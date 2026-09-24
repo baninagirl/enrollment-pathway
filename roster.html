@@ -100,8 +100,15 @@
   .pill{ display:inline-flex; align-items:center; gap:5px; padding:3px 9px; border-radius:99px; font-size:11.5px; font-weight:700; white-space:nowrap; }
   .pill.subj-math{ background:var(--accent-soft); color:var(--accent-soft-ink); }
   .pill.subj-reading{ background:var(--warn-soft); color:var(--warn); }
+  .pill.status-active{ background:var(--good-soft); color:var(--good); }
+  .pill.status-inactive{ background:var(--surface-2); color:var(--ink-faint); }
   .lvl{ font-variant-numeric:tabular-nums; font-weight:600; }
   .lvl.empty-lvl{ color:var(--ink-faint); font-weight:500; }
+
+  .selectcol{ width:34px; }
+  .selectcol input, .row-check{ width:15px; height:15px; margin:0; cursor:pointer; accent-color:var(--accent); }
+  .bulk-bar{ display:flex; align-items:center; gap:8px; padding:10px 16px; border-bottom:1px solid var(--border); background:var(--accent-soft); flex-wrap:wrap; }
+  .bulk-bar .count{ font-size:13px; font-weight:700; color:var(--accent-soft-ink); margin-right:auto; }
 
   select, input[type=text], input[type=number], input[type=date], input[type=email], input[type=password]{
     font-family:inherit; font-size:13.5px; padding:8px 10px; border-radius:8px; border:1px solid var(--border);
@@ -195,13 +202,22 @@
         <option value="Reading">Reading</option>
       </select>
       <select id="teacherFilter"><option value="all">All teachers</option></select>
+      <select id="statusFilter">
+        <option value="active" selected>Active</option>
+        <option value="inactive">Inactive</option>
+        <option value="all">All statuses</option>
+      </select>
     </div>
 
     <div class="card">
       <div class="card-head"><h3>Enrollments</h3><span class="hint" id="enrollCount"></span></div>
+      <div id="bulkBar" class="bulk-bar" hidden></div>
       <div class="table-scroll">
         <table class="stable">
-          <thead><tr><th>Student</th><th>Grade</th><th>Subject</th><th>Teacher</th><th>Current level</th><th>Goal</th></tr></thead>
+          <thead><tr>
+            <th class="selectcol"><input type="checkbox" id="selectAllCheckbox" title="Select all"></th>
+            <th>Student</th><th>Grade</th><th>Subject</th><th>Teacher</th><th>Current level</th><th>Goal</th><th>Status</th>
+          </tr></thead>
           <tbody id="rosterBody"></tbody>
         </table>
       </div>
@@ -239,8 +255,9 @@
 
   let sbClient = null, currentUser = null, currentRole = null, currentTeacherName = null;
   let students = [], trainers = [], enrollments = [];
-  let filters = { search:"", subject:"all", teacher:"all" };
+  let filters = { search:"", subject:"all", teacher:"all", status:"active" };
   let editingId = null;
+  let selectedIds = new Set();
 
   // A plain teacher and a trainer_teacher (a trainor who also carries her own roster,
   // like Queenie) both get their Student Roster locked to just their own students. The
@@ -379,6 +396,10 @@
     const { data, error } = await sbClient.from("subject_enrollments").select("*").order("student_name");
     if(error){ console.warn(error); enrollments = []; return; }
     enrollments = data || [];
+    // Drop any selection that no longer exists (deleted here or by someone else) so a
+    // stale id can never sneak into a bulk action.
+    const validIds = new Set(enrollments.map(e => e.id));
+    [...selectedIds].forEach(id => { if(!validIds.has(id)) selectedIds.delete(id); });
   }
 
   function populateTeacherFilter(){
@@ -400,6 +421,7 @@
       if(lockedTeacher !== null && e.teacher !== lockedTeacher) return false;
       if(filters.subject !== "all" && e.subject !== filters.subject) return false;
       if(lockedTeacher === null && filters.teacher !== "all" && e.teacher !== filters.teacher) return false;
+      if(filters.status !== "all" && (e.status || "active") !== filters.status) return false;
       if(filters.search && !(e.student_name||"").toLowerCase().includes(filters.search.toLowerCase())) return false;
       return true;
     });
@@ -412,19 +434,44 @@
     $("#enrollCount").textContent = rows.length + (rows.length===1 ? " enrollment" : " enrollments");
     const body = $("#rosterBody");
     if(rows.length === 0){
-      body.innerHTML = `<tr><td colspan="6"><div class="empty">${enrollments.length===0 ? "No enrollments yet — add your first one." : "Nothing matches your filters."}</div></td></tr>`;
-      return;
+      body.innerHTML = `<tr><td colspan="8"><div class="empty">${enrollments.length===0 ? "No enrollments yet — add your first one." : "Nothing matches your filters."}</div></td></tr>`;
+    }else{
+      body.innerHTML = rows.map(e => `
+        <tr class="clickrow" data-action="edit" data-id="${e.id}">
+          <td class="selectcol"><input type="checkbox" class="row-check" data-action="toggle-select" data-id="${e.id}" ${selectedIds.has(e.id)?"checked":""}></td>
+          <td>${esc(displayName(e.student_id, e.student_name))}</td>
+          <td>${esc(gradeFor(e.student_id) || "—")}</td>
+          <td><span class="pill ${e.subject==='Math'?'subj-math':'subj-reading'}">${esc(e.subject)}</span></td>
+          <td>${esc(e.teacher||"—")}</td>
+          <td>${fmtLevel(e.current_level, e.current_page)}</td>
+          <td>${fmtLevel(e.goal_level, e.goal_page)}</td>
+          <td><span class="pill ${(e.status||'active')==='inactive'?'status-inactive':'status-active'}">${(e.status||"active")==="inactive"?"Inactive":"Active"}</span></td>
+        </tr>
+      `).join("");
     }
-    body.innerHTML = rows.map(e => `
-      <tr class="clickrow" data-action="edit" data-id="${e.id}">
-        <td>${esc(displayName(e.student_id, e.student_name))}</td>
-        <td>${esc(gradeFor(e.student_id) || "—")}</td>
-        <td><span class="pill ${e.subject==='Math'?'subj-math':'subj-reading'}">${esc(e.subject)}</span></td>
-        <td>${esc(e.teacher||"—")}</td>
-        <td>${fmtLevel(e.current_level, e.current_page)}</td>
-        <td>${fmtLevel(e.goal_level, e.goal_page)}</td>
-      </tr>
-    `).join("");
+
+    const visibleIds = rows.map(r => r.id);
+    const selectedVisible = visibleIds.filter(id => selectedIds.has(id));
+    const selectAll = $("#selectAllCheckbox");
+    if(selectAll){
+      selectAll.checked = visibleIds.length > 0 && selectedVisible.length === visibleIds.length;
+      selectAll.indeterminate = selectedVisible.length > 0 && selectedVisible.length < visibleIds.length;
+    }
+    renderBulkBar();
+  }
+
+  function renderBulkBar(){
+    const bar = $("#bulkBar");
+    if(!bar) return;
+    const n = selectedIds.size;
+    if(n === 0){ bar.hidden = true; bar.innerHTML = ""; return; }
+    bar.hidden = false;
+    bar.innerHTML = `
+      <span class="count">${n} selected</span>
+      <button type="button" class="btn sm primary" data-action="bulk-edit">Edit selected</button>
+      ${isTeacherScoped() ? "" : `<button type="button" class="btn sm danger" data-action="bulk-delete">Delete</button>`}
+      <button type="button" class="btn sm ghost" data-action="bulk-clear">Clear</button>
+    `;
   }
 
   function levelOptions(subject, selected){
@@ -524,6 +571,52 @@
   }
   function closeModal(){ $("#modalBackdrop").hidden = true; $("#modal").innerHTML = ""; editingId = null; }
 
+  // Bulk edit touches only the fields the admin actually changes — everything starts on
+  // "No change" (or blank, for the level/page text fields) so applying it to a mixed batch
+  // of rows can never accidentally wipe out something that was fine as it was.
+  function openBulkEditModal(){
+    const n = selectedIds.size;
+    $("#modal").innerHTML = `
+      <div class="modal-head"><h3>Edit ${n} enrollment${n===1?"":"s"}</h3><button class="iconbtn" data-action="close-modal">✕</button></div>
+      <form id="bulkEditForm">
+        <div class="modal-body">
+          <p class="hint" style="font-size:12px; color:var(--ink-muted); margin:0;">Only the fields you touch get applied to all ${n} selected — leave the rest as "No change".</p>
+          <label class="field">Teacher<select name="teacher" ${isTeacherScoped()?"disabled":""}>
+            <option value="__nochange__" selected>No change</option>
+            ${trainers.map(t=>`<option value="${esc(t)}">${esc(t)}</option>`).join("")}
+          </select></label>
+          <label class="field">Subject<select name="subject" ${isTeacherScoped()?"disabled":""}>
+            <option value="__nochange__" selected>No change</option>
+            <option value="Math">Math</option>
+            <option value="Reading">Reading</option>
+          </select></label>
+          <label class="field">Status<select name="status">
+            <option value="__nochange__" selected>No change</option>
+            <option value="active">Active</option>
+            <option value="inactive">Inactive</option>
+          </select></label>
+          <div class="field-row">
+            <label class="field">Current level<input type="text" name="current_level" placeholder="No change"></label>
+            <label class="field">Current page<input type="text" name="current_page" placeholder="No change"></label>
+          </div>
+          <div class="field-row">
+            <label class="field">Goal level<input type="text" name="goal_level" placeholder="No change"></label>
+            <label class="field">Goal page<input type="text" name="goal_page" placeholder="No change"></label>
+          </div>
+          <p class="hint" style="font-size:11.5px; color:var(--ink-faint); margin:0;">Changing subject on a mixed Math/Reading batch? The level fields above use whichever code you type, so set Current/Goal level here too if the old ones won't make sense under the new subject.</p>
+        </div>
+        <div class="modal-foot">
+          <div></div>
+          <div style="display:flex; gap:8px;">
+            <button type="button" class="btn ghost" data-action="close-modal">Cancel</button>
+            <button type="submit" class="btn primary">Apply to ${n}</button>
+          </div>
+        </div>
+      </form>
+    `;
+    $("#modalBackdrop").hidden = false;
+  }
+
   document.addEventListener("submit", async (e)=>{
     if(e.target.id === "loginForm"){
       e.preventDefault();
@@ -592,6 +685,31 @@
       await Promise.all([loadStudents(), loadEnrollments()]);
       render();
     }
+    if(e.target.id === "bulkEditForm"){
+      e.preventDefault();
+      const fd = new FormData(e.target);
+      const patch = {};
+      const teacher = fd.get("teacher");
+      if(!isTeacherScoped() && teacher && teacher !== "__nochange__") patch.teacher = teacher;
+      const subject = fd.get("subject");
+      if(!isTeacherScoped() && subject && subject !== "__nochange__") patch.subject = subject;
+      const status = fd.get("status");
+      if(status && status !== "__nochange__") patch.status = status;
+      ["current_level","current_page","goal_level","goal_page"].forEach(key=>{
+        const v = (fd.get(key)||"").toString().trim();
+        if(v) patch[key] = v;
+      });
+
+      if(Object.keys(patch).length === 0){ alert("Nothing was changed — pick at least one field to update, or Cancel."); return; }
+      patch.updated_at = new Date().toISOString();
+
+      const ids = [...selectedIds];
+      const { error } = await sbClient.from("subject_enrollments").update(patch).in("id", ids);
+      if(error){ alert("Couldn't apply changes: " + error.message); return; }
+      closeModal();
+      selectedIds.clear();
+      await loadEnrollments(); render();
+    }
   });
 
   document.addEventListener("change", (e)=>{
@@ -604,6 +722,13 @@
     if(e.target.id === "searchInput"){ filters.search = e.target.value; render(); }
     if(e.target.id === "subjectFilter"){ filters.subject = e.target.value; render(); }
     if(e.target.id === "teacherFilter"){ filters.teacher = e.target.value; render(); }
+    if(e.target.id === "statusFilter"){ filters.status = e.target.value; render(); }
+    if(e.target.id === "selectAllCheckbox"){
+      const visibleIds = filtered().map(r => r.id);
+      if(e.target.checked){ visibleIds.forEach(id => selectedIds.add(id)); }
+      else{ visibleIds.forEach(id => selectedIds.delete(id)); }
+      render();
+    }
   });
 
   document.addEventListener("input", (e)=>{
@@ -636,6 +761,23 @@
       const { error } = await sbClient.from("subject_enrollments").delete().eq("id", id);
       if(error){ alert("Couldn't delete: " + error.message); return; }
       closeModal();
+      await loadEnrollments(); render();
+    }
+    else if(action === "toggle-select"){
+      const id = btn.dataset.id;
+      if(btn.checked) selectedIds.add(id); else selectedIds.delete(id);
+      render();
+    }
+    else if(action === "bulk-clear"){ selectedIds.clear(); render(); }
+    else if(action === "bulk-edit"){ openBulkEditModal(); }
+    else if(action === "bulk-delete"){
+      if(isTeacherScoped()) return;
+      const n = selectedIds.size;
+      if(!confirm(`Delete ${n} enrollment${n===1?"":"s"}? This can't be undone.`)) return;
+      const ids = [...selectedIds];
+      const { error } = await sbClient.from("subject_enrollments").delete().in("id", ids);
+      if(error){ alert("Couldn't delete: " + error.message); return; }
+      selectedIds.clear();
       await loadEnrollments(); render();
     }
   });
