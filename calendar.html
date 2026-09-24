@@ -94,6 +94,10 @@
 
   .cal-toolbar{ display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end; margin-bottom:16px; }
   .cal-toolbar .field{ max-width:230px; min-width:170px; flex:1; }
+  .view-tabs{ display:flex; gap:3px; background:var(--surface-2); padding:3px; border-radius:11px; border:1px solid var(--border); }
+  .view-tab{ border:none; background:transparent; padding:8px 13px; border-radius:8px; font-size:12.5px; font-weight:700; color:var(--ink-muted); cursor:pointer; white-space:nowrap; }
+  .view-tab:hover{ color:var(--ink); }
+  .view-tab.active{ background:var(--surface); color:var(--ink); box-shadow:var(--shadow); }
   .cal-legend{ display:flex; gap:16px; align-items:center; font-size:12px; color:var(--ink-muted); margin-left:auto; padding-bottom:9px; }
   .cal-legend .swatch{ display:inline-flex; align-items:center; gap:6px; }
   .cal-legend .dot{ width:9px; height:9px; border-radius:50%; flex:none; }
@@ -182,8 +186,13 @@
     </div>
 
     <div class="cal-toolbar" id="calToolbar">
-      <label class="field" id="calTeacherField">Teacher<select id="calTeacherFilter"></select></label>
-      <label class="field" id="calGroupField">Group<select id="calGroupFilter"></select></label>
+      <div class="view-tabs" id="calViewTabs" hidden>
+        <button type="button" class="view-tab active" data-action="set-view" data-view="all">All center</button>
+        <button type="button" class="view-tab" data-action="set-view" data-view="teacher">By teacher</button>
+        <button type="button" class="view-tab" data-action="set-view" data-view="group">By group</button>
+      </div>
+      <label class="field" id="calTeacherField" hidden>Teacher<select id="calTeacherFilter"></select></label>
+      <label class="field" id="calGroupField" hidden>Group<select id="calGroupFilter"></select></label>
       <div class="cal-legend">
         <span class="swatch"><span class="dot math"></span>Math</span>
         <span class="swatch"><span class="dot reading"></span>Reading</span>
@@ -258,6 +267,9 @@
   let sbClient = null, currentUser = null, currentRole = null, currentTeacherName = null;
   let schedules = [], enrollments = [], trainers = [];
   let filters = { teacher:"all", group:"all" };
+  // Which of the three tabs is active — only meaningful for non-teacher-scoped roles,
+  // who are the only ones who ever see the tabs at all.
+  let viewMode = "all";
 
   // Same idea as Student roster: a plain teacher and a trainer_teacher (a trainor who
   // also carries her own roster) both get the calendar locked to just their own students.
@@ -354,20 +366,46 @@
   }
 
   function populateFilters(){
+    const tabs = $("#calViewTabs");
     const teacherField = $("#calTeacherField");
+    const groupField = $("#calGroupField");
     const teacherSel = $("#calTeacherFilter");
-    if(isTeacherScoped()){
-      // A teacher (or trainer_teacher) only ever gets sent their own students by the
-      // database anyway (same rule as Student roster) — a teacher picker here would
-      // just be noise.
-      if(teacherField) teacherField.hidden = true;
-      filters.teacher = "all";
-    }else{
-      if(teacherField) teacherField.hidden = false;
-      teacherSel.innerHTML = `<option value="all">All teachers — center-wide</option>` + trainers.map(t=>`<option value="${esc(t)}">${esc(t)}</option>`).join("");
-    }
     const groupSel = $("#calGroupFilter");
     groupSel.innerHTML = `<option value="all">All groups</option>` + LEVEL_GROUPS.map(g=>`<option value="${g.key}">${esc(g.label)}</option>`).join("");
+
+    if(isTeacherScoped()){
+      // A teacher (or trainer_teacher) only ever gets sent her own students by the
+      // database anyway (same rule as Student roster) — "All center" / "By teacher"
+      // tabs would just be noise for her, so she only ever sees the Group filter,
+      // same as before.
+      if(tabs) tabs.hidden = true;
+      if(teacherField) teacherField.hidden = true;
+      if(groupField) groupField.hidden = false;
+      filters.teacher = "all";
+    }else{
+      teacherSel.innerHTML = `<option value="all">All teachers</option>` + trainers.map(t=>`<option value="${esc(t)}">${esc(t)}</option>`).join("");
+      if(tabs) tabs.hidden = false;
+      applyViewMode("all");
+    }
+  }
+
+  // The three tabs are mutually exclusive on purpose — "By teacher" and "By group" each
+  // show their own picker and hide the other, so there's never a question of which
+  // filter is actually in charge of what's on screen.
+  function applyViewMode(mode){
+    viewMode = mode;
+    filters.teacher = "all";
+    filters.group = "all";
+    $$(".view-tab").forEach(b => b.classList.toggle("active", b.dataset.view === mode));
+    const teacherField = $("#calTeacherField");
+    const groupField = $("#calGroupField");
+    if(teacherField) teacherField.hidden = mode !== "teacher";
+    if(groupField) groupField.hidden = mode !== "group";
+    const teacherSel = $("#calTeacherFilter");
+    const groupSel = $("#calGroupFilter");
+    if(teacherSel) teacherSel.value = "all";
+    if(groupSel) groupSel.value = "all";
+    renderCalendar();
   }
 
   function buildEntries(){
@@ -455,22 +493,15 @@
   });
 
   document.addEventListener("change", (e)=>{
-    if(e.target.id === "calTeacherFilter"){
-      filters.teacher = e.target.value;
-      if(filters.teacher !== "all"){ filters.group = "all"; const g = $("#calGroupFilter"); if(g) g.value = "all"; }
-      renderCalendar();
-    }
-    if(e.target.id === "calGroupFilter"){
-      filters.group = e.target.value;
-      if(filters.group !== "all" && !isTeacherScoped()){ filters.teacher = "all"; const t = $("#calTeacherFilter"); if(t) t.value = "all"; }
-      renderCalendar();
-    }
+    if(e.target.id === "calTeacherFilter"){ filters.teacher = e.target.value; renderCalendar(); }
+    if(e.target.id === "calGroupFilter"){ filters.group = e.target.value; renderCalendar(); }
   });
 
   document.addEventListener("click", async (e)=>{
     const btn = e.target.closest("[data-action]");
     if(!btn) return;
     if(btn.dataset.action === "logout"){ await sbClient.auth.signOut(); }
+    else if(btn.dataset.action === "set-view"){ applyViewMode(btn.dataset.view); }
   });
 
   boot();
