@@ -160,6 +160,7 @@
     <div class="rail-pages">
       <a class="navbtn" href="index.html">Pipeline</a>
       <a class="navbtn" href="roster.html">Student roster</a>
+      <a class="navbtn" href="calendar.html">Calendar</a>
       <a class="navbtn active" href="admin.html">Admin</a>
     </div>
     <div class="rail-divider"></div>
@@ -339,7 +340,7 @@
               <option value="superadmin">Superadmin</option>
             </select>
           </label>
-          <div id="newLoginTeacherField" hidden>
+          <div id="newLoginTeacherField" hidden style="display:flex; flex-direction:column; gap:12px;">
             <label class="field">Teacher name
               <input type="text" name="teacher_name" list="trainerNamesList" autocomplete="off" placeholder="Type their name — pick an existing one, or add new">
               <datalist id="trainerNamesList">${trainers.map(t=>`<option value="${esc(t)}">`).join("")}</datalist>

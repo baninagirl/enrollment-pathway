@@ -1,0 +1,475 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Kumon Hub — Calendar</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700&family=Public+Sans:wght@400;500;600;700&display=swap">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  :root{
+    --bg:#F5F6FA; --surface:#FFFFFF; --surface-2:#FBFBFE; --border:#E1E4EB;
+    --ink:#1B1F27; --ink-muted:#636C7C; --ink-faint:#9AA1AF;
+    --accent:#3454D1; --accent-ink:#FFFFFF; --accent-soft:#E9EDFC; --accent-soft-ink:#2A41A8;
+    --good:#1E8E5A; --good-soft:#E4F5EC; --warn:#A6650F; --warn-soft:#FBF0D9; --bad:#C23B2B; --bad-soft:#FBE8E5;
+    --shadow: 0 1px 2px rgba(20,24,34,.04), 0 8px 24px -12px rgba(20,24,34,.18);
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#14161C; --surface:#1C1F27; --surface-2:#20232C; --border:#2C303B;
+      --ink:#EDEFF4; --ink-muted:#9BA3B2; --ink-faint:#6B7280;
+      --accent:#6C86F0; --accent-ink:#0E1220; --accent-soft:#232A47; --accent-soft-ink:#B7C3FA;
+      --good:#4FC48A; --good-soft:#173226; --warn:#E3A63D; --warn-soft:#3A2E12; --bad:#F0796A; --bad-soft:#3A1F1C;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#14161C; --surface:#1C1F27; --surface-2:#20232C; --border:#2C303B;
+    --ink:#EDEFF4; --ink-muted:#9BA3B2; --ink-faint:#6B7280;
+    --accent:#6C86F0; --accent-ink:#0E1220; --accent-soft:#232A47; --accent-soft-ink:#B7C3FA;
+    --good:#4FC48A; --good-soft:#173226; --warn:#E3A63D; --warn-soft:#3A2E12; --bad:#F0796A; --bad-soft:#3A1F1C;
+    color-scheme: dark;
+  }
+
+  *{box-sizing:border-box;}
+  body{
+    background:var(--bg); color:var(--ink); margin:0;
+    font-family:"Public Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  h1,h2,h3,.brand{ font-family:"Sora", system-ui, sans-serif; }
+  h1,h2,h3{ text-wrap:balance; margin:0; }
+  button{ font-family:inherit; }
+  a{ color:var(--accent); }
+
+  .app{ display:grid; grid-template-columns: 216px 1fr; min-height:100vh; min-height:100dvh; }
+  .rail{
+    background:var(--surface); border-right:1px solid var(--border);
+    padding:20px 12px; display:flex; flex-direction:column; gap:4px;
+    position:sticky; top:0; align-self:start; height:100vh; height:100dvh;
+  }
+  .brand{ font-weight:700; font-size:16px; padding:6px 10px 18px; display:flex; align-items:center; gap:8px; color:var(--ink); }
+  .brand .dot{ width:9px;height:9px;border-radius:50%;background:var(--accent); flex:none; }
+  .navbtn{
+    display:flex; align-items:center; gap:10px; padding:9px 10px; border-radius:9px;
+    border:none; background:transparent; color:var(--ink-muted); font-size:14px; font-weight:600;
+    cursor:pointer; text-align:left; width:100%; text-decoration:none;
+  }
+  .navbtn:hover{ background:var(--surface-2); color:var(--ink); }
+  .navbtn.active{ background:var(--accent-soft); color:var(--accent-soft-ink); }
+  .rail-pages{ display:flex; flex-direction:column; gap:4px; margin-bottom:8px; }
+  .rail-divider{ height:1px; background:var(--border); margin:4px 10px 10px; }
+  .rail-account{ padding:0 10px 10px; }
+  .account-row{ display:flex; align-items:center; justify-content:space-between; gap:8px; padding:8px 8px; border-top:1px solid var(--border); font-size:12px; color:var(--ink-muted); }
+  .account-email{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .rail-foot{ margin-top:auto; padding:10px; font-size:12px; color:var(--ink-faint); line-height:1.5; }
+
+  .main{ padding:26px 30px 60px; max-width:1200px; width:100%; }
+  .page-head{ display:flex; align-items:flex-end; justify-content:space-between; gap:16px; margin-bottom:18px; flex-wrap:wrap; }
+  .page-head h1{ font-size:22px; font-weight:700; }
+  .page-sub{ color:var(--ink-muted); font-size:13.5px; margin-top:4px; }
+
+  .btn{
+    display:inline-flex; align-items:center; gap:7px; padding:9px 14px; border-radius:9px;
+    font-size:13.5px; font-weight:600; border:1px solid var(--border); background:var(--surface);
+    color:var(--ink); cursor:pointer; white-space:nowrap;
+  }
+  .btn:hover{ background:var(--surface-2); }
+  .btn.primary{ background:var(--accent); color:var(--accent-ink); border-color:var(--accent); }
+  .btn.sm{ padding:6px 10px; font-size:12.5px; border-radius:7px; }
+  .btn.ghost{ border-color:transparent; background:transparent; }
+
+  .hint{ font-size:12px; color:var(--ink-muted); font-weight:500; }
+  .empty{ padding:40px 16px; text-align:center; color:var(--ink-muted); font-size:13.5px; }
+  .banner{ background:var(--warn-soft); color:var(--warn); border-radius:11px; padding:11px 14px; font-size:13px; font-weight:600; margin-bottom:16px; }
+  .banner.info{ background:var(--accent-soft); color:var(--accent-soft-ink); }
+
+  select, input[type=text], input[type=number], input[type=date], input[type=email], input[type=password]{
+    font-family:inherit; font-size:13.5px; padding:8px 10px; border-radius:8px; border:1px solid var(--border);
+    background:var(--surface); color:var(--ink); width:100%;
+  }
+  select:focus, input:focus{ outline:2px solid var(--accent); outline-offset:1px; }
+  label.field{ display:flex; flex-direction:column; gap:5px; font-size:12.5px; font-weight:600; color:var(--ink-muted); }
+
+  .cal-toolbar{ display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end; margin-bottom:16px; }
+  .cal-toolbar .field{ max-width:230px; min-width:170px; flex:1; }
+  .cal-legend{ display:flex; gap:16px; align-items:center; font-size:12px; color:var(--ink-muted); margin-left:auto; padding-bottom:9px; }
+  .cal-legend .swatch{ display:inline-flex; align-items:center; gap:6px; }
+  .cal-legend .dot{ width:9px; height:9px; border-radius:50%; flex:none; }
+  .cal-legend .dot.math{ background:var(--accent); }
+  .cal-legend .dot.reading{ background:var(--warn); }
+  .cal-count{ font-size:12px; color:var(--ink-muted); padding-bottom:9px; white-space:nowrap; }
+
+  .cal-wrap{ overflow-x:auto; border:1px solid var(--border); border-radius:14px; background:var(--surface); box-shadow:var(--shadow); }
+  .cal-grid{ display:grid; min-width:820px; }
+  .cal-cell{ border-bottom:1px solid var(--border); border-right:1px solid var(--border); padding:8px; }
+  .cal-grid > .cal-cell:nth-last-child(-n+1){ border-bottom:none; }
+  .cal-head{
+    background:var(--surface-2); font-size:11px; font-weight:700; text-transform:uppercase;
+    letter-spacing:.04em; color:var(--ink-muted); padding:11px 8px; text-align:center;
+  }
+  .cal-time-label{
+    font-size:11.5px; font-weight:700; color:var(--ink-muted); background:var(--surface-2);
+    display:flex; align-items:center; justify-content:center; white-space:nowrap; min-height:56px;
+  }
+  .cal-chip{
+    display:flex; flex-direction:column; gap:1px; padding:5px 8px; border-radius:8px;
+    font-size:11.5px; font-weight:700; margin-bottom:4px; line-height:1.35;
+  }
+  .cal-chip:last-child{ margin-bottom:0; }
+  .cal-chip.subj-math{ background:var(--accent-soft); color:var(--accent-soft-ink); }
+  .cal-chip.subj-reading{ background:var(--warn-soft); color:var(--warn); }
+  .cal-chip .teacher-sub{ font-weight:500; opacity:.82; font-size:10.5px; }
+
+  .login-screen{ position:fixed; inset:0; display:flex; align-items:center; justify-content:center; background:var(--bg); z-index:100; padding:20px; }
+  .login-card{ width:100%; max-width:360px; background:var(--surface); border:1px solid var(--border); border-radius:16px; padding:28px 26px; box-shadow:var(--shadow); display:flex; flex-direction:column; gap:14px; }
+  .login-brand{ font-family:"Sora", system-ui, sans-serif; font-weight:700; font-size:18px; display:flex; align-items:center; gap:8px; color:var(--ink); }
+  .login-brand .dot{ width:9px; height:9px; border-radius:50%; background:var(--accent); flex:none; }
+  .login-sub{ font-size:13px; color:var(--ink-muted); margin:-6px 0 4px; }
+  .login-error{ background:var(--bad-soft); color:var(--bad); border-radius:9px; padding:9px 12px; font-size:12.5px; font-weight:600; }
+
+  [hidden]{ display:none !important; }
+
+  @media (max-width: 860px){
+    .app{ grid-template-columns:1fr; }
+    .rail{ position:fixed; bottom:0; left:0; right:0; top:auto; height:auto; flex-direction:row; padding:8px; border-right:none; border-top:1px solid var(--border); z-index:40; }
+    .brand, .rail-foot, .rail-account{ display:none; }
+    .rail-pages{ flex-direction:row; flex:1; margin-bottom:0; }
+    .rail-divider{ display:none; }
+    .navbtn{ text-align:center; justify-content:center; }
+    .main{ padding:16px 14px calc(70px + env(safe-area-inset-bottom)); }
+    .cal-legend{ margin-left:0; padding-bottom:0; width:100%; }
+    .cal-toolbar{ align-items:stretch; }
+  }
+</style>
+</head>
+<body>
+
+<div class="login-screen" id="loginScreen">
+  <form class="login-card" id="loginForm">
+    <div class="login-brand"><span class="dot"></span>Kumon Hub</div>
+    <div class="login-sub">Sign in with your team account.</div>
+    <div class="login-error" id="loginError" hidden></div>
+    <label class="field">Email<input type="email" name="email" required autocomplete="username" autofocus></label>
+    <label class="field">Password<input type="password" name="password" required autocomplete="current-password"></label>
+    <button class="btn primary" type="submit" style="justify-content:center;">Log in</button>
+  </form>
+</div>
+
+<div class="app" id="appRoot" hidden>
+  <nav class="rail">
+    <div class="brand"><span class="dot"></span>Kumon Hub</div>
+    <div class="rail-pages">
+      <a class="navbtn" href="index.html" id="navPipelineLink">Pipeline</a>
+      <a class="navbtn" href="roster.html">Student roster</a>
+      <a class="navbtn active" href="calendar.html">Calendar</a>
+      <a class="navbtn" href="admin.html" id="navAdminLink" hidden>Admin</a>
+    </div>
+    <div class="rail-divider"></div>
+    <div class="rail-account" id="railAccount"></div>
+    <div class="rail-foot">Everyone's weekly schedule, one shared grid.</div>
+  </nav>
+
+  <main class="main">
+    <div id="pendingGate" hidden></div>
+
+    <div class="page-head" id="pageHead">
+      <div>
+        <h1>Calendar</h1>
+        <div class="page-sub" id="pageSub">Your students' regular week, at a glance.</div>
+      </div>
+    </div>
+
+    <div class="cal-toolbar" id="calToolbar">
+      <label class="field" id="calTeacherField">Teacher<select id="calTeacherFilter"></select></label>
+      <label class="field" id="calGroupField">Group<select id="calGroupFilter"></select></label>
+      <div class="cal-legend">
+        <span class="swatch"><span class="dot math"></span>Math</span>
+        <span class="swatch"><span class="dot reading"></span>Reading</span>
+      </div>
+      <span class="cal-count" id="calCount"></span>
+    </div>
+
+    <div class="cal-wrap" id="calWrap">
+      <div class="cal-grid" id="calGrid"></div>
+      <div class="empty" id="calEmpty" hidden>Nobody's on a regular schedule that matches this view yet.</div>
+    </div>
+  </main>
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  const SUPABASE_URL = "https://bcnmsryahczapnxbpkve.supabase.co";
+  const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJjbm1zcnlhaGN6YXBueGJwa3ZlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTAyMDQ4NzksImV4cCI6MjEwNTc4MDg3OX0.VgCX3CR7YCJxR9-vwD8HlYcCx0MxlY7atgD_0h3F3to";
+
+  const $ = (sel, el) => (el||document).querySelector(sel);
+  const $$ = (sel, el) => Array.from((el||document).querySelectorAll(sel));
+  function esc(s){ return String(s==null?"":s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+
+  const DAY_ORDER = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
+  function fmtTime(t){
+    if(!t) return "";
+    let [h,m] = t.split(":").map(Number);
+    const ap = h >= 12 ? "PM" : "AM";
+    h = h % 12; if(h===0) h = 12;
+    return `${h}:${String(m).padStart(2,"0")} ${ap}`;
+  }
+
+  // Level bands Nina groups her center into for "group-wide" viewing. The 7A–3A
+  // split lands mid-level (3A runs ~200 pages), so that one boundary is decided by
+  // page number instead of level name; everything else is a straight level match.
+  // Math and Reading use different level codes past 2A (Reading splits each letter
+  // into I/II), so each subject gets its own list mapped to the same band keys.
+  const LEVEL_GROUPS = [
+    { key:"7a-3a61", label:"7A – 3A (up to pg. 61)" },
+    { key:"3a61-a",  label:"3A (pg. 62+) – A" },
+    { key:"bcd",     label:"B · C · D" },
+    { key:"efg",     label:"E · F · G" },
+    { key:"h-o",     label:"H – O" },
+  ];
+  const GROUP_MATH_LEVELS = {
+    "7a-3a61": ["7A","6A","5A","4A"],
+    "3a61-a":  ["2A","A"],
+    "bcd":     ["B","C","D"],
+    "efg":     ["E","F","G"],
+    "h-o":     ["H","I","J","K","L","M","N","O"],
+  };
+  const GROUP_READING_LEVELS = {
+    "7a-3a61": ["7A","6A","5A","4A"],
+    "3a61-a":  ["2A","AI","AII"],
+    "bcd":     ["BI","BII","CI","CII","DI","DII"],
+    "efg":     ["EI","EII","FI","FII","GI","GII"],
+    "h-o":     ["HI","HII","I-I","I-II","J","K","L","M","N","O"],
+  };
+  function levelGroupKey(subject, level, page){
+    if(!level) return null;
+    if(level === "3A"){
+      const p = parseInt(page, 10);
+      return (!isNaN(p) && p > 61) ? "3a61-a" : "7a-3a61";
+    }
+    const map = subject === "Reading" ? GROUP_READING_LEVELS : GROUP_MATH_LEVELS;
+    for(const key in map){ if(map[key].includes(level)) return key; }
+    return null;
+  }
+
+  let sbClient = null, currentUser = null, currentRole = null, currentTeacherName = null;
+  let schedules = [], enrollments = [], trainers = [];
+  let filters = { teacher:"all", group:"all" };
+
+  function showLogin(errMsg){
+    $("#loginScreen").hidden = false;
+    $("#appRoot").hidden = true;
+    const err = $("#loginError");
+    if(errMsg){ err.textContent = errMsg; err.hidden = false; } else { err.hidden = true; }
+  }
+  function showApp(){ $("#loginScreen").hidden = true; $("#appRoot").hidden = false; }
+  function renderAccount(){
+    const el = $("#railAccount");
+    if(el) el.innerHTML = currentUser ? `<div class="account-row"><span class="account-email">${esc(currentUser.email)}</span><button class="btn sm ghost" data-action="logout">Log out</button></div>` : "";
+    const adminLink = $("#navAdminLink");
+    if(adminLink) adminLink.hidden = currentRole !== "superadmin";
+    const pipelineLink = $("#navPipelineLink");
+    if(pipelineLink) pipelineLink.hidden = currentRole === "teacher" || currentRole === "pending";
+    applyRoleGate();
+  }
+
+  function applyRoleGate(){
+    const isPending = currentRole === "pending";
+    const gate = $("#pendingGate");
+    if(gate){
+      gate.hidden = !isPending;
+      gate.innerHTML = isPending ? `<div class="banner">Your account is waiting for approval. Ask a superadmin to set your role in <a href="admin.html">Admin</a> — until then there's nothing here for you to see.</div>` : "";
+    }
+    $("#pageSub").textContent = currentRole === "teacher" ? "Your students' regular week, at a glance." : "The whole center's regular week, at a glance.";
+    $$(".page-head, .cal-toolbar, .cal-wrap").forEach(el => { el.style.display = isPending ? "none" : ""; });
+  }
+
+  async function loadRole(){
+    if(!sbClient || !currentUser){ currentRole = null; currentTeacherName = null; return; }
+    try{
+      const { data, error } = await sbClient.from("profiles").select("role, teacher_name").eq("id", currentUser.id).maybeSingle();
+      if(error) throw error;
+      currentRole = data ? data.role : "pending";
+      currentTeacherName = data ? (data.teacher_name || null) : null;
+    }catch(e){ console.warn("couldn't load role", e); currentRole = "pending"; currentTeacherName = null; }
+  }
+
+  async function boot(){
+    if(!window.supabase){ showLogin("Couldn't load Supabase."); return; }
+    try{ sbClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY); }
+    catch(e){ showLogin("Couldn't connect to Supabase."); return; }
+
+    const { data:{ session } } = await sbClient.auth.getSession();
+    if(session){ currentUser = session.user; showApp(); await loadRole(); renderAccount(); startApp(); }
+    else{ showLogin(); }
+
+    sbClient.auth.onAuthStateChange(async (event, session)=>{
+      if(session){
+        currentUser = session.user;
+        showApp(); await loadRole(); renderAccount(); startApp();
+      }else{
+        currentUser = null; currentRole = null;
+        showLogin();
+      }
+    });
+  }
+
+  let started = false;
+  async function startApp(){
+    if(started) return;
+    started = true;
+    await Promise.all([loadSchedules(), loadEnrollments(), loadSettings()]);
+    populateFilters();
+    renderCalendar();
+
+    sbClient.channel("realtime:calendar-schedules")
+      .on("postgres_changes", { event:"*", schema:"public", table:"schedules" }, async ()=>{ await loadSchedules(); renderCalendar(); })
+      .subscribe();
+    sbClient.channel("realtime:calendar-enrollments")
+      .on("postgres_changes", { event:"*", schema:"public", table:"subject_enrollments" }, async ()=>{ await loadEnrollments(); renderCalendar(); })
+      .subscribe();
+  }
+
+  async function loadSchedules(){
+    const { data, error } = await sbClient.from("schedules").select("*").eq("status","active");
+    if(error){ console.warn(error); schedules = []; return; }
+    schedules = data || [];
+  }
+  async function loadEnrollments(){
+    const { data, error } = await sbClient.from("subject_enrollments").select("*").eq("status","active");
+    if(error){ console.warn(error); enrollments = []; return; }
+    enrollments = data || [];
+  }
+  async function loadSettings(){
+    const { data } = await sbClient.from("settings").select("value").eq("id","staff").maybeSingle();
+    const v = data ? data.value : {};
+    trainers = Array.isArray(v.trainers) ? v.trainers : [];
+  }
+
+  function populateFilters(){
+    const teacherField = $("#calTeacherField");
+    const teacherSel = $("#calTeacherFilter");
+    if(currentRole === "teacher"){
+      // A teacher only ever gets sent their own students by the database anyway
+      // (same rule as Student roster) — a teacher picker here would just be noise.
+      if(teacherField) teacherField.hidden = true;
+      filters.teacher = "all";
+    }else{
+      if(teacherField) teacherField.hidden = false;
+      teacherSel.innerHTML = `<option value="all">All teachers — center-wide</option>` + trainers.map(t=>`<option value="${esc(t)}">${esc(t)}</option>`).join("");
+    }
+    const groupSel = $("#calGroupFilter");
+    groupSel.innerHTML = `<option value="all">All groups</option>` + LEVEL_GROUPS.map(g=>`<option value="${g.key}">${esc(g.label)}</option>`).join("");
+  }
+
+  function buildEntries(){
+    const out = [];
+    for(const sc of schedules){
+      const enrs = enrollments.filter(e => e.student_id === sc.student_id);
+      if(!enrs.length) continue;
+      const slots = Array.isArray(sc.slots) ? sc.slots : [];
+      for(const slot of slots){
+        if(!slot || !slot.day || !slot.time) continue;
+        for(const e of enrs){
+          out.push({
+            day: slot.day, time: slot.time,
+            studentName: sc.student_name || e.student_name || "",
+            subject: e.subject, teacher: e.teacher || "",
+            groupKey: levelGroupKey(e.subject, e.current_level, e.current_page),
+          });
+        }
+      }
+    }
+    return out;
+  }
+
+  function filteredEntries(){
+    // Teachers can only ever see rows the database hands them (RLS already scoped
+    // subject_enrollments/schedules to their own students) — this just mirrors that
+    // for the "showTeacherLabel" decision below, it doesn't add a second gate.
+    return buildEntries().filter(en => {
+      if(currentRole !== "teacher" && filters.teacher !== "all" && en.teacher !== filters.teacher) return false;
+      if(filters.group !== "all" && en.groupKey !== filters.group) return false;
+      return true;
+    });
+  }
+
+  function renderCalendar(){
+    const entries = filteredEntries();
+    $("#calCount").textContent = entries.length + (entries.length===1 ? " weekly slot" : " weekly slots");
+    const grid = $("#calGrid");
+    const emptyEl = $("#calEmpty");
+
+    if(!entries.length){
+      grid.innerHTML = "";
+      grid.style.gridTemplateColumns = "";
+      emptyEl.hidden = false;
+      return;
+    }
+    emptyEl.hidden = true;
+
+    const days = DAY_ORDER.filter(d => d !== "Sun" || entries.some(e => e.day === "Sun"));
+    const times = [...new Set(entries.map(e => e.time))].sort();
+    const showTeacherLabel = currentRole !== "teacher" && filters.teacher === "all";
+
+    const byCell = {};
+    for(const e of entries){
+      const key = e.day + "|" + e.time;
+      (byCell[key] = byCell[key] || []).push(e);
+    }
+
+    let html = `<div class="cal-cell cal-head"></div>`;
+    for(const d of days) html += `<div class="cal-cell cal-head">${d}</div>`;
+
+    for(const t of times){
+      html += `<div class="cal-cell cal-time-label">${fmtTime(t)}</div>`;
+      for(const d of days){
+        const items = (byCell[d+"|"+t] || []).slice().sort((a,b) => a.studentName.localeCompare(b.studentName));
+        html += `<div class="cal-cell">${items.map(it => {
+          const cls = it.subject === "Reading" ? "subj-reading" : "subj-math";
+          const teacherLine = showTeacherLabel && it.teacher ? `<span class="teacher-sub">${esc(it.teacher)}</span>` : "";
+          const titleBits = [it.studentName, it.subject, it.teacher].filter(Boolean).join(" — ");
+          return `<div class="cal-chip ${cls}" title="${esc(titleBits)}">${esc(it.studentName)}${teacherLine}</div>`;
+        }).join("")}</div>`;
+      }
+    }
+    grid.style.gridTemplateColumns = `84px repeat(${days.length}, minmax(150px, 1fr))`;
+    grid.innerHTML = html;
+  }
+
+  document.addEventListener("submit", async (e)=>{
+    if(e.target.id === "loginForm"){
+      e.preventDefault();
+      const fd = new FormData(e.target);
+      const { error } = await sbClient.auth.signInWithPassword({ email: fd.get("email"), password: fd.get("password") });
+      if(error) showLogin(error.message);
+    }
+  });
+
+  document.addEventListener("change", (e)=>{
+    if(e.target.id === "calTeacherFilter"){
+      filters.teacher = e.target.value;
+      if(filters.teacher !== "all"){ filters.group = "all"; const g = $("#calGroupFilter"); if(g) g.value = "all"; }
+      renderCalendar();
+    }
+    if(e.target.id === "calGroupFilter"){
+      filters.group = e.target.value;
+      if(filters.group !== "all" && currentRole !== "teacher"){ filters.teacher = "all"; const t = $("#calTeacherFilter"); if(t) t.value = "all"; }
+      renderCalendar();
+    }
+  });
+
+  document.addEventListener("click", async (e)=>{
+    const btn = e.target.closest("[data-action]");
+    if(!btn) return;
+    if(btn.dataset.action === "logout"){ await sbClient.auth.signOut(); }
+  });
+
+  boot();
+})();
+</script>
+</body>
+</html>
