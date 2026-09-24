@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Enrollment Pathway</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700&family=Public+Sans:wght@400;500;600;700&display=swap">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -111,7 +111,7 @@
   .cal-cell:active{ filter:brightness(.95); }
   .stable tr.clickrow:active td{ background:var(--surface-2); }
 
-  .stats{ display:grid; grid-template-columns:repeat(6,1fr); gap:10px; margin-bottom:20px; }
+  .stats{ display:grid; grid-template-columns:repeat(7,1fr); gap:10px; margin-bottom:20px; }
   .stat{
     background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:13px 14px;
     display:flex; flex-direction:column; gap:6px; cursor:pointer;
@@ -218,7 +218,8 @@
   .roster-slot .iconbtn:hover{ opacity:1; background:rgba(0,0,0,.08); }
 
   /* Students search/table */
-  .search-row{ display:flex; gap:8px; margin-bottom:12px; }
+  .search-row{ display:flex; gap:8px; margin-bottom:12px; flex-wrap:wrap; }
+  .table-scroll{ overflow-x:auto; -webkit-overflow-scrolling:touch; }
   .stable{ width:100%; border-collapse:collapse; }
   .stable th{ text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--ink-muted); padding:8px 10px; border-bottom:1px solid var(--border); }
   .stable td{ padding:10px 10px; border-bottom:1px solid var(--border); font-size:13px; vertical-align:middle; }
@@ -255,16 +256,34 @@
   [hidden]{ display:none !important; }
 
   @media (max-width: 860px){
+    body{ overflow-x:hidden; }
     .app{ grid-template-columns:1fr; }
-    .rail{ position:fixed; bottom:0; left:0; right:0; top:auto; height:auto; flex-direction:row; justify-content:space-around; padding:8px; border-right:none; border-top:1px solid var(--border); z-index:40; }
+    .rail{
+      position:fixed; bottom:0; left:0; right:0; top:auto; height:auto; flex-direction:row; justify-content:space-around;
+      padding:6px 6px calc(6px + env(safe-area-inset-bottom)); border-right:none; border-top:1px solid var(--border); z-index:40;
+    }
     .brand, .rail-foot{ display:none; }
-    .navbtn{ flex-direction:column; gap:3px; font-size:10.5px; padding:6px 4px; text-align:center; width:auto; flex:1; }
-    .navbtn .badge{ position:absolute; margin-left:14px; margin-top:-14px; }
-    .main{ padding:18px 14px 90px; }
-    .stats{ grid-template-columns:repeat(2,1fr); }
+    .navbtn{ flex-direction:column; gap:3px; font-size:10px; padding:7px 2px; text-align:center; width:auto; flex:1; min-height:48px; justify-content:center; }
+    .navbtn svg{ width:19px; height:19px; }
+    .navbtn .badge{ position:absolute; margin-left:16px; margin-top:-16px; }
+    .main{ padding:16px 14px calc(84px + env(safe-area-inset-bottom)); }
+    .page-head{ gap:10px; }
+    .page-head h1{ font-size:19px; }
+    .stats{ grid-template-columns:repeat(2,1fr); gap:8px; }
+    .stat{ padding:11px 12px; }
     .field-row{ grid-template-columns:1fr; }
     .roster-grid{ grid-template-columns:repeat(2,1fr); }
-    .cal-cell{ min-height:74px; }
+    .cal-cell{ min-height:64px; padding:5px; }
+    .cal-chip{ font-size:10px; }
+    .cal-nav h2{ font-size:14px; min-width:0; flex:1; }
+    .cal-filters{ width:100%; }
+    .cal-filters select{ flex:1; min-width:0; }
+    .modal-backdrop{ padding:0; align-items:flex-end; }
+    .modal{ max-width:none; border-radius:16px 16px 0 0; max-height:92vh; padding-bottom:env(safe-area-inset-bottom); }
+    /* Bigger tap targets — icon-only buttons are too small to hit reliably on a touchscreen below 44px. */
+    .iconbtn{ padding:8px; }
+    .iconbtn svg{ width:17px; height:17px; }
+    .stable th, .stable td{ padding:9px 8px; font-size:12.5px; white-space:nowrap; }
   }
 </style>
 </head>
@@ -335,7 +354,7 @@
      the SQL schema to run first. Nothing else in this file needs to change.
      ==================================================================== */
   const SUPABASE_URL = "https://bcnmsryahczapnxbpkve.supabase.co";
-  const SUPABASE_ANON_KEY = "sb_publishable_aOFie2mmed-Q7T0H8GhuxQ_QfboXj-j";
+  const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJjbm1zcnlhaGN6YXBueGJwa3ZlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTAyMDQ4NzksImV4cCI6MjEwNTc4MDg3OX0.VgCX3CR7YCJxR9-vwD8HlYcCx0MxlY7atgD_0h3F3to";
 
   /* ---------------- Supabase-backed db shim ----------------
      Mimics the collection()/doc()/add()/update()/delete()/set()/onSnapshot() shape the rest of
@@ -578,6 +597,12 @@
     const [s,e] = weekBounds();
     return STATE.trainings.filter(t => t.status === "scheduled" && t.date >= s && t.date <= e);
   }
+  function missedTrainings(){
+    // Scheduled training sessions whose date has already passed without ever being marked
+    // complete (or cancelled) — i.e. the student didn't show, and no one's dealt with it yet.
+    return STATE.trainings.filter(t => t.status === "scheduled" && t.date < todayISO())
+      .sort((a,b)=> a.date.localeCompare(b.date));
+  }
 
   /* ---------------- Render dispatch ---------------- */
   function renderAll(){
@@ -589,7 +614,7 @@
 
   function renderNav(){
     $$(".navbtn").forEach(b => b.classList.toggle("active", b.dataset.tab === STATE.activeTab));
-    const n = needsOutcome().length + needsFollowUp().length;
+    const n = needsOutcome().length + needsFollowUp().length + missedTrainings().length;
     const badge = $("#badgeEnrollment");
     if(n > 0){ badge.hidden = false; badge.textContent = n; } else { badge.hidden = true; }
   }
@@ -641,7 +666,8 @@
       statTile("s3", awaitingTraining().length, "Enrolled, awaiting training", "", "enrollment"),
       statTile("s4", needsFollowUp().length, "Need follow-up", needsFollowUp().length?"bad":"", "enrollment"),
       statTile("s5", readyForSchedule().length, "Trained, ready for schedule", readyForSchedule().length?"warn":"", "enrollment"),
-      statTile("s6", activeScheduleStudents().length, "Active on regular schedule", "good", "roster")
+      statTile("s6", activeScheduleStudents().length, "Active on regular schedule", "good", "roster"),
+      statTile("s7", missedTrainings().length, "Missed training, needs follow-up", missedTrainings().length?"bad":"", "enrollment")
     ].join("");
   }
 
@@ -872,18 +898,15 @@
   }
 
   /* ---------------- Enrollment tracker ---------------- */
-  // When a diagnostic tested both subjects, the family doesn't always enroll in both — so instead
-  // of one generic "Enrolled" button, offer a button per subject (plus "Both" when relevant) that
-  // marks the outcome AND sets that as the student's enrolled subject in the same click.
+  // Always offer a button per subject — Math, Reading, and Both — regardless of what the
+  // diagnostic's own subject field says (it's often blank), so tagging an outcome never depends
+  // on that field being filled in correctly. Marks the outcome AND sets that as the student's
+  // enrolled subject in the same click. "Both" is what makes the student show up twice on the
+  // Students list, once per subject — see studentSubject()/renderStudents() below.
   function enrollButtons(d){
-    const subj = d.subject || "";
-    if(subj === "Both"){
-      return ["Math","Reading","Both"].map(s =>
-        `<button class="btn sm" data-action="mark-outcome" data-id="${d.id}" data-outcome="enrolled" data-subject="${s}">Enrolled in ${s}</button>`
-      ).join("");
-    }
-    const label = subj ? `Enrolled in ${esc(subj)}` : "Enrolled";
-    return `<button class="btn sm" data-action="mark-outcome" data-id="${d.id}" data-outcome="enrolled" data-subject="${esc(subj)}">${label}</button>`;
+    return ["Math","Reading","Both"].map(s =>
+      `<button class="btn sm" data-action="mark-outcome" data-id="${d.id}" data-outcome="enrolled" data-subject="${s}">Enrolled in ${s}</button>`
+    ).join("");
   }
 
   function diagnosticRow(d, compact){
@@ -902,6 +925,7 @@
           : `${enrollButtons(d)}
              <button class="btn sm danger" data-action="mark-outcome" data-id="${d.id}" data-outcome="not_enrolled">Not enrolled</button>`}
         ${!compact && !resolved ? `<button class="btn sm ghost" data-action="cancel-diagnostic" data-id="${d.id}">Cancel</button>` : ""}
+        <button class="btn sm ghost" data-action="edit-diagnostic" data-id="${d.id}">Edit</button>
         <button class="btn sm danger" title="Delete this student everywhere" data-action="delete-diagnostic" data-id="${d.id}">${iconTrash()}</button>
       </div>
     </div>`;
@@ -921,6 +945,21 @@
       </div>
     </div>`;
   }
+  function missedTrainingRow(t){
+    return `<div class="rowi">
+      <div class="who">
+        <span class="pill bad" style="align-self:flex-start;">Missed training</span>
+        <b>${esc(t.studentName)}</b>
+        <span>Session ${t.sessionNumber} of 2${t.trainer?" · "+esc(t.trainer):""} · was ${fmtDateShort(t.date)}</span>
+      </div>
+      <div class="when tnum">${fmtDateShort(t.date)} · ${fmtTime(t.time)}</div>
+      <div class="acts">
+        <button class="btn sm" data-action="mark-training-complete" data-id="${t.id}">Attended after all</button>
+        <button class="btn sm ghost" data-action="cancel-training" data-id="${t.id}">Cancel &amp; reschedule</button>
+        <button class="btn sm danger" title="Delete this student everywhere" data-action="delete-training" data-id="${t.id}">${iconTrash()}</button>
+      </div>
+    </div>`;
+  }
 
   function renderEnrollment(){
     const el = $("#view-enrollment");
@@ -929,12 +968,20 @@
     const training = awaitingTraining();
     const ready = readyForSchedule();
     const followUp = needsFollowUp();
+    const missed = missedTrainings();
 
     el.innerHTML = `
       <div class="section card">
         <div class="card-head"><h3>Needs an outcome</h3><span class="count">${outcome.length}</span></div>
         <div class="card-body row-list">
           ${outcome.length ? outcome.map(d=>diagnosticRow(d)).join("") : `<div class="empty">Nothing overdue. Diagnostics show up here once their date has passed and no outcome is tagged.</div>`}
+        </div>
+      </div>
+
+      <div class="section card">
+        <div class="card-head"><h3>Missed a training — needs follow-up</h3><span class="count">${missed.length}</span></div>
+        <div class="card-body row-list">
+          ${missed.length ? missed.map(t=>missedTrainingRow(t)).join("") : `<div class="empty">No missed sessions. This fills in when a scheduled training's date passes without being marked complete.</div>`}
         </div>
       </div>
 
@@ -1102,7 +1149,7 @@
         <button type="button" class="btn primary sm" data-action="open-new-student">${iconPlus()} Add student</button>
       </div>
       <div class="card">
-        ${rows.length ? `<table class="stable">
+        ${rows.length ? `<div class="table-scroll"><table class="stable">
           <thead><tr><th>#</th><th>Student</th><th>Age / grade</th><th>Subject</th><th>Parent / guardian</th><th>Contact</th><th>Stage</th><th>Diagnostic</th></tr></thead>
           <tbody>
             ${rows.map((row, i) => {
@@ -1121,7 +1168,7 @@
               </tr>`;
             }).join("")}
           </tbody>
-        </table>` : `<div class="empty">${q ? "No students match that search." : STATE.studentMonthMode==="month" ? `No students on the ${esc(monthLabel)} roster. Try <b>All time</b>, or <b>New diagnostic booking</b> / <b>Add student</b> adds one here.` : "No students yet. <b>New diagnostic booking</b> or <b>Add student</b> creates your first."}</div>`}
+        </table></div>` : `<div class="empty">${q ? "No students match that search." : STATE.studentMonthMode==="month" ? `No students on the ${esc(monthLabel)} roster. Try <b>All time</b>, or <b>New diagnostic booking</b> / <b>Add student</b> adds one here.` : "No students yet. <b>New diagnostic booking</b> or <b>Add student</b> creates your first."}</div>`}
       </div>
     `;
     const input = $("#studentSearchInput", el);
@@ -1377,6 +1424,55 @@
     `);
   }
 
+  function openEditDiagnosticModal(id){
+    const d = STATE.diagnostics.find(x=>x.id===id);
+    if(!d) return;
+    openModal(`
+      <div class="modal-head"><h3>Edit diagnostic booking</h3><button class="iconbtn" data-action="close-modal">✕</button></div>
+      <form data-form="edit-diagnostic" data-id="${d.id}">
+        <div class="modal-body">
+          <label class="field">Student name
+            <input type="text" name="studentName" list="studentNames" required value="${esc(d.studentName)}">
+          </label>
+          <div class="field-row">
+            <label class="field">Parent / guardian<input type="text" name="parentName" required value="${esc(d.parentName||"")}"></label>
+            <label class="field">Age / grade<input type="text" name="ageGrade" placeholder="e.g. G5, K1, 4YO" value="${esc(d.ageGrade||"")}"></label>
+          </div>
+          <label class="field">Phone or email<input type="text" name="contact" value="${esc(d.contact||"")}"></label>
+          <div class="field-row">
+            <label class="field">Date<input type="date" name="date" required value="${d.date||todayISO()}"></label>
+            <label class="field">Time<input type="time" name="time" required value="${d.time||"10:00"}"></label>
+          </div>
+          <div class="field-row">
+            <label class="field">Subject
+              <select name="subject">
+                <option value="">Choose…</option>
+                ${SUBJECT_OPTIONS.map(o=>`<option value="${esc(o)}" ${d.subject===o?"selected":""}>${esc(o)}</option>`).join("")}
+              </select>
+            </label>
+            <label class="field">Inquiry source
+              <select name="inquiry">
+                <option value="">Choose…</option>
+                ${INQUIRY_OPTIONS.map(o=>`<option value="${esc(o)}" ${d.inquiry===o?"selected":""}>${esc(o)}</option>`).join("")}
+              </select>
+            </label>
+          </div>
+          <label class="field">DT teacher
+            <select name="examiner" required>
+              <option value="">Choose…</option>
+              ${STATE.settings.examiners.map(o=>`<option value="${esc(o)}" ${d.examiner===o?"selected":""}>${esc(o)}</option>`).join("")}
+            </select>
+          </label>
+          <label class="field">Remarks<textarea name="notes" rows="2" placeholder="e.g. cant be reached, try call, referred by…">${esc(d.notes||"")}</textarea></label>
+        </div>
+        <div class="modal-foot">
+          <button type="button" class="btn ghost" data-action="close-modal">Cancel</button>
+          <button type="submit" class="btn primary">Save changes</button>
+        </div>
+      </form>
+    `);
+  }
+
   function openNewTraining(presetStudentId, presetDate){
     if(!STATE.settings.trainer){
       openModal(needStaffModal("trainer", "Settings"));
@@ -1549,6 +1645,35 @@
     });
   }
 
+  async function submitEditDiagnostic(form){
+    const id = form.dataset.id;
+    const d = STATE.diagnostics.find(x=>x.id===id);
+    if(!id || !d) return;
+    const fd = new FormData(form);
+    const studentName = fd.get("studentName").toString().trim();
+    const parentName = fd.get("parentName").toString().trim();
+    const ageGrade = fd.get("ageGrade").toString().trim();
+    const contact = fd.get("contact").toString().trim();
+    const date = fd.get("date");
+    const time = fd.get("time");
+    const subject = fd.get("subject").toString();
+    const inquiry = fd.get("inquiry").toString();
+    const examiner = fd.get("examiner");
+    const notes = fd.get("notes").toString().trim();
+    if(!studentName || !date || !time || !examiner) return;
+
+    await guardWrite(async ()=>{
+      await db.collection("diagnostics").doc(id).update({
+        studentName, parentName, ageGrade, contact, date, time, subject, inquiry, examiner, notes
+      });
+      // Keep the linked student record's own details in step with what was just corrected here.
+      if(d.studentId && studentById(d.studentId)){
+        await db.collection("students").doc(d.studentId).update({ name: studentName, parentName, parentPhone: contact, ageGrade });
+      }
+      toast("Booking updated.");
+    });
+  }
+
   async function submitNewTraining(form){
     const fd = new FormData(form);
     const studentId = fd.get("studentId");
@@ -1683,6 +1808,7 @@
     else if(a === "delete-student"){ openDeleteConfirm("student", el.dataset.id); }
     else if(a === "mark-outcome"){ markOutcome(el.dataset.id, el.dataset.outcome, el.dataset.subject); }
     else if(a === "cancel-diagnostic"){ cancelDiagnostic(el.dataset.id); }
+    else if(a === "edit-diagnostic"){ openEditDiagnosticModal(el.dataset.id); }
     else if(a === "cancel-training"){ cancelTraining(el.dataset.id); }
     else if(a === "mark-training-complete"){ markTrainingComplete(el.dataset.id); }
     else if(a === "delete-diagnostic"){ openDeleteConfirm("diagnostic", el.dataset.id); }
@@ -1745,6 +1871,7 @@
 
   const FORM_HANDLERS = {
     "new-diagnostic": submitNewDiagnostic,
+    "edit-diagnostic": submitEditDiagnostic,
     "new-training": submitNewTraining,
     "new-student": submitNewStudent,
     "edit-student": submitEditStudent,
