@@ -93,7 +93,7 @@
   .pill{ display:inline-flex; align-items:center; gap:5px; padding:3px 9px; border-radius:99px; font-size:11.5px; font-weight:700; white-space:nowrap; }
   .pill.super{ background:var(--accent-soft); color:var(--accent-soft-ink); }
   .pill.admin{ background:var(--surface-2); color:var(--ink-muted); }
-  .role-select{ font-family:inherit; font-size:12.5px; padding:6px 8px; border-radius:7px; border:1px solid var(--border); background:var(--surface); color:var(--ink); }
+  .role-select, .teacher-name-select{ font-family:inherit; font-size:12.5px; padding:6px 8px; border-radius:7px; border:1px solid var(--border); background:var(--surface); color:var(--ink); }
   .you-tag{ font-size:11px; color:var(--ink-faint); font-weight:600; }
 
   select, input[type=email], input[type=password]{
@@ -175,7 +175,7 @@
   const $ = (sel, el) => (el||document).querySelector(sel);
   function esc(s){ return String(s==null?"":s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
 
-  let sbClient = null, currentUser = null, currentRole = null, profiles = [];
+  let sbClient = null, currentUser = null, currentRole = null, profiles = [], trainers = [];
 
   function showLogin(errMsg){
     $("#loginScreen").hidden = false;
@@ -226,6 +226,19 @@
     if(error){ console.warn(error); return []; }
     return data;
   }
+  async function loadTrainers(){
+    const { data } = await sbClient.from("settings").select("value").eq("id","staff").maybeSingle();
+    const v = data ? data.value : {};
+    return Array.isArray(v.trainers) ? v.trainers : [];
+  }
+
+  function teacherNameCell(p){
+    if(p.role !== "teacher") return "";
+    return `<select class="teacher-name-select" data-action="change-teacher-name" data-id="${p.id}">
+      <option value="">Choose…</option>
+      ${trainers.map(t=>`<option value="${esc(t)}" ${p.teacher_name===t?"selected":""}>${esc(t)}</option>`).join("")}
+    </select>`;
+  }
 
   async function renderAdmin(){
     const body = $("#adminBody");
@@ -234,14 +247,14 @@
       return;
     }
     body.innerHTML = `<div class="empty">Loading…</div>`;
-    profiles = await loadProfiles();
+    [profiles, trainers] = await Promise.all([loadProfiles(), loadTrainers()]);
     body.innerHTML = `
-      <div class="banner info">To add someone new: create their login in Supabase (Authentication → Users → Add User, with Auto Confirm checked). They'll appear in the list below automatically — set their role here.</div>
+      <div class="banner info">To add someone new: create their login in Supabase (Authentication → Users → Add User, with Auto Confirm checked). They'll appear in the list below automatically — set their role here. Teacher roles also need a name picked from the Trainers list (Student roster → Settings) so their own students find them.</div>
       <div class="card">
         <div class="card-head"><h3>Team accounts</h3><span class="hint">${profiles.length}</span></div>
         <div class="table-scroll">
           <table class="stable">
-            <thead><tr><th>Email</th><th>Role</th><th></th></tr></thead>
+            <thead><tr><th>Email</th><th>Role</th><th>Teacher name</th><th></th></tr></thead>
             <tbody>
               ${profiles.map(p => `
                 <tr>
@@ -250,8 +263,10 @@
                     <select class="role-select" data-action="change-role" data-id="${p.id}">
                       <option value="admin" ${p.role==="admin"?"selected":""}>Admin</option>
                       <option value="superadmin" ${p.role==="superadmin"?"selected":""}>Superadmin</option>
+                      <option value="teacher" ${p.role==="teacher"?"selected":""}>Teacher</option>
                     </select>
                   </td>
+                  <td>${teacherNameCell(p)}</td>
                   <td>${p.id === currentUser.id ? `<span class="you-tag">that's you</span>` : ""}</td>
                 </tr>
               `).join("")}
@@ -281,14 +296,24 @@
     if(e.target.dataset && e.target.dataset.action === "change-role"){
       const id = e.target.dataset.id;
       const role = e.target.value;
-      const isSelf = id === currentUser.id && role !== "superadmin";
+      const wasSuperadmin = (profiles.find(p=>p.id===id)||{}).role === "superadmin";
+      const isSelf = id === currentUser.id && wasSuperadmin && role !== "superadmin";
       if(isSelf && !confirm("This removes your own superadmin access. Continue?")) {
         e.target.value = "superadmin";
         return;
       }
       const { error } = await sbClient.from("profiles").update({ role }).eq("id", id);
-      if(error){ alert("Couldn't update that role: " + error.message); e.target.value = e.target.value === "admin" ? "superadmin" : "admin"; }
-      else if(isSelf){ await loadRole(); renderAdmin(); }
+      if(error){ alert("Couldn't update that role: " + error.message); return; }
+      if(isSelf) await loadRole();
+      profiles = await loadProfiles();
+      renderAdmin();
+    }
+    if(e.target.dataset && e.target.dataset.action === "change-teacher-name"){
+      const id = e.target.dataset.id;
+      const teacher_name = e.target.value || null;
+      const { error } = await sbClient.from("profiles").update({ teacher_name }).eq("id", id);
+      if(error){ alert("Couldn't save that: " + error.message); return; }
+      profiles = await loadProfiles();
     }
   });
 

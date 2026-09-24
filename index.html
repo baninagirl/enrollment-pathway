@@ -379,6 +379,7 @@
 
   <main class="main">
     <div id="dbBanner"></div>
+    <div id="teacherGate" hidden></div>
 
     <div class="page-head">
       <div>
@@ -605,6 +606,20 @@
     if(el) el.innerHTML = currentUser ? `<div class="account-row"><span class="account-email">${esc(currentUser.email)}</span><button class="btn sm ghost" data-action="logout">Log out</button></div>` : "";
     const adminLink = $("#navAdminLink");
     if(adminLink) adminLink.hidden = currentRole !== "superadmin";
+    applyRoleGate();
+  }
+
+  // Pipeline (diagnostics/enrollment/training/monitoring) isn't a teacher's workspace —
+  // their whole job here is the Student roster page. Hide Pipeline's content for them
+  // and point them there, rather than leave everyone's data sitting open in front of them.
+  function applyRoleGate(){
+    const isTeacher = currentRole === "teacher";
+    const gate = $("#teacherGate");
+    if(gate){
+      gate.hidden = !isTeacher;
+      gate.innerHTML = isTeacher ? `<div class="banner">Pipeline isn't part of a teacher account — head to <a href="roster.html">Student roster</a> to see your students.</div>` : "";
+    }
+    $$(".page-head, #statsRow, .view").forEach(el => { el.style.display = isTeacher ? "none" : ""; });
   }
 
   /* ---------------- DB bootstrap ---------------- */
