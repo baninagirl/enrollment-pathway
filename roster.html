@@ -180,8 +180,7 @@
         <div class="page-sub">Current level and goal, per student, per subject.</div>
       </div>
       <div style="display:flex; gap:8px;">
-        <button class="btn" data-action="open-new-student">+ Add student</button>
-        <button class="btn primary" data-action="open-new">+ Add enrollment</button>
+        <button class="btn primary" data-action="open-new">+ Add to roster</button>
       </div>
     </div>
 
@@ -225,6 +224,11 @@
   const MATH_LEVELS = ["7A","6A","5A","4A","3A","2A","A","B","C","D","E","F","G","H","I","J","K","L","M","N","O"];
   const READING_LEVELS = ["7A","6A","5A","4A","3A","2A","AI","AII","BI","BII","CI","CII","DI","DII","EI","EII","FI","FII","GI","GII","HI","HII","I-I","I-II","J","K","L","M","N","O"];
   function levelsFor(subject){ return subject === "Reading" ? READING_LEVELS : MATH_LEVELS; }
+
+  const GRADE_OPTIONS = ["PK1","PK2","PK3","K","P1","P2","P3","P4","P5","P6","P7","P8","P9","P10","P11","P12","P13","P14"];
+  function gradeOptions(selected){
+    return `<option value="">—</option>` + GRADE_OPTIONS.map(g=>`<option value="${g}" ${g===selected?"selected":""}>${g}</option>`).join("");
+  }
   function fmtLevel(level, page){
     if(!level && !page) return `<span class="lvl empty-lvl">not yet recorded</span>`;
     return `<span class="lvl">${esc(level||"")}${esc(page||"")}</span>`;
@@ -364,67 +368,85 @@
   function openModal(enrollment, presetStudentId){
     editingId = enrollment ? enrollment.id : null;
     const subject = enrollment ? enrollment.subject : "Math";
-    const selectedStudentId = enrollment ? enrollment.student_id : (presetStudentId || null);
-    $("#modal").innerHTML = `
-      <div class="modal-head"><h3>${enrollment ? "Edit enrollment" : "Add enrollment"}</h3><button class="iconbtn" data-action="close-modal">✕</button></div>
+    $("#modal").innerHTML = enrollment ? `
+      <div class="modal-head"><h3>Edit enrollment</h3><button class="iconbtn" data-action="close-modal">✕</button></div>
       <form id="enrollForm">
         <div class="modal-body">
           <label class="field">Student
-            <select name="student_id" ${enrollment ? "disabled" : "required"}>${studentOptions(selectedStudentId)}</select>
+            <select name="student_id" disabled>${studentOptions(enrollment.student_id)}</select>
           </label>
           <label class="field">Subject
-            <select name="subject" data-action="subject-change" ${enrollment ? "disabled" : ""}>
+            <select name="subject" data-action="subject-change" disabled>
               <option value="Math" ${subject==="Math"?"selected":""}>Math</option>
               <option value="Reading" ${subject==="Reading"?"selected":""}>Reading</option>
             </select>
           </label>
-          <label class="field">Teacher<select name="teacher">${teacherOptions(enrollment ? enrollment.teacher : null)}</select></label>
+          <label class="field">Teacher<select name="teacher">${teacherOptions(enrollment.teacher)}</select></label>
           <div class="field-row">
-            <label class="field">Current level<select name="current_level" id="curLevelSelect">${levelOptions(subject, enrollment ? enrollment.current_level : null)}</select></label>
-            <label class="field">Current page<input type="text" name="current_page" value="${enrollment ? esc(enrollment.current_page||"") : ""}" placeholder="e.g. 130"></label>
+            <label class="field">Current level<select name="current_level" id="curLevelSelect">${levelOptions(subject, enrollment.current_level)}</select></label>
+            <label class="field">Current page<input type="text" name="current_page" value="${esc(enrollment.current_page||"")}" placeholder="e.g. 130"></label>
           </div>
           <div class="field-row">
-            <label class="field">Goal level<select name="goal_level" id="goalLevelSelect">${levelOptions(subject, enrollment ? enrollment.goal_level : null)}</select></label>
-            <label class="field">Goal page<input type="text" name="goal_page" value="${enrollment ? esc(enrollment.goal_page||"") : ""}" placeholder="e.g. 180"></label>
+            <label class="field">Goal level<select name="goal_level" id="goalLevelSelect">${levelOptions(subject, enrollment.goal_level)}</select></label>
+            <label class="field">Goal page<input type="text" name="goal_page" value="${esc(enrollment.goal_page||"")}" placeholder="e.g. 180"></label>
           </div>
         </div>
         <div class="modal-foot">
-          <div>${enrollment ? `<button type="button" class="btn danger" data-action="delete-enrollment" data-id="${enrollment.id}">Delete</button>` : ""}</div>
+          <div><button type="button" class="btn danger" data-action="delete-enrollment" data-id="${enrollment.id}">Delete</button></div>
           <div style="display:flex; gap:8px;">
             <button type="button" class="btn ghost" data-action="close-modal">Cancel</button>
             <button type="submit" class="btn primary">Save</button>
           </div>
         </div>
       </form>
-    `;
-    $("#modalBackdrop").hidden = false;
-  }
-  function closeModal(){ $("#modalBackdrop").hidden = true; $("#modal").innerHTML = ""; editingId = null; }
-
-  function openStudentModal(){
-    $("#modal").innerHTML = `
-      <div class="modal-head"><h3>Add student</h3><button class="iconbtn" data-action="close-modal">✕</button></div>
-      <form id="studentForm">
+    ` : (()=>{
+      const preset = presetStudentId ? students.find(s=>s.id===presetStudentId) : null;
+      return `
+      <div class="modal-head"><h3>Add to roster</h3><button class="iconbtn" data-action="close-modal">✕</button></div>
+      <form id="enrollForm">
         <div class="modal-body">
-          <label class="field">Student name<input type="text" name="name" required autofocus placeholder="e.g. Ava Santos"></label>
-          <div class="field-row">
-            <label class="field">Parent / guardian<input type="text" name="parentName"></label>
-            <label class="field">Grade<input type="text" name="ageGrade" placeholder="e.g. G5, K1, 4YO"></label>
+          <label class="field">Student
+            <input type="text" name="student_name" id="studentNameInput" required autocomplete="off" list="studentNamesList" placeholder="Type a name — pick an existing student, or type a new one" value="${preset?esc(preset.name):""}">
+            <datalist id="studentNamesList">${students.map(s=>`<option value="${esc(s.name)}">`).join("")}</datalist>
+          </label>
+          <div id="newStudentFields" ${preset?"hidden":""}>
+            <div class="hint" style="font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--ink-muted); margin:2px 0 8px;">New student — their details</div>
+            <div class="field-row">
+              <label class="field">Parent / guardian<input type="text" name="parentName"></label>
+              <label class="field">Grade<select name="ageGrade">${gradeOptions(null)}</select></label>
+            </div>
+            <label class="field" style="margin-top:10px;">Mobile number<input type="text" name="parentPhone"></label>
           </div>
-          <label class="field">Mobile number<input type="text" name="parentPhone"></label>
-          <p class="hint" style="font-size:12px; color:var(--ink-muted); margin:0;">For a student who still needs a diagnostic test, add them from Pipeline instead — this is for putting an existing, already-enrolled student straight onto the roster.</p>
+          <div style="height:1px; background:var(--border); margin:12px 0;"></div>
+          <label class="field">Subject
+            <select name="subject" data-action="subject-change">
+              <option value="Math" selected>Math</option>
+              <option value="Reading">Reading</option>
+            </select>
+          </label>
+          <label class="field">Teacher<select name="teacher">${teacherOptions(null)}</select></label>
+          <div class="field-row">
+            <label class="field">Current level<select name="current_level" id="curLevelSelect">${levelOptions(subject, null)}</select></label>
+            <label class="field">Current page<input type="text" name="current_page" placeholder="e.g. 130"></label>
+          </div>
+          <div class="field-row">
+            <label class="field">Goal level<select name="goal_level" id="goalLevelSelect">${levelOptions(subject, null)}</select></label>
+            <label class="field">Goal page<input type="text" name="goal_page" placeholder="e.g. 180"></label>
+          </div>
+          <p class="hint" style="font-size:12px; color:var(--ink-muted); margin:8px 0 0;">For a student who still needs a diagnostic test, add them from Pipeline instead — this is for a student already enrolled and taking classes.</p>
         </div>
         <div class="modal-foot">
           <div></div>
           <div style="display:flex; gap:8px;">
             <button type="button" class="btn ghost" data-action="close-modal">Cancel</button>
-            <button type="submit" class="btn primary">Add student</button>
+            <button type="submit" class="btn primary">Save</button>
           </div>
         </div>
       </form>
-    `;
+    `; })();
     $("#modalBackdrop").hidden = false;
   }
+  function closeModal(){ $("#modalBackdrop").hidden = true; $("#modal").innerHTML = ""; editingId = null; }
 
   document.addEventListener("submit", async (e)=>{
     if(e.target.id === "loginForm"){
@@ -432,32 +454,6 @@
       const fd = new FormData(e.target);
       const { error } = await sbClient.auth.signInWithPassword({ email: fd.get("email"), password: fd.get("password") });
       if(error) showLogin(error.message);
-      return;
-    }
-    if(e.target.id === "studentForm"){
-      e.preventDefault();
-      const fd = new FormData(e.target);
-      const name = fd.get("name").toString().trim();
-      if(!name) return;
-      const dupeId = findExistingStudentId(name);
-      if(dupeId){
-        if(!confirm(`A student named "${name}" is already on the roster. Add another enrollment for them instead?`)) return;
-        closeModal();
-        openModal(null, dupeId);
-        return;
-      }
-      const payload = {
-        name,
-        parent_name: (fd.get("parentName")||"").toString().trim(),
-        parent_phone: (fd.get("parentPhone")||"").toString().trim(),
-        age_grade: (fd.get("ageGrade")||"").toString().trim(),
-        status: "active"
-      };
-      const { data, error } = await sbClient.from("students").insert(payload).select().single();
-      if(error){ alert("Couldn't add student: " + error.message); return; }
-      await loadStudents();
-      closeModal();
-      openModal(null, data.id);
       return;
     }
     if(e.target.id === "enrollForm"){
@@ -474,25 +470,48 @@
         };
         const { error } = await sbClient.from("subject_enrollments").update(patch).eq("id", editingId);
         if(error){ alert("Couldn't save: " + error.message); return; }
-      }else{
-        const studentId = fd.get("student_id");
-        const student = students.find(s => s.id === studentId);
-        if(!studentId || !student){ alert("Pick a student first."); return; }
-        const payload = {
-          student_id: studentId,
-          student_name: student.name,
-          subject: fd.get("subject"),
-          teacher: fd.get("teacher") || null,
-          current_level: fd.get("current_level") || null,
-          current_page: fd.get("current_page") || null,
-          goal_level: fd.get("goal_level") || null,
-          goal_page: fd.get("goal_page") || null
-        };
-        const { error } = await sbClient.from("subject_enrollments").insert(payload);
-        if(error){ alert("Couldn't save: " + error.message); return; }
+        closeModal();
+        await loadEnrollments(); render();
+        return;
       }
+
+      const name = (fd.get("student_name")||"").toString().trim();
+      if(!name){ alert("Student name is required."); return; }
+      const subject = fd.get("subject");
+
+      let studentId = findExistingStudentId(name);
+      if(studentId){
+        const already = enrollments.find(en => en.student_id === studentId && en.subject === subject);
+        if(already){ alert(`${name} already has a ${subject} enrollment — edit that row instead.`); return; }
+      }else{
+        const payload = {
+          name,
+          parent_name: (fd.get("parentName")||"").toString().trim(),
+          parent_phone: (fd.get("parentPhone")||"").toString().trim(),
+          age_grade: (fd.get("ageGrade")||"").toString().trim(),
+          status: "active"
+        };
+        const { data, error } = await sbClient.from("students").insert(payload).select().single();
+        if(error){ alert("Couldn't add student: " + error.message); return; }
+        studentId = data.id;
+      }
+
+      const enrollPayload = {
+        student_id: studentId,
+        student_name: name,
+        subject,
+        teacher: fd.get("teacher") || null,
+        current_level: fd.get("current_level") || null,
+        current_page: fd.get("current_page") || null,
+        goal_level: fd.get("goal_level") || null,
+        goal_page: fd.get("goal_page") || null
+      };
+      const { error: enrollError } = await sbClient.from("subject_enrollments").insert(enrollPayload);
+      if(enrollError){ alert("Couldn't save: " + enrollError.message); return; }
+
       closeModal();
-      await loadEnrollments(); render();
+      await Promise.all([loadStudents(), loadEnrollments()]);
+      render();
     }
   });
 
@@ -510,6 +529,11 @@
 
   document.addEventListener("input", (e)=>{
     if(e.target.id === "searchInput"){ filters.search = e.target.value; render(); }
+    if(e.target.id === "studentNameInput"){
+      const val = e.target.value.trim().toLowerCase();
+      const box = $("#newStudentFields");
+      if(box) box.hidden = val.length > 0 && students.some(s => s.name.trim().toLowerCase() === val);
+    }
   });
 
   document.addEventListener("click", async (e)=>{
@@ -518,7 +542,6 @@
     const action = btn.dataset.action;
     if(action === "logout"){ await sbClient.auth.signOut(); }
     else if(action === "open-new"){ openModal(null); }
-    else if(action === "open-new-student"){ openStudentModal(); }
     else if(action === "edit"){
       const id = btn.dataset.id;
       const en = enrollments.find(x => x.id === id);
