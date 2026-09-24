@@ -379,7 +379,6 @@
 
   <main class="main">
     <div id="dbBanner"></div>
-    <div id="teacherGate" hidden></div>
 
     <div class="page-head">
       <div>
@@ -601,34 +600,22 @@
     $("#loginScreen").hidden = true;
     $("#appRoot").hidden = false;
   }
+  // Pipeline (diagnostics/enrollment/training/monitoring) isn't a teacher's workspace —
+  // their whole job here is the Student roster page. And a pending account (brand new,
+  // not yet approved by a superadmin) isn't cleared to see anything yet — Student roster
+  // shows them a "waiting for approval" banner of its own. Rather than paint Pipeline's
+  // sidebar and tabs first and then gate the content in the middle of it, send both
+  // straight to Student roster before any of that ever renders.
   function renderAccount(){
+    if(currentRole === "teacher" || currentRole === "pending"){
+      location.replace("roster.html");
+      return true; // redirecting away — caller should skip starting Pipeline's data fetches
+    }
     const el = $("#railAccount");
     if(el) el.innerHTML = currentUser ? `<div class="account-row"><span class="account-email">${esc(currentUser.email)}</span><button class="btn sm ghost" data-action="logout">Log out</button></div>` : "";
     const adminLink = $("#navAdminLink");
     if(adminLink) adminLink.hidden = currentRole !== "superadmin";
-    applyRoleGate();
-  }
-
-  // Pipeline (diagnostics/enrollment/training/monitoring) isn't a teacher's workspace —
-  // their whole job here is the Student roster page. Hide Pipeline's content for them
-  // and point them there, rather than leave everyone's data sitting open in front of them.
-  // A pending account (brand new, not yet approved by a superadmin) gets blocked outright —
-  // the database itself refuses them data now too, this is just the friendlier message.
-  function applyRoleGate(){
-    const isTeacher = currentRole === "teacher";
-    const isPending = currentRole === "pending";
-    const gate = $("#teacherGate");
-    if(gate){
-      gate.hidden = !isTeacher && !isPending;
-      if(isPending){
-        gate.innerHTML = `<div class="banner">Your account is waiting for approval. Ask a superadmin to set your role in <a href="admin.html">Admin</a> — until then there's nothing here for you to see.</div>`;
-      }else if(isTeacher){
-        gate.innerHTML = `<div class="banner">Pipeline isn't part of a teacher account — head to <a href="roster.html">Student roster</a> to see your students.</div>`;
-      }else{
-        gate.innerHTML = "";
-      }
-    }
-    $$(".page-head, #statsRow, .view").forEach(el => { el.style.display = (isTeacher || isPending) ? "none" : ""; });
+    return false;
   }
 
   /* ---------------- DB bootstrap ---------------- */
@@ -646,7 +633,7 @@
     db = makeSupabaseDB(sbClient);
 
     const { data:{ session } } = await sbClient.auth.getSession();
-    if(session){ currentUser = session.user; showApp(); await loadRole(); renderAccount(); startApp(); }
+    if(session){ currentUser = session.user; showApp(); await loadRole(); if(!renderAccount()) startApp(); }
     else{ showLogin(); showLoginView("login"); }
 
     sbClient.auth.onAuthStateChange(async (event, session)=>{
@@ -658,7 +645,7 @@
       }
       if(session){
         currentUser = session.user;
-        showApp(); await loadRole(); renderAccount(); startApp();
+        showApp(); await loadRole(); if(!renderAccount()) startApp();
       }else{
         currentUser = null; currentRole = null; appStarted = false;
         showLogin(); showLoginView("login");
