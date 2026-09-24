@@ -182,6 +182,7 @@
 <div class="modal-backdrop" id="modalBackdrop" hidden>
   <div class="modal" id="modal"></div>
 </div>
+<datalist id="trainerNamesListInline"></datalist>
 
 <script>
 (function(){
@@ -249,13 +250,21 @@
     const v = data ? data.value : {};
     return Array.isArray(v.trainers) ? v.trainers : [];
   }
+  // Adds a name to the Trainers list (Pipeline → Settings) if it's not already there —
+  // so typing a brand-new teacher's name here is enough, no separate trip to Pipeline.
+  async function ensureTrainer(name){
+    const { data } = await sbClient.from("settings").select("value").eq("id","staff").maybeSingle();
+    const v = data ? data.value : {};
+    const examiners = Array.isArray(v.examiners) ? v.examiners : [];
+    const list = Array.isArray(v.trainers) ? v.trainers : [];
+    if(list.includes(name)) return;
+    await sbClient.from("settings").upsert({ id: "staff", value: { examiners, trainers: [...list, name] } });
+  }
 
   function teacherNameCell(p){
     if(p.role !== "teacher") return "";
-    return `<select class="teacher-name-select" data-action="change-teacher-name" data-id="${p.id}">
-      <option value="">Choose…</option>
-      ${trainers.map(t=>`<option value="${esc(t)}" ${p.teacher_name===t?"selected":""}>${esc(t)}</option>`).join("")}
-    </select>`;
+    return `<input type="text" class="teacher-name-select" data-action="change-teacher-name" data-id="${p.id}"
+      list="trainerNamesListInline" autocomplete="off" value="${esc(p.teacher_name||"")}" placeholder="Type a name…" style="max-width:160px;">`;
   }
 
   async function renderAdmin(){
@@ -271,8 +280,10 @@
     if(newLoginBtn) newLoginBtn.hidden = false;
     body.innerHTML = `<div class="empty">Loading…</div>`;
     [profiles, trainers] = await Promise.all([loadProfiles(), loadTrainers()]);
+    const sharedTrainerList = $("#trainerNamesListInline");
+    if(sharedTrainerList) sharedTrainerList.innerHTML = trainers.map(t=>`<option value="${esc(t)}">`).join("");
     body.innerHTML = `
-      <div class="banner info">"+ New login" creates their account right here. They'll get a confirmation email — once they click it, they can log in with the password you set. Teacher roles need a name picked from the Trainers list (Student roster → Settings) so their own students find them.</div>
+      <div class="banner info">"+ New login" creates their account right here. They'll get a confirmation email — once they click it, they can log in with the password you set. For a teacher, just type their name — new names are added to your Trainers list automatically.</div>
       <div class="card">
         <div class="card-head"><h3>Team accounts</h3><span class="hint">${profiles.length}</span></div>
         <div class="table-scroll">
@@ -329,11 +340,10 @@
           </label>
           <div id="newLoginTeacherField" hidden>
             <label class="field">Teacher name
-              <select name="teacher_name">
-                <option value="">Choose…</option>
-                ${trainers.map(t=>`<option value="${esc(t)}">${esc(t)}</option>`).join("")}
-              </select>
+              <input type="text" name="teacher_name" list="trainerNamesList" autocomplete="off" placeholder="Type their name — pick an existing one, or add new">
+              <datalist id="trainerNamesList">${trainers.map(t=>`<option value="${esc(t)}">`).join("")}</datalist>
             </label>
+            <div class="hint" style="font-weight:500;">Not on the list yet? Just type their name — it'll be added to Trainers (Pipeline → Settings) automatically.</div>
           </div>
           <div id="newLoginError" class="login-error" hidden></div>
         </div>
@@ -360,11 +370,11 @@
       const email = fd.get("email").toString().trim();
       const password = fd.get("password").toString();
       const role = fd.get("role").toString();
-      const teacherName = fd.get("teacher_name") ? fd.get("teacher_name").toString() : "";
+      const teacherName = fd.get("teacher_name") ? fd.get("teacher_name").toString().trim() : "";
       const errBox = $("#newLoginError");
       errBox.hidden = true;
       if(role === "teacher" && !teacherName){
-        errBox.textContent = "Pick which teacher this is.";
+        errBox.textContent = "Type or pick which teacher this is.";
         errBox.hidden = false;
         return;
       }
@@ -384,9 +394,10 @@
         // The trigger that creates their profile row runs the instant signUp() is called
         // (before they've even confirmed their email), so this update is safe right away.
         await sbClient.from("profiles").update(patch).eq("id", newId);
+        if(role === "teacher") await ensureTrainer(teacherName);
       }
       closeModal();
-      profiles = await loadProfiles();
+      [profiles, trainers] = await Promise.all([loadProfiles(), loadTrainers()]);
       renderAdmin();
       alert(`Login created for ${email}. They'll get a confirmation email — once they click it, they can log in with the password you set.`);
     }
@@ -422,10 +433,13 @@
     }
     if(e.target.dataset && e.target.dataset.action === "change-teacher-name"){
       const id = e.target.dataset.id;
-      const teacher_name = e.target.value || null;
+      const teacher_name = e.target.value.trim() || null;
       const { error } = await sbClient.from("profiles").update({ teacher_name }).eq("id", id);
       if(error){ alert("Couldn't save that: " + error.message); return; }
-      profiles = await loadProfiles();
+      if(teacher_name) await ensureTrainer(teacher_name);
+      [profiles, trainers] = await Promise.all([loadProfiles(), loadTrainers()]);
+      const sharedTrainerList = $("#trainerNamesListInline");
+      if(sharedTrainerList) sharedTrainerList.innerHTML = trainers.map(t=>`<option value="${esc(t)}">`).join("");
     }
   });
 
