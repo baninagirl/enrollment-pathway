@@ -551,6 +551,16 @@
   function gradeSelect(name, selected){
     return `<select name="${name}"><option value="">—</option>${GRADE_OPTIONS.map(g=>`<option value="${g}" ${g===selected?"selected":""}>${g}</option>`).join("")}</select>`;
   }
+
+  // Curriculum levels — same lists as the Student roster page (roster.html), duplicated here
+  // (no shared build step) so a student can be assigned straight to a teacher's roster level
+  // when they graduate off the monitor schedule.
+  const MATH_LEVELS = ["7A","6A","5A","4A","3A","2A","A","B","C","D","E","F","G","H","I","J","K","L","M","N","O"];
+  const READING_LEVELS = ["7A","6A","5A","4A","3A","2A","AI","AII","BI","BII","CI","CII","DI","DII","EI","EII","FI","FII","GI","GII","HI","HII","I-I","I-II","J","K","L","M","N","O"];
+  function levelsForSubject(subject){ return subject === "Reading" ? READING_LEVELS : MATH_LEVELS; }
+  function levelSelect(name, subject){
+    return `<select name="${name}"><option value="">—</option>${levelsForSubject(subject).map(l=>`<option value="${l}">${l}</option>`).join("")}</select>`;
+  }
   const INQUIRY_OPTIONS = ["Facebook", "Referral", "Walk-in", "Returnee", "Landline/Phone", "Other"];
   function subjectText(v){ return v || "—"; }
 
@@ -1669,6 +1679,9 @@
       `);
       return;
     }
+    const presetSubject = presetStudentId ? (studentById(presetStudentId)||{}).subject : null;
+    const mathChecked = presetSubject === "Math" || presetSubject === "Both";
+    const readingChecked = presetSubject === "Reading" || presetSubject === "Both";
     openModal(`
       <div class="modal-head"><h3>New regular schedule</h3><button class="iconbtn" data-action="close-modal">✕</button></div>
       <form data-form="new-schedule">
@@ -1693,6 +1706,40 @@
             <label class="field">Time<input type="time" name="time2" required value="16:00"></label>
           </div>
           <label class="field">Start date<input type="date" name="startDate" required value="${todayISO()}"></label>
+
+          <div style="height:1px; background:var(--border); margin:14px 0;"></div>
+          <div class="hint" style="font-size:11px; text-transform:uppercase; letter-spacing:.04em; margin:0 0 8px;">Graduating — assign to a teacher's roster</div>
+
+          <label class="field" style="flex-direction:row; align-items:center; gap:8px;">
+            <input type="checkbox" name="mathOn" data-action="toggle-subject-block" data-target="mathScheduleBlock" ${mathChecked?"checked":""}> Math
+          </label>
+          <div id="mathScheduleBlock" ${mathChecked?"":"hidden"} style="margin:8px 0 4px;">
+            ${fieldSelectStaff("mathTeacher", STATE.settings.trainers, "Math teacher", false)}
+            <div class="field-row">
+              <label class="field">Current level${levelSelect("mathCurLevel","Math")}</label>
+              <label class="field">Current page<input type="text" name="mathCurPage" placeholder="e.g. 130"></label>
+            </div>
+            <div class="field-row">
+              <label class="field">Goal level${levelSelect("mathGoalLevel","Math")}</label>
+              <label class="field">Goal page<input type="text" name="mathGoalPage" placeholder="e.g. 180"></label>
+            </div>
+          </div>
+
+          <label class="field" style="flex-direction:row; align-items:center; gap:8px; margin-top:6px;">
+            <input type="checkbox" name="readingOn" data-action="toggle-subject-block" data-target="readingScheduleBlock" ${readingChecked?"checked":""}> Reading
+          </label>
+          <div id="readingScheduleBlock" ${readingChecked?"":"hidden"} style="margin:8px 0 4px;">
+            ${fieldSelectStaff("readingTeacher", STATE.settings.trainers, "Reading teacher", false)}
+            <div class="field-row">
+              <label class="field">Current level${levelSelect("readingCurLevel","Reading")}</label>
+              <label class="field">Current page<input type="text" name="readingCurPage" placeholder="e.g. 130"></label>
+            </div>
+            <div class="field-row">
+              <label class="field">Goal level${levelSelect("readingGoalLevel","Reading")}</label>
+              <label class="field">Goal page<input type="text" name="readingGoalPage" placeholder="e.g. 180"></label>
+            </div>
+          </div>
+          <p class="hint" style="font-size:12px; margin:4px 0 0;">This is what puts them on the Student roster page, under their teacher.</p>
         </div>
         <div class="modal-foot">
           <button type="button" class="btn ghost" data-action="close-modal">Cancel</button>
@@ -1851,13 +1898,31 @@
     if(day1 === day2){ toast("Pick two different days."); return; }
     const s = studentById(studentId);
     if(!s) return;
+    const mathOn = fd.get("mathOn") === "on";
+    const readingOn = fd.get("readingOn") === "on";
     const slots = [{ day: day1, time: time1 }, { day: day2, time: time2 }];
     await guardWrite(async ()=>{
       await db.collection("schedules").add({
         studentId, studentName: s.name, slots, startDate, status: "active", createdAt: new Date().toISOString()
       });
       await db.collection("students").doc(studentId).update({ status: "active" });
-      toast("Regular schedule set.");
+      if(mathOn){
+        await db.collection("subject_enrollments").add({
+          studentId, studentName: s.name, subject: "Math",
+          teacher: fd.get("mathTeacher") || "",
+          currentLevel: fd.get("mathCurLevel") || "", currentPage: fd.get("mathCurPage") || "",
+          goalLevel: fd.get("mathGoalLevel") || "", goalPage: fd.get("mathGoalPage") || ""
+        });
+      }
+      if(readingOn){
+        await db.collection("subject_enrollments").add({
+          studentId, studentName: s.name, subject: "Reading",
+          teacher: fd.get("readingTeacher") || "",
+          currentLevel: fd.get("readingCurLevel") || "", currentPage: fd.get("readingCurPage") || "",
+          goalLevel: fd.get("readingGoalLevel") || "", goalPage: fd.get("readingGoalPage") || ""
+        });
+      }
+      toast(mathOn || readingOn ? "Regular schedule set — now on their teacher's roster." : "Regular schedule set.");
     });
   }
 
@@ -2029,6 +2094,10 @@
   document.addEventListener("change", e => {
     if(e.target.matches('[data-action="cal-staff"]')){ STATE.calStaff = e.target.value; renderCalendar(); }
     else if(e.target.matches('[data-action="set-subject"]')){ setStudentSubject(e.target.dataset.id, e.target.value); }
+    else if(e.target.matches('[data-action="toggle-subject-block"]')){
+      const box = $("#" + e.target.dataset.target);
+      if(box) box.hidden = !e.target.checked;
+    }
   });
 
   document.addEventListener("input", e => {

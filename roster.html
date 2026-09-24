@@ -412,10 +412,9 @@
           <div id="newStudentFields" ${preset?"hidden":""}>
             <div class="hint" style="font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--ink-muted); margin:2px 0 8px;">New student — their details</div>
             <div class="field-row">
-              <label class="field">Parent / guardian<input type="text" name="parentName"></label>
               <label class="field">Grade<select name="ageGrade">${gradeOptions(null)}</select></label>
+              <label class="field">Birthday<input type="date" name="birthday"></label>
             </div>
-            <label class="field" style="margin-top:10px;">Mobile number<input type="text" name="parentPhone"></label>
           </div>
           <div style="height:1px; background:var(--border); margin:12px 0;"></div>
           <label class="field">Subject
@@ -486,9 +485,8 @@
       }else{
         const payload = {
           name,
-          parent_name: (fd.get("parentName")||"").toString().trim(),
-          parent_phone: (fd.get("parentPhone")||"").toString().trim(),
           age_grade: (fd.get("ageGrade")||"").toString().trim(),
+          birthday: fd.get("birthday") || null,
           status: "active"
         };
         const { data, error } = await sbClient.from("students").insert(payload).select().single();
