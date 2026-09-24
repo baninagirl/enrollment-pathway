@@ -242,6 +242,12 @@
   let filters = { search:"", subject:"all", teacher:"all" };
   let editingId = null;
 
+  // A plain teacher and a trainer_teacher (a trainor who also carries her own roster,
+  // like Queenie) both get their Student Roster locked to just their own students. The
+  // difference between the two roles is Pipeline access, handled separately — this is
+  // purely about roster scoping, so both count the same way here.
+  function isTeacherScoped(){ return currentRole === "teacher" || currentRole === "trainer_teacher"; }
+
   function gradeFor(studentId){
     const s = students.find(x => x.id === studentId);
     return s ? (s.age_grade || "") : "";
@@ -316,7 +322,7 @@
     started = true;
     await Promise.all([loadStudents(), loadSettings(), loadEnrollments()]);
     populateTeacherFilter();
-    if(currentRole === "teacher" && currentTeacherName){ filters.teacher = currentTeacherName; }
+    if(isTeacherScoped() && currentTeacherName){ filters.teacher = currentTeacherName; }
     render();
 
     sbClient.channel("realtime:subject_enrollments")
@@ -325,9 +331,44 @@
   }
 
   async function loadStudents(){
-    const { data, error } = await sbClient.from("students").select("id,name,age_grade").order("name");
+    const { data, error } = await sbClient.from("students").select("id,name,age_grade,first_name,last_name").order("name");
     if(error){ console.warn(error); students = []; return; }
     students = data || [];
+  }
+
+  // "Quijano, Nina" when we have a real first/last split; otherwise fall back to
+  // whatever single name we've got (legacy students who haven't been re-entered yet).
+  function displayName(studentId, fallback){
+    const s = students.find(x => x.id === studentId);
+    if(s && s.last_name && s.first_name) return `${s.last_name}, ${s.first_name}`;
+    return fallback || (s ? s.name : "") || "";
+  }
+  // Sort key for alphabetizing by last name. With a real split it's exact; without one,
+  // this guesses the last word of whatever name we have as a stand-in last name — good
+  // enough to sort sensibly, but worth re-entering the student properly when you can.
+  // Best-effort split for a legacy student who doesn't have first_name/last_name yet —
+  // last word of whatever single name we have becomes the guessed last name. Used only
+  // to pre-fill the form so re-entering someone isn't starting from blank fields.
+  function splitNameGuess(full){
+    const parts = (full||"").trim().split(/\s+/).filter(Boolean);
+    if(parts.length <= 1) return { first: parts[0]||"", last: "" };
+    return { first: parts.slice(0,-1).join(" "), last: parts[parts.length-1] };
+  }
+  function distinctFirstNames(){
+    const set = new Set(students.map(s => s.first_name || splitNameGuess(s.name).first).filter(Boolean));
+    return [...set].sort((a,b)=>a.localeCompare(b));
+  }
+  function distinctLastNames(){
+    const set = new Set(students.map(s => s.last_name || splitNameGuess(s.name).last).filter(Boolean));
+    return [...set].sort((a,b)=>a.localeCompare(b));
+  }
+  function lastNameSortKey(studentId, fallback){
+    const s = students.find(x => x.id === studentId);
+    if(s && s.last_name) return `${s.last_name} ${s.first_name||""}`.trim().toLowerCase();
+    const raw = (fallback || (s ? s.name : "") || "").trim();
+    const parts = raw.split(/\s+/).filter(Boolean);
+    const guessLast = parts.length ? parts[parts.length-1] : raw;
+    return `${guessLast} ${raw}`.toLowerCase();
   }
   async function loadSettings(){
     const { data } = await sbClient.from("settings").select("value").eq("id","staff").maybeSingle();
@@ -342,7 +383,7 @@
 
   function populateTeacherFilter(){
     const sel = $("#teacherFilter");
-    if(currentRole === "teacher"){
+    if(isTeacherScoped()){
       sel.innerHTML = `<option value="${esc(currentTeacherName||"")}">${esc(currentTeacherName||"You")}</option>`;
       sel.disabled = true;
     }else{
@@ -352,8 +393,9 @@
   }
 
   function filtered(){
-    // A teacher only ever sees their own students, no matter what the filter says.
-    const lockedTeacher = currentRole === "teacher" ? currentTeacherName : null;
+    // A teacher (and a trainer_teacher, like Queenie) only ever sees their own students,
+    // no matter what the filter says.
+    const lockedTeacher = isTeacherScoped() ? currentTeacherName : null;
     return enrollments.filter(e=>{
       if(lockedTeacher !== null && e.teacher !== lockedTeacher) return false;
       if(filters.subject !== "all" && e.subject !== filters.subject) return false;
@@ -364,7 +406,9 @@
   }
 
   function render(){
-    const rows = filtered();
+    const rows = filtered().slice().sort((a,b) =>
+      lastNameSortKey(a.student_id, a.student_name).localeCompare(lastNameSortKey(b.student_id, b.student_name))
+    );
     $("#enrollCount").textContent = rows.length + (rows.length===1 ? " enrollment" : " enrollments");
     const body = $("#rosterBody");
     if(rows.length === 0){
@@ -373,7 +417,7 @@
     }
     body.innerHTML = rows.map(e => `
       <tr class="clickrow" data-action="edit" data-id="${e.id}">
-        <td>${esc(e.student_name)}</td>
+        <td>${esc(displayName(e.student_id, e.student_name))}</td>
         <td>${esc(gradeFor(e.student_id) || "—")}</td>
         <td><span class="pill ${e.subject==='Math'?'subj-math':'subj-reading'}">${esc(e.subject)}</span></td>
         <td>${esc(e.teacher||"—")}</td>
@@ -410,7 +454,7 @@
               <option value="Reading" ${subject==="Reading"?"selected":""}>Reading</option>
             </select>
           </label>
-          <label class="field">Teacher<select name="teacher" ${currentRole==="teacher"?"disabled":""}>${teacherOptions(enrollment.teacher)}</select></label>
+          <label class="field">Teacher<select name="teacher" ${isTeacherScoped()?"disabled":""}>${teacherOptions(enrollment.teacher)}</select></label>
           <div class="field-row">
             <label class="field">Current level<select name="current_level" id="curLevelSelect">${levelOptions(subject, enrollment.current_level)}</select></label>
             <label class="field">Current page<input type="text" name="current_page" value="${esc(enrollment.current_page||"")}" placeholder="e.g. 130"></label>
@@ -421,7 +465,7 @@
           </div>
         </div>
         <div class="modal-foot">
-          <div>${currentRole==="teacher" ? "" : `<button type="button" class="btn danger" data-action="delete-enrollment" data-id="${enrollment.id}">Delete</button>`}</div>
+          <div>${isTeacherScoped() ? "" : `<button type="button" class="btn danger" data-action="delete-enrollment" data-id="${enrollment.id}">Delete</button>`}</div>
           <div style="display:flex; gap:8px;">
             <button type="button" class="btn ghost" data-action="close-modal">Cancel</button>
             <button type="submit" class="btn primary">Save</button>
@@ -430,15 +474,18 @@
       </form>
     ` : (()=>{
       const preset = presetStudentId ? students.find(s=>s.id===presetStudentId) : null;
-      const lockedTeacher = currentRole === "teacher" ? (currentTeacherName||"") : null;
+      const presetSplit = preset ? (preset.first_name && preset.last_name ? {first:preset.first_name,last:preset.last_name} : splitNameGuess(preset.name)) : {first:"",last:""};
+      const lockedTeacher = isTeacherScoped() ? (currentTeacherName||"") : null;
       return `
       <div class="modal-head"><h3>Add to roster</h3><button class="iconbtn" data-action="close-modal">✕</button></div>
       <form id="enrollForm">
         <div class="modal-body">
-          <label class="field">Student
-            <input type="text" name="student_name" id="studentNameInput" required autocomplete="off" list="studentNamesList" placeholder="Type a name — pick an existing student, or type a new one" value="${preset?esc(preset.name):""}">
-            <datalist id="studentNamesList">${students.map(s=>`<option value="${esc(s.name)}">`).join("")}</datalist>
-          </label>
+          <div class="field-row">
+            <label class="field">First name<input type="text" name="firstName" id="firstNameInput" required autocomplete="off" list="studentFirstNamesList" placeholder="Nina" value="${esc(presetSplit.first)}"></label>
+            <label class="field">Last name<input type="text" name="lastName" id="lastNameInput" required autocomplete="off" list="studentLastNamesList" placeholder="Quijano" value="${esc(presetSplit.last)}"></label>
+          </div>
+          <datalist id="studentFirstNamesList">${distinctFirstNames().map(n=>`<option value="${esc(n)}">`).join("")}</datalist>
+          <datalist id="studentLastNamesList">${distinctLastNames().map(n=>`<option value="${esc(n)}">`).join("")}</datalist>
           <div id="newStudentFields" ${preset?"hidden":""}>
             <div class="hint" style="font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--ink-muted); margin:2px 0 8px;">New student — their details</div>
             <div class="field-row">
@@ -490,7 +537,7 @@
       const fd = new FormData(e.target);
       if(editingId){
         const patch = {
-          teacher: currentRole === "teacher" ? currentTeacherName : (fd.get("teacher") || null),
+          teacher: isTeacherScoped() ? currentTeacherName : (fd.get("teacher") || null),
           current_level: fd.get("current_level") || null,
           current_page: fd.get("current_page") || null,
           goal_level: fd.get("goal_level") || null,
@@ -504,8 +551,10 @@
         return;
       }
 
-      const name = (fd.get("student_name")||"").toString().trim();
-      if(!name){ alert("Student name is required."); return; }
+      const firstName = (fd.get("firstName")||"").toString().trim();
+      const lastName = (fd.get("lastName")||"").toString().trim();
+      if(!firstName || !lastName){ alert("First and last name are both required."); return; }
+      const name = `${firstName} ${lastName}`;
       const subject = fd.get("subject");
 
       let studentId = findExistingStudentId(name);
@@ -515,6 +564,8 @@
       }else{
         const payload = {
           name,
+          first_name: firstName,
+          last_name: lastName,
           age_grade: (fd.get("ageGrade")||"").toString().trim(),
           birthday: fd.get("birthday") || null,
           status: "active"
@@ -528,7 +579,7 @@
         student_id: studentId,
         student_name: name,
         subject,
-        teacher: currentRole === "teacher" ? currentTeacherName : (fd.get("teacher") || null),
+        teacher: isTeacherScoped() ? currentTeacherName : (fd.get("teacher") || null),
         current_level: fd.get("current_level") || null,
         current_page: fd.get("current_page") || null,
         goal_level: fd.get("goal_level") || null,
@@ -557,10 +608,13 @@
 
   document.addEventListener("input", (e)=>{
     if(e.target.id === "searchInput"){ filters.search = e.target.value; render(); }
-    if(e.target.id === "studentNameInput"){
-      const val = e.target.value.trim().toLowerCase();
+    if(e.target.id === "firstNameInput" || e.target.id === "lastNameInput"){
+      const first = ($("#firstNameInput")||{}).value || "";
+      const last = ($("#lastNameInput")||{}).value || "";
+      const combined = `${first} ${last}`.trim().toLowerCase();
+      const isExisting = combined.length > 0 && students.some(s => s.name.trim().toLowerCase() === combined);
       const box = $("#newStudentFields");
-      if(box) box.hidden = val.length > 0 && students.some(s => s.name.trim().toLowerCase() === val);
+      if(box) box.hidden = isExisting;
     }
   });
 

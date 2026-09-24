@@ -405,7 +405,8 @@
 
 <div class="toast" id="toast" hidden></div>
 
-<datalist id="studentNames"></datalist>
+<datalist id="studentFirstNames"></datalist>
+<datalist id="studentLastNames"></datalist>
 
 <script>
 (function(){
@@ -1371,11 +1372,15 @@
   function openEditStudentModal(id){
     const s = studentById(id);
     if(!s) return;
+    const nameSplit = (s.firstName && s.lastName) ? {first:s.firstName,last:s.lastName} : splitNameGuess(s.name);
     openModal(`
       <div class="modal-head"><h3>Edit ${esc(s.name)}</h3><button class="iconbtn" data-action="close-modal">✕</button></div>
       <form data-form="edit-student" data-id="${s.id}">
         <div class="modal-body">
-          <label class="field">Student name<input type="text" name="name" required value="${esc(s.name)}"></label>
+          <div class="field-row">
+            <label class="field">First name<input type="text" name="firstName" required value="${esc(nameSplit.first)}"></label>
+            <label class="field">Last name<input type="text" name="lastName" required value="${esc(nameSplit.last)}"></label>
+          </div>
           <div class="field-row">
             <label class="field">Parent / guardian<input type="text" name="parentName" value="${esc(s.parentName||"")}"></label>
             <label class="field">Grade${gradeSelect("ageGrade", s.ageGrade||"")}</label>
@@ -1402,11 +1407,13 @@
   async function submitEditStudent(form){
     const id = form.dataset.id;
     const fd = new FormData(form);
-    const name = fd.get("name").toString().trim();
-    if(!id || !name) return;
+    const firstName = fd.get("firstName").toString().trim();
+    const lastName = fd.get("lastName").toString().trim();
+    const name = `${firstName} ${lastName}`.trim();
+    if(!id || !firstName || !lastName) return;
     await guardWrite(async ()=>{
       await db.collection("students").doc(id).update({
-        name,
+        name, firstName, lastName,
         parentName: fd.get("parentName").toString().trim(),
         parentPhone: fd.get("parentPhone").toString().trim(),
         ageGrade: fd.get("ageGrade").toString().trim(),
@@ -1429,7 +1436,10 @@
       <div class="modal-head"><h3>Add student</h3><button class="iconbtn" data-action="close-modal">✕</button></div>
       <form data-form="new-student">
         <div class="modal-body">
-          <label class="field">Student name<input type="text" name="name" required autofocus placeholder="e.g. Ava Santos"></label>
+          <div class="field-row">
+            <label class="field">First name<input type="text" name="firstName" required autofocus autocomplete="off" list="studentFirstNames" placeholder="Ava"></label>
+            <label class="field">Last name<input type="text" name="lastName" required autocomplete="off" list="studentLastNames" placeholder="Santos"></label>
+          </div>
           <div class="field-row">
             <label class="field">Parent / guardian<input type="text" name="parentName"></label>
             <label class="field">Grade${gradeSelect("ageGrade", "")}</label>
@@ -1447,12 +1457,14 @@
 
   async function submitNewStudent(form){
     const fd = new FormData(form);
-    const name = fd.get("name").toString().trim();
-    if(!name) return;
+    const firstName = fd.get("firstName").toString().trim();
+    const lastName = fd.get("lastName").toString().trim();
+    const name = `${firstName} ${lastName}`.trim();
+    if(!firstName || !lastName) return;
     if(findExistingStudentId(name)){ toast("A student with that name is already on the roster."); return; }
     await guardWrite(async ()=>{
       await db.collection("students").add({
-        name,
+        name, firstName, lastName,
         parentName: fd.get("parentName").toString().trim(),
         parentPhone: fd.get("parentPhone").toString().trim(),
         parentEmail: "", ageGrade: fd.get("ageGrade").toString().trim(), notes: "",
@@ -1510,9 +1522,21 @@
     $("#modal").innerHTML = "";
   }
 
+  // Best-effort split for a legacy student who doesn't have firstName/lastName yet — last
+  // word of whatever single name we have becomes the guessed last name. Used only to
+  // pre-fill forms so re-entering someone isn't starting from blank fields.
+  function splitNameGuess(full){
+    const parts = (full||"").trim().split(/\s+/).filter(Boolean);
+    if(parts.length <= 1) return { first: parts[0]||"", last: "" };
+    return { first: parts.slice(0,-1).join(" "), last: parts[parts.length-1] };
+  }
+
   function renderStudentDatalist(){
-    const dl = $("#studentNames");
-    dl.innerHTML = STATE.students.map(s => `<option value="${esc(s.name)}" data-id="${s.id}">`).join("");
+    const firstDl = $("#studentFirstNames"), lastDl = $("#studentLastNames");
+    const firsts = [...new Set(STATE.students.map(s => s.firstName || splitNameGuess(s.name).first).filter(Boolean))].sort((a,b)=>a.localeCompare(b));
+    const lasts = [...new Set(STATE.students.map(s => s.lastName || splitNameGuess(s.name).last).filter(Boolean))].sort((a,b)=>a.localeCompare(b));
+    if(firstDl) firstDl.innerHTML = firsts.map(n => `<option value="${esc(n)}">`).join("");
+    if(lastDl) lastDl.innerHTML = lasts.map(n => `<option value="${esc(n)}">`).join("");
   }
 
   /* ---------------- Forms (modal content builders) ---------------- */
@@ -1554,9 +1578,10 @@
       <div class="modal-head"><h3>New diagnostic booking</h3><button class="iconbtn" data-action="close-modal">✕</button></div>
       <form data-form="new-diagnostic">
         <div class="modal-body">
-          <label class="field">Student name
-            <input type="text" name="studentName" list="studentNames" required placeholder="e.g. Ava Santos">
-          </label>
+          <div class="field-row">
+            <label class="field">First name<input type="text" name="firstName" list="studentFirstNames" required autocomplete="off" placeholder="Ava"></label>
+            <label class="field">Last name<input type="text" name="lastName" list="studentLastNames" required autocomplete="off" placeholder="Santos"></label>
+          </div>
           <div class="field-row">
             <label class="field">Parent / guardian<input type="text" name="parentName" required></label>
             <label class="field">Age / grade${gradeSelect("ageGrade", "")}</label>
@@ -1598,9 +1623,10 @@
       <div class="modal-head"><h3>Edit diagnostic booking</h3><button class="iconbtn" data-action="close-modal">✕</button></div>
       <form data-form="edit-diagnostic" data-id="${d.id}">
         <div class="modal-body">
-          <label class="field">Student name
-            <input type="text" name="studentName" list="studentNames" required value="${esc(d.studentName)}">
-          </label>
+          <div class="field-row">
+            <label class="field">First name<input type="text" name="firstName" list="studentFirstNames" required autocomplete="off" value="${esc((d.studentId && studentById(d.studentId) && studentById(d.studentId).firstName) || splitNameGuess(d.studentName).first)}"></label>
+            <label class="field">Last name<input type="text" name="lastName" list="studentLastNames" required autocomplete="off" value="${esc((d.studentId && studentById(d.studentId) && studentById(d.studentId).lastName) || splitNameGuess(d.studentName).last)}"></label>
+          </div>
           <div class="field-row">
             <label class="field">Parent / guardian<input type="text" name="parentName" required value="${esc(d.parentName||"")}"></label>
             <label class="field">Age / grade${gradeSelect("ageGrade", d.ageGrade||"")}</label>
@@ -1813,7 +1839,9 @@
 
   async function submitNewDiagnostic(form){
     const fd = new FormData(form);
-    const studentName = fd.get("studentName").toString().trim();
+    const firstName = fd.get("firstName").toString().trim();
+    const lastName = fd.get("lastName").toString().trim();
+    const studentName = `${firstName} ${lastName}`.trim();
     const parentName = fd.get("parentName").toString().trim();
     const ageGrade = fd.get("ageGrade").toString().trim();
     const contact = fd.get("contact").toString().trim();
@@ -1823,20 +1851,20 @@
     const inquiry = fd.get("inquiry").toString();
     const examiner = fd.get("examiner");
     const notes = fd.get("notes").toString().trim();
-    if(!studentName || !date || !time || !examiner) return;
+    if(!firstName || !lastName || !date || !time || !examiner) return;
 
     await guardWrite(async ()=>{
       let studentId = findExistingStudentId(studentName);
       const now = new Date().toISOString();
       if(!studentId){
         const ref = await db.collection("students").add({
-          name: studentName, parentName, parentPhone: contact, parentEmail: "", ageGrade, subject,
+          name: studentName, firstName, lastName, parentName, parentPhone: contact, parentEmail: "", ageGrade, subject,
           notes: "", status: "diagnostic_scheduled", followUpStatus: "", followUpNotes: "",
           createdAt: now
         });
         studentId = ref.id;
       } else {
-        const patch = { status: "diagnostic_scheduled", parentName, parentPhone: contact, ageGrade };
+        const patch = { status: "diagnostic_scheduled", firstName, lastName, parentName, parentPhone: contact, ageGrade };
         if(subject && !studentById(studentId).subject) patch.subject = subject;
         await db.collection("students").doc(studentId).update(patch);
       }
@@ -1854,7 +1882,9 @@
     const d = STATE.diagnostics.find(x=>x.id===id);
     if(!id || !d) return;
     const fd = new FormData(form);
-    const studentName = fd.get("studentName").toString().trim();
+    const firstName = fd.get("firstName").toString().trim();
+    const lastName = fd.get("lastName").toString().trim();
+    const studentName = `${firstName} ${lastName}`.trim();
     const parentName = fd.get("parentName").toString().trim();
     const ageGrade = fd.get("ageGrade").toString().trim();
     const contact = fd.get("contact").toString().trim();
@@ -1864,7 +1894,7 @@
     const inquiry = fd.get("inquiry").toString();
     const examiner = fd.get("examiner");
     const notes = fd.get("notes").toString().trim();
-    if(!studentName || !date || !time || !examiner) return;
+    if(!firstName || !lastName || !date || !time || !examiner) return;
 
     await guardWrite(async ()=>{
       await db.collection("diagnostics").doc(id).update({
@@ -1872,7 +1902,7 @@
       });
       // Keep the linked student record's own details in step with what was just corrected here.
       if(d.studentId && studentById(d.studentId)){
-        await db.collection("students").doc(d.studentId).update({ name: studentName, parentName, parentPhone: contact, ageGrade });
+        await db.collection("students").doc(d.studentId).update({ name: studentName, firstName, lastName, parentName, parentPhone: contact, ageGrade });
       }
       toast("Booking updated.");
     });
