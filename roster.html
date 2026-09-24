@@ -174,7 +174,9 @@
   </nav>
 
   <main class="main">
-    <div class="page-head">
+    <div id="pendingGate" hidden></div>
+
+    <div class="page-head" id="pageHead">
       <div>
         <h1>Student roster</h1>
         <div class="page-sub">Current level and goal, per student, per subject.</div>
@@ -261,7 +263,20 @@
     const adminLink = $("#navAdminLink");
     if(adminLink) adminLink.hidden = currentRole !== "superadmin";
     const pipelineLink = $("#navPipelineLink");
-    if(pipelineLink) pipelineLink.hidden = currentRole === "teacher";
+    if(pipelineLink) pipelineLink.hidden = currentRole === "teacher" || currentRole === "pending";
+    applyRoleGate();
+  }
+
+  // A pending account (brand new, not yet approved) gets blocked outright — the database
+  // itself refuses them data now too, this is just the friendlier message in its place.
+  function applyRoleGate(){
+    const isPending = currentRole === "pending";
+    const gate = $("#pendingGate");
+    if(gate){
+      gate.hidden = !isPending;
+      gate.innerHTML = isPending ? `<div class="banner">Your account is waiting for approval. Ask a superadmin to set your role in <a href="admin.html">Admin</a> — until then there's nothing here for you to see.</div>` : "";
+    }
+    $$(".page-head, .search-row, .card").forEach(el => { el.style.display = isPending ? "none" : ""; });
   }
 
   async function loadRole(){
@@ -269,9 +284,9 @@
     try{
       const { data, error } = await sbClient.from("profiles").select("role, teacher_name").eq("id", currentUser.id).maybeSingle();
       if(error) throw error;
-      currentRole = data ? data.role : "admin";
+      currentRole = data ? data.role : "pending";
       currentTeacherName = data ? (data.teacher_name || null) : null;
-    }catch(e){ console.warn("couldn't load role", e); currentRole = "admin"; currentTeacherName = null; }
+    }catch(e){ console.warn("couldn't load role", e); currentRole = "pending"; currentTeacherName = null; }
   }
 
   async function boot(){

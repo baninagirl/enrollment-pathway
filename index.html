@@ -568,17 +568,17 @@
   let sbClient = null, db = null, writable = true, appStarted = false, currentUser = null, currentRole = null;
 
   // Looks up the logged-in user's role from the `profiles` table (see phase1-roles.sql).
-  // Falls back to "admin" (the safer, lower-privilege default) if anything goes wrong, so a
-  // hiccup here never accidentally grants admin-only access — it just hides it.
+  // Falls back to "pending" (no access at all) if anything goes wrong, so a hiccup here
+  // never accidentally grants access — it just blocks it, same as a real pending account.
   async function loadRole(){
     if(!sbClient || !currentUser){ currentRole = null; return; }
     try{
       const { data, error } = await sbClient.from("profiles").select("role").eq("id", currentUser.id).maybeSingle();
       if(error) throw error;
-      currentRole = data ? data.role : "admin";
+      currentRole = data ? data.role : "pending";
     }catch(e){
       console.warn("couldn't load role", e);
-      currentRole = "admin";
+      currentRole = "pending";
     }
   }
 
@@ -612,14 +612,23 @@
   // Pipeline (diagnostics/enrollment/training/monitoring) isn't a teacher's workspace —
   // their whole job here is the Student roster page. Hide Pipeline's content for them
   // and point them there, rather than leave everyone's data sitting open in front of them.
+  // A pending account (brand new, not yet approved by a superadmin) gets blocked outright —
+  // the database itself refuses them data now too, this is just the friendlier message.
   function applyRoleGate(){
     const isTeacher = currentRole === "teacher";
+    const isPending = currentRole === "pending";
     const gate = $("#teacherGate");
     if(gate){
-      gate.hidden = !isTeacher;
-      gate.innerHTML = isTeacher ? `<div class="banner">Pipeline isn't part of a teacher account — head to <a href="roster.html">Student roster</a> to see your students.</div>` : "";
+      gate.hidden = !isTeacher && !isPending;
+      if(isPending){
+        gate.innerHTML = `<div class="banner">Your account is waiting for approval. Ask a superadmin to set your role in <a href="admin.html">Admin</a> — until then there's nothing here for you to see.</div>`;
+      }else if(isTeacher){
+        gate.innerHTML = `<div class="banner">Pipeline isn't part of a teacher account — head to <a href="roster.html">Student roster</a> to see your students.</div>`;
+      }else{
+        gate.innerHTML = "";
+      }
     }
-    $$(".page-head, #statsRow, .view").forEach(el => { el.style.display = isTeacher ? "none" : ""; });
+    $$(".page-head, #statsRow, .view").forEach(el => { el.style.display = (isTeacher || isPending) ? "none" : ""; });
   }
 
   /* ---------------- DB bootstrap ---------------- */

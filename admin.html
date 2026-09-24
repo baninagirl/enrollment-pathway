@@ -105,6 +105,17 @@
 
   .banner{ background:var(--warn-soft); color:var(--warn); border-radius:11px; padding:11px 14px; font-size:13px; font-weight:600; margin-bottom:16px; }
   .banner.info{ background:var(--accent-soft); color:var(--accent-soft-ink); }
+  .banner.good{ background:var(--good-soft); color:var(--good); }
+
+  .field-row{ display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  .modal-backdrop{ position:fixed; inset:0; background:rgba(10,12,18,.5); display:flex; align-items:flex-start; justify-content:center; padding:5vh 16px; overflow-y:auto; z-index:50; }
+  .modal{ background:var(--surface); border-radius:16px; width:100%; max-width:420px; box-shadow:var(--shadow); }
+  .modal-head{ display:flex; align-items:center; justify-content:space-between; padding:16px 18px; border-bottom:1px solid var(--border); }
+  .modal-head h3{ font-size:15.5px; font-weight:700; }
+  .modal-body{ padding:16px 18px; display:flex; flex-direction:column; gap:12px; max-height:66vh; overflow-y:auto; }
+  .modal-foot{ display:flex; justify-content:flex-end; gap:8px; padding:14px 18px; border-top:1px solid var(--border); }
+  .iconbtn{ border:none; background:transparent; cursor:pointer; color:var(--ink-muted); padding:4px; border-radius:6px; }
+  .iconbtn:hover{ background:var(--surface-2); color:var(--ink); }
 
   .login-screen{ position:fixed; inset:0; display:flex; align-items:center; justify-content:center; background:var(--bg); z-index:100; padding:20px; }
   .login-card{ width:100%; max-width:360px; background:var(--surface); border:1px solid var(--border); border-radius:16px; padding:28px 26px; box-shadow:var(--shadow); display:flex; flex-direction:column; gap:14px; }
@@ -156,13 +167,20 @@
   </nav>
 
   <main class="main">
-    <div class="page-head">
-      <h1>Admin</h1>
-      <div class="page-sub">Who has access, and what they can do.</div>
+    <div class="page-head" style="display:flex; align-items:flex-end; justify-content:space-between; gap:16px; flex-wrap:wrap;">
+      <div>
+        <h1>Admin</h1>
+        <div class="page-sub">Who has access, and what they can do.</div>
+      </div>
+      <button class="btn primary" id="newLoginBtn" data-action="open-new-login" hidden>+ New login</button>
     </div>
 
     <div id="adminBody"></div>
   </main>
+</div>
+
+<div class="modal-backdrop" id="modalBackdrop" hidden>
+  <div class="modal" id="modal"></div>
 </div>
 
 <script>
@@ -194,10 +212,10 @@
     try{
       const { data, error } = await sbClient.from("profiles").select("role").eq("id", currentUser.id).maybeSingle();
       if(error) throw error;
-      currentRole = data ? data.role : "admin";
+      currentRole = data ? data.role : "pending";
     }catch(e){
       console.warn("couldn't load role", e);
-      currentRole = "admin";
+      currentRole = "pending";
     }
   }
 
@@ -242,14 +260,19 @@
 
   async function renderAdmin(){
     const body = $("#adminBody");
+    const newLoginBtn = $("#newLoginBtn");
     if(currentRole !== "superadmin"){
-      body.innerHTML = `<div class="banner">Your account (${esc(currentUser.email)}) doesn't have superadmin access, so there's nothing to manage here. If that's wrong, ask another superadmin to update your role.</div>`;
+      body.innerHTML = currentRole === "pending"
+        ? `<div class="banner">Your account (${esc(currentUser.email)}) is waiting for approval. Ask an existing superadmin to set your role here.</div>`
+        : `<div class="banner">Your account (${esc(currentUser.email)}) doesn't have superadmin access, so there's nothing to manage here. If that's wrong, ask another superadmin to update your role.</div>`;
+      if(newLoginBtn) newLoginBtn.hidden = true;
       return;
     }
+    if(newLoginBtn) newLoginBtn.hidden = false;
     body.innerHTML = `<div class="empty">Loading…</div>`;
     [profiles, trainers] = await Promise.all([loadProfiles(), loadTrainers()]);
     body.innerHTML = `
-      <div class="banner info">To add someone new: create their login in Supabase (Authentication → Users → Add User, with Auto Confirm checked). They'll appear in the list below automatically — set their role here. Teacher roles also need a name picked from the Trainers list (Student roster → Settings) so their own students find them.</div>
+      <div class="banner info">"+ New login" creates their account right here. They'll get a confirmation email — once they click it, they can log in with the password you set. Teacher roles need a name picked from the Trainers list (Student roster → Settings) so their own students find them.</div>
       <div class="card">
         <div class="card-head"><h3>Team accounts</h3><span class="hint">${profiles.length}</span></div>
         <div class="table-scroll">
@@ -261,6 +284,7 @@
                   <td>${esc(p.email || p.id)}</td>
                   <td>
                     <select class="role-select" data-action="change-role" data-id="${p.id}">
+                      ${p.role==="pending" ? `<option value="pending" selected>Pending approval</option>` : ""}
                       <option value="admin" ${p.role==="admin"?"selected":""}>Admin</option>
                       <option value="superadmin" ${p.role==="superadmin"?"selected":""}>Superadmin</option>
                       <option value="teacher" ${p.role==="teacher"?"selected":""}>Teacher</option>
@@ -277,12 +301,94 @@
     `;
   }
 
+  function genPassword(){
+    const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789";
+    let out = "";
+    for(let i=0;i<10;i++) out += chars[Math.floor(Math.random()*chars.length)];
+    return out;
+  }
+
+  function closeModal(){ $("#modalBackdrop").hidden = true; $("#modal").innerHTML = ""; }
+
+  function openNewLoginModal(){
+    $("#modal").innerHTML = `
+      <div class="modal-head"><h3>New login</h3><button class="iconbtn" data-action="close-modal">✕</button></div>
+      <form id="newLoginForm">
+        <div class="modal-body">
+          <label class="field">Email<input type="email" name="email" required placeholder="their@email.com"></label>
+          <label class="field">Temporary password
+            <input type="text" name="password" required value="${genPassword()}">
+          </label>
+          <div class="hint" style="font-weight:500;">Share this password with them yourself — text, call, whatever's easiest. They can change it anytime from the login screen's "Forgot password" link.</div>
+          <label class="field">Role
+            <select name="role" data-action="new-login-role">
+              <option value="admin" selected>Admin</option>
+              <option value="teacher">Teacher</option>
+              <option value="superadmin">Superadmin</option>
+            </select>
+          </label>
+          <div id="newLoginTeacherField" hidden>
+            <label class="field">Teacher name
+              <select name="teacher_name">
+                <option value="">Choose…</option>
+                ${trainers.map(t=>`<option value="${esc(t)}">${esc(t)}</option>`).join("")}
+              </select>
+            </label>
+          </div>
+          <div id="newLoginError" class="login-error" hidden></div>
+        </div>
+        <div class="modal-foot">
+          <button type="button" class="btn ghost" data-action="close-modal">Cancel</button>
+          <button type="submit" class="btn primary">Create login</button>
+        </div>
+      </form>
+    `;
+    $("#modalBackdrop").hidden = false;
+  }
+
   document.addEventListener("submit", async (e)=>{
     if(e.target.id === "loginForm"){
       e.preventDefault();
       const fd = new FormData(e.target);
       const { error } = await sbClient.auth.signInWithPassword({ email: fd.get("email"), password: fd.get("password") });
       if(error){ showLogin(error.message); }
+      return;
+    }
+    if(e.target.id === "newLoginForm"){
+      e.preventDefault();
+      const fd = new FormData(e.target);
+      const email = fd.get("email").toString().trim();
+      const password = fd.get("password").toString();
+      const role = fd.get("role").toString();
+      const teacherName = fd.get("teacher_name") ? fd.get("teacher_name").toString() : "";
+      const errBox = $("#newLoginError");
+      errBox.hidden = true;
+      if(role === "teacher" && !teacherName){
+        errBox.textContent = "Pick which teacher this is.";
+        errBox.hidden = false;
+        return;
+      }
+      // A separate, non-persisting client — signing this new person up must never touch
+      // your own logged-in session on this page.
+      const signupClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+        auth: { persistSession: false, autoRefreshToken: false }
+      });
+      const { data, error } = await signupClient.auth.signUp({ email, password });
+      if(error){ errBox.textContent = error.message; errBox.hidden = false; return; }
+      const newId = data && data.user ? data.user.id : null;
+      if(newId){
+        // New signups default to "pending" (no access) until someone sets a real role —
+        // always patch it here, even to "admin", so a login made through this form is
+        // never left stuck pending.
+        const patch = { role, teacher_name: role === "teacher" ? teacherName : null };
+        // The trigger that creates their profile row runs the instant signUp() is called
+        // (before they've even confirmed their email), so this update is safe right away.
+        await sbClient.from("profiles").update(patch).eq("id", newId);
+      }
+      closeModal();
+      profiles = await loadProfiles();
+      renderAdmin();
+      alert(`Login created for ${email}. They'll get a confirmation email — once they click it, they can log in with the password you set.`);
     }
   });
 
@@ -290,9 +396,15 @@
     const btn = e.target.closest("[data-action]");
     if(!btn) return;
     if(btn.dataset.action === "logout"){ await sbClient.auth.signOut(); }
+    else if(btn.dataset.action === "open-new-login"){ openNewLoginModal(); }
+    else if(btn.dataset.action === "close-modal"){ closeModal(); }
   });
 
   document.addEventListener("change", async (e)=>{
+    if(e.target.dataset && e.target.dataset.action === "new-login-role"){
+      const box = $("#newLoginTeacherField");
+      if(box) box.hidden = e.target.value !== "teacher";
+    }
     if(e.target.dataset && e.target.dataset.action === "change-role"){
       const id = e.target.dataset.id;
       const role = e.target.value;
