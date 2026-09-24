@@ -128,6 +128,14 @@
   .modal-foot{ display:flex; justify-content:space-between; gap:8px; padding:14px 18px; border-top:1px solid var(--border); }
   .iconbtn{ border:none; background:transparent; cursor:pointer; color:var(--ink-muted); padding:4px; border-radius:6px; }
   .iconbtn:hover{ background:var(--surface-2); color:var(--ink); }
+  .iconbtn.sm{ padding:6px; flex:none; }
+
+  .sched-section{ border:1px solid var(--border); border-radius:11px; padding:12px; background:var(--surface-2); }
+  .sched-head{ display:flex; align-items:center; justify-content:space-between; margin-bottom:8px; }
+  .sched-label{ font-size:12.5px; font-weight:600; color:var(--ink-muted); }
+  .sched-row{ display:grid; grid-template-columns:1fr 1fr 84px auto; gap:6px; margin-bottom:6px; align-items:center; }
+  .sched-row:last-of-type{ margin-bottom:0; }
+  .sched-row select, .sched-row input{ padding:7px 8px; font-size:13px; }
 
   .banner{ background:var(--warn-soft); color:var(--warn); border-radius:11px; padding:11px 14px; font-size:13px; font-weight:600; margin-bottom:16px; }
   .banner.info{ background:var(--accent-soft); color:var(--accent-soft-ink); }
@@ -262,7 +270,7 @@
   }
 
   let sbClient = null, currentUser = null, currentRole = null, currentTeacherName = null;
-  let students = [], trainers = [], enrollments = [];
+  let students = [], trainers = [], enrollments = [], schedules = [];
   let filters = { search:"", subject:"all", teacher:"all", status:"active" };
   let editingId = null;
   let selectedIds = new Set();
@@ -346,13 +354,16 @@
   async function startApp(){
     if(started) return;
     started = true;
-    await Promise.all([loadStudents(), loadSettings(), loadEnrollments()]);
+    await Promise.all([loadStudents(), loadSettings(), loadEnrollments(), loadSchedules()]);
     populateTeacherFilter();
     if(isTeacherScoped() && currentTeacherName){ filters.teacher = currentTeacherName; }
     render();
 
     sbClient.channel("realtime:subject_enrollments")
       .on("postgres_changes", { event:"*", schema:"public", table:"subject_enrollments" }, async ()=>{ await loadEnrollments(); render(); })
+      .subscribe();
+    sbClient.channel("realtime:roster-schedules")
+      .on("postgres_changes", { event:"*", schema:"public", table:"schedules" }, async ()=>{ await loadSchedules(); })
       .subscribe();
   }
 
@@ -409,6 +420,71 @@
     // stale id can never sneak into a bulk action.
     const validIds = new Set(enrollments.map(e => e.id));
     [...selectedIds].forEach(id => { if(!validIds.has(id)) selectedIds.delete(id); });
+  }
+  async function loadSchedules(){
+    const { data, error } = await sbClient.from("schedules").select("*");
+    if(error){ console.warn(error); schedules = []; return; }
+    schedules = data || [];
+  }
+  function scheduleFor(enrollmentId){ return schedules.find(sc => sc.subject_enrollment_id === enrollmentId) || null; }
+
+  // Reads the repeated sched_day/sched_time/sched_mode fields back off the form, in the
+  // order the rows are in — FormData.getAll() preserves document order for repeated
+  // names. A row with no day picked is dropped; a day with no time yet is kept (it just
+  // won't show up on Calendar until a time is added — see parseScheduleText above).
+  function readScheduleRowsFromForm(fd){
+    const days = fd.getAll("sched_day"), times = fd.getAll("sched_time"), modes = fd.getAll("sched_mode");
+    const out = [];
+    for(let i=0; i<days.length; i++){
+      if(!days[i]) continue;
+      out.push({ day: days[i], time: times[i] || "", mode: modes[i] === "RI" ? "RI" : "IC" });
+    }
+    return out;
+  }
+  // Keeps the `schedules` row for one enrollment in sync with what's in the modal —
+  // inserts one if this enrollment never had a schedule before, updates it if it did,
+  // and deletes it if every day was cleared out (rather than leaving an empty row).
+  async function saveScheduleForEnrollment(enrollmentId, studentId, studentName, slots){
+    const existing = scheduleFor(enrollmentId);
+    if(!slots.length){
+      if(existing){
+        const { error } = await sbClient.from("schedules").delete().eq("id", existing.id);
+        if(error) console.warn("couldn't clear schedule", error);
+      }
+      return;
+    }
+    if(existing){
+      const { error } = await sbClient.from("schedules").update({ slots, status:"active" }).eq("id", existing.id);
+      if(error) console.warn("couldn't update schedule", error);
+    }else{
+      const { error } = await sbClient.from("schedules").insert({
+        student_id: studentId, student_name: studentName, subject_enrollment_id: enrollmentId,
+        slots, status:"active", start_date: new Date().toISOString().slice(0,10)
+      });
+      if(error) console.warn("couldn't save schedule", error);
+    }
+    await loadSchedules();
+  }
+
+  // Miss Mira's imported roster already has each student's days transcribed as plain
+  // text (e.g. "Tue (RI) Sat (CV)", "Mon Fri") in the old schedule column from that
+  // import — this turns that same text into starter day/mode rows (time left blank,
+  // since the sheet never had times) so opening Edit on one of her students doesn't
+  // start from a blank Schedule section. (RI) stays RI; anything else, like the sheet's
+  // (CV), is read as IC (in-center) since that's the default when no tag is written.
+  function parseScheduleText(text){
+    if(!text) return [];
+    const DAY_MAP = { mon:"Mon", tue:"Tue", tues:"Tue", wed:"Wed", weds:"Wed", thu:"Thu", thur:"Thu", thurs:"Thu", fri:"Fri", sat:"Sat", sun:"Sun" };
+    const out = [];
+    const re = /([A-Za-z]+)\s*(?:\(([^)]+)\))?/g;
+    let m;
+    while((m = re.exec(text))){
+      const day = DAY_MAP[m[1].toLowerCase()];
+      if(!day) continue;
+      const mode = (m[2]||"").trim().toUpperCase() === "RI" ? "RI" : "IC";
+      out.push({ day, time:"", mode });
+    }
+    return out;
   }
 
   function populateTeacherFilter(){
@@ -509,9 +585,51 @@
     return `<option value="">—</option>` + trainers.map(t=>`<option value="${esc(t)}" ${t===selected?"selected":""}>${esc(t)}</option>`).join("");
   }
 
+  // Schedule editor — a variable-length list of day/time/mode rows inside the enrollment
+  // modal, feeding straight into the `schedules` table Calendar reads. Fields repeat the
+  // same three names (sched_day/sched_time/sched_mode) across rows; on submit we read
+  // them back with FormData.getAll(), which preserves row order.
+  const SCHED_DAYS = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
+  function scheduleRowHtml(row){
+    row = row || { day:"", time:"", mode:"IC" };
+    return `<div class="sched-row">
+      <select name="sched_day">
+        <option value="">Day…</option>
+        ${SCHED_DAYS.map(d=>`<option value="${d}" ${d===row.day?"selected":""}>${d}</option>`).join("")}
+      </select>
+      <input type="time" name="sched_time" value="${esc(row.time||"")}">
+      <select name="sched_mode" title="IC = In Center, RI = Remote Instruction">
+        <option value="IC" ${row.mode!=="RI"?"selected":""}>IC</option>
+        <option value="RI" ${row.mode==="RI"?"selected":""}>RI</option>
+      </select>
+      <button type="button" class="iconbtn sm" data-action="remove-schedule-row" title="Remove this day">✕</button>
+    </div>`;
+  }
+  function scheduleSectionHtml(rows, worksheetMode){
+    return `<div class="sched-section">
+      <div class="sched-head">
+        <span class="sched-label">Schedule</span>
+        <button type="button" class="btn sm ghost" data-action="add-schedule-row">${iconPlusSm()} Add day</button>
+      </div>
+      <div id="scheduleRows">${(rows && rows.length ? rows : [null]).map(scheduleRowHtml).join("")}</div>
+      <p class="hint" style="font-size:11.5px; margin:6px 0 0;">Leave a day's time blank until you know it — it just won't show on Calendar yet.</p>
+      <label class="field" style="margin-top:12px;">Worksheet mode
+        <select name="mode">
+          <option value="Paper" ${worksheetMode!=="KC"?"selected":""}>Paper</option>
+          <option value="KC" ${worksheetMode==="KC"?"selected":""}>KC (Kumon Connect)</option>
+        </select>
+      </label>
+    </div>`;
+  }
+  function iconPlusSm(){ return `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>`; }
+
   function openModal(enrollment, presetStudentId){
     editingId = enrollment ? enrollment.id : null;
     const subject = enrollment ? enrollment.subject : "Math";
+    const existingSchedule = enrollment ? scheduleFor(enrollment.id) : null;
+    const scheduleRows = existingSchedule && existingSchedule.slots && existingSchedule.slots.length
+      ? existingSchedule.slots
+      : (enrollment ? parseScheduleText(enrollment.schedule) : []);
     $("#modal").innerHTML = enrollment ? `
       <div class="modal-head"><h3>Edit enrollment</h3><button class="iconbtn" data-action="close-modal">✕</button></div>
       <form id="enrollForm">
@@ -534,6 +652,7 @@
             <label class="field">Goal level<select name="goal_level" id="goalLevelSelect">${levelOptions(subject, enrollment.goal_level)}</select></label>
             <label class="field">Goal page<input type="text" name="goal_page" value="${esc(enrollment.goal_page||"")}" placeholder="e.g. 180"></label>
           </div>
+          ${scheduleSectionHtml(scheduleRows, enrollment.mode)}
         </div>
         <div class="modal-foot">
           <div>${isTeacherScoped() ? "" : `<button type="button" class="btn danger" data-action="delete-enrollment" data-id="${enrollment.id}">Delete</button>`}</div>
@@ -580,6 +699,7 @@
             <label class="field">Goal level<select name="goal_level" id="goalLevelSelect">${levelOptions(subject, null)}</select></label>
             <label class="field">Goal page<input type="text" name="goal_page" placeholder="e.g. 180"></label>
           </div>
+          ${scheduleSectionHtml(null, null)}
           <p class="hint" style="font-size:12px; color:var(--ink-muted); margin:8px 0 0;">For a student who still needs a diagnostic test, add them from Pipeline instead — this is for a student already enrolled and taking classes.</p>
         </div>
         <div class="modal-foot">
@@ -653,16 +773,21 @@
       e.preventDefault();
       const fd = new FormData(e.target);
       if(editingId){
+        const editingEnrollment = enrollments.find(en => en.id === editingId);
         const patch = {
           teacher: isTeacherScoped() ? currentTeacherName : (fd.get("teacher") || null),
           current_level: fd.get("current_level") || null,
           current_page: fd.get("current_page") || null,
           goal_level: fd.get("goal_level") || null,
           goal_page: fd.get("goal_page") || null,
+          mode: fd.get("mode") || null,
           updated_at: new Date().toISOString()
         };
         const { error } = await sbClient.from("subject_enrollments").update(patch).eq("id", editingId);
         if(error){ alert("Couldn't save: " + error.message); return; }
+        if(editingEnrollment){
+          await saveScheduleForEnrollment(editingId, editingEnrollment.student_id, editingEnrollment.student_name, readScheduleRowsFromForm(fd));
+        }
         closeModal();
         await loadEnrollments(); render();
         return;
@@ -685,7 +810,11 @@
           last_name: lastName,
           age_grade: (fd.get("ageGrade")||"").toString().trim(),
           birthday: fd.get("birthday") || null,
-          status: "active"
+          status: "active",
+          // Marks this as a student entered directly onto the roster, not one who came
+          // through Pipeline's diagnostic funnel — keeps them out of Pipeline's own
+          // Students tab and stat tiles. See phase9-pipeline-roster-origin.sql.
+          origin: "roster"
         };
         const { data, error } = await sbClient.from("students").insert(payload).select().single();
         if(error){ alert("Couldn't add student: " + error.message); return; }
@@ -700,10 +829,16 @@
         current_level: fd.get("current_level") || null,
         current_page: fd.get("current_page") || null,
         goal_level: fd.get("goal_level") || null,
-        goal_page: fd.get("goal_page") || null
+        goal_page: fd.get("goal_page") || null,
+        mode: fd.get("mode") || null
       };
-      const { error: enrollError } = await sbClient.from("subject_enrollments").insert(enrollPayload);
+      const { data: newEnrollment, error: enrollError } = await sbClient.from("subject_enrollments").insert(enrollPayload).select().single();
       if(enrollError){ alert("Couldn't save: " + enrollError.message); return; }
+
+      const slots = readScheduleRowsFromForm(fd);
+      if(newEnrollment && slots.length){
+        await saveScheduleForEnrollment(newEnrollment.id, studentId, name, slots);
+      }
 
       closeModal();
       await Promise.all([loadStudents(), loadEnrollments()]);
@@ -808,6 +943,17 @@
       if(error){ alert("Couldn't delete: " + error.message); return; }
       selectedIds.clear();
       await loadEnrollments(); render();
+    }
+    else if(action === "add-schedule-row"){
+      $("#scheduleRows").insertAdjacentHTML("beforeend", scheduleRowHtml(null));
+    }
+    else if(action === "remove-schedule-row"){
+      const rows = $("#scheduleRows");
+      const row = btn.closest(".sched-row");
+      // Always leave at least one row so there's somewhere to pick a day from again —
+      // clear it instead of removing it if it's the last one.
+      if(rows.children.length > 1) row.remove();
+      else row.outerHTML = scheduleRowHtml(null);
     }
   });
 

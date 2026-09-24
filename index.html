@@ -715,6 +715,13 @@
   }
 
   /* ---------------- Derived helpers ---------------- */
+  // Pipeline's own tables (the Students tab, and every stat tile below) only ever mean
+  // students who came through ITS diagnostic → training → graduation funnel. A student
+  // entered straight onto Student Roster (origin: 'roster' — see phase9) already exists
+  // and never touches that funnel, so Pipeline shouldn't list them or count them.
+  // studentById() stays unfiltered — it's used for lookups where the id is already
+  // known (editing a record, joining a diagnostic/training), not for building lists.
+  function pipelineStudents(){ return STATE.students.filter(s => s.origin !== "roster"); }
   function studentById(id){ return STATE.students.find(s => s.id === id); }
   function trainingsFor(studentId){ return STATE.trainings.filter(t => t.studentId === studentId).sort((a,b)=> a.sessionNumber - b.sessionNumber); }
   function activeDiagnosticFor(studentId){
@@ -731,16 +738,16 @@
       .sort((a,b)=> (a.date+a.time).localeCompare(b.date+b.time));
   }
   function awaitingTraining(){
-    return STATE.students.filter(s => s.status === "enrolled_pending_training").sort((a,b)=> a.name.localeCompare(b.name));
+    return pipelineStudents().filter(s => s.status === "enrolled_pending_training").sort((a,b)=> a.name.localeCompare(b.name));
   }
   function onMonitorSchedule(){
-    return STATE.students.filter(s => s.status === "monitor_schedule").sort((a,b)=> a.name.localeCompare(b.name));
+    return pipelineStudents().filter(s => s.status === "monitor_schedule").sort((a,b)=> a.name.localeCompare(b.name));
   }
   function readyForSchedule(){
-    return STATE.students.filter(s => s.status === "ready_for_schedule").sort((a,b)=> a.name.localeCompare(b.name));
+    return pipelineStudents().filter(s => s.status === "ready_for_schedule").sort((a,b)=> a.name.localeCompare(b.name));
   }
   function needsFollowUp(){
-    return STATE.students.filter(s => s.status === "not_enrolled" && (s.followUpStatus||"needs_follow_up") !== "closed")
+    return pipelineStudents().filter(s => s.status === "not_enrolled" && (s.followUpStatus||"needs_follow_up") !== "closed")
       .sort((a,b)=> a.name.localeCompare(b.name));
   }
   function activeScheduleStudents(){
@@ -1278,7 +1285,7 @@
     const monthKey = monthKeyOf(STATE.studentMonth);
     const monthLabel = STATE.studentMonth.toLocaleDateString(undefined,{ month:"long", year:"numeric" });
 
-    const base = STATE.students
+    const base = pipelineStudents()
       .filter(s => !q || s.name.toLowerCase().includes(q) || (s.parentName||"").toLowerCase().includes(q))
       .filter(s => STATE.studentMonthMode === "all" || studentCohortMonthKey(s) === monthKey)
       .sort((a,b)=> (b.createdAt||"").localeCompare(a.createdAt||""));
