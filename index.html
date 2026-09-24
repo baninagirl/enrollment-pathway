@@ -751,7 +751,16 @@
       .sort((a,b)=> a.name.localeCompare(b.name));
   }
   function activeScheduleStudents(){
-    return STATE.schedules.filter(s => s.status === "active");
+    // Same origin split as pipelineStudents() above — a schedule row now exists for
+    // Student Roster's own students too (Miss Mira's imported roster and anyone added
+    // there since), and those were never on Pipeline's regular-schedule "Weekly view"
+    // or its own Calendar tab. Only count a schedule here if it belongs to a student
+    // who actually came through Pipeline's funnel.
+    return STATE.schedules.filter(s => {
+      if(s.status !== "active") return false;
+      const student = studentById(s.studentId);
+      return !student || student.origin !== "roster";
+    });
   }
   function weekBounds(){
     const now = new Date(); const day = now.getDay();
@@ -851,7 +860,14 @@
   function scheduleInstances(rangeStartISO, rangeEndISO){
     const out = [];
     const end = parseISODate(rangeEndISO);
-    STATE.schedules.filter(s => s.status === "active" && Array.isArray(s.slots)).forEach(s => {
+    // Same Pipeline-only rule as activeScheduleStudents() — a schedule belonging to a
+    // Student Roster student (origin: 'roster') never plots dots on Pipeline's own
+    // Calendar, same as it's excluded from the "Active on regular schedule" tile.
+    STATE.schedules.filter(s => {
+      if(s.status !== "active" || !Array.isArray(s.slots)) return false;
+      const student = studentById(s.studentId);
+      return !student || student.origin !== "roster";
+    }).forEach(s => {
       s.slots.forEach(slot => {
         const dowIndex = DOW.indexOf(slot.day);
         if(dowIndex < 0 || !slot.time) return;
