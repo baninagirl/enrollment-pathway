@@ -547,6 +547,10 @@
   };
 
   const SUBJECT_OPTIONS = ["Reading", "Math", "Both"];
+  const GRADE_OPTIONS = ["PK1","PK2","PK3","K","P1","P2","P3","P4","P5","P6","P7","P8","P9","P10","P11","P12","P13","P14"];
+  function gradeSelect(name, selected){
+    return `<select name="${name}"><option value="">—</option>${GRADE_OPTIONS.map(g=>`<option value="${g}" ${g===selected?"selected":""}>${g}</option>`).join("")}</select>`;
+  }
   const INQUIRY_OPTIONS = ["Facebook", "Referral", "Walk-in", "Returnee", "Landline/Phone", "Other"];
   function subjectText(v){ return v || "—"; }
 
@@ -1352,7 +1356,7 @@
           <label class="field">Student name<input type="text" name="name" required value="${esc(s.name)}"></label>
           <div class="field-row">
             <label class="field">Parent / guardian<input type="text" name="parentName" value="${esc(s.parentName||"")}"></label>
-            <label class="field">Grade<input type="text" name="ageGrade" placeholder="e.g. G5, K1, 4YO" value="${esc(s.ageGrade||"")}"></label>
+            <label class="field">Grade${gradeSelect("ageGrade", s.ageGrade||"")}</label>
           </div>
           <div class="field-row">
             <label class="field">Mobile number<input type="text" name="parentPhone" value="${esc(s.parentPhone||"")}"></label>
@@ -1406,7 +1410,7 @@
           <label class="field">Student name<input type="text" name="name" required autofocus placeholder="e.g. Ava Santos"></label>
           <div class="field-row">
             <label class="field">Parent / guardian<input type="text" name="parentName"></label>
-            <label class="field">Grade<input type="text" name="ageGrade" placeholder="e.g. G5, K1, 4YO"></label>
+            <label class="field">Grade${gradeSelect("ageGrade", "")}</label>
           </div>
           <label class="field">Mobile number<input type="text" name="parentPhone"></label>
           <p class="hint">For a student already going through a diagnostic booking, use <b>New diagnostic booking</b> instead — this is for adding someone straight onto the roster (e.g. an existing student from your old spreadsheet).</p>
@@ -1533,7 +1537,7 @@
           </label>
           <div class="field-row">
             <label class="field">Parent / guardian<input type="text" name="parentName" required></label>
-            <label class="field">Age / grade<input type="text" name="ageGrade" placeholder="e.g. G5, K1, 4YO"></label>
+            <label class="field">Age / grade${gradeSelect("ageGrade", "")}</label>
           </div>
           <label class="field">Phone or email<input type="text" name="contact"></label>
           <div class="field-row">
@@ -1577,7 +1581,7 @@
           </label>
           <div class="field-row">
             <label class="field">Parent / guardian<input type="text" name="parentName" required value="${esc(d.parentName||"")}"></label>
-            <label class="field">Age / grade<input type="text" name="ageGrade" placeholder="e.g. G5, K1, 4YO" value="${esc(d.ageGrade||"")}"></label>
+            <label class="field">Age / grade${gradeSelect("ageGrade", d.ageGrade||"")}</label>
           </div>
           <label class="field">Phone or email<input type="text" name="contact" value="${esc(d.contact||"")}"></label>
           <div class="field-row">
