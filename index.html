@@ -154,7 +154,7 @@
   .seg button{ border:none; background:transparent; padding:6px 11px; border-radius:7px; font-size:12.5px; font-weight:600; color:var(--ink-muted); cursor:pointer; }
   .seg button.active{ background:var(--surface); color:var(--ink); box-shadow:var(--shadow); }
 
-  select, input[type=text], input[type=date], input[type=time], input[type=search], textarea{
+  select, input[type=text], input[type=date], input[type=time], input[type=search], input[type=email], input[type=password], textarea{
     font-family:inherit; font-size:13.5px; padding:8px 10px; border-radius:8px; border:1px solid var(--border);
     background:var(--surface); color:var(--ink); width:100%;
   }
@@ -253,6 +253,17 @@
 
   .toast{ position:fixed; bottom:22px; left:50%; transform:translateX(-50%); background:var(--ink); color:var(--bg); padding:10px 18px; border-radius:99px; font-size:13px; font-weight:600; z-index:80; box-shadow:var(--shadow); }
 
+  /* Login gate */
+  .login-screen{ position:fixed; inset:0; display:flex; align-items:center; justify-content:center; background:var(--bg); z-index:100; padding:20px; }
+  .login-card{ width:100%; max-width:360px; background:var(--surface); border:1px solid var(--border); border-radius:16px; padding:28px 26px; box-shadow:var(--shadow); display:flex; flex-direction:column; gap:14px; }
+  .login-brand{ font-family:"Sora", system-ui, sans-serif; font-weight:700; font-size:18px; display:flex; align-items:center; gap:8px; color:var(--ink); }
+  .login-brand .dot{ width:9px; height:9px; border-radius:50%; background:var(--accent); flex:none; }
+  .login-sub{ font-size:13px; color:var(--ink-muted); margin:-6px 0 4px; }
+  .login-error{ background:var(--bad-soft); color:var(--bad); border-radius:9px; padding:9px 12px; font-size:12.5px; font-weight:600; }
+  .rail-account{ padding:0 10px 10px; }
+  .account-row{ display:flex; align-items:center; justify-content:space-between; gap:8px; padding:8px 8px; border-top:1px solid var(--border); font-size:12px; color:var(--ink-muted); }
+  .account-email{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+
   [hidden]{ display:none !important; }
 
   @media (max-width: 860px){
@@ -289,7 +300,18 @@
 </head>
 <body>
 
-<div class="app">
+<div class="login-screen" id="loginScreen">
+  <form class="login-card" id="loginForm">
+    <div class="login-brand"><span class="dot"></span>Enrollment Pathway</div>
+    <div class="login-sub">Sign in to view your team's schedule.</div>
+    <div class="login-error" id="loginError" hidden></div>
+    <label class="field">Email<input type="email" name="email" required autocomplete="username" autofocus></label>
+    <label class="field">Password<input type="password" name="password" required autocomplete="current-password"></label>
+    <button class="btn primary" type="submit" style="justify-content:center;">Log in</button>
+  </form>
+</div>
+
+<div class="app" id="appRoot" hidden>
   <nav class="rail">
     <div class="brand"><span class="dot"></span>Enrollment Pathway</div>
     <button class="navbtn active" data-action="switch-tab" data-tab="calendar">
@@ -313,6 +335,7 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 00.34 1.87l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.7 1.7 0 00-1.87-.34 1.7 1.7 0 00-1 1.55V21a2 2 0 11-4 0v-.09a1.7 1.7 0 00-1-1.55 1.7 1.7 0 00-1.87.34l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.7 1.7 0 00.34-1.87 1.7 1.7 0 00-1.55-1H3a2 2 0 110-4h.09a1.7 1.7 0 001.55-1 1.7 1.7 0 00-.34-1.87l-.06-.06a2 2 0 112.83-2.83l.06.06a1.7 1.7 0 001.87.34H9a1.7 1.7 0 001-1.55V3a2 2 0 114 0v.09a1.7 1.7 0 001 1.55 1.7 1.7 0 001.87-.34l.06-.06a2 2 0 112.83 2.83l-.06.06a1.7 1.7 0 00-.34 1.87V9a1.7 1.7 0 001.55 1H21a2 2 0 110 4h-.09a1.7 1.7 0 00-1.55 1z"/></svg>
       Settings
     </button>
+    <div class="rail-account" id="railAccount"></div>
     <div class="rail-foot">Diagnostic tests &amp; student trainings, one shared schedule for the team.</div>
   </nav>
 
@@ -488,21 +511,58 @@
   const INQUIRY_OPTIONS = ["Facebook", "Referral", "Walk-in", "Returnee", "Landline/Phone", "Other"];
   function subjectText(v){ return v || "—"; }
 
-  let db = null, writable = true;
+  let sbClient = null, db = null, writable = true, appStarted = false, currentUser = null;
+
+  /* ---------------- Login gate ---------------- */
+  function showLogin(errMsg){
+    $("#loginScreen").hidden = false;
+    $("#appRoot").hidden = true;
+    const err = $("#loginError");
+    if(errMsg){ err.textContent = errMsg; err.hidden = false; }
+    else{ err.hidden = true; }
+  }
+  function showApp(){
+    $("#loginScreen").hidden = true;
+    $("#appRoot").hidden = false;
+  }
+  function renderAccount(){
+    const el = $("#railAccount");
+    if(!el) return;
+    el.innerHTML = currentUser ? `<div class="account-row"><span class="account-email">${esc(currentUser.email)}</span><button class="btn sm ghost" data-action="logout">Log out</button></div>` : "";
+  }
 
   /* ---------------- DB bootstrap ---------------- */
   async function boot(){
     const configured = !SUPABASE_URL.includes("YOUR_SUPABASE") && !SUPABASE_ANON_KEY.includes("YOUR_SUPABASE");
-    try{
-      db = (configured && window.supabase) ? makeSupabaseDB(window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)) : null;
-    }catch(e){ console.warn(e); db = null; }
-
-    if(!db){
+    if(!configured || !window.supabase){
       $("#dbBanner").innerHTML = `<div class="banner">Add your Supabase URL and anon key near the top of index.html (see SETUP.md), then redeploy, to load and save your team's schedule.</div>`;
+      showApp();
       renderAll();
       return;
     }
 
+    try{ sbClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY); }
+    catch(e){ console.warn(e); showLogin("Couldn't connect to Supabase."); return; }
+    db = makeSupabaseDB(sbClient);
+
+    const { data:{ session } } = await sbClient.auth.getSession();
+    if(session){ currentUser = session.user; showApp(); renderAccount(); startApp(); }
+    else{ showLogin(); }
+
+    sbClient.auth.onAuthStateChange((event, session)=>{
+      if(session){
+        currentUser = session.user;
+        showApp(); renderAccount(); startApp();
+      }else{
+        currentUser = null; appStarted = false;
+        showLogin();
+      }
+    });
+  }
+
+  function startApp(){
+    if(appStarted) return;
+    appStarted = true;
     subscribe(db.collection("students"), rows => { STATE.students = rows; STATE.loaded.students = true; onData(); });
     subscribe(db.collection("diagnostics"), rows => { STATE.diagnostics = rows; STATE.loaded.diagnostics = true; onData(); });
     subscribe(db.collection("trainings"), rows => { STATE.trainings = rows; STATE.loaded.trainings = true; onData(); });
@@ -1855,6 +1915,7 @@
     else if(a === "student-month-today"){ const d=new Date(); STATE.studentMonth = new Date(d.getFullYear(), d.getMonth(), 1); renderStudents(); }
     else if(a === "student-month-mode"){ STATE.studentMonthMode = el.dataset.mode; renderStudents(); }
     else if(a === "open-edit-student"){ openEditStudentModal(el.dataset.id); }
+    else if(a === "logout"){ if(sbClient) sbClient.auth.signOut(); }
     else if(el.closest(".stat")){ /* handled by switch-tab above via data-action on the tile itself */ }
   });
 
@@ -1895,6 +1956,19 @@
 
   $("#modalBackdrop").addEventListener("click", e => { if(e.target.id === "modalBackdrop") closeModal(); });
   document.addEventListener("keydown", e => { if(e.key === "Escape") closeModal(); });
+
+  $("#loginForm").addEventListener("submit", async e => {
+    e.preventDefault();
+    if(!sbClient) return;
+    const fd = new FormData(e.target);
+    const email = String(fd.get("email")||"").trim();
+    const password = String(fd.get("password")||"");
+    const btn = e.target.querySelector('button[type="submit"]');
+    btn.disabled = true; btn.textContent = "Logging in…";
+    const { error } = await sbClient.auth.signInWithPassword({ email, password });
+    if(error) showLogin(error.message === "Invalid login credentials" ? "Wrong email or password." : error.message);
+    btn.disabled = false; btn.textContent = "Log in";
+  });
 
   /* ---------------- Go ---------------- */
   renderAll();
