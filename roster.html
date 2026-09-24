@@ -1,0 +1,476 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Kumon Hub — Student Roster</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700&family=Public+Sans:wght@400;500;600;700&display=swap">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  :root{
+    --bg:#F5F6FA; --surface:#FFFFFF; --surface-2:#FBFBFE; --border:#E1E4EB;
+    --ink:#1B1F27; --ink-muted:#636C7C; --ink-faint:#9AA1AF;
+    --accent:#3454D1; --accent-ink:#FFFFFF; --accent-soft:#E9EDFC; --accent-soft-ink:#2A41A8;
+    --good:#1E8E5A; --good-soft:#E4F5EC; --warn:#A6650F; --warn-soft:#FBF0D9; --bad:#C23B2B; --bad-soft:#FBE8E5;
+    --shadow: 0 1px 2px rgba(20,24,34,.04), 0 8px 24px -12px rgba(20,24,34,.18);
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#14161C; --surface:#1C1F27; --surface-2:#20232C; --border:#2C303B;
+      --ink:#EDEFF4; --ink-muted:#9BA3B2; --ink-faint:#6B7280;
+      --accent:#6C86F0; --accent-ink:#0E1220; --accent-soft:#232A47; --accent-soft-ink:#B7C3FA;
+      --good:#4FC48A; --good-soft:#173226; --warn:#E3A63D; --warn-soft:#3A2E12; --bad:#F0796A; --bad-soft:#3A1F1C;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#14161C; --surface:#1C1F27; --surface-2:#20232C; --border:#2C303B;
+    --ink:#EDEFF4; --ink-muted:#9BA3B2; --ink-faint:#6B7280;
+    --accent:#6C86F0; --accent-ink:#0E1220; --accent-soft:#232A47; --accent-soft-ink:#B7C3FA;
+    --good:#4FC48A; --good-soft:#173226; --warn:#E3A63D; --warn-soft:#3A2E12; --bad:#F0796A; --bad-soft:#3A1F1C;
+    color-scheme: dark;
+  }
+
+  *{box-sizing:border-box;}
+  body{
+    background:var(--bg); color:var(--ink); margin:0;
+    font-family:"Public Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  h1,h2,h3,.brand{ font-family:"Sora", system-ui, sans-serif; }
+  h1,h2,h3{ text-wrap:balance; margin:0; }
+  button{ font-family:inherit; }
+  a{ color:var(--accent); }
+
+  .app{ display:grid; grid-template-columns: 216px 1fr; min-height:100vh; min-height:100dvh; }
+  .rail{
+    background:var(--surface); border-right:1px solid var(--border);
+    padding:20px 12px; display:flex; flex-direction:column; gap:4px;
+    position:sticky; top:0; align-self:start; height:100vh; height:100dvh;
+  }
+  .brand{ font-weight:700; font-size:16px; padding:6px 10px 18px; display:flex; align-items:center; gap:8px; color:var(--ink); }
+  .brand .dot{ width:9px;height:9px;border-radius:50%;background:var(--accent); flex:none; }
+  .navbtn{
+    display:flex; align-items:center; gap:10px; padding:9px 10px; border-radius:9px;
+    border:none; background:transparent; color:var(--ink-muted); font-size:14px; font-weight:600;
+    cursor:pointer; text-align:left; width:100%; text-decoration:none;
+  }
+  .navbtn:hover{ background:var(--surface-2); color:var(--ink); }
+  .navbtn.active{ background:var(--accent-soft); color:var(--accent-soft-ink); }
+  .rail-pages{ display:flex; flex-direction:column; gap:4px; margin-bottom:8px; }
+  .rail-divider{ height:1px; background:var(--border); margin:4px 10px 10px; }
+  .rail-account{ padding:0 10px 10px; }
+  .account-row{ display:flex; align-items:center; justify-content:space-between; gap:8px; padding:8px 8px; border-top:1px solid var(--border); font-size:12px; color:var(--ink-muted); }
+  .account-email{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .rail-foot{ margin-top:auto; padding:10px; font-size:12px; color:var(--ink-faint); line-height:1.5; }
+
+  .main{ padding:26px 30px 60px; max-width:1100px; width:100%; }
+  .page-head{ display:flex; align-items:flex-end; justify-content:space-between; gap:16px; margin-bottom:18px; flex-wrap:wrap; }
+  .page-head h1{ font-size:22px; font-weight:700; }
+  .page-sub{ color:var(--ink-muted); font-size:13.5px; margin-top:4px; }
+
+  .btn{
+    display:inline-flex; align-items:center; gap:7px; padding:9px 14px; border-radius:9px;
+    font-size:13.5px; font-weight:600; border:1px solid var(--border); background:var(--surface);
+    color:var(--ink); cursor:pointer; white-space:nowrap;
+  }
+  .btn:hover{ background:var(--surface-2); }
+  .btn.primary{ background:var(--accent); color:var(--accent-ink); border-color:var(--accent); }
+  .btn.danger{ color:var(--bad); border-color:var(--bad-soft); }
+  .btn.danger:hover{ background:var(--bad-soft); }
+  .btn.ghost{ border-color:transparent; background:transparent; }
+  .btn.sm{ padding:6px 10px; font-size:12.5px; border-radius:7px; }
+  .btn:disabled{ opacity:.5; cursor:not-allowed; }
+
+  .card{ background:var(--surface); border:1px solid var(--border); border-radius:14px; margin-bottom:18px; }
+  .card-head{ display:flex; align-items:center; justify-content:space-between; padding:14px 16px; border-bottom:1px solid var(--border); gap:10px; flex-wrap:wrap; }
+  .card-head h3{ font-size:14.5px; font-weight:700; }
+  .empty{ padding:30px 16px; text-align:center; color:var(--ink-muted); font-size:13.5px; }
+
+  .search-row{ display:flex; gap:8px; margin-bottom:14px; flex-wrap:wrap; }
+  .search-row input, .search-row select{ font-size:13.5px; }
+  .table-scroll{ overflow-x:auto; }
+  .stable{ width:100%; border-collapse:collapse; }
+  .stable th{ text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--ink-muted); padding:8px 16px; border-bottom:1px solid var(--border); }
+  .stable td{ padding:10px 16px; border-bottom:1px solid var(--border); font-size:13px; vertical-align:middle; }
+  .stable tr:last-child td{ border-bottom:none; }
+  .stable tr.clickrow{ cursor:pointer; }
+  .stable tr.clickrow:hover{ background:var(--surface-2); }
+  .pill{ display:inline-flex; align-items:center; gap:5px; padding:3px 9px; border-radius:99px; font-size:11.5px; font-weight:700; white-space:nowrap; }
+  .pill.subj-math{ background:var(--accent-soft); color:var(--accent-soft-ink); }
+  .pill.subj-reading{ background:var(--warn-soft); color:var(--warn); }
+  .lvl{ font-variant-numeric:tabular-nums; font-weight:600; }
+  .lvl.empty-lvl{ color:var(--ink-faint); font-weight:500; }
+
+  select, input[type=text], input[type=number], input[type=email], input[type=password]{
+    font-family:inherit; font-size:13.5px; padding:8px 10px; border-radius:8px; border:1px solid var(--border);
+    background:var(--surface); color:var(--ink); width:100%;
+  }
+  select:focus, input:focus{ outline:2px solid var(--accent); outline-offset:1px; }
+  label.field{ display:flex; flex-direction:column; gap:5px; font-size:12.5px; font-weight:600; color:var(--ink-muted); }
+  .field-row{ display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+
+  .modal-backdrop{ position:fixed; inset:0; background:rgba(10,12,18,.5); display:flex; align-items:flex-start; justify-content:center; padding:5vh 16px; overflow-y:auto; z-index:50; }
+  .modal{ background:var(--surface); border-radius:16px; width:100%; max-width:460px; box-shadow:var(--shadow); }
+  .modal-head{ display:flex; align-items:center; justify-content:space-between; padding:16px 18px; border-bottom:1px solid var(--border); }
+  .modal-head h3{ font-size:15.5px; font-weight:700; }
+  .modal-body{ padding:16px 18px; display:flex; flex-direction:column; gap:12px; max-height:66vh; overflow-y:auto; }
+  .modal-foot{ display:flex; justify-content:space-between; gap:8px; padding:14px 18px; border-top:1px solid var(--border); }
+  .iconbtn{ border:none; background:transparent; cursor:pointer; color:var(--ink-muted); padding:4px; border-radius:6px; }
+  .iconbtn:hover{ background:var(--surface-2); color:var(--ink); }
+
+  .banner{ background:var(--warn-soft); color:var(--warn); border-radius:11px; padding:11px 14px; font-size:13px; font-weight:600; margin-bottom:16px; }
+  .banner.info{ background:var(--accent-soft); color:var(--accent-soft-ink); }
+
+  .login-screen{ position:fixed; inset:0; display:flex; align-items:center; justify-content:center; background:var(--bg); z-index:100; padding:20px; }
+  .login-card{ width:100%; max-width:360px; background:var(--surface); border:1px solid var(--border); border-radius:16px; padding:28px 26px; box-shadow:var(--shadow); display:flex; flex-direction:column; gap:14px; }
+  .login-brand{ font-family:"Sora", system-ui, sans-serif; font-weight:700; font-size:18px; display:flex; align-items:center; gap:8px; color:var(--ink); }
+  .login-brand .dot{ width:9px; height:9px; border-radius:50%; background:var(--accent); flex:none; }
+  .login-sub{ font-size:13px; color:var(--ink-muted); margin:-6px 0 4px; }
+  .login-error{ background:var(--bad-soft); color:var(--bad); border-radius:9px; padding:9px 12px; font-size:12.5px; font-weight:600; }
+
+  [hidden]{ display:none !important; }
+
+  @media (max-width: 860px){
+    .app{ grid-template-columns:1fr; }
+    .rail{ position:fixed; bottom:0; left:0; right:0; top:auto; height:auto; flex-direction:row; padding:8px; border-right:none; border-top:1px solid var(--border); z-index:40; }
+    .brand, .rail-foot, .rail-account{ display:none; }
+    .rail-pages{ flex-direction:row; flex:1; margin-bottom:0; }
+    .rail-divider{ display:none; }
+    .navbtn{ text-align:center; justify-content:center; }
+    .main{ padding:16px 14px calc(70px + env(safe-area-inset-bottom)); }
+    .stable th, .stable td{ padding:9px 8px; font-size:12.5px; }
+    .field-row{ grid-template-columns:1fr; }
+    .modal-backdrop{ padding:0; align-items:flex-end; }
+    .modal{ max-width:none; border-radius:16px 16px 0 0; max-height:92vh; }
+  }
+</style>
+</head>
+<body>
+
+<div class="login-screen" id="loginScreen">
+  <form class="login-card" id="loginForm">
+    <div class="login-brand"><span class="dot"></span>Kumon Hub</div>
+    <div class="login-sub">Sign in with your team account.</div>
+    <div class="login-error" id="loginError" hidden></div>
+    <label class="field">Email<input type="email" name="email" required autocomplete="username" autofocus></label>
+    <label class="field">Password<input type="password" name="password" required autocomplete="current-password"></label>
+    <button class="btn primary" type="submit" style="justify-content:center;">Log in</button>
+  </form>
+</div>
+
+<div class="app" id="appRoot" hidden>
+  <nav class="rail">
+    <div class="brand"><span class="dot"></span>Kumon Hub</div>
+    <div class="rail-pages">
+      <a class="navbtn" href="index.html">Pipeline</a>
+      <a class="navbtn active" href="roster.html">Student roster</a>
+      <a class="navbtn" href="admin.html" id="navAdminLink" hidden>Admin</a>
+    </div>
+    <div class="rail-divider"></div>
+    <div class="rail-account" id="railAccount"></div>
+    <div class="rail-foot">Curriculum levels and progress, per subject.</div>
+  </nav>
+
+  <main class="main">
+    <div class="page-head">
+      <div>
+        <h1>Student roster</h1>
+        <div class="page-sub">Current level and goal, per student, per subject.</div>
+      </div>
+      <div><button class="btn primary" data-action="open-new">+ Add enrollment</button></div>
+    </div>
+
+    <div class="search-row">
+      <input type="text" id="searchInput" placeholder="Search student…" style="max-width:220px;">
+      <select id="subjectFilter">
+        <option value="all">All subjects</option>
+        <option value="Math">Math</option>
+        <option value="Reading">Reading</option>
+      </select>
+      <select id="teacherFilter"><option value="all">All teachers</option></select>
+    </div>
+
+    <div class="card">
+      <div class="card-head"><h3>Enrollments</h3><span class="hint" id="enrollCount"></span></div>
+      <div class="table-scroll">
+        <table class="stable">
+          <thead><tr><th>Student</th><th>Subject</th><th>Teacher</th><th>Current level</th><th>Goal</th></tr></thead>
+          <tbody id="rosterBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+</div>
+
+<div class="modal-backdrop" id="modalBackdrop" hidden>
+  <div class="modal" id="modal"></div>
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  const SUPABASE_URL = "https://bcnmsryahczapnxbpkve.supabase.co";
+  const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJjbm1zcnlhaGN6YXBueGJwa3ZlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTAyMDQ4NzksImV4cCI6MjEwNTc4MDg3OX0.VgCX3CR7YCJxR9-vwD8HlYcCx0MxlY7atgD_0h3F3to";
+
+  const $ = (sel, el) => (el||document).querySelector(sel);
+  const $$ = (sel, el) => Array.from((el||document).querySelectorAll(sel));
+  function esc(s){ return String(s==null?"":s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+
+  const MATH_LEVELS = ["7A","6A","5A","4A","3A","2A","A","B","C","D","E","F","G","H","I","J","K","L","M","N","O"];
+  const READING_LEVELS = ["7A","6A","5A","4A","3A","2A","AI","AII","BI","BII","CI","CII","DI","DII","EI","EII","FI","FII","GI","GII","HI","HII","I-I","I-II","J","K","L","M","N","O"];
+  function levelsFor(subject){ return subject === "Reading" ? READING_LEVELS : MATH_LEVELS; }
+  function fmtLevel(level, page){
+    if(!level && !page) return `<span class="lvl empty-lvl">not yet recorded</span>`;
+    return `<span class="lvl">${esc(level||"")}${esc(page||"")}</span>`;
+  }
+
+  let sbClient = null, currentUser = null, currentRole = null;
+  let students = [], trainers = [], enrollments = [];
+  let filters = { search:"", subject:"all", teacher:"all" };
+  let editingId = null;
+
+  function showLogin(errMsg){
+    $("#loginScreen").hidden = false;
+    $("#appRoot").hidden = true;
+    const err = $("#loginError");
+    if(errMsg){ err.textContent = errMsg; err.hidden = false; } else { err.hidden = true; }
+  }
+  function showApp(){ $("#loginScreen").hidden = true; $("#appRoot").hidden = false; }
+  function renderAccount(){
+    const el = $("#railAccount");
+    if(el) el.innerHTML = currentUser ? `<div class="account-row"><span class="account-email">${esc(currentUser.email)}</span><button class="btn sm ghost" data-action="logout">Log out</button></div>` : "";
+    const adminLink = $("#navAdminLink");
+    if(adminLink) adminLink.hidden = currentRole !== "superadmin";
+  }
+
+  async function loadRole(){
+    if(!sbClient || !currentUser){ currentRole = null; return; }
+    try{
+      const { data, error } = await sbClient.from("profiles").select("role").eq("id", currentUser.id).maybeSingle();
+      if(error) throw error;
+      currentRole = data ? data.role : "admin";
+    }catch(e){ console.warn("couldn't load role", e); currentRole = "admin"; }
+  }
+
+  async function boot(){
+    if(!window.supabase){ showLogin("Couldn't load Supabase."); return; }
+    try{ sbClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY); }
+    catch(e){ showLogin("Couldn't connect to Supabase."); return; }
+
+    const { data:{ session } } = await sbClient.auth.getSession();
+    if(session){ currentUser = session.user; showApp(); await loadRole(); renderAccount(); startApp(); }
+    else{ showLogin(); }
+
+    sbClient.auth.onAuthStateChange(async (event, session)=>{
+      if(session){
+        currentUser = session.user;
+        showApp(); await loadRole(); renderAccount(); startApp();
+      }else{
+        currentUser = null; currentRole = null;
+        showLogin();
+      }
+    });
+  }
+
+  let started = false;
+  async function startApp(){
+    if(started) return;
+    started = true;
+    await Promise.all([loadStudents(), loadSettings(), loadEnrollments()]);
+    populateTeacherFilter();
+    render();
+
+    sbClient.channel("realtime:subject_enrollments")
+      .on("postgres_changes", { event:"*", schema:"public", table:"subject_enrollments" }, async ()=>{ await loadEnrollments(); render(); })
+      .subscribe();
+  }
+
+  async function loadStudents(){
+    const { data, error } = await sbClient.from("students").select("id,name").order("name");
+    if(error){ console.warn(error); students = []; return; }
+    students = data || [];
+  }
+  async function loadSettings(){
+    const { data } = await sbClient.from("settings").select("value").eq("id","staff").maybeSingle();
+    const v = data ? data.value : {};
+    trainers = Array.isArray(v.trainers) ? v.trainers : [];
+  }
+  async function loadEnrollments(){
+    const { data, error } = await sbClient.from("subject_enrollments").select("*").order("student_name");
+    if(error){ console.warn(error); enrollments = []; return; }
+    enrollments = data || [];
+  }
+
+  function populateTeacherFilter(){
+    const sel = $("#teacherFilter");
+    sel.innerHTML = `<option value="all">All teachers</option>` + trainers.map(t=>`<option value="${esc(t)}">${esc(t)}</option>`).join("");
+  }
+
+  function filtered(){
+    return enrollments.filter(e=>{
+      if(filters.subject !== "all" && e.subject !== filters.subject) return false;
+      if(filters.teacher !== "all" && e.teacher !== filters.teacher) return false;
+      if(filters.search && !(e.student_name||"").toLowerCase().includes(filters.search.toLowerCase())) return false;
+      return true;
+    });
+  }
+
+  function render(){
+    const rows = filtered();
+    $("#enrollCount").textContent = rows.length + (rows.length===1 ? " enrollment" : " enrollments");
+    const body = $("#rosterBody");
+    if(rows.length === 0){
+      body.innerHTML = `<tr><td colspan="5"><div class="empty">${enrollments.length===0 ? "No enrollments yet — add your first one." : "Nothing matches your filters."}</div></td></tr>`;
+      return;
+    }
+    body.innerHTML = rows.map(e => `
+      <tr class="clickrow" data-action="edit" data-id="${e.id}">
+        <td>${esc(e.student_name)}</td>
+        <td><span class="pill ${e.subject==='Math'?'subj-math':'subj-reading'}">${esc(e.subject)}</span></td>
+        <td>${esc(e.teacher||"—")}</td>
+        <td>${fmtLevel(e.current_level, e.current_page)}</td>
+        <td>${fmtLevel(e.goal_level, e.goal_page)}</td>
+      </tr>
+    `).join("");
+  }
+
+  function levelOptions(subject, selected){
+    return `<option value="">—</option>` + levelsFor(subject).map(l=>`<option value="${l}" ${l===selected?"selected":""}>${l}</option>`).join("");
+  }
+
+  function studentOptions(selectedId){
+    return `<option value="">Choose a student…</option>` + students.map(s=>`<option value="${s.id}" ${s.id===selectedId?"selected":""}>${esc(s.name)}</option>`).join("");
+  }
+  function teacherOptions(selected){
+    return `<option value="">—</option>` + trainers.map(t=>`<option value="${esc(t)}" ${t===selected?"selected":""}>${esc(t)}</option>`).join("");
+  }
+
+  function openModal(enrollment){
+    editingId = enrollment ? enrollment.id : null;
+    const subject = enrollment ? enrollment.subject : "Math";
+    $("#modal").innerHTML = `
+      <div class="modal-head"><h3>${enrollment ? "Edit enrollment" : "Add enrollment"}</h3><button class="iconbtn" data-action="close-modal">✕</button></div>
+      <form id="enrollForm">
+        <div class="modal-body">
+          <label class="field">Student
+            <select name="student_id" ${enrollment ? "disabled" : "required"}>${studentOptions(enrollment ? enrollment.student_id : null)}</select>
+          </label>
+          <label class="field">Subject
+            <select name="subject" data-action="subject-change" ${enrollment ? "disabled" : ""}>
+              <option value="Math" ${subject==="Math"?"selected":""}>Math</option>
+              <option value="Reading" ${subject==="Reading"?"selected":""}>Reading</option>
+            </select>
+          </label>
+          <label class="field">Teacher<select name="teacher">${teacherOptions(enrollment ? enrollment.teacher : null)}</select></label>
+          <div class="field-row">
+            <label class="field">Current level<select name="current_level" id="curLevelSelect">${levelOptions(subject, enrollment ? enrollment.current_level : null)}</select></label>
+            <label class="field">Current page<input type="text" name="current_page" value="${enrollment ? esc(enrollment.current_page||"") : ""}" placeholder="e.g. 130"></label>
+          </div>
+          <div class="field-row">
+            <label class="field">Goal level<select name="goal_level" id="goalLevelSelect">${levelOptions(subject, enrollment ? enrollment.goal_level : null)}</select></label>
+            <label class="field">Goal page<input type="text" name="goal_page" value="${enrollment ? esc(enrollment.goal_page||"") : ""}" placeholder="e.g. 180"></label>
+          </div>
+        </div>
+        <div class="modal-foot">
+          <div>${enrollment ? `<button type="button" class="btn danger" data-action="delete-enrollment" data-id="${enrollment.id}">Delete</button>` : ""}</div>
+          <div style="display:flex; gap:8px;">
+            <button type="button" class="btn ghost" data-action="close-modal">Cancel</button>
+            <button type="submit" class="btn primary">Save</button>
+          </div>
+        </div>
+      </form>
+    `;
+    $("#modalBackdrop").hidden = false;
+  }
+  function closeModal(){ $("#modalBackdrop").hidden = true; $("#modal").innerHTML = ""; editingId = null; }
+
+  document.addEventListener("submit", async (e)=>{
+    if(e.target.id === "loginForm"){
+      e.preventDefault();
+      const fd = new FormData(e.target);
+      const { error } = await sbClient.auth.signInWithPassword({ email: fd.get("email"), password: fd.get("password") });
+      if(error) showLogin(error.message);
+      return;
+    }
+    if(e.target.id === "enrollForm"){
+      e.preventDefault();
+      const fd = new FormData(e.target);
+      if(editingId){
+        const patch = {
+          teacher: fd.get("teacher") || null,
+          current_level: fd.get("current_level") || null,
+          current_page: fd.get("current_page") || null,
+          goal_level: fd.get("goal_level") || null,
+          goal_page: fd.get("goal_page") || null,
+          updated_at: new Date().toISOString()
+        };
+        const { error } = await sbClient.from("subject_enrollments").update(patch).eq("id", editingId);
+        if(error){ alert("Couldn't save: " + error.message); return; }
+      }else{
+        const studentId = fd.get("student_id");
+        const student = students.find(s => s.id === studentId);
+        if(!studentId || !student){ alert("Pick a student first."); return; }
+        const payload = {
+          student_id: studentId,
+          student_name: student.name,
+          subject: fd.get("subject"),
+          teacher: fd.get("teacher") || null,
+          current_level: fd.get("current_level") || null,
+          current_page: fd.get("current_page") || null,
+          goal_level: fd.get("goal_level") || null,
+          goal_page: fd.get("goal_page") || null
+        };
+        const { error } = await sbClient.from("subject_enrollments").insert(payload);
+        if(error){ alert("Couldn't save: " + error.message); return; }
+      }
+      closeModal();
+      await loadEnrollments(); render();
+    }
+  });
+
+  document.addEventListener("change", (e)=>{
+    if(e.target.dataset && e.target.dataset.action === "subject-change"){
+      const subject = e.target.value;
+      const cur = $("#curLevelSelect"), goal = $("#goalLevelSelect");
+      if(cur) cur.innerHTML = levelOptions(subject, null);
+      if(goal) goal.innerHTML = levelOptions(subject, null);
+    }
+    if(e.target.id === "searchInput"){ filters.search = e.target.value; render(); }
+    if(e.target.id === "subjectFilter"){ filters.subject = e.target.value; render(); }
+    if(e.target.id === "teacherFilter"){ filters.teacher = e.target.value; render(); }
+  });
+
+  document.addEventListener("input", (e)=>{
+    if(e.target.id === "searchInput"){ filters.search = e.target.value; render(); }
+  });
+
+  document.addEventListener("click", async (e)=>{
+    const btn = e.target.closest("[data-action]");
+    if(!btn) return;
+    const action = btn.dataset.action;
+    if(action === "logout"){ await sbClient.auth.signOut(); }
+    else if(action === "open-new"){ openModal(null); }
+    else if(action === "edit"){
+      const id = btn.dataset.id;
+      const en = enrollments.find(x => x.id === id);
+      if(en) openModal(en);
+    }
+    else if(action === "close-modal"){ closeModal(); }
+    else if(action === "delete-enrollment"){
+      const id = btn.dataset.id;
+      if(!confirm("Delete this enrollment? This can't be undone.")) return;
+      const { error } = await sbClient.from("subject_enrollments").delete().eq("id", id);
+      if(error){ alert("Couldn't delete: " + error.message); return; }
+      closeModal();
+      await loadEnrollments(); render();
+    }
+  });
+
+  boot();
+})();
+</script>
+</body>
+</html>
