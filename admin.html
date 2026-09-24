@@ -4,14 +4,14 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Kumon Hub — Admin</title>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700&family=Public+Sans:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700&family=Inter:wght@400;500;600;700;800&display=swap">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
   :root{
     --bg:#F5F6FA; --surface:#FFFFFF; --surface-2:#FBFBFE; --border:#E1E4EB;
     --ink:#1B1F27; --ink-muted:#636C7C; --ink-faint:#9AA1AF;
-    --accent:#3454D1; --accent-ink:#FFFFFF; --accent-soft:#E9EDFC; --accent-soft-ink:#2A41A8;
-    --good:#1E8E5A; --good-soft:#E4F5EC; --warn:#A6650F; --warn-soft:#FBF0D9; --bad:#C23B2B; --bad-soft:#FBE8E5;
+    --accent:#0057FF; --accent-ink:#FFFFFF; --accent-soft:#E2EBFF; --accent-soft-ink:#0041C7;
+    --good:#1E8E5A; --good-soft:#E4F5EC; --warn:#D63F1F; --warn-soft:#FBE0D6; --bad:#D63F1F; --bad-soft:#FBE0D6;
     --shadow: 0 1px 2px rgba(20,24,34,.04), 0 8px 24px -12px rgba(20,24,34,.18);
     color-scheme: light;
   }
@@ -19,23 +19,23 @@
     :root:not([data-theme="light"]){
       --bg:#14161C; --surface:#1C1F27; --surface-2:#20232C; --border:#2C303B;
       --ink:#EDEFF4; --ink-muted:#9BA3B2; --ink-faint:#6B7280;
-      --accent:#6C86F0; --accent-ink:#0E1220; --accent-soft:#232A47; --accent-soft-ink:#B7C3FA;
-      --good:#4FC48A; --good-soft:#173226; --warn:#E3A63D; --warn-soft:#3A2E12; --bad:#F0796A; --bad-soft:#3A1F1C;
+      --accent:#5B8FFF; --accent-ink:#0E1220; --accent-soft:#1C2A4D; --accent-soft-ink:#B9CDFF;
+      --good:#4FC48A; --good-soft:#173226; --warn:#FF7A56; --warn-soft:#3A1F16; --bad:#FF7A56; --bad-soft:#3A1F16;
       color-scheme: dark;
     }
   }
   :root[data-theme="dark"]{
     --bg:#14161C; --surface:#1C1F27; --surface-2:#20232C; --border:#2C303B;
     --ink:#EDEFF4; --ink-muted:#9BA3B2; --ink-faint:#6B7280;
-    --accent:#6C86F0; --accent-ink:#0E1220; --accent-soft:#232A47; --accent-soft-ink:#B7C3FA;
-    --good:#4FC48A; --good-soft:#173226; --warn:#E3A63D; --warn-soft:#3A2E12; --bad:#F0796A; --bad-soft:#3A1F1C;
+    --accent:#5B8FFF; --accent-ink:#0E1220; --accent-soft:#1C2A4D; --accent-soft-ink:#B9CDFF;
+    --good:#4FC48A; --good-soft:#173226; --warn:#FF7A56; --warn-soft:#3A1F16; --bad:#FF7A56; --bad-soft:#3A1F16;
     color-scheme: dark;
   }
 
   *{box-sizing:border-box;}
   body{
     background:var(--bg); color:var(--ink); margin:0;
-    font-family:"Public Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+    font-family:"Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
     -webkit-font-smoothing:antialiased;
   }
   h1,h2,h3,.brand{ font-family:"Sora", system-ui, sans-serif; }
@@ -264,7 +264,7 @@
   }
 
   function teacherNameCell(p){
-    if(p.role !== "teacher") return "";
+    if(p.role !== "teacher" && p.role !== "trainer_teacher") return "";
     return `<input type="text" class="teacher-name-select" data-action="change-teacher-name" data-id="${p.id}"
       list="trainerNamesListInline" autocomplete="off" value="${esc(p.teacher_name||"")}" placeholder="Type a name…" style="max-width:160px;">`;
   }
@@ -301,6 +301,7 @@
                       <option value="admin" ${p.role==="admin"?"selected":""}>Admin</option>
                       <option value="superadmin" ${p.role==="superadmin"?"selected":""}>Superadmin</option>
                       <option value="teacher" ${p.role==="teacher"?"selected":""}>Teacher</option>
+                      <option value="trainer_teacher" ${p.role==="trainer_teacher"?"selected":""}>Trainer + Teacher</option>
                     </select>
                   </td>
                   <td>${teacherNameCell(p)}</td>
@@ -337,6 +338,7 @@
             <select name="role" data-action="new-login-role">
               <option value="admin" selected>Admin</option>
               <option value="teacher">Teacher</option>
+              <option value="trainer_teacher">Trainer + Teacher</option>
               <option value="superadmin">Superadmin</option>
             </select>
           </label>
@@ -345,7 +347,7 @@
               <input type="text" name="teacher_name" list="trainerNamesList" autocomplete="off" placeholder="Type their name — pick an existing one, or add new">
               <datalist id="trainerNamesList">${trainers.map(t=>`<option value="${esc(t)}">`).join("")}</datalist>
             </label>
-            <div class="hint">Not on the list yet? Just type their name — it'll be added to Trainers (Pipeline → Settings) automatically.</div>
+            <div class="hint" id="newLoginTeacherHint">Not on the list yet? Just type their name — it'll be added to Trainers (Pipeline → Settings) automatically.</div>
           </div>
           <div id="newLoginError" class="login-error" hidden></div>
         </div>
@@ -375,7 +377,7 @@
       const teacherName = fd.get("teacher_name") ? fd.get("teacher_name").toString().trim() : "";
       const errBox = $("#newLoginError");
       errBox.hidden = true;
-      if(role === "teacher" && !teacherName){
+      if((role === "teacher" || role === "trainer_teacher") && !teacherName){
         errBox.textContent = "Type or pick which teacher this is.";
         errBox.hidden = false;
         return;
@@ -392,11 +394,11 @@
         // New signups default to "pending" (no access) until someone sets a real role —
         // always patch it here, even to "admin", so a login made through this form is
         // never left stuck pending.
-        const patch = { role, teacher_name: role === "teacher" ? teacherName : null };
+        const patch = { role, teacher_name: (role === "teacher" || role === "trainer_teacher") ? teacherName : null };
         // The trigger that creates their profile row runs the instant signUp() is called
         // (before they've even confirmed their email), so this update is safe right away.
         await sbClient.from("profiles").update(patch).eq("id", newId);
-        if(role === "teacher") await ensureTrainer(teacherName);
+        if(role === "teacher" || role === "trainer_teacher") await ensureTrainer(teacherName);
       }
       closeModal();
       [profiles, trainers] = await Promise.all([loadProfiles(), loadTrainers()]);
@@ -416,7 +418,7 @@
   document.addEventListener("change", async (e)=>{
     if(e.target.dataset && e.target.dataset.action === "new-login-role"){
       const box = $("#newLoginTeacherField");
-      if(box) box.hidden = e.target.value !== "teacher";
+      if(box) box.hidden = !(e.target.value === "teacher" || e.target.value === "trainer_teacher");
     }
     if(e.target.dataset && e.target.dataset.action === "change-role"){
       const id = e.target.dataset.id;
