@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Kumon Hub — Admin</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700&family=Public+Sans:wght@400;500;600;700&display=swap">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  :root{
+    --bg:#F5F6FA; --surface:#FFFFFF; --surface-2:#FBFBFE; --border:#E1E4EB;
+    --ink:#1B1F27; --ink-muted:#636C7C; --ink-faint:#9AA1AF;
+    --accent:#3454D1; --accent-ink:#FFFFFF; --accent-soft:#E9EDFC; --accent-soft-ink:#2A41A8;
+    --good:#1E8E5A; --good-soft:#E4F5EC; --warn:#A6650F; --warn-soft:#FBF0D9; --bad:#C23B2B; --bad-soft:#FBE8E5;
+    --shadow: 0 1px 2px rgba(20,24,34,.04), 0 8px 24px -12px rgba(20,24,34,.18);
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#14161C; --surface:#1C1F27; --surface-2:#20232C; --border:#2C303B;
+      --ink:#EDEFF4; --ink-muted:#9BA3B2; --ink-faint:#6B7280;
+      --accent:#6C86F0; --accent-ink:#0E1220; --accent-soft:#232A47; --accent-soft-ink:#B7C3FA;
+      --good:#4FC48A; --good-soft:#173226; --warn:#E3A63D; --warn-soft:#3A2E12; --bad:#F0796A; --bad-soft:#3A1F1C;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#14161C; --surface:#1C1F27; --surface-2:#20232C; --border:#2C303B;
+    --ink:#EDEFF4; --ink-muted:#9BA3B2; --ink-faint:#6B7280;
+    --accent:#6C86F0; --accent-ink:#0E1220; --accent-soft:#232A47; --accent-soft-ink:#B7C3FA;
+    --good:#4FC48A; --good-soft:#173226; --warn:#E3A63D; --warn-soft:#3A2E12; --bad:#F0796A; --bad-soft:#3A1F1C;
+    color-scheme: dark;
+  }
+
+  *{box-sizing:border-box;}
+  body{
+    background:var(--bg); color:var(--ink); margin:0;
+    font-family:"Public Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  h1,h2,h3,.brand{ font-family:"Sora", system-ui, sans-serif; }
+  h1,h2,h3{ text-wrap:balance; margin:0; }
+  button{ font-family:inherit; }
+  a{ color:var(--accent); }
+
+  .app{ display:grid; grid-template-columns: 216px 1fr; min-height:100vh; min-height:100dvh; }
+  .rail{
+    background:var(--surface); border-right:1px solid var(--border);
+    padding:20px 12px; display:flex; flex-direction:column; gap:4px;
+    position:sticky; top:0; align-self:start; height:100vh; height:100dvh;
+  }
+  .brand{ font-weight:700; font-size:16px; padding:6px 10px 18px; display:flex; align-items:center; gap:8px; color:var(--ink); }
+  .brand .dot{ width:9px;height:9px;border-radius:50%;background:var(--accent); flex:none; }
+  .navbtn{
+    display:flex; align-items:center; gap:10px; padding:9px 10px; border-radius:9px;
+    border:none; background:transparent; color:var(--ink-muted); font-size:14px; font-weight:600;
+    cursor:pointer; text-align:left; width:100%; text-decoration:none;
+  }
+  .navbtn:hover{ background:var(--surface-2); color:var(--ink); }
+  .navbtn.active{ background:var(--accent-soft); color:var(--accent-soft-ink); }
+  .rail-pages{ display:flex; flex-direction:column; gap:4px; margin-bottom:8px; }
+  .rail-divider{ height:1px; background:var(--border); margin:4px 10px 10px; }
+  .rail-account{ padding:0 10px 10px; }
+  .account-row{ display:flex; align-items:center; justify-content:space-between; gap:8px; padding:8px 8px; border-top:1px solid var(--border); font-size:12px; color:var(--ink-muted); }
+  .account-email{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .rail-foot{ margin-top:auto; padding:10px; font-size:12px; color:var(--ink-faint); line-height:1.5; }
+
+  .main{ padding:26px 30px 60px; max-width:900px; width:100%; }
+  .page-head{ margin-bottom:18px; }
+  .page-head h1{ font-size:22px; font-weight:700; }
+  .page-sub{ color:var(--ink-muted); font-size:13.5px; margin-top:4px; }
+
+  .btn{
+    display:inline-flex; align-items:center; gap:7px; padding:9px 14px; border-radius:9px;
+    font-size:13.5px; font-weight:600; border:1px solid var(--border); background:var(--surface);
+    color:var(--ink); cursor:pointer; white-space:nowrap;
+  }
+  .btn:hover{ background:var(--surface-2); }
+  .btn.primary{ background:var(--accent); color:var(--accent-ink); border-color:var(--accent); }
+  .btn.ghost{ border-color:transparent; background:transparent; }
+  .btn.sm{ padding:6px 10px; font-size:12.5px; border-radius:7px; }
+
+  .card{ background:var(--surface); border:1px solid var(--border); border-radius:14px; margin-bottom:18px; }
+  .card-head{ display:flex; align-items:center; justify-content:space-between; padding:14px 16px; border-bottom:1px solid var(--border); gap:10px; flex-wrap:wrap; }
+  .card-head h3{ font-size:14.5px; font-weight:700; }
+  .empty{ padding:30px 16px; text-align:center; color:var(--ink-muted); font-size:13.5px; }
+
+  .table-scroll{ overflow-x:auto; }
+  .stable{ width:100%; border-collapse:collapse; }
+  .stable th{ text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--ink-muted); padding:8px 16px; border-bottom:1px solid var(--border); }
+  .stable td{ padding:10px 16px; border-bottom:1px solid var(--border); font-size:13px; vertical-align:middle; }
+  .stable tr:last-child td{ border-bottom:none; }
+  .pill{ display:inline-flex; align-items:center; gap:5px; padding:3px 9px; border-radius:99px; font-size:11.5px; font-weight:700; white-space:nowrap; }
+  .pill.super{ background:var(--accent-soft); color:var(--accent-soft-ink); }
+  .pill.admin{ background:var(--surface-2); color:var(--ink-muted); }
+  .role-select{ font-family:inherit; font-size:12.5px; padding:6px 8px; border-radius:7px; border:1px solid var(--border); background:var(--surface); color:var(--ink); }
+  .you-tag{ font-size:11px; color:var(--ink-faint); font-weight:600; }
+
+  select, input[type=email], input[type=password]{
+    font-family:inherit; font-size:13.5px; padding:8px 10px; border-radius:8px; border:1px solid var(--border);
+    background:var(--surface); color:var(--ink); width:100%;
+  }
+  select:focus, input:focus{ outline:2px solid var(--accent); outline-offset:1px; }
+  label.field{ display:flex; flex-direction:column; gap:5px; font-size:12.5px; font-weight:600; color:var(--ink-muted); }
+
+  .banner{ background:var(--warn-soft); color:var(--warn); border-radius:11px; padding:11px 14px; font-size:13px; font-weight:600; margin-bottom:16px; }
+  .banner.info{ background:var(--accent-soft); color:var(--accent-soft-ink); }
+
+  .login-screen{ position:fixed; inset:0; display:flex; align-items:center; justify-content:center; background:var(--bg); z-index:100; padding:20px; }
+  .login-card{ width:100%; max-width:360px; background:var(--surface); border:1px solid var(--border); border-radius:16px; padding:28px 26px; box-shadow:var(--shadow); display:flex; flex-direction:column; gap:14px; }
+  .login-brand{ font-family:"Sora", system-ui, sans-serif; font-weight:700; font-size:18px; display:flex; align-items:center; gap:8px; color:var(--ink); }
+  .login-brand .dot{ width:9px; height:9px; border-radius:50%; background:var(--accent); flex:none; }
+  .login-sub{ font-size:13px; color:var(--ink-muted); margin:-6px 0 4px; }
+  .login-error{ background:var(--bad-soft); color:var(--bad); border-radius:9px; padding:9px 12px; font-size:12.5px; font-weight:600; }
+  .link-btn{ background:none; border:none; color:var(--accent); font-size:12.5px; font-weight:600; cursor:pointer; padding:2px; align-self:center; }
+  .link-btn:hover{ text-decoration:underline; }
+
+  [hidden]{ display:none !important; }
+
+  @media (max-width: 860px){
+    .app{ grid-template-columns:1fr; }
+    .rail{ position:fixed; bottom:0; left:0; right:0; top:auto; height:auto; flex-direction:row; padding:8px; border-right:none; border-top:1px solid var(--border); z-index:40; }
+    .brand, .rail-foot, .rail-account{ display:none; }
+    .rail-pages{ flex-direction:row; flex:1; margin-bottom:0; }
+    .rail-divider{ display:none; }
+    .navbtn{ text-align:center; justify-content:center; }
+    .main{ padding:16px 14px calc(70px + env(safe-area-inset-bottom)); }
+    .stable th, .stable td{ padding:9px 8px; font-size:12.5px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="login-screen" id="loginScreen">
+  <form class="login-card" id="loginForm">
+    <div class="login-brand"><span class="dot"></span>Kumon Hub</div>
+    <div class="login-sub">Sign in with your team account.</div>
+    <div class="login-error" id="loginError" hidden></div>
+    <label class="field">Email<input type="email" name="email" required autocomplete="username" autofocus></label>
+    <label class="field">Password<input type="password" name="password" required autocomplete="current-password"></label>
+    <button class="btn primary" type="submit" style="justify-content:center;">Log in</button>
+  </form>
+</div>
+
+<div class="app" id="appRoot" hidden>
+  <nav class="rail">
+    <div class="brand"><span class="dot"></span>Kumon Hub</div>
+    <div class="rail-pages">
+      <a class="navbtn" href="index.html">Pipeline</a>
+      <a class="navbtn active" href="admin.html">Admin</a>
+    </div>
+    <div class="rail-divider"></div>
+    <div class="rail-account" id="railAccount"></div>
+    <div class="rail-foot">Team accounts and access.</div>
+  </nav>
+
+  <main class="main">
+    <div class="page-head">
+      <h1>Admin</h1>
+      <div class="page-sub">Who has access, and what they can do.</div>
+    </div>
+
+    <div id="adminBody"></div>
+  </main>
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  const SUPABASE_URL = "https://bcnmsryahczapnxbpkve.supabase.co";
+  const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJjbm1zcnlhaGN6YXBueGJwa3ZlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTAyMDQ4NzksImV4cCI6MjEwNTc4MDg3OX0.VgCX3CR7YCJxR9-vwD8HlYcCx0MxlY7atgD_0h3F3to";
+
+  const $ = (sel, el) => (el||document).querySelector(sel);
+  function esc(s){ return String(s==null?"":s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+
+  let sbClient = null, currentUser = null, currentRole = null, profiles = [];
+
+  function showLogin(errMsg){
+    $("#loginScreen").hidden = false;
+    $("#appRoot").hidden = true;
+    const err = $("#loginError");
+    if(errMsg){ err.textContent = errMsg; err.hidden = false; } else { err.hidden = true; }
+  }
+  function showApp(){ $("#loginScreen").hidden = true; $("#appRoot").hidden = false; }
+  function renderAccount(){
+    const el = $("#railAccount");
+    if(el) el.innerHTML = currentUser ? `<div class="account-row"><span class="account-email">${esc(currentUser.email)}</span><button class="btn sm ghost" data-action="logout">Log out</button></div>` : "";
+  }
+
+  async function loadRole(){
+    if(!sbClient || !currentUser){ currentRole = null; return; }
+    try{
+      const { data, error } = await sbClient.from("profiles").select("role").eq("id", currentUser.id).maybeSingle();
+      if(error) throw error;
+      currentRole = data ? data.role : "admin";
+    }catch(e){
+      console.warn("couldn't load role", e);
+      currentRole = "admin";
+    }
+  }
+
+  async function boot(){
+    if(!window.supabase){ showLogin("Couldn't load Supabase."); return; }
+    try{ sbClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY); }
+    catch(e){ showLogin("Couldn't connect to Supabase."); return; }
+
+    const { data:{ session } } = await sbClient.auth.getSession();
+    if(session){ currentUser = session.user; showApp(); await loadRole(); renderAccount(); renderAdmin(); }
+    else{ showLogin(); }
+
+    sbClient.auth.onAuthStateChange(async (event, session)=>{
+      if(session){
+        currentUser = session.user;
+        showApp(); await loadRole(); renderAccount(); renderAdmin();
+      }else{
+        currentUser = null; currentRole = null;
+        showLogin();
+      }
+    });
+  }
+
+  async function loadProfiles(){
+    const { data, error } = await sbClient.from("profiles").select("*").order("email");
+    if(error){ console.warn(error); return []; }
+    return data;
+  }
+
+  async function renderAdmin(){
+    const body = $("#adminBody");
+    if(currentRole !== "superadmin"){
+      body.innerHTML = `<div class="banner">Your account (${esc(currentUser.email)}) doesn't have superadmin access, so there's nothing to manage here. If that's wrong, ask another superadmin to update your role.</div>`;
+      return;
+    }
+    body.innerHTML = `<div class="empty">Loading…</div>`;
+    profiles = await loadProfiles();
+    body.innerHTML = `
+      <div class="banner info">To add someone new: create their login in Supabase (Authentication → Users → Add User, with Auto Confirm checked). They'll appear in the list below automatically — set their role here.</div>
+      <div class="card">
+        <div class="card-head"><h3>Team accounts</h3><span class="hint">${profiles.length}</span></div>
+        <div class="table-scroll">
+          <table class="stable">
+            <thead><tr><th>Email</th><th>Role</th><th></th></tr></thead>
+            <tbody>
+              ${profiles.map(p => `
+                <tr>
+                  <td>${esc(p.email || p.id)}</td>
+                  <td>
+                    <select class="role-select" data-action="change-role" data-id="${p.id}">
+                      <option value="admin" ${p.role==="admin"?"selected":""}>Admin</option>
+                      <option value="superadmin" ${p.role==="superadmin"?"selected":""}>Superadmin</option>
+                    </select>
+                  </td>
+                  <td>${p.id === currentUser.id ? `<span class="you-tag">that's you</span>` : ""}</td>
+                </tr>
+              `).join("")}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    `;
+  }
+
+  document.addEventListener("submit", async (e)=>{
+    if(e.target.id === "loginForm"){
+      e.preventDefault();
+      const fd = new FormData(e.target);
+      const { error } = await sbClient.auth.signInWithPassword({ email: fd.get("email"), password: fd.get("password") });
+      if(error){ showLogin(error.message); }
+    }
+  });
+
+  document.addEventListener("click", async (e)=>{
+    const btn = e.target.closest("[data-action]");
+    if(!btn) return;
+    if(btn.dataset.action === "logout"){ await sbClient.auth.signOut(); }
+  });
+
+  document.addEventListener("change", async (e)=>{
+    if(e.target.dataset && e.target.dataset.action === "change-role"){
+      const id = e.target.dataset.id;
+      const role = e.target.value;
+      const isSelf = id === currentUser.id && role !== "superadmin";
+      if(isSelf && !confirm("This removes your own superadmin access. Continue?")) {
+        e.target.value = "superadmin";
+        return;
+      }
+      const { error } = await sbClient.from("profiles").update({ role }).eq("id", id);
+      if(error){ alert("Couldn't update that role: " + error.message); e.target.value = e.target.value === "admin" ? "superadmin" : "admin"; }
+      else if(isSelf){ await loadRole(); renderAdmin(); }
+    }
+  });
+
+  boot();
+})();
+</script>
+</body>
+</html>

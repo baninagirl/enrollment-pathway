@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Enrollment Pathway</title>
+<title>Kumon Hub — Pipeline</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700&family=Public+Sans:wght@400;500;600;700&display=swap">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
@@ -269,6 +269,13 @@
   .account-row{ display:flex; align-items:center; justify-content:space-between; gap:8px; padding:8px 8px; border-top:1px solid var(--border); font-size:12px; color:var(--ink-muted); }
   .account-email{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 
+  /* Top-level app nav (Pipeline / Roster / Payments / Admin) — separate from the
+     within-Pipeline tabs below it. Plain links, not JS tab-switches, since each is
+     its own page. */
+  .navbtn{ text-decoration:none; }
+  .rail-pages{ display:flex; flex-direction:column; gap:4px; margin-bottom:8px; }
+  .rail-divider{ height:1px; background:var(--border); margin:4px 10px 10px; }
+
   [hidden]{ display:none !important; }
 
   @media (max-width: 860px){
@@ -307,7 +314,7 @@
 
 <div class="login-screen" id="loginScreen">
   <form class="login-card" id="loginForm">
-    <div class="login-brand"><span class="dot"></span>Enrollment Pathway</div>
+    <div class="login-brand"><span class="dot"></span>Kumon Hub</div>
     <div class="login-sub">Sign in to view your team's schedule.</div>
     <div class="login-error" id="loginError" hidden></div>
     <label class="field">Email<input type="email" name="email" required autocomplete="username" autofocus></label>
@@ -338,7 +345,12 @@
 
 <div class="app" id="appRoot" hidden>
   <nav class="rail">
-    <div class="brand"><span class="dot"></span>Enrollment Pathway</div>
+    <div class="brand"><span class="dot"></span>Kumon Hub</div>
+    <div class="rail-pages">
+      <a class="navbtn active" href="index.html">Pipeline</a>
+      <a class="navbtn" href="admin.html" id="navAdminLink" hidden>Admin</a>
+    </div>
+    <div class="rail-divider"></div>
     <button class="navbtn active" data-action="switch-tab" data-tab="calendar">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>
       Calendar
@@ -537,7 +549,22 @@
   const INQUIRY_OPTIONS = ["Facebook", "Referral", "Walk-in", "Returnee", "Landline/Phone", "Other"];
   function subjectText(v){ return v || "—"; }
 
-  let sbClient = null, db = null, writable = true, appStarted = false, currentUser = null;
+  let sbClient = null, db = null, writable = true, appStarted = false, currentUser = null, currentRole = null;
+
+  // Looks up the logged-in user's role from the `profiles` table (see phase1-roles.sql).
+  // Falls back to "admin" (the safer, lower-privilege default) if anything goes wrong, so a
+  // hiccup here never accidentally grants admin-only access — it just hides it.
+  async function loadRole(){
+    if(!sbClient || !currentUser){ currentRole = null; return; }
+    try{
+      const { data, error } = await sbClient.from("profiles").select("role").eq("id", currentUser.id).maybeSingle();
+      if(error) throw error;
+      currentRole = data ? data.role : "admin";
+    }catch(e){
+      console.warn("couldn't load role", e);
+      currentRole = "admin";
+    }
+  }
 
   /* ---------------- Login gate ---------------- */
   function showLogin(errMsg){
@@ -560,8 +587,9 @@
   }
   function renderAccount(){
     const el = $("#railAccount");
-    if(!el) return;
-    el.innerHTML = currentUser ? `<div class="account-row"><span class="account-email">${esc(currentUser.email)}</span><button class="btn sm ghost" data-action="logout">Log out</button></div>` : "";
+    if(el) el.innerHTML = currentUser ? `<div class="account-row"><span class="account-email">${esc(currentUser.email)}</span><button class="btn sm ghost" data-action="logout">Log out</button></div>` : "";
+    const adminLink = $("#navAdminLink");
+    if(adminLink) adminLink.hidden = currentRole !== "superadmin";
   }
 
   /* ---------------- DB bootstrap ---------------- */
@@ -579,10 +607,10 @@
     db = makeSupabaseDB(sbClient);
 
     const { data:{ session } } = await sbClient.auth.getSession();
-    if(session){ currentUser = session.user; showApp(); renderAccount(); startApp(); }
+    if(session){ currentUser = session.user; showApp(); await loadRole(); renderAccount(); startApp(); }
     else{ showLogin(); showLoginView("login"); }
 
-    sbClient.auth.onAuthStateChange((event, session)=>{
+    sbClient.auth.onAuthStateChange(async (event, session)=>{
       // Clicking the reset link in the email lands back here with a temporary "recovery"
       // session — don't drop them straight into the app, make them set a new password first.
       if(event === "PASSWORD_RECOVERY"){
@@ -591,9 +619,9 @@
       }
       if(session){
         currentUser = session.user;
-        showApp(); renderAccount(); startApp();
+        showApp(); await loadRole(); renderAccount(); startApp();
       }else{
-        currentUser = null; appStarted = false;
+        currentUser = null; currentRole = null; appStarted = false;
         showLogin(); showLoginView("login");
       }
     });

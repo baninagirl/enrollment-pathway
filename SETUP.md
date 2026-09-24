@@ -1,4 +1,8 @@
-# Enrollment Pathway — standalone setup
+# Kumon Hub — standalone setup
+
+> This file predates the login system and the Kumon Hub expansion (roles, and more pages
+> to come). The steps below (1–3) are still accurate for the original one-page app —
+> see **"Kumon Hub — Phase 1: roles"** further down for what's new.
 
 This is the same app, rebuilt to run outside Claude on your own Supabase project + Vercel,
 instead of Claude's built-in storage. Three steps: set up the database, fill in two values,
@@ -51,3 +55,31 @@ or drag it onto your existing project's page — Vercel will redeploy the same U
   or two, same as before.
 - **Nothing else changed** — same calendar, enrollment tracker, roster, students tab, settings.
   Only how it stores data changed.
+
+## Kumon Hub — Phase 1: roles
+
+The app is growing into a few pages under one "Kumon Hub" umbrella — `index.html` (the
+Pipeline, unchanged) is now the first of several. `admin.html` is the second: it manages who
+has access and what they can do. Two roles: **admin** (day-to-day access, the default for
+everyone) and **superadmin** (everything admin can do, plus managing other people's accounts —
+more admin-only actions will land here as later pages are added, e.g. approving payments).
+
+Setup, one time only:
+
+1. In Supabase's SQL Editor, run `phase1-roles.sql` from this folder. It adds the table that
+   tracks roles and quietly backfills one for every login you already have (everyone starts
+   as "admin").
+2. Still in the SQL Editor, run one more line — with your own login's email — to make
+   yourself the first superadmin (the file has this at the very bottom too):
+
+   ```sql
+   update profiles set role = 'superadmin' where email = 'you@example.com';
+   ```
+3. Deploy `admin.html` alongside `index.html` the same way you deploy everything else (same
+   GitHub Desktop → commit → push, Vercel picks it up automatically). It'll be reachable at
+   `your-project.vercel.app/admin.html`, and an "Admin" link will appear in the Pipeline's
+   nav rail for superadmins automatically — everyone else just won't see that link.
+
+Adding a new team member from here on: create their login the same way as before (Supabase →
+Authentication → Users → Add User, Auto Confirm checked). They'll show up on the Admin page
+automatically as "admin" — go there to make them superadmin if they should be.
