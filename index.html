@@ -126,6 +126,8 @@
   .stat.good .n{ color:var(--good); }
 
   .card{ background:var(--surface); border:1px solid var(--border); border-radius:14px; }
+  .section-mini{ display:flex; align-items:center; justify-content:space-between; padding:9px 16px; background:var(--surface-2); border:1px solid var(--border); border-radius:10px; font-size:12.5px; font-weight:600; color:var(--ink-muted); margin-bottom:8px; }
+  .section-mini .mini-count{ color:var(--ink-faint); font-weight:700; }
   .card-head{ display:flex; align-items:center; justify-content:space-between; padding:14px 16px; border-bottom:1px solid var(--border); gap:10px; flex-wrap:wrap; }
   .card-head h3{ font-size:14.5px; font-weight:700; }
   .card-head .count{ color:var(--ink-muted); font-weight:600; font-size:12.5px; }
@@ -527,7 +529,8 @@
     calStaff: "all",
     studentSearch: "",
     studentMonth: (()=>{ const d=new Date(); return new Date(d.getFullYear(), d.getMonth(), 1); })(),
-    studentMonthMode: "month" // "month" = this month's roster only, "all" = every month (historical)
+    studentMonthMode: "month", // "month" = this month's roster only, "all" = every month (historical)
+    enrollmentShowAll: false // false = empty sections collapse to a thin line; true = every section shows full, even with nothing in it
   };
 
   const SUBJECT_OPTIONS = ["Reading", "Math", "Both"];
@@ -739,8 +742,13 @@
 
     const actions = $("#pageActions");
     actions.innerHTML = "";
-    if(STATE.activeTab === "calendar" || STATE.activeTab === "enrollment"){
+    if(STATE.activeTab === "calendar"){
       actions.innerHTML = `<button class="btn primary" data-action="open-new-chooser">${iconPlus()} New booking</button>`;
+    } else if(STATE.activeTab === "enrollment"){
+      actions.innerHTML = `
+        <button class="btn ghost" data-action="toggle-enrollment-view">${STATE.enrollmentShowAll ? "Collapse empty sections" : "Show everything"}</button>
+        <button class="btn primary" data-action="open-new-chooser">${iconPlus()} New booking</button>
+      `;
     } else if(STATE.activeTab === "roster"){
       actions.innerHTML = `<button class="btn primary" data-action="open-new-schedule">${iconPlus()} New regular schedule</button>`;
     } else if(STATE.activeTab === "students"){
@@ -1065,6 +1073,21 @@
     </div>`;
   }
 
+  // A section with nothing in it collapses to a single thin row instead of a full empty-state
+  // card, so an all-caught-up day doesn't read as a wall of "nothing here" boxes. The "show
+  // everything" toggle (STATE.enrollmentShowAll) forces every section back to its full card.
+  function enrollmentSection(title, count, bodyHtml, emptyText){
+    if(count > 0 || STATE.enrollmentShowAll){
+      return `<div class="section card">
+        <div class="card-head"><h3>${title}</h3><span class="count">${count}</span></div>
+        <div class="card-body row-list">
+          ${count ? bodyHtml : `<div class="empty">${emptyText}</div>`}
+        </div>
+      </div>`;
+    }
+    return `<div class="section-mini"><span>${title}</span><span class="mini-count">0</span></div>`;
+  }
+
   function renderEnrollment(){
     const el = $("#view-enrollment");
     const outcome = needsOutcome();
@@ -1075,83 +1098,50 @@
     const followUp = needsFollowUp();
     const missed = missedTrainings();
 
+    const outcomeBody = outcome.map(d=>diagnosticRow(d)).join("");
+    const missedBody = missed.map(t=>missedTrainingRow(t)).join("");
+    const trainingBody = training.map(s => {
+      const done = trainingsFor(s.id);
+      const doneCount = done.filter(t=>t.status==="completed").length;
+      const scheduledSessions = done.filter(t=>t.status==="scheduled");
+      const totalCount = doneCount + scheduledSessions.length;
+      return `<div class="rowi">
+        <div class="who"><b>${esc(s.name)}</b><span>${esc(s.parentName||"")}</span></div>
+        <div class="when">${doneCount} of 2 completed${scheduledSessions.length?`, ${scheduledSessions.length} scheduled`:""}</div>
+        <select data-action="set-subject" data-id="${s.id}" style="width:auto; min-width:130px;">
+          <option value="">Subject: not set</option>
+          ${SUBJECT_OPTIONS.map(o=>`<option value="${esc(o)}" ${s.subject===o?"selected":""}>${esc(o)}</option>`).join("")}
+        </select>
+        <div class="acts">
+          ${scheduledSessions.map(t => `<button class="btn sm" data-action="mark-training-complete" data-id="${t.id}">Mark session ${t.sessionNumber} complete</button>`).join("")}
+          ${totalCount < 2 ? `<button class="btn sm primary" data-action="open-new-training" data-student="${s.id}">Schedule session ${totalCount+1}</button>` : ""}
+        </div>
+      </div>`;
+    }).join("");
+    const monitorBody = monitor.map(s => `<div class="rowi">
+      <div class="who"><b>${esc(s.name)}</b><span>${esc(s.parentName||"")}</span></div>
+      <div class="when">Both trainings completed</div>
+      <div class="acts"><button class="btn sm primary" data-action="mark-ready-for-schedule" data-id="${s.id}">Mark ready for regular schedule</button></div>
+    </div>`).join("");
+    const readyBody = ready.map(s => `<div class="rowi">
+      <div class="who"><b>${esc(s.name)}</b><span>${esc(s.parentName||"")}</span></div>
+      <div class="when">Both trainings completed</div>
+      <div class="acts"><button class="btn sm primary" data-action="open-new-schedule" data-student="${s.id}">Set schedule</button></div>
+    </div>`).join("");
+    const followUpBody = followUp.map(s => followUpRow(s)).join("");
+    const upcomingBody = upcoming.slice(0,8).map(d => `<div class="rowi">
+      <div class="who"><b>${esc(d.studentName)}</b><span>${esc(d.parentName||"")}</span></div>
+      <div class="when tnum">${fmtDateShort(d.date)} · ${fmtTime(d.time)}${d.examiner?" · "+esc(d.examiner):""}</div>
+    </div>`).join("");
+
     el.innerHTML = `
-      <div class="section card">
-        <div class="card-head"><h3>Needs an outcome</h3><span class="count">${outcome.length}</span></div>
-        <div class="card-body row-list">
-          ${outcome.length ? outcome.map(d=>diagnosticRow(d)).join("") : `<div class="empty">Nothing overdue. Diagnostics show up here once their date has passed and no outcome is tagged.</div>`}
-        </div>
-      </div>
-
-      <div class="section card">
-        <div class="card-head"><h3>Missed a training — needs follow-up</h3><span class="count">${missed.length}</span></div>
-        <div class="card-body row-list">
-          ${missed.length ? missed.map(t=>missedTrainingRow(t)).join("") : `<div class="empty">No missed sessions. This fills in when a scheduled training's date passes without being marked complete.</div>`}
-        </div>
-      </div>
-
-      <div class="section card">
-        <div class="card-head"><h3>Enrolled — schedule their 2 trainings</h3><span class="count">${training.length}</span></div>
-        <div class="card-body row-list">
-          ${training.length ? training.map(s => {
-            const done = trainingsFor(s.id);
-            const doneCount = done.filter(t=>t.status==="completed").length;
-            const scheduledSessions = done.filter(t=>t.status==="scheduled");
-            const totalCount = doneCount + scheduledSessions.length;
-            return `<div class="rowi">
-              <div class="who"><b>${esc(s.name)}</b><span>${esc(s.parentName||"")}</span></div>
-              <div class="when">${doneCount} of 2 completed${scheduledSessions.length?`, ${scheduledSessions.length} scheduled`:""}</div>
-              <select data-action="set-subject" data-id="${s.id}" style="width:auto; min-width:130px;">
-                <option value="">Subject: not set</option>
-                ${SUBJECT_OPTIONS.map(o=>`<option value="${esc(o)}" ${s.subject===o?"selected":""}>${esc(o)}</option>`).join("")}
-              </select>
-              <div class="acts">
-                ${scheduledSessions.map(t => `<button class="btn sm" data-action="mark-training-complete" data-id="${t.id}">Mark session ${t.sessionNumber} complete</button>`).join("")}
-                ${totalCount < 2 ? `<button class="btn sm primary" data-action="open-new-training" data-student="${s.id}">Schedule session ${totalCount+1}</button>` : ""}
-              </div>
-            </div>`;
-          }).join("") : `<div class="empty">No one's waiting on trainings right now.</div>`}
-        </div>
-      </div>
-
-      <div class="section card">
-        <div class="card-head"><h3>On monitor schedule</h3><span class="count">${monitor.length}</span></div>
-        <div class="card-body row-list">
-          ${monitor.length ? monitor.map(s => `<div class="rowi">
-            <div class="who"><b>${esc(s.name)}</b><span>${esc(s.parentName||"")}</span></div>
-            <div class="when">Both trainings completed</div>
-            <div class="acts"><button class="btn sm primary" data-action="mark-ready-for-schedule" data-id="${s.id}">Mark ready for regular schedule</button></div>
-          </div>`).join("") : `<div class="empty">No one's on monitor schedule right now. Students land here automatically once both trainings are complete.</div>`}
-        </div>
-      </div>
-
-      <div class="section card">
-        <div class="card-head"><h3>Trained — set their regular schedule</h3><span class="count">${ready.length}</span></div>
-        <div class="card-body row-list">
-          ${ready.length ? ready.map(s => `<div class="rowi">
-            <div class="who"><b>${esc(s.name)}</b><span>${esc(s.parentName||"")}</span></div>
-            <div class="when">Both trainings completed</div>
-            <div class="acts"><button class="btn sm primary" data-action="open-new-schedule" data-student="${s.id}">Set schedule</button></div>
-          </div>`).join("") : `<div class="empty">No one's ready for a regular schedule yet.</div>`}
-        </div>
-      </div>
-
-      <div class="section card">
-        <div class="card-head"><h3>Not enrolled — follow up</h3><span class="count">${followUp.length}</span></div>
-        <div class="card-body row-list">
-          ${followUp.length ? followUp.map(s => followUpRow(s)).join("") : `<div class="empty">No open follow-ups.</div>`}
-        </div>
-      </div>
-
-      ${upcoming.length ? `<div class="section card">
-        <div class="card-head"><h3>Upcoming diagnostics</h3><span class="count">${upcoming.length}</span></div>
-        <div class="card-body row-list">
-          ${upcoming.slice(0,8).map(d => `<div class="rowi">
-            <div class="who"><b>${esc(d.studentName)}</b><span>${esc(d.parentName||"")}</span></div>
-            <div class="when tnum">${fmtDateShort(d.date)} · ${fmtTime(d.time)}${d.examiner?" · "+esc(d.examiner):""}</div>
-          </div>`).join("")}
-        </div>
-      </div>` : ""}
+      ${enrollmentSection("Needs an outcome", outcome.length, outcomeBody, "Nothing overdue. Diagnostics show up here once their date has passed and no outcome is tagged.")}
+      ${enrollmentSection("Missed a training — needs follow-up", missed.length, missedBody, "No missed sessions. This fills in when a scheduled training's date passes without being marked complete.")}
+      ${enrollmentSection("Enrolled — schedule their 2 trainings", training.length, trainingBody, "No one's waiting on trainings right now.")}
+      ${enrollmentSection("On monitor schedule", monitor.length, monitorBody, "No one's on monitor schedule right now. Students land here automatically once both trainings are complete.")}
+      ${enrollmentSection("Trained — set their regular schedule", ready.length, readyBody, "No one's ready for a regular schedule yet.")}
+      ${enrollmentSection("Not enrolled — follow up", followUp.length, followUpBody, "No open follow-ups.")}
+      ${enrollmentSection("Upcoming diagnostics", upcoming.length, upcomingBody, "Nothing booked ahead yet.")}
     `;
   }
 
@@ -1932,6 +1922,7 @@
     const a = el.dataset.action;
 
     if(a === "switch-tab"){ STATE.activeTab = el.dataset.tab; renderAll(); }
+    else if(a === "toggle-enrollment-view"){ STATE.enrollmentShowAll = !STATE.enrollmentShowAll; renderView(); }
     else if(a === "goto-settings"){ STATE.activeTab = "settings"; closeModal(); renderAll(); }
     else if(a === "close-modal"){ closeModal(); }
     else if(a === "open-new-chooser"){ openNewChooser(); }
