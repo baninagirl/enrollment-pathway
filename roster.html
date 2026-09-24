@@ -104,6 +104,14 @@
   .pill.status-inactive{ background:var(--surface-2); color:var(--ink-faint); }
   .lvl{ font-variant-numeric:tabular-nums; font-weight:600; }
   .lvl.empty-lvl{ color:var(--ink-faint); font-weight:500; }
+  .pill.mode-kc{ background:var(--accent-soft); color:var(--accent-soft-ink); }
+  .pill.mode-paper{ background:var(--surface-2); color:var(--ink-muted); }
+  .sched-cell{ display:flex; flex-direction:column; gap:2px; }
+  .sched-line{ font-size:12px; font-weight:600; white-space:nowrap; }
+  .sched-line.muted{ color:var(--ink-muted); font-weight:500; }
+  .mode-tag{ font-size:9.5px; font-weight:700; padding:1px 5px; border-radius:5px; margin-left:2px; }
+  .mode-tag.ic{ background:var(--good-soft); color:var(--good); }
+  .mode-tag.ri{ background:var(--warn-soft); color:var(--warn); }
 
   .selectcol{ width:34px; }
   .selectcol input, .row-check{ width:15px; height:15px; margin:0; cursor:pointer; accent-color:var(--accent); }
@@ -232,7 +240,7 @@
         <table class="stable">
           <thead><tr>
             <th class="selectcol" id="selectHeaderCell">#</th>
-            <th>Student</th><th>Grade</th><th>Subject</th><th>Teacher</th><th>Current level</th><th>Goal</th><th>Status</th>
+            <th>Student</th><th>Grade</th><th>Subject</th><th>Teacher</th><th>Current level</th><th>Goal</th><th>Schedule</th><th>Mode</th><th>Status</th>
           </tr></thead>
           <tbody id="rosterBody"></tbody>
         </table>
@@ -263,6 +271,37 @@
   const GRADE_OPTIONS = ["PK1","PK2","PK3","K","P1","P2","P3","P4","P5","P6","P7","P8","P9","P10","P11","P12","P13","P14"];
   function gradeOptions(selected){
     return `<option value="">—</option>` + GRADE_OPTIONS.map(g=>`<option value="${g}" ${g===selected?"selected":""}>${g}</option>`).join("");
+  }
+  function fmtTime12(t){
+    if(!t) return "";
+    let [h,m] = t.split(":").map(Number);
+    const ap = h >= 12 ? "PM" : "AM";
+    h = h % 12; if(h===0) h = 12;
+    return `${h}:${String(m).padStart(2,"0")} ${ap}`;
+  }
+  // Table view of the same schedule the edit modal builds — a saved `schedules` row wins
+  // if there is one; otherwise this falls back to the plain-text day notes some legacy
+  // enrollments (like Miss Mira's imported roster) still carry, so the column isn't just
+  // blank for a student nobody's opened Edit on yet.
+  function fmtSchedule(enrollment){
+    const sc = scheduleFor(enrollment.id);
+    const slots = sc && Array.isArray(sc.slots) ? sc.slots.filter(s => s && s.day) : [];
+    if(slots.length){
+      return `<div class="sched-cell">${slots.map(s =>
+        `<span class="sched-line">${esc(s.day)}${s.time ? " " + fmtTime12(s.time) : ""} <span class="mode-tag ${s.mode==="RI"?"ri":"ic"}">${s.mode==="RI"?"RI":"IC"}</span></span>`
+      ).join("")}</div>`;
+    }
+    const legacy = parseScheduleText(enrollment.schedule);
+    if(legacy.length){
+      return `<div class="sched-cell">${legacy.map(s =>
+        `<span class="sched-line muted">${esc(s.day)} <span class="mode-tag ${s.mode==="RI"?"ri":"ic"}">${s.mode==="RI"?"RI":"IC"}</span></span>`
+      ).join("")}<span class="hint" style="font-size:10.5px;">no time set</span></div>`;
+    }
+    return `<span class="lvl empty-lvl">not set</span>`;
+  }
+  function fmtMode(mode){
+    if(!mode) return `<span class="lvl empty-lvl">—</span>`;
+    return `<span class="pill ${mode==="KC"?"mode-kc":"mode-paper"}">${mode==="KC"?"KC":"Paper"}</span>`;
   }
   function fmtLevel(level, page){
     if(!level && !page) return `<span class="lvl empty-lvl">not yet recorded</span>`;
@@ -530,7 +569,7 @@
 
     const body = $("#rosterBody");
     if(rows.length === 0){
-      body.innerHTML = `<tr><td colspan="8"><div class="empty">${enrollments.length===0 ? "No enrollments yet — add your first one." : "Nothing matches your filters."}</div></td></tr>`;
+      body.innerHTML = `<tr><td colspan="10"><div class="empty">${enrollments.length===0 ? "No enrollments yet — add your first one." : "Nothing matches your filters."}</div></td></tr>`;
     }else{
       body.innerHTML = rows.map((e, idx) => `
         <tr class="clickrow" data-action="edit" data-id="${e.id}">
@@ -543,6 +582,8 @@
           <td>${esc(e.teacher||"—")}</td>
           <td>${fmtLevel(e.current_level, e.current_page)}</td>
           <td>${fmtLevel(e.goal_level, e.goal_page)}</td>
+          <td>${fmtSchedule(e)}</td>
+          <td>${fmtMode(e.mode)}</td>
           <td><span class="pill ${(e.status||'active')==='inactive'?'status-inactive':'status-active'}">${(e.status||"active")==="inactive"?"Inactive":"Active"}</span></td>
         </tr>
       `).join("");
