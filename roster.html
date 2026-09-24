@@ -107,8 +107,10 @@
 
   .selectcol{ width:34px; }
   .selectcol input, .row-check{ width:15px; height:15px; margin:0; cursor:pointer; accent-color:var(--accent); }
+  .rownum{ color:var(--ink-faint); font-variant-numeric:tabular-nums; font-size:12px; }
   .bulk-bar{ display:flex; align-items:center; gap:8px; padding:10px 16px; border-bottom:1px solid var(--border); background:var(--accent-soft); flex-wrap:wrap; }
   .bulk-bar .count{ font-size:13px; font-weight:700; color:var(--accent-soft-ink); margin-right:auto; }
+  .btn.ghost.on{ background:var(--accent-soft); color:var(--accent-soft-ink); }
 
   select, input[type=text], input[type=number], input[type=date], input[type=email], input[type=password]{
     font-family:inherit; font-size:13.5px; padding:8px 10px; border-radius:8px; border:1px solid var(--border);
@@ -210,12 +212,18 @@
     </div>
 
     <div class="card">
-      <div class="card-head"><h3>Enrollments</h3><span class="hint" id="enrollCount"></span></div>
+      <div class="card-head">
+        <h3>Enrollments</h3>
+        <div style="display:flex; align-items:center; gap:10px;">
+          <span class="hint" id="enrollCount"></span>
+          <button type="button" class="btn sm ghost" id="selectModeToggle" data-action="toggle-select-mode" title="Select multiple to bulk edit">Select</button>
+        </div>
+      </div>
       <div id="bulkBar" class="bulk-bar" hidden></div>
       <div class="table-scroll">
         <table class="stable">
           <thead><tr>
-            <th class="selectcol"><input type="checkbox" id="selectAllCheckbox" title="Select all"></th>
+            <th class="selectcol" id="selectHeaderCell">#</th>
             <th>Student</th><th>Grade</th><th>Subject</th><th>Teacher</th><th>Current level</th><th>Goal</th><th>Status</th>
           </tr></thead>
           <tbody id="rosterBody"></tbody>
@@ -258,6 +266,7 @@
   let filters = { search:"", subject:"all", teacher:"all", status:"active" };
   let editingId = null;
   let selectedIds = new Set();
+  let selectMode = false;
 
   // A plain teacher and a trainer_teacher (a trainor who also carries her own roster,
   // like Queenie) both get their Student Roster locked to just their own students. The
@@ -432,13 +441,26 @@
       lastNameSortKey(a.student_id, a.student_name).localeCompare(lastNameSortKey(b.student_id, b.student_name))
     );
     $("#enrollCount").textContent = rows.length + (rows.length===1 ? " enrollment" : " enrollments");
+
+    const toggleBtn = $("#selectModeToggle");
+    if(toggleBtn){
+      toggleBtn.textContent = selectMode ? "Done" : "Select";
+      toggleBtn.classList.toggle("on", selectMode);
+    }
+    const headerCell = $("#selectHeaderCell");
+    if(headerCell){
+      headerCell.innerHTML = selectMode ? `<input type="checkbox" id="selectAllCheckbox" title="Select all">` : `#`;
+    }
+
     const body = $("#rosterBody");
     if(rows.length === 0){
       body.innerHTML = `<tr><td colspan="8"><div class="empty">${enrollments.length===0 ? "No enrollments yet — add your first one." : "Nothing matches your filters."}</div></td></tr>`;
     }else{
-      body.innerHTML = rows.map(e => `
+      body.innerHTML = rows.map((e, idx) => `
         <tr class="clickrow" data-action="edit" data-id="${e.id}">
-          <td class="selectcol"><input type="checkbox" class="row-check" data-action="toggle-select" data-id="${e.id}" ${selectedIds.has(e.id)?"checked":""}></td>
+          <td class="selectcol">${selectMode
+            ? `<input type="checkbox" class="row-check" data-action="toggle-select" data-id="${e.id}" ${selectedIds.has(e.id)?"checked":""}>`
+            : `<span class="rownum">${idx+1}</span>`}</td>
           <td>${esc(displayName(e.student_id, e.student_name))}</td>
           <td>${esc(gradeFor(e.student_id) || "—")}</td>
           <td><span class="pill ${e.subject==='Math'?'subj-math':'subj-reading'}">${esc(e.subject)}</span></td>
@@ -450,12 +472,14 @@
       `).join("");
     }
 
-    const visibleIds = rows.map(r => r.id);
-    const selectedVisible = visibleIds.filter(id => selectedIds.has(id));
-    const selectAll = $("#selectAllCheckbox");
-    if(selectAll){
-      selectAll.checked = visibleIds.length > 0 && selectedVisible.length === visibleIds.length;
-      selectAll.indeterminate = selectedVisible.length > 0 && selectedVisible.length < visibleIds.length;
+    if(selectMode){
+      const visibleIds = rows.map(r => r.id);
+      const selectedVisible = visibleIds.filter(id => selectedIds.has(id));
+      const selectAll = $("#selectAllCheckbox");
+      if(selectAll){
+        selectAll.checked = visibleIds.length > 0 && selectedVisible.length === visibleIds.length;
+        selectAll.indeterminate = selectedVisible.length > 0 && selectedVisible.length < visibleIds.length;
+      }
     }
     renderBulkBar();
   }
@@ -464,7 +488,7 @@
     const bar = $("#bulkBar");
     if(!bar) return;
     const n = selectedIds.size;
-    if(n === 0){ bar.hidden = true; bar.innerHTML = ""; return; }
+    if(!selectMode || n === 0){ bar.hidden = true; bar.innerHTML = ""; return; }
     bar.hidden = false;
     bar.innerHTML = `
       <span class="count">${n} selected</span>
@@ -766,6 +790,11 @@
     else if(action === "toggle-select"){
       const id = btn.dataset.id;
       if(btn.checked) selectedIds.add(id); else selectedIds.delete(id);
+      render();
+    }
+    else if(action === "toggle-select-mode"){
+      selectMode = !selectMode;
+      selectedIds.clear();
       render();
     }
     else if(action === "bulk-clear"){ selectedIds.clear(); render(); }
