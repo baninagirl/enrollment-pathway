@@ -111,7 +111,7 @@
   .cal-cell:active{ filter:brightness(.95); }
   .stable tr.clickrow:active td{ background:var(--surface-2); }
 
-  .stats{ display:grid; grid-template-columns:repeat(7,1fr); gap:10px; margin-bottom:20px; }
+  .stats{ display:grid; grid-template-columns:repeat(8,1fr); gap:10px; margin-bottom:20px; }
   .stat{
     background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:13px 14px;
     display:flex; flex-direction:column; gap:6px; cursor:pointer;
@@ -516,7 +516,7 @@
   /* ---------------- State ---------------- */
   const STATE = {
     students: [], diagnostics: [], trainings: [], schedules: [],
-    settings: { examiners: [], trainer: "" },
+    settings: { examiners: [], trainers: [] },
     loaded: { students:false, diagnostics:false, trainings:false, schedules:false, settings:false },
     activeTab: "calendar",
     calMonth: (()=>{ const d=new Date(); return new Date(d.getFullYear(), d.getMonth(), 1); })(),
@@ -607,7 +607,10 @@
     db.doc("settings/staff").onSnapshot(snap => {
       const d = snap.exists ? snap.data() : {};
       STATE.settings.examiners = Array.isArray(d.examiners) ? d.examiners : [];
-      STATE.settings.trainer = d.trainer || "";
+      // Migrates the old single-trainer setup automatically: if this settings doc still only
+      // has the old "trainer" string (from before multiple trainers were supported) and no
+      // "trainers" list yet, seed the list with that one name so nothing is lost.
+      STATE.settings.trainers = Array.isArray(d.trainers) ? d.trainers : (d.trainer ? [d.trainer] : []);
       STATE.loaded.settings = true;
       onData();
     }, err => console.warn("settings sub error", err));
@@ -643,7 +646,9 @@
       const completed = trainingsFor(s.id).filter(t => t.status === "completed").length;
       if(completed >= 2){
         reconciling[s.id] = true;
-        db.collection("students").doc(s.id).update({ status: "ready_for_schedule" })
+        // Finishing both trainings doesn't drop a student straight onto the regular schedule —
+        // they go on monitor schedule first. A trainer promotes them from there once ready.
+        db.collection("students").doc(s.id).update({ status: "monitor_schedule" })
           .catch(e => console.warn("reconcile failed", e))
           .finally(()=>{ delete reconciling[s.id]; });
       }
@@ -668,6 +673,9 @@
   }
   function awaitingTraining(){
     return STATE.students.filter(s => s.status === "enrolled_pending_training").sort((a,b)=> a.name.localeCompare(b.name));
+  }
+  function onMonitorSchedule(){
+    return STATE.students.filter(s => s.status === "monitor_schedule").sort((a,b)=> a.name.localeCompare(b.name));
   }
   function readyForSchedule(){
     return STATE.students.filter(s => s.status === "ready_for_schedule").sort((a,b)=> a.name.localeCompare(b.name));
@@ -760,10 +768,11 @@
       statTile("s1", diagnosticsThisWeek().length, "Diagnostics this week", "", "calendar"),
       statTile("s2", needsOutcome().length, "Need an outcome tagged", needsOutcome().length?"warn":"", "enrollment"),
       statTile("s3", awaitingTraining().length, "Enrolled, awaiting training", "", "enrollment"),
-      statTile("s4", needsFollowUp().length, "Need follow-up", needsFollowUp().length?"bad":"", "enrollment"),
-      statTile("s5", readyForSchedule().length, "Trained, ready for schedule", readyForSchedule().length?"warn":"", "enrollment"),
-      statTile("s6", activeScheduleStudents().length, "Active on regular schedule", "good", "roster"),
-      statTile("s7", missedTrainings().length, "Missed training, needs follow-up", missedTrainings().length?"bad":"", "enrollment")
+      statTile("s4", onMonitorSchedule().length, "On monitor schedule", "", "enrollment"),
+      statTile("s5", needsFollowUp().length, "Need follow-up", needsFollowUp().length?"bad":"", "enrollment"),
+      statTile("s6", readyForSchedule().length, "Ready for regular schedule", readyForSchedule().length?"warn":"", "enrollment"),
+      statTile("s7", activeScheduleStudents().length, "Active on regular schedule", "good", "roster"),
+      statTile("s8", missedTrainings().length, "Missed training, needs follow-up", missedTrainings().length?"bad":"", "enrollment")
     ].join("");
   }
 
@@ -790,9 +799,9 @@
   }
 
   function gatherEvents(rangeStartISO, rangeEndISO){
-    // Trainings and the regular schedule are Miss Queenie's (the trainer's) own work — they only
-    // show up under "All staff" (the shared overview) and under her own filtered view, but drop
-    // out when the calendar is filtered to a different examiner who has nothing to do with them.
+    // Each diagnostic and training already carries its own examiner/trainer, so filtering by a
+    // specific person just matches that field. The regular weekly schedule isn't assigned to any
+    // one trainer (any of them might run it), so those slots only show under "All staff".
     let events = [];
     if(STATE.calFilter === "all" || STATE.calFilter === "diagnostic"){
       events = events.concat(STATE.diagnostics.filter(d => d.status !== "cancelled" && d.date >= rangeStartISO && d.date <= rangeEndISO).map(d => ({
@@ -805,7 +814,7 @@
       })));
     }
     if(STATE.calFilter === "all" || STATE.calFilter === "schedule"){
-      events = events.concat(scheduleInstances(rangeStartISO, rangeEndISO).map(e => ({ ...e, staff: STATE.settings.trainer })));
+      events = events.concat(scheduleInstances(rangeStartISO, rangeEndISO).map(e => ({ ...e, staff: null })));
     }
     if(STATE.calStaff !== "all") events = events.filter(e => e.staff === STATE.calStaff);
     events.sort((a,b)=> (a.date+a.time).localeCompare(b.date+b.time));
@@ -836,7 +845,7 @@
           <select data-action="cal-staff">
             <option value="all">All staff</option>
             ${STATE.settings.examiners.map(x=>`<option value="${esc(x)}" ${STATE.calStaff===x?"selected":""}>${esc(x)}</option>`).join("")}
-            ${STATE.settings.trainer ? `<option value="${esc(STATE.settings.trainer)}" ${STATE.calStaff===STATE.settings.trainer?"selected":""}>${esc(STATE.settings.trainer)} (trainer)</option>` : ""}
+            ${STATE.settings.trainers.map(x=>`<option value="${esc(x)}" ${STATE.calStaff===x?"selected":""}>${esc(x)} (trainer)</option>`).join("")}
           </select>
         </div>
       </div>
@@ -971,13 +980,12 @@
     if(STATE.calFilter === "all" || STATE.calFilter === "diagnostic"){
       STATE.diagnostics.filter(d=>d.date===iso && d.status!=="cancelled" && staffOk(d.examiner)).forEach(d => dayEvents.push({type:"diagnostic", time:d.time, ref:d}));
     }
-    if(staffOk(STATE.settings.trainer)){
-      if(STATE.calFilter === "all" || STATE.calFilter === "training"){
-        STATE.trainings.filter(t=>t.date===iso && t.status!=="cancelled").forEach(t => dayEvents.push({type:"training", time:t.time, ref:t}));
-      }
-      if(STATE.calFilter === "all" || STATE.calFilter === "schedule"){
-        scheduleInstances(iso, iso).forEach(s => dayEvents.push({type:"schedule", time:s.time, ref:s}));
-      }
+    if(STATE.calFilter === "all" || STATE.calFilter === "training"){
+      STATE.trainings.filter(t=>t.date===iso && t.status!=="cancelled" && staffOk(t.trainer)).forEach(t => dayEvents.push({type:"training", time:t.time, ref:t}));
+    }
+    if(STATE.calFilter === "all" || STATE.calFilter === "schedule"){
+      // Regular schedule slots aren't tied to one trainer, so they only show under "All staff".
+      if(STATE.calStaff === "all") scheduleInstances(iso, iso).forEach(s => dayEvents.push({type:"schedule", time:s.time, ref:s}));
     }
     dayEvents.sort((a,b)=> (a.time||"").localeCompare(b.time||""));
 
@@ -1062,6 +1070,7 @@
     const outcome = needsOutcome();
     const upcoming = upcomingDiagnostics();
     const training = awaitingTraining();
+    const monitor = onMonitorSchedule();
     const ready = readyForSchedule();
     const followUp = needsFollowUp();
     const missed = missedTrainings();
@@ -1102,6 +1111,17 @@
               </div>
             </div>`;
           }).join("") : `<div class="empty">No one's waiting on trainings right now.</div>`}
+        </div>
+      </div>
+
+      <div class="section card">
+        <div class="card-head"><h3>On monitor schedule</h3><span class="count">${monitor.length}</span></div>
+        <div class="card-body row-list">
+          ${monitor.length ? monitor.map(s => `<div class="rowi">
+            <div class="who"><b>${esc(s.name)}</b><span>${esc(s.parentName||"")}</span></div>
+            <div class="when">Both trainings completed</div>
+            <div class="acts"><button class="btn sm primary" data-action="mark-ready-for-schedule" data-id="${s.id}">Mark ready for regular schedule</button></div>
+          </div>`).join("") : `<div class="empty">No one's on monitor schedule right now. Students land here automatically once both trainings are complete.</div>`}
         </div>
       </div>
 
@@ -1182,6 +1202,7 @@
   const STATUS_LABEL = {
     diagnostic_scheduled: ["Diagnostic scheduled","muted"],
     enrolled_pending_training: ["Awaiting training","warn"],
+    monitor_schedule: ["On monitor schedule","warn"],
     ready_for_schedule: ["Ready for schedule","warn"],
     active: ["Active","good"],
     not_enrolled: ["Not enrolled","bad"]
@@ -1413,12 +1434,13 @@
         </div>
       </div>
       <div class="section card">
-        <div class="card-head"><h3>Trainer</h3><span class="count">conducts student trainings</span></div>
+        <div class="card-head"><h3>Trainers</h3><span class="count">conduct student trainings</span></div>
         <div class="card-body">
-          <p class="hint" style="margin:6px 0 10px;">One person conducts all student trainings. This name is shown on every training booking.</p>
-          <div style="display:flex; gap:8px; max-width:320px;">
-            <input type="text" id="trainerName" placeholder="Trainer's name" value="${esc(STATE.settings.trainer)}">
-            <button class="btn primary sm" data-action="save-trainer">Save</button>
+          <p class="hint" style="margin:6px 0 10px;">These names fill the trainer picker when booking a training. Add everyone who conducts them.</p>
+          <div class="taglist" id="trainerTags"></div>
+          <div style="display:flex; gap:8px; margin-top:12px;">
+            <input type="text" id="newTrainer" placeholder="Add a trainer's name">
+            <button class="btn primary sm" data-action="add-trainer">Add</button>
           </div>
         </div>
       </div>
@@ -1427,6 +1449,10 @@
     tags.innerHTML = STATE.settings.examiners.length
       ? STATE.settings.examiners.map(x => `<span class="tagchip">${esc(x)}<button data-action="remove-examiner" data-name="${esc(x)}">✕</button></span>`).join("")
       : `<span class="hint">No examiners added yet.</span>`;
+    const trainerTags = $("#trainerTags", el);
+    trainerTags.innerHTML = STATE.settings.trainers.length
+      ? STATE.settings.trainers.map(x => `<span class="tagchip">${esc(x)}<button data-action="remove-trainer" data-name="${esc(x)}">✕</button></span>`).join("")
+      : `<span class="hint">No trainers added yet.</span>`;
   }
 
   /* ---------------- Modal plumbing ---------------- */
@@ -1570,7 +1596,7 @@
   }
 
   function openNewTraining(presetStudentId, presetDate){
-    if(!STATE.settings.trainer){
+    if(!STATE.settings.trainers.length){
       openModal(needStaffModal("trainer", "Settings"));
       return;
     }
@@ -1596,7 +1622,7 @@
             <label class="field">Date<input type="date" name="date" required value="${presetDate||todayISO()}"></label>
             <label class="field">Time<input type="time" name="time" required value="10:00"></label>
           </div>
-          <div class="hint">Trainer: <b>${esc(STATE.settings.trainer)}</b></div>
+          ${fieldSelectStaff("trainer", STATE.settings.trainers, "Trainer", true)}
         </div>
         <div class="modal-foot">
           <button type="button" class="btn ghost" data-action="close-modal">Cancel</button>
@@ -1680,7 +1706,7 @@
   }
 
   function needStaffModal(kind, tab){
-    const label = kind === "examiner" ? "at least one DT teacher" : "your trainer's name";
+    const label = kind === "examiner" ? "at least one DT teacher" : "at least one trainer";
     return `
       <div class="modal-head"><h3>Add staff first</h3><button class="iconbtn" data-action="close-modal">✕</button></div>
       <div class="modal-body"><div class="empty">Add ${label} in Settings before booking this.</div></div>
@@ -1775,7 +1801,8 @@
     const studentId = fd.get("studentId");
     const date = fd.get("date");
     const time = fd.get("time");
-    if(!studentId || !date || !time) return;
+    const trainer = fd.get("trainer");
+    if(!studentId || !date || !time || !trainer) return;
     const s = studentById(studentId);
     if(!s) return;
     const existing = trainingsFor(studentId).filter(t=>t.status!=="cancelled");
@@ -1785,7 +1812,7 @@
     await guardWrite(async ()=>{
       await db.collection("trainings").add({
         studentId, studentName: s.name, sessionNumber, date, time,
-        trainer: STATE.settings.trainer, status: "scheduled", createdAt: new Date().toISOString()
+        trainer, status: "scheduled", createdAt: new Date().toISOString()
       });
       toast(`Training session ${sessionNumber} scheduled.`);
     });
@@ -1855,9 +1882,15 @@
       const others = trainingsFor(t.studentId).filter(x=>x.id!==id);
       const completedCount = others.filter(x=>x.status==="completed").length + 1;
       if(completedCount >= 2){
-        await db.collection("students").doc(t.studentId).update({ status: "ready_for_schedule" });
+        await db.collection("students").doc(t.studentId).update({ status: "monitor_schedule" });
       }
       toast("Training marked complete.");
+    });
+  }
+  async function markReadyForSchedule(studentId){
+    await guardWrite(async ()=>{
+      await db.collection("students").doc(studentId).update({ status: "ready_for_schedule" });
+      toast("Marked ready for regular schedule.");
     });
   }
 
@@ -1877,13 +1910,19 @@
     name = name.trim();
     if(!name) return;
     if(STATE.settings.examiners.includes(name)) return;
-    await guardWrite(async ()=>{ await db.doc("settings/staff").set({ examiners: [...STATE.settings.examiners, name], trainer: STATE.settings.trainer }); });
+    await guardWrite(async ()=>{ await db.doc("settings/staff").set({ examiners: [...STATE.settings.examiners, name], trainers: STATE.settings.trainers }); });
   }
   async function removeExaminer(name){
-    await guardWrite(async ()=>{ await db.doc("settings/staff").set({ examiners: STATE.settings.examiners.filter(x=>x!==name), trainer: STATE.settings.trainer }); });
+    await guardWrite(async ()=>{ await db.doc("settings/staff").set({ examiners: STATE.settings.examiners.filter(x=>x!==name), trainers: STATE.settings.trainers }); });
   }
-  async function saveTrainer(name){
-    await guardWrite(async ()=>{ await db.doc("settings/staff").set({ examiners: STATE.settings.examiners, trainer: name.trim() }); toast("Trainer saved."); });
+  async function addTrainer(name){
+    name = name.trim();
+    if(!name) return;
+    if(STATE.settings.trainers.includes(name)) return;
+    await guardWrite(async ()=>{ await db.doc("settings/staff").set({ examiners: STATE.settings.examiners, trainers: [...STATE.settings.trainers, name] }); });
+  }
+  async function removeTrainer(name){
+    await guardWrite(async ()=>{ await db.doc("settings/staff").set({ examiners: STATE.settings.examiners, trainers: STATE.settings.trainers.filter(x=>x!==name) }); });
   }
 
   /* ---------------- Event delegation ---------------- */
@@ -1907,6 +1946,7 @@
     else if(a === "edit-diagnostic"){ openEditDiagnosticModal(el.dataset.id); }
     else if(a === "cancel-training"){ cancelTraining(el.dataset.id); }
     else if(a === "mark-training-complete"){ markTrainingComplete(el.dataset.id); }
+    else if(a === "mark-ready-for-schedule"){ markReadyForSchedule(el.dataset.id); }
     else if(a === "delete-diagnostic"){ openDeleteConfirm("diagnostic", el.dataset.id); }
     else if(a === "delete-training"){ openDeleteConfirm("training", el.dataset.id); }
     else if(a === "delete-schedule"){ openDeleteConfirm("schedule", el.dataset.id); }
@@ -1944,7 +1984,12 @@
       input.value = "";
     }
     else if(a === "remove-examiner"){ removeExaminer(el.dataset.name); }
-    else if(a === "save-trainer"){ saveTrainer($("#trainerName").value); }
+    else if(a === "add-trainer"){
+      const input = $("#newTrainer");
+      addTrainer(input.value);
+      input.value = "";
+    }
+    else if(a === "remove-trainer"){ removeTrainer(el.dataset.name); }
     else if(a === "open-new-student"){ openNewStudentModal(); }
     else if(a === "student-month-prev"){ STATE.studentMonth = new Date(STATE.studentMonth.getFullYear(), STATE.studentMonth.getMonth()-1, 1); renderStudents(); }
     else if(a === "student-month-next"){ STATE.studentMonth = new Date(STATE.studentMonth.getFullYear(), STATE.studentMonth.getMonth()+1, 1); renderStudents(); }
