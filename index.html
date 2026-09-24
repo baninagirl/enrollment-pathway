@@ -260,6 +260,9 @@
   .login-brand .dot{ width:9px; height:9px; border-radius:50%; background:var(--accent); flex:none; }
   .login-sub{ font-size:13px; color:var(--ink-muted); margin:-6px 0 4px; }
   .login-error{ background:var(--bad-soft); color:var(--bad); border-radius:9px; padding:9px 12px; font-size:12.5px; font-weight:600; }
+  .login-note{ background:var(--good-soft); color:var(--good); border-radius:9px; padding:9px 12px; font-size:12.5px; font-weight:600; }
+  .link-btn{ background:none; border:none; color:var(--accent); font-size:12.5px; font-weight:600; cursor:pointer; padding:2px; align-self:center; }
+  .link-btn:hover{ text-decoration:underline; }
   .rail-account{ padding:0 10px 10px; }
   .account-row{ display:flex; align-items:center; justify-content:space-between; gap:8px; padding:8px 8px; border-top:1px solid var(--border); font-size:12px; color:var(--ink-muted); }
   .account-email{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
@@ -308,6 +311,26 @@
     <label class="field">Email<input type="email" name="email" required autocomplete="username" autofocus></label>
     <label class="field">Password<input type="password" name="password" required autocomplete="current-password"></label>
     <button class="btn primary" type="submit" style="justify-content:center;">Log in</button>
+    <button class="link-btn" type="button" data-action="show-forgot">Forgot password?</button>
+  </form>
+
+  <form class="login-card" id="forgotForm" hidden>
+    <div class="login-brand"><span class="dot"></span>Reset password</div>
+    <div class="login-sub">Enter your email and we'll send you a link to reset it.</div>
+    <div class="login-error" id="forgotError" hidden></div>
+    <div class="login-note" id="forgotSent" hidden>Check your email for a reset link.</div>
+    <label class="field">Email<input type="email" name="email" required autocomplete="username"></label>
+    <button class="btn primary" type="submit" style="justify-content:center;">Send reset link</button>
+    <button class="link-btn" type="button" data-action="show-login">Back to log in</button>
+  </form>
+
+  <form class="login-card" id="resetForm" hidden>
+    <div class="login-brand"><span class="dot"></span>Set a new password</div>
+    <div class="login-sub">Choose a new password for your account.</div>
+    <div class="login-error" id="resetError" hidden></div>
+    <label class="field">New password<input type="password" name="password" required minlength="6" autocomplete="new-password"></label>
+    <label class="field">Confirm password<input type="password" name="password2" required minlength="6" autocomplete="new-password"></label>
+    <button class="btn primary" type="submit" style="justify-content:center;">Save password</button>
   </form>
 </div>
 
@@ -521,6 +544,13 @@
     if(errMsg){ err.textContent = errMsg; err.hidden = false; }
     else{ err.hidden = true; }
   }
+  // Swaps which of the three login-screen panels (log in / forgot password / set new
+  // password) is visible. The screen itself is toggled separately by showLogin()/showApp().
+  function showLoginView(view){
+    $("#loginForm").hidden = view !== "login";
+    $("#forgotForm").hidden = view !== "forgot";
+    $("#resetForm").hidden = view !== "reset";
+  }
   function showApp(){
     $("#loginScreen").hidden = true;
     $("#appRoot").hidden = false;
@@ -547,15 +577,21 @@
 
     const { data:{ session } } = await sbClient.auth.getSession();
     if(session){ currentUser = session.user; showApp(); renderAccount(); startApp(); }
-    else{ showLogin(); }
+    else{ showLogin(); showLoginView("login"); }
 
     sbClient.auth.onAuthStateChange((event, session)=>{
+      // Clicking the reset link in the email lands back here with a temporary "recovery"
+      // session — don't drop them straight into the app, make them set a new password first.
+      if(event === "PASSWORD_RECOVERY"){
+        showLogin(); showLoginView("reset");
+        return;
+      }
       if(session){
         currentUser = session.user;
         showApp(); renderAccount(); startApp();
       }else{
         currentUser = null; appStarted = false;
-        showLogin();
+        showLogin(); showLoginView("login");
       }
     });
   }
@@ -1916,6 +1952,8 @@
     else if(a === "student-month-mode"){ STATE.studentMonthMode = el.dataset.mode; renderStudents(); }
     else if(a === "open-edit-student"){ openEditStudentModal(el.dataset.id); }
     else if(a === "logout"){ if(sbClient) sbClient.auth.signOut(); }
+    else if(a === "show-forgot"){ showLoginView("forgot"); }
+    else if(a === "show-login"){ showLoginView("login"); }
     else if(el.closest(".stat")){ /* handled by switch-tab above via data-action on the tile itself */ }
   });
 
@@ -1968,6 +2006,44 @@
     const { error } = await sbClient.auth.signInWithPassword({ email, password });
     if(error) showLogin(error.message === "Invalid login credentials" ? "Wrong email or password." : error.message);
     btn.disabled = false; btn.textContent = "Log in";
+  });
+
+  $("#forgotForm").addEventListener("submit", async e => {
+    e.preventDefault();
+    if(!sbClient) return;
+    const fd = new FormData(e.target);
+    const email = String(fd.get("email")||"").trim();
+    const btn = e.target.querySelector('button[type="submit"]');
+    const err = $("#forgotError"), sent = $("#forgotSent");
+    err.hidden = true; sent.hidden = true;
+    btn.disabled = true; btn.textContent = "Sending…";
+    // redirectTo must be added under Authentication > URL Configuration > Redirect URLs
+    // in Supabase, or it'll bounce to Supabase's default instead of back to this site.
+    const { error } = await sbClient.auth.resetPasswordForEmail(email, { redirectTo: window.location.origin + window.location.pathname });
+    btn.disabled = false; btn.textContent = "Send reset link";
+    if(error){ err.textContent = error.message; err.hidden = false; }
+    else{ sent.hidden = false; }
+  });
+
+  $("#resetForm").addEventListener("submit", async e => {
+    e.preventDefault();
+    if(!sbClient) return;
+    const fd = new FormData(e.target);
+    const password = String(fd.get("password")||"");
+    const password2 = String(fd.get("password2")||"");
+    const err = $("#resetError");
+    if(password.length < 6){ err.textContent = "Password must be at least 6 characters."; err.hidden = false; return; }
+    if(password !== password2){ err.textContent = "Passwords don't match."; err.hidden = false; return; }
+    err.hidden = true;
+    const btn = e.target.querySelector('button[type="submit"]');
+    btn.disabled = true; btn.textContent = "Saving…";
+    const { data, error } = await sbClient.auth.updateUser({ password });
+    btn.disabled = false; btn.textContent = "Save password";
+    if(error){ err.textContent = error.message; err.hidden = false; return; }
+    currentUser = data.user;
+    toast("Password updated.");
+    showLoginView("login");
+    showApp(); renderAccount(); startApp();
   });
 
   /* ---------------- Go ---------------- */
