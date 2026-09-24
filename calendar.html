@@ -103,6 +103,7 @@
   .cal-legend .dot{ width:9px; height:9px; border-radius:50%; flex:none; }
   .cal-legend .dot.math{ background:var(--accent); }
   .cal-legend .dot.reading{ background:var(--warn); }
+  .cal-legend .dot.arrived{ background:transparent; border:1.5px solid var(--ink-muted); }
   .cal-count{ font-size:12px; color:var(--ink-muted); padding-bottom:9px; white-space:nowrap; }
 
   .cal-wrap{ overflow-x:auto; border:1px solid var(--border); border-radius:14px; background:var(--surface); box-shadow:var(--shadow); }
@@ -125,10 +126,19 @@
   .cal-chip:last-child{ margin-bottom:0; }
   .cal-chip.subj-math{ background:var(--accent-soft); color:var(--accent-soft-ink); }
   .cal-chip.subj-reading{ background:var(--warn-soft); color:var(--warn); }
-  .cal-chip.arrived{ border-left-color:var(--good); }
-  .cal-chip .teacher-sub{ font-weight:500; opacity:.82; font-size:10.5px; margin-left:20px; }
+  .cal-chip.arrived{ border-left-color:currentColor; }
+  .cal-chip .teacher-sub{ font-weight:500; opacity:.82; font-size:10.5px; margin-left:19px; }
   .chip-row{ display:flex; align-items:center; gap:6px; cursor:pointer; }
-  .chip-row input{ width:13px; height:13px; margin:0; flex:none; accent-color:var(--good); }
+  /* A quiet little dot instead of a standard checkbox — same ink color the chip's text
+     already uses, so it sits in the chip rather than shouting over it. Hollow until
+     checked, filled solid once someone's marked arrived. */
+  .chip-row input{
+    appearance:none; -webkit-appearance:none; width:13px; height:13px; margin:0; flex:none;
+    border-radius:50%; border:1.5px solid currentColor; background:transparent;
+    opacity:.5; cursor:pointer;
+  }
+  .chip-row input:hover{ opacity:.85; }
+  .chip-row input:checked{ background:currentColor; opacity:.9; }
   .mode-tag{ font-size:9.5px; font-weight:700; opacity:.7; letter-spacing:.02em; }
 
   .login-screen{ position:fixed; inset:0; display:flex; align-items:center; justify-content:center; background:var(--bg); z-index:100; padding:20px; }
@@ -201,7 +211,7 @@
       <div class="cal-legend">
         <span class="swatch"><span class="dot math"></span>Math</span>
         <span class="swatch"><span class="dot reading"></span>Reading</span>
-        <span class="swatch">☑ Arrived this week</span>
+        <span class="swatch"><span class="dot arrived"></span>Arrived today</span>
       </div>
       <span class="cal-count" id="calCount"></span>
     </div>
@@ -225,6 +235,10 @@
   function esc(s){ return String(s==null?"":s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
 
   const DAY_ORDER = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
+  // Attendance is only ever meaningful for whatever day it actually is — the toggle
+  // shows up on today's column only, and "today" naturally moves to the next column
+  // tomorrow since this is just read fresh on every render.
+  function todayDow(){ return DAY_ORDER[(new Date().getDay() + 6) % 7]; }
   function fmtTime(t){
     if(!t) return "";
     let [h,m] = t.split(":").map(Number);
@@ -516,10 +530,25 @@
     let html = `<div class="cal-cell cal-head"></div>`;
     for(const d of days) html += `<div class="cal-cell cal-head">${d}</div>`;
 
+    const today = todayDow();
     for(const t of times){
       html += `<div class="cal-cell cal-time-label">${fmtTime(t)}</div>`;
       for(const d of days){
-        const items = (byCell[d+"|"+t] || []).slice().sort((a,b) => a.studentName.localeCompare(b.studentName));
+        const isToday = d === today;
+        let items = (byCell[d+"|"+t] || []).slice();
+        if(isToday){
+          // End-of-day triage: whoever hasn't been checked off yet sinks to the bottom
+          // of the cell, so a teacher can scan straight to who still needs a message
+          // home, instead of hunting for them alphabetically.
+          items.sort((a,b) => {
+            const aArr = a.scheduleId && !!(attendanceFor(a.scheduleId, a.day)||{}).arrived;
+            const bArr = b.scheduleId && !!(attendanceFor(b.scheduleId, b.day)||{}).arrived;
+            if(aArr !== bArr) return aArr ? -1 : 1;
+            return a.studentName.localeCompare(b.studentName);
+          });
+        }else{
+          items.sort((a,b) => a.studentName.localeCompare(b.studentName));
+        }
         html += `<div class="cal-cell">${items.map(it => {
           const cls = it.subject === "Reading" ? "subj-reading" : "subj-math";
           const teacherLine = showTeacherLabel && it.teacher ? `<span class="teacher-sub">${esc(it.teacher)}</span>` : "";
@@ -527,10 +556,12 @@
           const rec = it.scheduleId ? attendanceFor(it.scheduleId, it.day) : null;
           const arrived = !!(rec && rec.arrived);
           const modeTag = it.mode === "RI" ? `<span class="mode-tag">RI</span>` : "";
-          const checkbox = it.scheduleId
+          // Only today's column ever gets the toggle — yesterday's is done, tomorrow's
+          // hasn't happened yet, so there's nothing useful to check off either way.
+          const checkbox = (isToday && it.scheduleId)
             ? `<input type="checkbox" data-action="toggle-arrived" data-schedule="${esc(it.scheduleId)}" data-day="${esc(it.day)}" ${arrived?"checked":""}>`
             : "";
-          return `<div class="cal-chip ${cls} ${arrived?"arrived":""}" title="${esc(titleBits)}">
+          return `<div class="cal-chip ${cls} ${isToday && arrived?"arrived":""}" title="${esc(titleBits)}">
             <label class="chip-row">${checkbox}<span class="chip-name">${esc(it.studentName)} ${modeTag}</span></label>
             ${teacherLine}
           </div>`;
