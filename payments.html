@@ -494,122 +494,94 @@
     return { student: s, due, paid, balance, status };
   }
 
-  // ---------------- Statement of Account ----------------
-  // A running ledger for one student (or a whole billing group combined) across the last
-  // few months — for printing or pasting to a parent. Tuition is only tracked as a single
-  // current rate per student (not historized), so a past month here assumes today's rate
-  // applied back then too — worth a heads up if a family's rate has changed recently.
-  function monthsBack(throughYm, span){
-    const [y,m] = throughYm.split("-").map(Number);
-    const out = [];
-    for(let i = span - 1; i >= 0; i--){
-      const d = new Date(y, m - 1 - i, 1);
-      out.push(d.getFullYear() + "-" + String(d.getMonth()+1).padStart(2,"0"));
-    }
-    return out;
-  }
-  function ledgerFor(studentIds, throughYm, span){
-    const months = monthsBack(throughYm, span);
-    const rows = months.map(ym => {
-      let due = 0, paid = 0;
-      studentIds.forEach(sid => {
-        const s = students.find(x => x.id === sid);
-        if(!s) return;
-        due += Number(s.monthly_tuition||0);
-        paid += verifiedPaidFor(sid, ym);
-      });
-      return { ym, due, paid, balance: due - paid };
+  // ---------------- Tuition image download ----------------
+  // One click, no modal: draws a small card with that student's (or that billing group's)
+  // computed total for the currently-selected month and downloads it straight away as a PNG.
+  function monthTotalFor(studentIds, ym){
+    let due = 0, paid = 0;
+    studentIds.forEach(sid => {
+      const s = students.find(x => x.id === sid);
+      if(!s) return;
+      due += Number(s.monthly_tuition||0);
+      paid += verifiedPaidFor(sid, ym);
     });
-    const payments = receipts
-      .filter(r => studentIds.includes(r.student_id) && r.status === "verified" && months.includes(r.covers_month.slice(0,7)))
-      .sort((a,b) => (a.covers_month < b.covers_month ? -1 : 1));
-    return {
-      rows,
-      payments,
-      totalDue: rows.reduce((n,r)=>n+r.due,0),
-      totalPaid: rows.reduce((n,r)=>n+r.paid,0),
-      totalBalance: rows.reduce((n,r)=>n+r.balance,0)
-    };
+    const balance = due - paid;
+    const status = balance <= 0 ? "PAID" : (paid > 0 ? "PARTIAL" : "UNPAID");
+    return { due, paid, balance, status };
   }
-  function statementPlainText(names, ledger, span){
-    const lines = [];
-    lines.push("STATEMENT OF ACCOUNT");
-    lines.push("Kumon Iligan City Learning Center");
-    lines.push(names);
-    lines.push("As of " + new Date().toLocaleDateString("en-US", { year:"numeric", month:"long", day:"numeric" }));
-    lines.push("");
-    ledger.rows.forEach(r => {
-      lines.push(`${fmtMonthLabel(r.ym)} — Due ${peso(r.due)}, Paid ${peso(r.paid)}, Balance ${peso(r.balance)}`);
-    });
-    lines.push("");
-    lines.push(`TOTAL BALANCE (last ${span} mo.): ${peso(ledger.totalBalance)}`);
-    return lines.join("\n");
-  }
-  function statementPrintHtml(names, ledger, span){
-    const rowsHtml = ledger.rows.map(r => `<tr><td>${esc(fmtMonthLabel(r.ym))}</td><td class="r">${peso(r.due)}</td><td class="r">${peso(r.paid)}</td><td class="r">${peso(r.balance)}</td></tr>`).join("");
-    const paymentsHtml = ledger.payments.length
-      ? ledger.payments.map(p => `<tr><td>${esc(fmtMonthLabel(p.covers_month.slice(0,7)))}</td><td>${esc(p.reference_number||"—")}</td><td class="r">${peso(p.amount)}</td></tr>`).join("")
-      : `<tr><td colspan="3" class="muted">No payments recorded in this period.</td></tr>`;
-    return `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Statement of Account — ${esc(names)}</title>
-      <style>
-        body{ font-family: -apple-system, Arial, sans-serif; color:#1B1F27; padding:32px; max-width:640px; margin:0 auto; }
-        h1{ font-size:18px; margin:0 0 2px; } h2{ font-size:14px; font-weight:600; color:#636C7C; margin:0 0 18px; }
-        table{ width:100%; border-collapse:collapse; margin-bottom:20px; font-size:13px; }
-        th{ text-align:left; font-size:10.5px; text-transform:uppercase; letter-spacing:.03em; color:#636C7C; padding:6px 8px; border-bottom:1px solid #E1E4EB; }
-        td{ padding:7px 8px; border-bottom:1px solid #E1E4EB; }
-        td.r, th.r{ text-align:right; font-variant-numeric:tabular-nums; }
-        .muted{ color:#9AA1AF; }
-        .total{ font-size:15px; font-weight:700; text-align:right; padding-top:6px; }
-        .meta{ font-size:12px; color:#636C7C; margin-bottom:18px; }
-      </style></head><body>
-      <h1>Statement of Account</h1>
-      <h2>Kumon Iligan City Learning Center</h2>
-      <div class="meta"><b>${esc(names)}</b><br>As of ${esc(new Date().toLocaleDateString("en-US", { year:"numeric", month:"long", day:"numeric" }))}</div>
-      <table><thead><tr><th>Month</th><th class="r">Due</th><th class="r">Paid</th><th class="r">Balance</th></tr></thead>
-      <tbody>${rowsHtml}</tbody></table>
-      <h2 style="margin-bottom:8px;">Payments received</h2>
-      <table><thead><tr><th>For</th><th>Reference</th><th class="r">Amount</th></tr></thead>
-      <tbody>${paymentsHtml}</tbody></table>
-      <div class="total">Total balance (last ${span} months): ${peso(ledger.totalBalance)}</div>
-      <script>window.onload = () => setTimeout(() => window.print(), 250);<\/script>
-      </body></html>`;
-  }
-  function openStatementModal(studentIds, names){
-    let span = 6;
-    const modal = $("#modal");
-    function paint(){
-      const ledger = ledgerFor(studentIds, selectedMonth, span);
-      modal.innerHTML = `
-        <div class="modal-head"><h3>Statement of Account</h3><button class="iconbtn" data-action="close-modal">✕</button></div>
-        <div class="modal-body">
-          <div><b>${esc(names)}</b></div>
-          <label class="field" style="max-width:160px;">Show last
-            <select id="statementSpan">
-              <option value="3" ${span===3?"selected":""}>3 months</option>
-              <option value="6" ${span===6?"selected":""}>6 months</option>
-              <option value="12" ${span===12?"selected":""}>12 months</option>
-            </select>
-          </label>
-          <div class="table-scroll">
-            <table class="stable">
-              <thead><tr><th>Month</th><th>Due</th><th>Paid</th><th>Balance</th></tr></thead>
-              <tbody>${ledger.rows.map(r => `<tr><td>${esc(fmtMonthLabel(r.ym))}</td><td class="money">${peso(r.due)}</td><td class="money">${peso(r.paid)}</td><td class="money">${peso(r.balance)}</td></tr>`).join("")}</tbody>
-            </table>
-          </div>
-          <div style="text-align:right; font-weight:700;">Total balance: ${peso(ledger.totalBalance)}</div>
-          ${ledger.rows.some(r=>r.due===0) ? `<div class="banner info" style="margin:0;">Assumes today's tuition rate applied across every month shown — if it changed recently, the older months here won't be exact.</div>` : ""}
-        </div>
-        <div class="modal-foot">
-          <button type="button" class="btn ghost" data-action="statement-copy" data-names="${esc(names)}">Copy as text</button>
-          <button type="button" class="btn primary" data-action="statement-print" data-names="${esc(names)}">Print / Save PDF</button>
-        </div>
-      `;
-      $("#statementSpan").addEventListener("change", (e)=>{ span = Number(e.target.value); paint(); });
-      modal.dataset.studentIds = JSON.stringify(studentIds);
-      modal.dataset.span = span;
+  function slugify(s){ return String(s).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "") || "student"; }
+
+  function downloadTuitionImage(studentIds, names){
+    const ym = selectedMonth;
+    const totals = monthTotalFor(studentIds, ym);
+    const statusColor = totals.status === "PAID" ? "#1E8E5A" : totals.status === "PARTIAL" ? "#C2831F" : "#C23B2B";
+
+    const W = 640, H = 400;
+    const canvas = document.createElement("canvas");
+    canvas.width = W; canvas.height = H;
+    const ctx = canvas.getContext("2d");
+
+    ctx.fillStyle = "#FFFFFF";
+    ctx.fillRect(0, 0, W, H);
+    ctx.strokeStyle = "#E1E4EB";
+    ctx.lineWidth = 2;
+    ctx.strokeRect(1, 1, W-2, H-2);
+
+    ctx.fillStyle = "#636C7C";
+    ctx.font = "600 13px Arial, sans-serif";
+    ctx.fillText("KUMON ILIGAN CITY LEARNING CENTER", 32, 44);
+
+    ctx.fillStyle = "#1B1F27";
+    ctx.font = "700 24px Arial, sans-serif";
+    ctx.fillText(names, 32, 82);
+
+    ctx.fillStyle = "#9AA1AF";
+    ctx.font = "500 13px Arial, sans-serif";
+    ctx.fillText("Tuition — " + fmtMonthLabel(ym), 32, 104);
+
+    ctx.strokeStyle = "#E1E4EB";
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(32, 126); ctx.lineTo(W-32, 126); ctx.stroke();
+
+    function line(label, value, y, big){
+      ctx.fillStyle = "#636C7C";
+      ctx.font = "600 13px Arial, sans-serif";
+      ctx.fillText(label, 32, y);
+      ctx.fillStyle = "#1B1F27";
+      ctx.font = (big ? "700 22px " : "700 17px ") + "Arial, sans-serif";
+      ctx.textAlign = "right";
+      ctx.fillText(value, W-32, y + (big ? 2 : 0));
+      ctx.textAlign = "left";
     }
-    paint();
-    $("#modalBackdrop").hidden = false;
+    line("Tuition due", peso(totals.due), 162);
+    line("Paid", peso(totals.paid), 194);
+
+    ctx.strokeStyle = "#E1E4EB";
+    ctx.beginPath(); ctx.moveTo(32, 216); ctx.lineTo(W-32, 216); ctx.stroke();
+
+    ctx.fillStyle = "#636C7C";
+    ctx.font = "600 14px Arial, sans-serif";
+    ctx.fillText("Balance", 32, 258);
+    ctx.fillStyle = statusColor;
+    ctx.font = "700 30px Arial, sans-serif";
+    ctx.textAlign = "right";
+    ctx.fillText(peso(totals.balance), W-32, 262);
+    ctx.textAlign = "left";
+
+    ctx.fillStyle = statusColor;
+    ctx.font = "700 13px Arial, sans-serif";
+    ctx.fillText(totals.status, 32, 288);
+
+    ctx.fillStyle = "#9AA1AF";
+    ctx.font = "400 11px Arial, sans-serif";
+    ctx.fillText("Generated " + new Date().toLocaleDateString("en-US", { year:"numeric", month:"long", day:"numeric" }) + " via Kumon Hub", 32, H - 24);
+
+    const a = document.createElement("a");
+    a.download = `tuition-${slugify(names)}-${ym}.png`;
+    a.href = canvas.toDataURL("image/png");
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
   }
 
   function render(){
@@ -688,13 +660,13 @@
       const balance = due - paid;
       const status = balance <= 0 ? "paid" : (paid > 0 ? "partial" : "unpaid");
       html += `<tr class="group-row">
-        <td class="gname">${esc(name)}<span class="faint" style="font-weight:500;">(${members.length})</span></td>
+        <td class="gname">${esc(name)}<span class="faint" style="font-weight:500;">(${members.length})</span>${gid !== "__none__" ? `<button class="iconbtn" data-action="download-tuition" data-group="${esc(gid)}" title="Download tuition image">⬇</button>` : ""}</td>
         <td></td>
         <td class="money">${peso(due)}</td>
         <td class="money">${peso(paid)}</td>
         <td class="money">${peso(balance)}</td>
         <td>${statusPill(status)}</td>
-        <td>${gid !== "__none__" ? `<div class="row-actions"><button class="btn sm ghost" data-action="open-statement" data-group="${esc(gid)}">Statement</button></div>` : ""}</td>
+        <td></td>
       </tr>`;
       html += members.map(r => rowHtml(r)).join("");
     });
@@ -704,13 +676,13 @@
   function rowHtml(r){
     const s = r.student;
     return `<tr>
-      <td>${esc(displayName(s))}<div class="faint" style="font-size:11.5px;">${esc(s.age_grade||"")}</div></td>
+      <td>${esc(displayName(s))}<button class="iconbtn" data-action="download-tuition" data-student="${esc(s.id)}" title="Download tuition image">⬇</button><div class="faint" style="font-size:11.5px;">${esc(s.age_grade||"")}</div></td>
       <td class="muted">${esc(groupNameFor(s.billing_group_id) || "—")}</td>
       <td class="money">${peso(r.due)} <button class="iconbtn" data-action="edit-tuition" data-id="${esc(s.id)}" title="Edit tuition">✎</button></td>
       <td class="money">${peso(r.paid)}</td>
       <td class="money">${peso(r.balance)}</td>
       <td>${statusPill(r.status)}</td>
-      <td><div class="row-actions"><button class="btn sm ghost" data-action="open-statement" data-student="${esc(s.id)}">Statement</button><button class="btn sm" data-action="open-log-payment" data-student="${esc(s.id)}">Log payment</button></div></td>
+      <td><div class="row-actions"><button class="btn sm" data-action="open-log-payment" data-student="${esc(s.id)}">Log payment</button></div></td>
     </tr>`;
   }
 
@@ -1034,35 +1006,15 @@
     }
     else if(action === "open-log-payment"){ openLogPaymentModal(btn.dataset.student || null); }
     else if(action === "edit-tuition"){ e.preventDefault(); openTuitionModal(btn.dataset.id); }
-    else if(action === "open-statement"){
+    else if(action === "download-tuition"){
+      e.preventDefault();
       if(btn.dataset.group){
         const gid = btn.dataset.group;
         const members = students.filter(s => s.billing_group_id === gid);
-        openStatementModal(members.map(s => s.id), groupNameFor(gid) || "Billing group");
+        downloadTuitionImage(members.map(s => s.id), groupNameFor(gid) || "Billing group");
       }else{
         const s = students.find(x => x.id === btn.dataset.student);
-        if(s) openStatementModal([s.id], displayName(s));
-      }
-    }
-    else if(action === "statement-print"){
-      const ids = JSON.parse($("#modal").dataset.studentIds || "[]");
-      const span = Number($("#modal").dataset.span || 6);
-      const ledger = ledgerFor(ids, selectedMonth, span);
-      const win = window.open("", "_blank");
-      if(!win){ toast("Your browser blocked the print window — allow pop-ups for this site and try again."); return; }
-      win.document.write(statementPrintHtml(btn.dataset.names, ledger, span));
-      win.document.close();
-    }
-    else if(action === "statement-copy"){
-      const ids = JSON.parse($("#modal").dataset.studentIds || "[]");
-      const span = Number($("#modal").dataset.span || 6);
-      const ledger = ledgerFor(ids, selectedMonth, span);
-      const text = statementPlainText(btn.dataset.names, ledger, span);
-      try{
-        await navigator.clipboard.writeText(text);
-        toast("Copied — paste it into Messenger, SMS, or email.");
-      }catch(err){
-        toast("Couldn't copy automatically — select and copy the text yourself.");
+        if(s) downloadTuitionImage([s.id], displayName(s));
       }
     }
     else if(action === "open-groups"){ openGroupsModal(); }
