@@ -1399,6 +1399,10 @@
     const monthRange = cycleRangeLabel(STATE.studentMonth);
 
     const base = pipelineStudents()
+      // Only students who've been marked Enrolled off their diagnostic belong on this
+      // roster — a booked-but-not-yet-tested student, or one marked not enrolled, isn't
+      // on the roster yet (they're still tracked from the Enrollment tab).
+      .filter(s => s.status !== "diagnostic_scheduled" && s.status !== "not_enrolled")
       .filter(s => !q || s.name.toLowerCase().includes(q) || (s.parentName||"").toLowerCase().includes(q))
       .filter(s => STATE.studentMonthMode === "all" || studentCohortMonthKey(s) === monthKey)
       .sort((a,b)=> (b.createdAt||"").localeCompare(a.createdAt||""));
@@ -1436,7 +1440,7 @@
       </div>
       <div class="card">
         ${rows.length ? `<div class="table-scroll"><table class="stable">
-          <thead><tr><th>#</th><th>Student</th><th>Age / grade</th><th>Subject</th><th>Parent / guardian</th><th>Contact</th><th>Stage</th><th>Diagnostic</th></tr></thead>
+          <thead><tr><th>#</th><th>Student</th><th>Age / grade</th><th>Subject</th><th>Parent / guardian</th><th>Contact</th><th>Stage</th><th>Start point</th><th>DT test</th><th>DT date</th><th>Score</th><th>Time</th></tr></thead>
           <tbody>
             ${rows.map((row, i) => {
               const s = row.s;
@@ -1450,11 +1454,15 @@
                 <td>${esc(s.parentName||"—")}</td>
                 <td>${esc(s.parentPhone||s.parentEmail||"—")}</td>
                 <td><span class="pill ${st[1]}">${st[0]}</span></td>
+                <td>${esc((d && d.startPoint) || "—")}</td>
+                <td>${esc((d && d.dtTest) || "—")}</td>
                 <td class="tnum">${d ? fmtDateShort(d.date) : "—"}</td>
+                <td>${esc((d && d.score) || "—")}</td>
+                <td class="tnum">${d ? fmtTime(d.time) : "—"}</td>
               </tr>`;
             }).join("")}
           </tbody>
-        </table></div>` : `<div class="empty">${q ? "No students match that search." : STATE.studentMonthMode==="month" ? `No students on the ${esc(monthLabel)} roster. Try <b>All time</b>, or <b>New diagnostic booking</b> / <b>Add student</b> adds one here.` : "No students yet. <b>New diagnostic booking</b> or <b>Add student</b> creates your first."}</div>`}
+        </table></div>` : `<div class="empty">${q ? "No students match that search." : STATE.studentMonthMode==="month" ? `No enrolled students on the ${esc(monthLabel)} roster yet. Try <b>All time</b> — a student shows up here once their diagnostic is marked <b>Enrolled</b>.` : "No enrolled students yet. A student shows up here once their diagnostic is marked <b>Enrolled</b>."}</div>`}
       </div>
     `;
     const input = $("#studentSearchInput", el);
@@ -1780,6 +1788,11 @@
             </select>
           </label>
           <label class="field">Remarks<textarea name="notes" rows="2" placeholder="e.g. cant be reached, try call, referred by…">${esc(d.notes||"")}</textarea></label>
+          <div class="field-row">
+            <label class="field">DT test<input type="text" name="dtTest" value="${esc(d.dtTest||"")}"></label>
+            <label class="field">Score<input type="text" name="score" value="${esc(d.score||"")}"></label>
+          </div>
+          <label class="field">Start point<input type="text" name="startPoint" value="${esc(d.startPoint||"")}" placeholder="e.g. Math 3A"></label>
         </div>
         <div class="modal-foot">
           <button type="button" class="btn ghost" data-action="close-modal">Cancel</button>
@@ -2017,11 +2030,15 @@
     const inquiry = fd.get("inquiry").toString();
     const examiner = fd.get("examiner");
     const notes = fd.get("notes").toString().trim();
+    const dtTest = fd.get("dtTest").toString().trim();
+    const score = fd.get("score").toString().trim();
+    const startPoint = fd.get("startPoint").toString().trim();
     if(!firstName || !lastName || !date || !time || !examiner) return;
 
     await guardWrite(async ()=>{
       await db.collection("diagnostics").doc(id).update({
-        studentName, parentName, ageGrade, contact, date, time, subject, inquiry, examiner, notes
+        studentName, parentName, ageGrade, contact, date, time, subject, inquiry, examiner, notes,
+        dtTest, score, startPoint
       });
       // Keep the linked student record's own details in step with what was just corrected here.
       if(d.studentId && studentById(d.studentId)){
