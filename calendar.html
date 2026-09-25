@@ -107,6 +107,23 @@
   .cal-count{ font-size:12px; color:var(--ink-muted); padding-bottom:9px; white-space:nowrap; }
 
   .cal-wrap{ overflow-x:auto; border:1px solid var(--border); border-radius:14px; background:var(--surface); box-shadow:var(--shadow); }
+
+  .noshow-card{ margin-top:16px; border:1px solid var(--border); border-radius:14px; background:var(--surface); box-shadow:var(--shadow); padding:14px 16px; }
+  .noshow-head{ font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; color:var(--ink-muted); margin-bottom:10px; }
+  .noshow-list{ display:flex; flex-wrap:wrap; gap:8px; }
+  .noshow-empty{ font-size:12.5px; color:var(--ink-faint); }
+  .noshow-chip{
+    display:inline-flex; align-items:center; gap:7px; padding:6px 10px; border-radius:9px;
+    font-size:12.5px; font-weight:700;
+  }
+  .noshow-chip.subj-math{ background:var(--accent-soft); color:var(--accent-soft-ink); }
+  .noshow-chip.subj-reading{ background:var(--warn-soft); color:var(--warn); }
+  .noshow-chip .teacher-sub{ font-weight:500; opacity:.75; font-size:10.5px; }
+  .noshow-chip input{
+    appearance:none; -webkit-appearance:none; width:13px; height:13px; margin:0; flex:none;
+    border-radius:50%; border:1.5px solid currentColor; background:transparent; opacity:.55; cursor:pointer;
+  }
+  .noshow-chip input:hover{ opacity:.9; }
   .cal-grid{ display:grid; min-width:820px; }
   .cal-cell{ border-bottom:1px solid var(--border); border-right:1px solid var(--border); padding:8px; }
   .cal-grid > .cal-cell:nth-last-child(-n+1){ border-bottom:none; }
@@ -208,6 +225,11 @@
       </div>
       <label class="field" id="calTeacherField" hidden>Teacher<select id="calTeacherFilter"></select></label>
       <label class="field" id="calGroupField" hidden>Group<select id="calGroupFilter"></select></label>
+      <label class="field" id="calModeField">Mode<select id="calModeFilter">
+        <option value="all">All modes</option>
+        <option value="IC">IC only</option>
+        <option value="RI">RI only</option>
+      </select></label>
       <div class="cal-legend">
         <span class="swatch"><span class="dot math"></span>Math</span>
         <span class="swatch"><span class="dot reading"></span>Reading</span>
@@ -219,6 +241,11 @@
     <div class="cal-wrap" id="calWrap">
       <div class="cal-grid" id="calGrid"></div>
       <div class="empty" id="calEmpty" hidden>Nobody's on a regular schedule that matches this view yet.</div>
+    </div>
+
+    <div class="noshow-card" id="noShowCard" hidden>
+      <div class="noshow-head">Did not arrive today:</div>
+      <div class="noshow-list" id="noShowList"></div>
     </div>
   </main>
 </div>
@@ -286,7 +313,7 @@
 
   let sbClient = null, currentUser = null, currentRole = null, currentTeacherName = null;
   let schedules = [], enrollments = [], trainers = [], attendance = [];
-  let filters = { teacher:"all", group:"all" };
+  let filters = { teacher:"all", group:"all", mode:"all" };
   // Which of the three tabs is active — only meaningful for non-teacher-scoped roles,
   // who are the only ones who ever see the tabs at all.
   let viewMode = "all";
@@ -499,6 +526,7 @@
     return buildEntries().filter(en => {
       if(!isTeacherScoped() && filters.teacher !== "all" && en.teacher !== filters.teacher) return false;
       if(filters.group !== "all" && en.groupKey !== filters.group) return false;
+      if(filters.mode !== "all" && en.mode !== filters.mode) return false;
       return true;
     });
   }
@@ -513,6 +541,7 @@
       grid.innerHTML = "";
       grid.style.gridTemplateColumns = "";
       emptyEl.hidden = false;
+      $("#noShowCard").hidden = true;
       return;
     }
     emptyEl.hidden = true;
@@ -535,20 +564,7 @@
       html += `<div class="cal-cell cal-time-label">${fmtTime(t)}</div>`;
       for(const d of days){
         const isToday = d === today;
-        let items = (byCell[d+"|"+t] || []).slice();
-        if(isToday){
-          // End-of-day triage: whoever hasn't been checked off yet sinks to the bottom
-          // of the cell, so a teacher can scan straight to who still needs a message
-          // home, instead of hunting for them alphabetically.
-          items.sort((a,b) => {
-            const aArr = a.scheduleId && !!(attendanceFor(a.scheduleId, a.day)||{}).arrived;
-            const bArr = b.scheduleId && !!(attendanceFor(b.scheduleId, b.day)||{}).arrived;
-            if(aArr !== bArr) return aArr ? -1 : 1;
-            return a.studentName.localeCompare(b.studentName);
-          });
-        }else{
-          items.sort((a,b) => a.studentName.localeCompare(b.studentName));
-        }
+        const items = (byCell[d+"|"+t] || []).slice().sort((a,b) => a.studentName.localeCompare(b.studentName));
         html += `<div class="cal-cell">${items.map(it => {
           const cls = it.subject === "Reading" ? "subj-reading" : "subj-math";
           const teacherLine = showTeacherLabel && it.teacher ? `<span class="teacher-sub">${esc(it.teacher)}</span>` : "";
@@ -570,6 +586,36 @@
     }
     grid.style.gridTemplateColumns = `84px repeat(${days.length}, minmax(150px, 1fr))`;
     grid.innerHTML = html;
+
+    renderNoShowList(entries, today, showTeacherLabel);
+  }
+
+  // A standing end-of-day list, separate from the grid — everyone scheduled today who
+  // hasn't been checked off yet, so a teacher can see at a glance who still needs a
+  // message home without hunting across the day's time slots for them.
+  function renderNoShowList(entries, today, showTeacherLabel){
+    const card = $("#noShowCard");
+    const list = $("#noShowList");
+    const todays = entries.filter(e => e.day === today && e.scheduleId);
+    if(!todays.length){ card.hidden = true; return; }
+    card.hidden = false;
+
+    const pending = todays
+      .filter(e => !(attendanceFor(e.scheduleId, e.day)||{}).arrived)
+      .sort((a,b) => a.studentName.localeCompare(b.studentName));
+
+    if(!pending.length){
+      list.innerHTML = `<span class="noshow-empty">Everyone's checked in.</span>`;
+      return;
+    }
+    list.innerHTML = pending.map(it => {
+      const cls = it.subject === "Reading" ? "subj-reading" : "subj-math";
+      const teacherLine = showTeacherLabel && it.teacher ? `<span class="teacher-sub">${esc(it.teacher)}</span>` : "";
+      return `<label class="noshow-chip ${cls}">
+        <input type="checkbox" data-action="toggle-arrived" data-schedule="${esc(it.scheduleId)}" data-day="${esc(it.day)}">
+        <span>${esc(it.studentName)}</span>${teacherLine}
+      </label>`;
+    }).join("");
   }
 
   document.addEventListener("submit", async (e)=>{
@@ -584,6 +630,7 @@
   document.addEventListener("change", (e)=>{
     if(e.target.id === "calTeacherFilter"){ filters.teacher = e.target.value; renderCalendar(); }
     if(e.target.id === "calGroupFilter"){ filters.group = e.target.value; renderCalendar(); }
+    if(e.target.id === "calModeFilter"){ filters.mode = e.target.value; renderCalendar(); }
     if(e.target.dataset && e.target.dataset.action === "toggle-arrived"){
       toggleArrived(e.target.dataset.schedule, e.target.dataset.day, e.target.checked);
     }
