@@ -1091,6 +1091,14 @@
     $("#modalBackdrop").hidden = false;
   }
 
+  // Just hides non-matching rows rather than rebuilding the list, so a checkbox someone
+  // already ticked stays ticked even while it's filtered out of view.
+  function filterGroupMemberList(query){
+    const q = query.trim().toLowerCase();
+    document.querySelectorAll(".group-list .check-row").forEach(row => {
+      row.hidden = q.length > 0 && !row.dataset.name.includes(q);
+    });
+  }
   function openGroupEditModal(groupId){
     const g = groupId ? billingGroups.find(x => x.id === groupId) : null;
     const modal = $("#modal");
@@ -1100,8 +1108,9 @@
         <div class="modal-body">
           <label class="field">Group name<input type="text" name="name" value="${g ? esc(g.name) : ""}" placeholder="e.g. Lee family" required autofocus></label>
           <label class="field">Members
+            <input type="search" id="groupMemberSearch" placeholder="Search students…" style="margin-bottom:8px;">
             <div class="group-list">
-              ${students.map(s => `<label class="check-row"><input type="checkbox" name="member" value="${esc(s.id)}" ${g && s.billing_group_id === g.id ? "checked" : ""}>${esc(displayName(s))}</label>`).join("")}
+              ${students.map(s => `<label class="check-row" data-name="${esc(displayName(s).toLowerCase())}"><input type="checkbox" name="member" value="${esc(s.id)}" ${g && s.billing_group_id === g.id ? "checked" : ""}>${esc(displayName(s))}</label>`).join("")}
             </div>
           </label>
         </div>
@@ -1279,6 +1288,7 @@
   });
   document.addEventListener("input", (e)=>{
     if(e.target.id === "searchInput"){ filters.search = e.target.value; render(); }
+    if(e.target.id === "groupMemberSearch"){ filterGroupMemberList(e.target.value); }
   });
 
   document.addEventListener("click", async (e)=>{
