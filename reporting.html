@@ -147,7 +147,6 @@
   .iconbtn{ border:none; background:transparent; cursor:pointer; color:var(--ink-muted); padding:4px; border-radius:6px; transition: transform .08s ease, background .12s ease; }
   .iconbtn:active{ transform:scale(.9); }
   .iconbtn:hover{ background:var(--surface-2); color:var(--ink); }
-  .copybtn{ font-size:12px; vertical-align:middle; }
 
   .login-screen{ position:fixed; inset:0; display:flex; align-items:center; justify-content:center; background:var(--bg); z-index:100; padding:20px; }
   .login-card{ width:100%; max-width:360px; background:var(--surface); border:1px solid var(--border); border-radius:16px; padding:28px 26px; box-shadow:var(--shadow); display:flex; flex-direction:column; gap:14px; }
@@ -461,26 +460,6 @@
     const guessLast = parts.length ? parts[parts.length-1] : raw;
     return `${guessLast} ${raw}`.toLowerCase();
   }
-  // Plain "First Last" (or whatever we have) to actually copy to the clipboard —
-  // the "Last, First" form is for sorting/scanning, not for pasting elsewhere.
-  function copyableName(studentId, fallback){
-    const s = students.find(x => x.id === studentId);
-    if(s && s.first_name && s.last_name) return `${s.first_name} ${s.last_name}`;
-    return fallback || (s ? s.name : "") || "";
-  }
-  async function copyToClipboard(text){
-    try{
-      if(navigator.clipboard && window.isSecureContext){ await navigator.clipboard.writeText(text); return true; }
-    }catch(e){}
-    try{
-      const ta = document.createElement("textarea");
-      ta.value = text; ta.style.position = "fixed"; ta.style.opacity = "0";
-      document.body.appendChild(ta); ta.select();
-      document.execCommand("copy");
-      document.body.removeChild(ta);
-      return true;
-    }catch(e){ return false; }
-  }
   function populateTeacherFilter(){
     const sel = $("#teacherFilter");
     if(!sel) return;
@@ -657,7 +636,7 @@
     body.innerHTML = rows.map((r, idx) => `
       <tr class="${editable?"clickrow":""}" ${editable?`data-action="edit-report" data-id="${r.id}"`:""}>
         <td class="rownum">${idx+1}</td>
-        <td><b>${esc(displayName(r.student_id, r.student_name))}</b> <button type="button" class="iconbtn copybtn" data-action="copy-name" data-student="${esc(r.student_id)}" data-fallback="${esc(r.student_name||"")}" title="Copy name">📋</button></td>
+        <td><b>${esc(displayName(r.student_id, r.student_name))}</b></td>
         <td>${esc(gradeFor(r.student_id) || "—")}</td>
         <td><span class="pill ${r.subject==='Math'?'subj-math':'subj-reading'}">${esc(r.subject||"")}</span></td>
         <td>${fmtMode(r.mode)}</td>
@@ -689,7 +668,7 @@
     editingId = enrollmentId;
     const v = k => esc(e[k] || "");
     $("#modal").innerHTML = `
-      <div class="modal-head"><h3>${esc(displayName(e.student_id, e.student_name))} — ${esc(e.subject||"")} <button type="button" class="iconbtn copybtn" data-action="copy-name" data-student="${esc(e.student_id)}" data-fallback="${esc(e.student_name||"")}" title="Copy name">📋</button></h3><button class="iconbtn" data-action="close-modal">✕</button></div>
+      <div class="modal-head"><h3>${esc(displayName(e.student_id, e.student_name))} — ${esc(e.subject||"")}</h3><button class="iconbtn" data-action="close-modal">✕</button></div>
       <form id="reportForm">
         <div class="modal-body">
           <p class="hint" style="font-size:12px; color:var(--ink-muted); margin:0;">${esc(monthLabel(viewMonth))}'s numbers. Goal, Schedule, Mode, Award and Actual are edited from <a href="roster.html">Student Roster</a> instead.</p>
@@ -781,13 +760,6 @@
     else if(action === "close-modal"){ closeModal(); }
     else if(action === "run-undo"){ runUndo(); }
     else if(action === "run-redo"){ runRedo(); }
-    else if(action === "copy-name"){
-      const name = copyableName(btn.dataset.student, btn.dataset.fallback);
-      const ok = await copyToClipboard(name);
-      const original = btn.textContent;
-      btn.textContent = ok ? "✓" : "✕";
-      setTimeout(()=>{ btn.textContent = original; }, 1100);
-    }
   });
 
   boot();

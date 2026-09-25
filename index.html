@@ -249,7 +249,6 @@
   .modal-foot{ display:flex; justify-content:flex-end; gap:8px; padding:14px 18px; border-top:1px solid var(--border); }
   .iconbtn{ border:none; background:transparent; cursor:pointer; color:var(--ink-muted); padding:4px; border-radius:6px; display:flex; }
   .iconbtn:hover{ background:var(--surface-2); color:var(--ink); }
-  .copybtn{ display:inline-flex; font-size:12px; vertical-align:middle; }
   .hint{ font-size:12px; color:var(--ink-muted); }
   .chooser{ display:flex; flex-direction:column; gap:8px; }
   .choose-opt{ display:flex; align-items:center; gap:12px; padding:13px 14px; border:1px solid var(--border); border-radius:11px; cursor:pointer; text-align:left; background:var(--surface); }
@@ -819,29 +818,11 @@
     const g = splitNameGuess(s.name);
     return g.last ? `${g.last}, ${g.first}` : (s.name || "");
   }
-  function copyableName(s){
-    if(!s) return "";
-    if(s.firstName && s.lastName) return `${s.firstName} ${s.lastName}`;
-    return s.name || "";
-  }
   function lastNameSortKey(s){
     if(!s) return "";
     if(s.lastName) return `${s.lastName} ${s.firstName||""}`.trim().toLowerCase();
     const g = splitNameGuess(s.name);
     return `${g.last} ${g.first}`.trim().toLowerCase();
-  }
-  async function copyToClipboard(text){
-    try{
-      if(navigator.clipboard && window.isSecureContext){ await navigator.clipboard.writeText(text); return true; }
-    }catch(e){}
-    try{
-      const ta = document.createElement("textarea");
-      ta.value = text; ta.style.position = "fixed"; ta.style.opacity = "0";
-      document.body.appendChild(ta); ta.select();
-      document.execCommand("copy");
-      document.body.removeChild(ta);
-      return true;
-    }catch(e){ return false; }
   }
   function trainingsFor(studentId){ return STATE.trainings.filter(t => t.studentId === studentId).sort((a,b)=> a.sessionNumber - b.sessionNumber); }
   function activeDiagnosticFor(studentId){
@@ -1497,7 +1478,7 @@
               const d = activeDiagnosticFor(s.id);
               return `<tr class="clickrow" data-action="open-student" data-id="${s.id}">
                 <td class="tnum">${i+1}</td>
-                <td><b>${esc(displayName(s))}</b> <button type="button" class="iconbtn copybtn" data-action="copy-name" data-student="${esc(s.id)}" title="Copy name">📋</button></td>
+                <td><b>${esc(displayName(s))}</b></td>
                 <td>${esc(s.ageGrade||"—")}</td>
                 <td>${row.subj ? `<span class="pill subj">${esc(row.subj)}</span>` : "—"}</td>
                 <td>${esc(s.parentName||"—")}</td>
@@ -1526,7 +1507,7 @@
     const sched = scheduleFor(id);
     const st = STATUS_LABEL[s.status] || ["—","muted"];
     openModal(`
-      <div class="modal-head"><h3>${esc(displayName(s))} <button type="button" class="iconbtn copybtn" data-action="copy-name" data-student="${esc(s.id)}" title="Copy name">📋</button></h3><button class="iconbtn" data-action="close-modal">✕</button></div>
+      <div class="modal-head"><h3>${esc(displayName(s))}</h3><button class="iconbtn" data-action="close-modal">✕</button></div>
       <div class="modal-body">
         <div style="display:flex; gap:6px; flex-wrap:wrap;">
           <span class="pill ${st[1]}">${st[0]}</span>
@@ -2300,14 +2281,6 @@
     }
     else if(a === "run-undo"){ runUndo(); }
     else if(a === "run-redo"){ runRedo(); }
-    else if(a === "copy-name"){
-      const s = studentById(el.dataset.student);
-      const original = el.textContent;
-      copyToClipboard(copyableName(s)).then(ok => {
-        el.textContent = ok ? "✓" : "✕";
-        setTimeout(()=>{ el.textContent = original; }, 1100);
-      });
-    }
     else if(a === "followup-status"){ setFollowupStatus(el.dataset.id, el.dataset.status); renderEnrollment(); }
     else if(a === "cal-prev"){
       if(STATE.calView === "week") STATE.calWeekStart = addDays(STATE.calWeekStart, -7);
