@@ -59,6 +59,7 @@
   }
   .navbtn:focus-visible{ outline:none; box-shadow: 0 0 0 3px var(--accent-soft); }
   .navbtn:hover{ background:var(--surface-2); color:var(--ink); }
+  .navbtn svg{ width:17px; height:17px; flex:none; }
   .navbtn.active{ background:var(--accent-soft); color:var(--accent-soft-ink); box-shadow: inset 3px 0 0 var(--accent); }
   .rail-pages{ display:flex; flex-direction:column; gap:4px; margin-bottom:8px; }
   .rail-divider{ height:1px; background:var(--border); margin:4px 10px 10px; }
@@ -230,12 +231,12 @@
   <nav class="rail">
     <div class="brand"><span class="dot"></span>Kumon Hub</div>
     <div class="rail-pages">
-      <a class="navbtn" href="index.html" id="navPipelineLink">Pipeline</a>
-      <a class="navbtn" href="roster.html">Student roster</a>
-      <a class="navbtn" href="calendar.html">Calendar</a>
-      <a class="navbtn" href="reporting.html">Reporting</a>
-      <a class="navbtn active" href="payments.html">Payments</a>
-      <a class="navbtn" href="admin.html" id="navAdminLink" hidden>Admin</a>
+      <a class="navbtn" href="index.html" id="navPipelineLink"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16l-6.5 8.5V19l-3 1.5v-8L4 4z"/></svg>Pipeline</a>
+      <a class="navbtn" href="roster.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3L2 8l10 5 10-5-10-5z"/><path d="M6 10.5V15c0 1.5 2.5 3 6 3s6-1.5 6-3v-4.5"/></svg>Student roster</a>
+      <a class="navbtn" href="calendar.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>Calendar</a>
+      <a class="navbtn" href="reporting.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 20V10M12 20V4M6 20v-6"/></svg>Reporting</a>
+      <a class="navbtn active" href="payments.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20M6 15h4"/></svg>Payments</a>
+      <a class="navbtn" href="admin.html" id="navAdminLink" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v6c0 5-3.5 8-7 9-3.5-1-7-4-7-9V6l7-3z"/></svg>Admin</a>
     </div>
     <div class="rail-divider"></div>
     <div class="rail-account" id="railAccount"></div>
