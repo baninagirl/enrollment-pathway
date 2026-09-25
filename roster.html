@@ -130,6 +130,13 @@
 
   .modal-backdrop{ position:fixed; inset:0; background:rgba(10,12,18,.5); display:flex; align-items:flex-start; justify-content:center; padding:5vh 16px; overflow-y:auto; z-index:50; }
   .modal{ background:var(--surface); border-radius:16px; width:100%; max-width:460px; box-shadow:var(--shadow); }
+
+  /* Undo/redo bar — personal to this browser tab, only for destructive actions (deletes/bulk edits). */
+  .undo-bar{ position:fixed; right:22px; bottom:22px; z-index:90; display:flex; gap:6px; background:var(--surface); border:1px solid var(--border); border-radius:14px; box-shadow:var(--shadow); padding:6px; }
+  .undo-btn{ display:flex; align-items:center; gap:7px; border:none; background:transparent; cursor:pointer; font-size:12.5px; font-weight:700; color:var(--ink); padding:8px 12px; border-radius:10px; white-space:nowrap; }
+  .undo-btn:hover{ background:var(--surface-2); }
+  .undo-btn .undo-label{ font-weight:500; color:var(--ink-muted); max-width:180px; overflow:hidden; text-overflow:ellipsis; }
+  @media (max-width: 640px){ .undo-btn .undo-label{ max-width:96px; } }
   .modal-head{ display:flex; align-items:center; justify-content:space-between; padding:16px 18px; border-bottom:1px solid var(--border); }
   .modal-head h3{ font-size:15.5px; font-weight:700; }
   .modal-body{ padding:16px 18px; display:flex; flex-direction:column; gap:12px; max-height:66vh; overflow-y:auto; }
@@ -193,6 +200,7 @@
       <a class="navbtn active" href="roster.html">Student roster</a>
       <a class="navbtn" href="calendar.html">Calendar</a>
       <a class="navbtn" href="reporting.html">Reporting</a>
+      <a class="navbtn" href="payments.html" id="navPaymentsLink" hidden>Payments</a>
       <a class="navbtn" href="admin.html" id="navAdminLink" hidden>Admin</a>
     </div>
     <div class="rail-divider"></div>
@@ -254,6 +262,8 @@
   <div class="modal" id="modal"></div>
 </div>
 
+<div class="undo-bar" id="undoBar" hidden></div>
+
 <script>
 (function(){
   "use strict";
@@ -264,6 +274,50 @@
   const $ = (sel, el) => (el||document).querySelector(sel);
   const $$ = (sel, el) => Array.from((el||document).querySelectorAll(sel));
   function esc(s){ return String(s==null?"":s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+
+  /* ---------------- Undo / redo ----------------
+     Personal to this browser tab and in-memory only (a refresh clears it) — covers
+     destructive actions only: deleting an enrollment (one or in bulk) and bulk edits.
+     Holds up to 2 undo steps and 1 redo step. Each entry snapshots exactly what it
+     needs to put things back, so undo/redo never re-derive state from what's on screen. */
+  const undoStack = [];
+  let redoEntry = null;
+  const UNDO_CAP = 2;
+  function pushUndo(label, undo, redo){
+    undoStack.push({ label, undo, redo });
+    if(undoStack.length > UNDO_CAP) undoStack.shift();
+    redoEntry = null;
+    renderUndoBar();
+  }
+  async function runUndo(){
+    const entry = undoStack.pop();
+    if(!entry) return;
+    try{ await entry.undo(); redoEntry = entry; }
+    catch(err){ console.warn(err); undoStack.push(entry); alert("Couldn't undo that — try again."); }
+    renderUndoBar();
+  }
+  async function runRedo(){
+    const entry = redoEntry;
+    if(!entry) return;
+    try{
+      await entry.redo();
+      undoStack.push(entry);
+      if(undoStack.length > UNDO_CAP) undoStack.shift();
+      redoEntry = null;
+    }catch(err){ console.warn(err); alert("Couldn't redo that — try again."); }
+    renderUndoBar();
+  }
+  function renderUndoBar(){
+    const bar = $("#undoBar");
+    if(!bar) return;
+    const top = undoStack[undoStack.length - 1];
+    if(!top && !redoEntry){ bar.hidden = true; bar.innerHTML = ""; return; }
+    bar.hidden = false;
+    bar.innerHTML = `
+      ${top ? `<button class="undo-btn" data-action="run-undo">↶ Undo <span class="undo-label">${esc(top.label)}</span></button>` : ""}
+      ${redoEntry ? `<button class="undo-btn" data-action="run-redo">↷ Redo <span class="undo-label">${esc(redoEntry.label)}</span></button>` : ""}
+    `;
+  }
 
   const MATH_LEVELS = ["7A","6A","5A","4A","3A","2A","A","B","C","D","E","F","G","H","I","J","K","L","M","N","O"];
   const READING_LEVELS = ["7A","6A","5A","4A","3A","2A","AI","AII","BI","BII","CI","CII","DI","DII","EI","EII","FI","FII","GI","GII","HI","HII","I-I","I-II","J","K","L","M","N","O"];
@@ -350,6 +404,8 @@
     if(adminLink) adminLink.hidden = currentRole !== "superadmin";
     const pipelineLink = $("#navPipelineLink");
     if(pipelineLink) pipelineLink.hidden = currentRole === "teacher" || currentRole === "pending";
+    const paymentsLink = $("#navPaymentsLink");
+    if(paymentsLink) paymentsLink.hidden = !(currentRole === "admin" || currentRole === "superadmin");
     applyRoleGate();
   }
 
@@ -472,6 +528,36 @@
     schedules = data || [];
   }
   function scheduleFor(enrollmentId){ return schedules.find(sc => sc.subject_enrollment_id === enrollmentId) || null; }
+
+  /* ---------------- Delete/restore snapshots (for undo) ----------------
+     Deleting a subject_enrollments row cascades in the database to its schedules row
+     and to any enrollment_monthly_history rows archived under it — so undoing a delete
+     has to bring all three back, not just the enrollment itself. */
+  async function snapshotEnrollmentCascade(id){
+    const enrollmentRow = enrollments.find(e => e.id === id) || null;
+    const scheduleRow = scheduleFor(id);
+    const { data: historyRows, error } = await sbClient.from("enrollment_monthly_history").select("*").eq("subject_enrollment_id", id);
+    if(error) console.warn("couldn't snapshot history for undo", error);
+    return { enrollmentRow, scheduleRow, historyRows: historyRows || [] };
+  }
+  async function restoreEnrollmentCascade(snap){
+    if(snap.enrollmentRow){
+      const { error } = await sbClient.from("subject_enrollments").insert(snap.enrollmentRow);
+      if(error) throw error;
+    }
+    if(snap.scheduleRow){
+      const { error } = await sbClient.from("schedules").insert(snap.scheduleRow);
+      if(error) throw error;
+    }
+    if(snap.historyRows.length){
+      const { error } = await sbClient.from("enrollment_monthly_history").insert(snap.historyRows);
+      if(error) throw error;
+    }
+  }
+  async function performDeleteEnrollments(ids){
+    const { error } = await sbClient.from("subject_enrollments").delete().in("id", ids);
+    if(error) throw error;
+  }
 
   // Reads the repeated sched_day/sched_time/sched_mode fields back off the form, in the
   // order the rows are in — FormData.getAll() preserves document order for repeated
@@ -938,11 +1024,40 @@
       patch.updated_at = new Date().toISOString();
 
       const ids = [...selectedIds];
+      // Snapshot each row's OWN prior values for just the fields this patch touches —
+      // rows can differ from each other, so undo has to restore each one individually
+      // rather than reversing the patch as if every row started the same.
+      const patchKeys = Object.keys(patch).filter(k => k !== "updated_at");
+      const priorValues = ids.map(id => {
+        const row = enrollments.find(e => e.id === id);
+        const prior = { id };
+        patchKeys.forEach(k => { prior[k] = row ? row[k] : null; });
+        return prior;
+      });
+
       const { error } = await sbClient.from("subject_enrollments").update(patch).in("id", ids);
       if(error){ alert("Couldn't apply changes: " + error.message); return; }
       closeModal();
       selectedIds.clear();
       await loadEnrollments(); render();
+
+      const label = `Bulk edit ${ids.length} enrollment${ids.length===1?"":"s"}`;
+      pushUndo(label,
+        async ()=>{
+          for(const p of priorValues){
+            const { id, ...fields } = p;
+            fields.updated_at = new Date().toISOString();
+            const { error } = await sbClient.from("subject_enrollments").update(fields).eq("id", id);
+            if(error) throw error;
+          }
+          await loadEnrollments(); render();
+        },
+        async ()=>{
+          const { error } = await sbClient.from("subject_enrollments").update(patch).in("id", ids);
+          if(error) throw error;
+          await loadEnrollments(); render();
+        }
+      );
     }
   });
 
@@ -989,13 +1104,22 @@
       if(en) openModal(en);
     }
     else if(action === "close-modal"){ closeModal(); }
+    else if(action === "run-undo"){ runUndo(); }
+    else if(action === "run-redo"){ runRedo(); }
     else if(action === "delete-enrollment"){
       const id = btn.dataset.id;
-      if(!confirm("Delete this enrollment? This can't be undone.")) return;
-      const { error } = await sbClient.from("subject_enrollments").delete().eq("id", id);
-      if(error){ alert("Couldn't delete: " + error.message); return; }
+      if(!confirm("Delete this enrollment? You can undo this from the Undo button afterward.")) return;
+      const snap = await snapshotEnrollmentCascade(id);
+      try{ await performDeleteEnrollments([id]); }
+      catch(error){ alert("Couldn't delete: " + error.message); return; }
       closeModal();
-      await loadEnrollments(); render();
+      await Promise.all([loadEnrollments(), loadSchedules()]); render();
+
+      const label = `Delete ${(snap.enrollmentRow && snap.enrollmentRow.student_name) || "enrollment"}`;
+      pushUndo(label,
+        async ()=>{ await restoreEnrollmentCascade(snap); await Promise.all([loadEnrollments(), loadSchedules()]); render(); },
+        async ()=>{ await performDeleteEnrollments([id]); await Promise.all([loadEnrollments(), loadSchedules()]); render(); }
+      );
     }
     else if(action === "toggle-select"){
       const id = btn.dataset.id;
@@ -1012,12 +1136,22 @@
     else if(action === "bulk-delete"){
       if(isTeacherScoped()) return;
       const n = selectedIds.size;
-      if(!confirm(`Delete ${n} enrollment${n===1?"":"s"}? This can't be undone.`)) return;
+      if(!confirm(`Delete ${n} enrollment${n===1?"":"s"}? You can undo this from the Undo button afterward.`)) return;
       const ids = [...selectedIds];
-      const { error } = await sbClient.from("subject_enrollments").delete().in("id", ids);
-      if(error){ alert("Couldn't delete: " + error.message); return; }
+      const snaps = await Promise.all(ids.map(id => snapshotEnrollmentCascade(id)));
+      try{ await performDeleteEnrollments(ids); }
+      catch(error){ alert("Couldn't delete: " + error.message); return; }
       selectedIds.clear();
-      await loadEnrollments(); render();
+      await Promise.all([loadEnrollments(), loadSchedules()]); render();
+
+      const label = `Delete ${ids.length} enrollment${ids.length===1?"":"s"}`;
+      pushUndo(label,
+        async ()=>{
+          for(const snap of snaps) await restoreEnrollmentCascade(snap);
+          await Promise.all([loadEnrollments(), loadSchedules()]); render();
+        },
+        async ()=>{ await performDeleteEnrollments(ids); await Promise.all([loadEnrollments(), loadSchedules()]); render(); }
+      );
     }
     else if(action === "add-schedule-row"){
       $("#scheduleRows").insertAdjacentHTML("beforeend", scheduleRowHtml(null));

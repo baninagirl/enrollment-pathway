@@ -191,6 +191,7 @@
       <a class="navbtn" href="roster.html">Student roster</a>
       <a class="navbtn active" href="calendar.html">Calendar</a>
       <a class="navbtn" href="reporting.html">Reporting</a>
+      <a class="navbtn" href="payments.html" id="navPaymentsLink" hidden>Payments</a>
       <a class="navbtn" href="admin.html" id="navAdminLink" hidden>Admin</a>
     </div>
     <div class="rail-divider"></div>
@@ -327,6 +328,8 @@
     if(adminLink) adminLink.hidden = currentRole !== "superadmin";
     const pipelineLink = $("#navPipelineLink");
     if(pipelineLink) pipelineLink.hidden = currentRole === "teacher" || currentRole === "pending";
+    const paymentsLink = $("#navPaymentsLink");
+    if(paymentsLink) paymentsLink.hidden = !(currentRole === "admin" || currentRole === "superadmin");
     applyRoleGate();
   }
 

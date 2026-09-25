@@ -1,0 +1,1094 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Kumon Hub — Payments</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700&family=Inter:wght@400;500;600;700;800&display=swap">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  :root{
+    --bg:#F5F6FA; --surface:#FFFFFF; --surface-2:#FBFBFE; --border:#E1E4EB;
+    --ink:#1B1F27; --ink-muted:#636C7C; --ink-faint:#9AA1AF;
+    --accent:#3454D1; --accent-ink:#FFFFFF; --accent-soft:#E9EDFC; --accent-soft-ink:#2A41A8;
+    --good:#1E8E5A; --good-soft:#E4F5EC; --warn:#C2831F; --warn-soft:#FBF0E1; --bad:#C23B2B; --bad-soft:#FBE8E5;
+    --shadow: 0 1px 2px rgba(20,24,34,.04), 0 8px 24px -12px rgba(20,24,34,.18);
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#14161C; --surface:#1C1F27; --surface-2:#20232C; --border:#2C303B;
+      --ink:#EDEFF4; --ink-muted:#9BA3B2; --ink-faint:#6B7280;
+      --accent:#6C86F0; --accent-ink:#0E1220; --accent-soft:#232A47; --accent-soft-ink:#B7C3FA;
+      --good:#4FC48A; --good-soft:#173226; --warn:#E0A23F; --warn-soft:#332711; --bad:#F0796A; --bad-soft:#3A1F1C;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#14161C; --surface:#1C1F27; --surface-2:#20232C; --border:#2C303B;
+    --ink:#EDEFF4; --ink-muted:#9BA3B2; --ink-faint:#6B7280;
+    --accent:#6C86F0; --accent-ink:#0E1220; --accent-soft:#232A47; --accent-soft-ink:#B7C3FA;
+    --good:#4FC48A; --good-soft:#173226; --warn:#E0A23F; --warn-soft:#332711; --bad:#F0796A; --bad-soft:#3A1F1C;
+    color-scheme: dark;
+  }
+
+  *{box-sizing:border-box;}
+  body{
+    background:var(--bg); color:var(--ink); margin:0;
+    font-family:"Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  h1,h2,h3,.brand{ font-family:"Sora", system-ui, sans-serif; }
+  h1,h2,h3{ text-wrap:balance; margin:0; }
+  button{ font-family:inherit; }
+  a{ color:var(--accent); }
+
+  .app{ display:grid; grid-template-columns: 216px 1fr; min-height:100vh; min-height:100dvh; }
+  .rail{
+    background:var(--surface); border-right:1px solid var(--border);
+    padding:20px 12px; display:flex; flex-direction:column; gap:4px;
+    position:sticky; top:0; align-self:start; height:100vh; height:100dvh;
+  }
+  .brand{ font-weight:700; font-size:16px; padding:6px 10px 18px; display:flex; align-items:center; gap:8px; color:var(--ink); }
+  .brand .dot{ width:9px;height:9px;border-radius:50%;background:var(--accent); flex:none; }
+  .navbtn{
+    display:flex; align-items:center; gap:10px; padding:9px 10px; border-radius:9px;
+    border:none; background:transparent; color:var(--ink-muted); font-size:14px; font-weight:600;
+    cursor:pointer; text-align:left; width:100%; text-decoration:none;
+  }
+  .navbtn:hover{ background:var(--surface-2); color:var(--ink); }
+  .navbtn.active{ background:var(--accent-soft); color:var(--accent-soft-ink); }
+  .rail-pages{ display:flex; flex-direction:column; gap:4px; margin-bottom:8px; }
+  .rail-divider{ height:1px; background:var(--border); margin:4px 10px 10px; }
+  .rail-account{ padding:0 10px 10px; }
+  .account-row{ display:flex; align-items:center; justify-content:space-between; gap:8px; padding:8px 8px; border-top:1px solid var(--border); font-size:12px; color:var(--ink-muted); }
+  .account-email{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .rail-foot{ margin-top:auto; padding:10px; font-size:12px; color:var(--ink-faint); line-height:1.5; }
+
+  .main{ padding:26px 30px 60px; max-width:1100px; width:100%; }
+  .page-head{ display:flex; align-items:flex-end; justify-content:space-between; gap:16px; margin-bottom:18px; flex-wrap:wrap; }
+  .page-head h1{ font-size:22px; font-weight:700; }
+  .page-sub{ color:var(--ink-muted); font-size:13.5px; margin-top:4px; }
+
+  .btn{
+    display:inline-flex; align-items:center; gap:7px; padding:9px 14px; border-radius:9px;
+    font-size:13.5px; font-weight:600; border:1px solid var(--border); background:var(--surface);
+    color:var(--ink); cursor:pointer; white-space:nowrap;
+  }
+  .btn:hover{ background:var(--surface-2); }
+  .btn.primary{ background:var(--accent); color:var(--accent-ink); border-color:var(--accent); }
+  .btn.danger{ color:var(--bad); border-color:var(--bad-soft); }
+  .btn.danger:hover{ background:var(--bad-soft); }
+  .btn.good{ color:var(--good); border-color:var(--good-soft); }
+  .btn.good:hover{ background:var(--good-soft); }
+  .btn.warn{ color:var(--warn); border-color:var(--warn-soft); }
+  .btn.warn:hover{ background:var(--warn-soft); }
+  .btn.ghost{ border-color:transparent; background:transparent; }
+  .btn.sm{ padding:6px 10px; font-size:12.5px; border-radius:7px; }
+  .btn:disabled{ opacity:.5; cursor:not-allowed; }
+
+  .card{ background:var(--surface); border:1px solid var(--border); border-radius:14px; margin-bottom:18px; }
+  .card-head{ display:flex; align-items:center; justify-content:space-between; padding:14px 16px; border-bottom:1px solid var(--border); gap:10px; flex-wrap:wrap; }
+  .card-head h3{ font-size:14.5px; font-weight:700; }
+  .empty{ padding:30px 16px; text-align:center; color:var(--ink-muted); font-size:13.5px; }
+
+  .stats{ display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin-bottom:18px; }
+  .stat{ background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:13px 14px; display:flex; flex-direction:column; gap:6px; }
+  .stat .n{ font-size:22px; font-weight:700; font-family:"Sora",sans-serif; }
+  .stat .l{ font-size:12px; color:var(--ink-muted); font-weight:600; }
+  .stat.warn .n{ color:var(--warn); }
+  .stat.bad .n{ color:var(--bad); }
+
+  .search-row{ display:flex; gap:8px; margin-bottom:14px; flex-wrap:wrap; align-items:center; }
+  .search-row input, .search-row select{ font-size:13.5px; }
+  .table-scroll{ overflow-x:auto; }
+  .stable{ width:100%; border-collapse:collapse; }
+  .stable th{ text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--ink-muted); padding:8px 16px; border-bottom:1px solid var(--border); }
+  .stable td{ padding:10px 16px; border-bottom:1px solid var(--border); font-size:13px; vertical-align:middle; }
+  .stable tr:last-child td{ border-bottom:none; }
+  .stable tr.group-row td{ background:var(--surface-2); font-weight:700; }
+  .stable tr.group-row td.gname{ display:flex; align-items:center; gap:6px; }
+  .money{ font-variant-numeric:tabular-nums; font-weight:600; }
+  .muted{ color:var(--ink-muted); }
+  .faint{ color:var(--ink-faint); }
+  .pill{ display:inline-flex; align-items:center; gap:5px; padding:3px 9px; border-radius:99px; font-size:11.5px; font-weight:700; white-space:nowrap; }
+  .pill.paid{ background:var(--good-soft); color:var(--good); }
+  .pill.partial{ background:var(--warn-soft); color:var(--warn); }
+  .pill.unpaid{ background:var(--bad-soft); color:var(--bad); }
+  .pill.pending{ background:var(--accent-soft); color:var(--accent-soft-ink); }
+  .pill.flagged{ background:var(--warn-soft); color:var(--warn); }
+  .pill.verified{ background:var(--good-soft); color:var(--good); }
+  .pill.rejected{ background:var(--surface-2); color:var(--ink-faint); }
+  .row-actions{ display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end; }
+
+  .receipt-row{ display:flex; align-items:flex-start; gap:14px; padding:14px 16px; border-bottom:1px solid var(--border); flex-wrap:wrap; }
+  .receipt-row:last-child{ border-bottom:none; }
+  .receipt-thumb{ width:42px; height:42px; border-radius:9px; background:var(--surface-2); border:1px solid var(--border); display:flex; align-items:center; justify-content:center; font-size:16px; flex:none; }
+  .receipt-info{ flex:1; min-width:200px; }
+  .receipt-info b{ font-size:13.5px; }
+  .receipt-info .sub{ display:block; font-size:12px; color:var(--ink-muted); margin-top:2px; line-height:1.5; }
+  .receipt-info .note{ display:block; font-size:12px; color:var(--warn); margin-top:2px; font-weight:600; }
+  .receipt-acts{ display:flex; gap:6px; flex-wrap:wrap; align-items:flex-start; }
+
+  select, input[type=text], input[type=number], input[type=date], input[type=month], input[type=email], input[type=password], input[type=file]{
+    font-family:inherit; font-size:13.5px; padding:8px 10px; border-radius:8px; border:1px solid var(--border);
+    background:var(--surface); color:var(--ink); width:100%;
+  }
+  select:focus, input:focus{ outline:2px solid var(--accent); outline-offset:1px; }
+  label.field{ display:flex; flex-direction:column; gap:5px; font-size:12.5px; font-weight:600; color:var(--ink-muted); }
+  .field-row{ display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  .check-row{ display:flex; align-items:center; gap:8px; font-size:13px; font-weight:500; color:var(--ink); padding:6px 0; }
+  .check-row input{ width:15px; height:15px; margin:0; accent-color:var(--accent); }
+  .group-list{ display:flex; flex-direction:column; gap:2px; max-height:220px; overflow-y:auto; border:1px solid var(--border); border-radius:9px; padding:8px 10px; }
+
+  .modal-backdrop{ position:fixed; inset:0; background:rgba(10,12,18,.5); display:flex; align-items:flex-start; justify-content:center; padding:5vh 16px; overflow-y:auto; z-index:50; }
+  .modal{ background:var(--surface); border-radius:16px; width:100%; max-width:460px; box-shadow:var(--shadow); }
+  .modal-head{ display:flex; align-items:center; justify-content:space-between; padding:16px 18px; border-bottom:1px solid var(--border); }
+  .modal-head h3{ font-size:15.5px; font-weight:700; }
+  .modal-body{ padding:16px 18px; display:flex; flex-direction:column; gap:12px; max-height:66vh; overflow-y:auto; }
+  .modal-foot{ display:flex; justify-content:space-between; gap:8px; padding:14px 18px; border-top:1px solid var(--border); }
+  .iconbtn{ border:none; background:transparent; cursor:pointer; color:var(--ink-muted); padding:4px; border-radius:6px; }
+  .iconbtn:hover{ background:var(--surface-2); color:var(--ink); }
+
+  .banner{ background:var(--warn-soft); color:var(--warn); border-radius:11px; padding:11px 14px; font-size:13px; font-weight:600; margin-bottom:16px; }
+  .banner.info{ background:var(--accent-soft); color:var(--accent-soft-ink); }
+
+  /* Undo/redo bar — personal to this browser tab, only for destructive actions (deletes). */
+  .undo-bar{ position:fixed; right:22px; bottom:22px; z-index:90; display:flex; gap:6px; background:var(--surface); border:1px solid var(--border); border-radius:14px; box-shadow:var(--shadow); padding:6px; }
+  .undo-btn{ display:flex; align-items:center; gap:7px; border:none; background:transparent; cursor:pointer; font-size:12.5px; font-weight:700; color:var(--ink); padding:8px 12px; border-radius:10px; white-space:nowrap; }
+  .undo-btn:hover{ background:var(--surface-2); }
+  .undo-btn .undo-label{ font-weight:500; color:var(--ink-muted); max-width:180px; overflow:hidden; text-overflow:ellipsis; }
+  @media (max-width: 640px){ .undo-btn .undo-label{ max-width:96px; } }
+
+  .toast{ position:fixed; left:50%; bottom:22px; transform:translateX(-50%); background:var(--ink); color:var(--bg); font-size:13px; font-weight:600; padding:10px 16px; border-radius:10px; z-index:95; box-shadow:var(--shadow); }
+
+  .login-screen{ position:fixed; inset:0; display:flex; align-items:center; justify-content:center; background:var(--bg); z-index:100; padding:20px; }
+  .login-card{ width:100%; max-width:360px; background:var(--surface); border:1px solid var(--border); border-radius:16px; padding:28px 26px; box-shadow:var(--shadow); display:flex; flex-direction:column; gap:14px; }
+  .login-brand{ font-family:"Sora", system-ui, sans-serif; font-weight:700; font-size:18px; display:flex; align-items:center; gap:8px; color:var(--ink); }
+  .login-brand .dot{ width:9px; height:9px; border-radius:50%; background:var(--accent); flex:none; }
+  .login-sub{ font-size:13px; color:var(--ink-muted); margin:-6px 0 4px; }
+  .login-error{ background:var(--bad-soft); color:var(--bad); border-radius:9px; padding:9px 12px; font-size:12.5px; font-weight:600; }
+
+  [hidden]{ display:none !important; }
+
+  @media (max-width: 860px){
+    .app{ grid-template-columns:1fr; }
+    .rail{ position:fixed; bottom:0; left:0; right:0; top:auto; height:auto; flex-direction:row; padding:8px; border-right:none; border-top:1px solid var(--border); z-index:40; }
+    .brand, .rail-foot, .rail-account{ display:none; }
+    .rail-pages{ flex-direction:row; flex:1; margin-bottom:0; }
+    .rail-divider{ display:none; }
+    .navbtn{ text-align:center; justify-content:center; }
+    .main{ padding:16px 14px calc(70px + env(safe-area-inset-bottom)); }
+    .stats{ grid-template-columns:repeat(2,1fr); }
+    .stable th, .stable td{ padding:9px 8px; font-size:12.5px; }
+    .field-row{ grid-template-columns:1fr; }
+    .modal-backdrop{ padding:0; align-items:flex-end; }
+    .modal{ max-width:none; border-radius:16px 16px 0 0; max-height:92vh; }
+  }
+</style>
+</head>
+<body>
+
+<div class="login-screen" id="loginScreen">
+  <form class="login-card" id="loginForm">
+    <div class="login-brand"><span class="dot"></span>Kumon Hub</div>
+    <div class="login-sub">Sign in with your team account.</div>
+    <div class="login-error" id="loginError" hidden></div>
+    <label class="field">Email<input type="email" name="email" required autocomplete="username" autofocus></label>
+    <label class="field">Password<input type="password" name="password" required autocomplete="current-password"></label>
+    <button class="btn primary" type="submit" style="justify-content:center;">Log in</button>
+  </form>
+</div>
+
+<div class="app" id="appRoot" hidden>
+  <nav class="rail">
+    <div class="brand"><span class="dot"></span>Kumon Hub</div>
+    <div class="rail-pages">
+      <a class="navbtn" href="index.html" id="navPipelineLink">Pipeline</a>
+      <a class="navbtn" href="roster.html">Student roster</a>
+      <a class="navbtn" href="calendar.html">Calendar</a>
+      <a class="navbtn" href="reporting.html">Reporting</a>
+      <a class="navbtn active" href="payments.html">Payments</a>
+      <a class="navbtn" href="admin.html" id="navAdminLink" hidden>Admin</a>
+    </div>
+    <div class="rail-divider"></div>
+    <div class="rail-account" id="railAccount"></div>
+    <div class="rail-foot">Tuition, receipts, and billing groups.</div>
+  </nav>
+
+  <main class="main">
+    <div id="pendingGate" hidden></div>
+
+    <div class="page-head" id="pageHead">
+      <div>
+        <h1>Payments</h1>
+        <div class="page-sub">Tuition due this month, receipt review, and billing groups for families paying together.</div>
+      </div>
+      <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+        <button class="btn" data-action="open-groups">Billing groups</button>
+        <button class="btn primary" data-action="open-log-payment">+ Log payment</button>
+      </div>
+    </div>
+
+    <div class="stats" id="statsRow"></div>
+
+    <div class="search-row">
+      <input type="month" id="monthInput">
+      <input type="text" id="searchInput" placeholder="Search student…" style="max-width:200px;">
+      <select id="statusFilter">
+        <option value="all">All statuses</option>
+        <option value="unpaid">Unpaid</option>
+        <option value="partial">Partial</option>
+        <option value="paid">Paid</option>
+      </select>
+      <button type="button" class="btn sm ghost" id="groupViewToggle" data-action="toggle-group-view">View by billing group</button>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <h3 id="tableTitle">This month</h3>
+        <span class="muted" id="tableCount" style="font-size:12.5px;"></span>
+      </div>
+      <div class="table-scroll">
+        <table class="stable">
+          <thead><tr>
+            <th>Student</th><th>Group</th><th>Tuition due</th><th>Paid</th><th>Balance</th><th>Status</th><th></th>
+          </tr></thead>
+          <tbody id="paymentsBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head"><h3>Pending receipt review</h3><span class="pill pending" id="reviewCountBadge"></span></div>
+      <div id="reviewBody"></div>
+    </div>
+  </main>
+</div>
+
+<div class="modal-backdrop" id="modalBackdrop" hidden>
+  <div class="modal" id="modal"></div>
+</div>
+
+<div class="toast" id="toast" hidden></div>
+<div class="undo-bar" id="undoBar" hidden></div>
+
+<script>
+(function(){
+  "use strict";
+
+  const SUPABASE_URL = "https://bcnmsryahczapnxbpkve.supabase.co";
+  const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJjbm1zcnlhaGN6YXBueGJwa3ZlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTAyMDQ4NzksImV4cCI6MjEwNTc4MDg3OX0.VgCX3CR7YCJxR9-vwD8HlYcCx0MxlY7atgD_0h3F3to";
+
+  const $ = (sel, el) => (el||document).querySelector(sel);
+  const $$ = (sel, el) => Array.from((el||document).querySelectorAll(sel));
+  function esc(s){ return String(s==null?"":s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+  function peso(n){ const v = Number(n)||0; return "₱" + v.toLocaleString("en-PH", { minimumFractionDigits: v % 1 ? 2 : 0, maximumFractionDigits: 2 }); }
+
+  let sbClient = null, currentUser = null, currentRole = null;
+  let students = [], enrollments = [], billingGroups = [], receipts = [];
+  let selectedMonth = monthDefault(); // "YYYY-MM"
+  let groupView = false;
+  const filters = { search: "", status: "all" };
+
+  function monthDefault(){
+    const d = new Date();
+    return d.getFullYear() + "-" + String(d.getMonth()+1).padStart(2,"0");
+  }
+  function monthToDate(ym){ return ym + "-01"; } // matches covers_month, which is always the 1st
+  function fmtMonthLabel(ym){
+    const [y,m] = ym.split("-").map(Number);
+    return new Date(y, m-1, 1).toLocaleDateString("en-US", { month:"long", year:"numeric" });
+  }
+
+  let toastTimer = null;
+  function toast(msg){
+    const el = $("#toast");
+    if(!el) return;
+    el.textContent = msg;
+    el.hidden = false;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(()=>{ el.hidden = true; }, 3200);
+  }
+
+  /* ---------------- Undo / redo ----------------
+     Personal to this browser tab and in-memory only (a refresh clears it) — covers
+     destructive actions only: deleting a receipt entry and deleting a billing group.
+     Capacity: 2 undos, 1 redo — matches every other page in the hub. */
+  const UNDO_CAP = 2;
+  let undoStack = [];
+  let redoEntry = null;
+
+  function pushUndo(label, undoFn, redoFn){
+    undoStack.push({ label, undo: undoFn, redo: redoFn });
+    if(undoStack.length > UNDO_CAP) undoStack.shift();
+    redoEntry = null;
+    renderUndoBar();
+  }
+  async function runUndo(){
+    const entry = undoStack.pop();
+    if(!entry) return;
+    try{
+      await entry.undo();
+      redoEntry = entry;
+    }catch(err){ console.warn(err); toast("Couldn't undo that — try again."); }
+    renderUndoBar();
+  }
+  async function runRedo(){
+    const entry = redoEntry;
+    if(!entry) return;
+    try{
+      await entry.redo();
+      undoStack.push(entry);
+      if(undoStack.length > UNDO_CAP) undoStack.shift();
+      redoEntry = null;
+    }catch(err){ console.warn(err); toast("Couldn't redo that — try again."); }
+    renderUndoBar();
+  }
+  function renderUndoBar(){
+    const bar = $("#undoBar");
+    if(!bar) return;
+    const top = undoStack[undoStack.length - 1];
+    if(!top && !redoEntry){ bar.hidden = true; bar.innerHTML = ""; return; }
+    bar.hidden = false;
+    bar.innerHTML = `
+      ${top ? `<button class="undo-btn" data-action="run-undo">↶ Undo <span class="undo-label">${esc(top.label)}</span></button>` : ""}
+      ${redoEntry ? `<button class="undo-btn" data-action="run-redo">↷ Redo <span class="undo-label">${esc(redoEntry.label)}</span></button>` : ""}
+    `;
+  }
+
+  function showLogin(errMsg){
+    $("#loginScreen").hidden = false;
+    $("#appRoot").hidden = true;
+    const err = $("#loginError");
+    if(errMsg){ err.textContent = errMsg; err.hidden = false; } else { err.hidden = true; }
+  }
+  function showApp(){ $("#loginScreen").hidden = true; $("#appRoot").hidden = false; }
+  function renderAccount(){
+    const el = $("#railAccount");
+    if(el) el.innerHTML = currentUser ? `<div class="account-row"><span class="account-email">${esc(currentUser.email)}</span><button class="btn sm ghost" data-action="logout">Log out</button></div>` : "";
+    const adminLink = $("#navAdminLink");
+    if(adminLink) adminLink.hidden = currentRole !== "superadmin";
+    const pipelineLink = $("#navPipelineLink");
+    if(pipelineLink) pipelineLink.hidden = currentRole === "teacher" || currentRole === "pending";
+    applyRoleGate();
+  }
+
+  // Payments is admin/superadmin only — same rule the database itself enforces (see
+  // phase16-payments.sql). A teacher or pending account gets the same friendly gate
+  // Student roster shows a pending account, rather than a page that just loads nothing.
+  function isAuthorized(){ return currentRole === "admin" || currentRole === "superadmin"; }
+  function applyRoleGate(){
+    const blocked = !isAuthorized();
+    const gate = $("#pendingGate");
+    if(gate){
+      gate.hidden = !blocked;
+      gate.innerHTML = blocked
+        ? (currentRole === "pending"
+            ? `<div class="banner">Your account is waiting for approval. Ask a superadmin to set your role in <a href="admin.html">Admin</a> — until then there's nothing here for you to see.</div>`
+            : `<div class="banner">Payments is only visible to admin and superadmin accounts.</div>`)
+        : "";
+    }
+    $$(".page-head, .stats, .search-row, .card").forEach(el => { el.style.display = blocked ? "none" : ""; });
+  }
+
+  async function loadRole(){
+    if(!sbClient || !currentUser){ currentRole = null; return; }
+    try{
+      const { data, error } = await sbClient.from("profiles").select("role").eq("id", currentUser.id).maybeSingle();
+      if(error) throw error;
+      currentRole = data ? data.role : "pending";
+    }catch(e){ console.warn("couldn't load role", e); currentRole = "pending"; }
+  }
+
+  async function boot(){
+    if(!window.supabase){ showLogin("Couldn't load Supabase."); return; }
+    try{ sbClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY); }
+    catch(e){ showLogin("Couldn't connect to Supabase."); return; }
+
+    $("#monthInput").value = selectedMonth;
+
+    const { data:{ session } } = await sbClient.auth.getSession();
+    if(session){ currentUser = session.user; showApp(); await loadRole(); renderAccount(); startApp(); }
+    else{ showLogin(); }
+
+    sbClient.auth.onAuthStateChange(async (event, session)=>{
+      if(session){
+        currentUser = session.user;
+        showApp(); await loadRole(); renderAccount(); startApp();
+      }else{
+        currentUser = null; currentRole = null;
+        showLogin();
+      }
+    });
+  }
+
+  let started = false;
+  async function startApp(){
+    if(started) return;
+    started = true;
+    if(!isAuthorized()) return;
+    await Promise.all([loadStudents(), loadEnrollments(), loadBillingGroups(), loadReceipts()]);
+    render();
+
+    sbClient.channel("realtime:payment_receipts")
+      .on("postgres_changes", { event:"*", schema:"public", table:"payment_receipts" }, async ()=>{ await loadReceipts(); render(); })
+      .subscribe();
+    sbClient.channel("realtime:billing_groups")
+      .on("postgres_changes", { event:"*", schema:"public", table:"billing_groups" }, async ()=>{ await loadBillingGroups(); render(); })
+      .subscribe();
+    sbClient.channel("realtime:payments-students")
+      .on("postgres_changes", { event:"*", schema:"public", table:"students" }, async ()=>{ await loadStudents(); render(); })
+      .subscribe();
+  }
+
+  async function loadStudents(){
+    const { data, error } = await sbClient.from("students")
+      .select("id,name,first_name,last_name,age_grade,status,monthly_tuition,billing_group_id")
+      .order("name");
+    if(error){ console.warn(error); students = []; return; }
+    students = data || [];
+  }
+  async function loadEnrollments(){
+    const { data, error } = await sbClient.from("subject_enrollments").select("id,student_id,status");
+    if(error){ console.warn(error); enrollments = []; return; }
+    enrollments = data || [];
+  }
+  async function loadBillingGroups(){
+    const { data, error } = await sbClient.from("billing_groups").select("id,name").order("name");
+    if(error){ console.warn(error); billingGroups = []; return; }
+    billingGroups = data || [];
+  }
+  async function loadReceipts(){
+    const { data, error } = await sbClient.from("payment_receipts").select("*").order("created_at", { ascending:false });
+    if(error){ console.warn(error); receipts = []; return; }
+    receipts = data || [];
+  }
+
+  function displayName(s){
+    if(s.last_name && s.first_name) return `${s.last_name}, ${s.first_name}`;
+    return s.name || "";
+  }
+  // Payments only applies to students who are actually on the roster (at least one active
+  // subject enrollment) — a Pipeline lead who hasn't enrolled yet has no tuition to track.
+  function billableStudents(){
+    const activeIds = new Set(enrollments.filter(e => e.status === "active").map(e => e.student_id));
+    return students.filter(s => activeIds.has(s.id));
+  }
+  function groupNameFor(id){
+    if(!id) return null;
+    const g = billingGroups.find(x => x.id === id);
+    return g ? g.name : null;
+  }
+  function verifiedPaidFor(studentId, ym){
+    const monthDate = monthToDate(ym);
+    return receipts
+      .filter(r => r.student_id === studentId && r.status === "verified" && r.covers_month === monthDate)
+      .reduce((sum, r) => sum + Number(r.amount||0), 0);
+  }
+  function rowFor(s, ym){
+    const due = Number(s.monthly_tuition||0);
+    const paid = verifiedPaidFor(s.id, ym);
+    const balance = due - paid;
+    const status = balance <= 0 ? "paid" : (paid > 0 ? "partial" : "unpaid");
+    return { student: s, due, paid, balance, status };
+  }
+
+  // ---------------- Statement of Account ----------------
+  // A running ledger for one student (or a whole billing group combined) across the last
+  // few months — for printing or pasting to a parent. Tuition is only tracked as a single
+  // current rate per student (not historized), so a past month here assumes today's rate
+  // applied back then too — worth a heads up if a family's rate has changed recently.
+  function monthsBack(throughYm, span){
+    const [y,m] = throughYm.split("-").map(Number);
+    const out = [];
+    for(let i = span - 1; i >= 0; i--){
+      const d = new Date(y, m - 1 - i, 1);
+      out.push(d.getFullYear() + "-" + String(d.getMonth()+1).padStart(2,"0"));
+    }
+    return out;
+  }
+  function ledgerFor(studentIds, throughYm, span){
+    const months = monthsBack(throughYm, span);
+    const rows = months.map(ym => {
+      let due = 0, paid = 0;
+      studentIds.forEach(sid => {
+        const s = students.find(x => x.id === sid);
+        if(!s) return;
+        due += Number(s.monthly_tuition||0);
+        paid += verifiedPaidFor(sid, ym);
+      });
+      return { ym, due, paid, balance: due - paid };
+    });
+    const payments = receipts
+      .filter(r => studentIds.includes(r.student_id) && r.status === "verified" && months.includes(r.covers_month.slice(0,7)))
+      .sort((a,b) => (a.covers_month < b.covers_month ? -1 : 1));
+    return {
+      rows,
+      payments,
+      totalDue: rows.reduce((n,r)=>n+r.due,0),
+      totalPaid: rows.reduce((n,r)=>n+r.paid,0),
+      totalBalance: rows.reduce((n,r)=>n+r.balance,0)
+    };
+  }
+  function statementPlainText(names, ledger, span){
+    const lines = [];
+    lines.push("STATEMENT OF ACCOUNT");
+    lines.push("Kumon Iligan City Learning Center");
+    lines.push(names);
+    lines.push("As of " + new Date().toLocaleDateString("en-US", { year:"numeric", month:"long", day:"numeric" }));
+    lines.push("");
+    ledger.rows.forEach(r => {
+      lines.push(`${fmtMonthLabel(r.ym)} — Due ${peso(r.due)}, Paid ${peso(r.paid)}, Balance ${peso(r.balance)}`);
+    });
+    lines.push("");
+    lines.push(`TOTAL BALANCE (last ${span} mo.): ${peso(ledger.totalBalance)}`);
+    return lines.join("\n");
+  }
+  function statementPrintHtml(names, ledger, span){
+    const rowsHtml = ledger.rows.map(r => `<tr><td>${esc(fmtMonthLabel(r.ym))}</td><td class="r">${peso(r.due)}</td><td class="r">${peso(r.paid)}</td><td class="r">${peso(r.balance)}</td></tr>`).join("");
+    const paymentsHtml = ledger.payments.length
+      ? ledger.payments.map(p => `<tr><td>${esc(fmtMonthLabel(p.covers_month.slice(0,7)))}</td><td>${esc(p.reference_number||"—")}</td><td class="r">${peso(p.amount)}</td></tr>`).join("")
+      : `<tr><td colspan="3" class="muted">No payments recorded in this period.</td></tr>`;
+    return `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Statement of Account — ${esc(names)}</title>
+      <style>
+        body{ font-family: -apple-system, Arial, sans-serif; color:#1B1F27; padding:32px; max-width:640px; margin:0 auto; }
+        h1{ font-size:18px; margin:0 0 2px; } h2{ font-size:14px; font-weight:600; color:#636C7C; margin:0 0 18px; }
+        table{ width:100%; border-collapse:collapse; margin-bottom:20px; font-size:13px; }
+        th{ text-align:left; font-size:10.5px; text-transform:uppercase; letter-spacing:.03em; color:#636C7C; padding:6px 8px; border-bottom:1px solid #E1E4EB; }
+        td{ padding:7px 8px; border-bottom:1px solid #E1E4EB; }
+        td.r, th.r{ text-align:right; font-variant-numeric:tabular-nums; }
+        .muted{ color:#9AA1AF; }
+        .total{ font-size:15px; font-weight:700; text-align:right; padding-top:6px; }
+        .meta{ font-size:12px; color:#636C7C; margin-bottom:18px; }
+      </style></head><body>
+      <h1>Statement of Account</h1>
+      <h2>Kumon Iligan City Learning Center</h2>
+      <div class="meta"><b>${esc(names)}</b><br>As of ${esc(new Date().toLocaleDateString("en-US", { year:"numeric", month:"long", day:"numeric" }))}</div>
+      <table><thead><tr><th>Month</th><th class="r">Due</th><th class="r">Paid</th><th class="r">Balance</th></tr></thead>
+      <tbody>${rowsHtml}</tbody></table>
+      <h2 style="margin-bottom:8px;">Payments received</h2>
+      <table><thead><tr><th>For</th><th>Reference</th><th class="r">Amount</th></tr></thead>
+      <tbody>${paymentsHtml}</tbody></table>
+      <div class="total">Total balance (last ${span} months): ${peso(ledger.totalBalance)}</div>
+      <script>window.onload = () => setTimeout(() => window.print(), 250);<\/script>
+      </body></html>`;
+  }
+  function openStatementModal(studentIds, names){
+    let span = 6;
+    const modal = $("#modal");
+    function paint(){
+      const ledger = ledgerFor(studentIds, selectedMonth, span);
+      modal.innerHTML = `
+        <div class="modal-head"><h3>Statement of Account</h3><button class="iconbtn" data-action="close-modal">✕</button></div>
+        <div class="modal-body">
+          <div><b>${esc(names)}</b></div>
+          <label class="field" style="max-width:160px;">Show last
+            <select id="statementSpan">
+              <option value="3" ${span===3?"selected":""}>3 months</option>
+              <option value="6" ${span===6?"selected":""}>6 months</option>
+              <option value="12" ${span===12?"selected":""}>12 months</option>
+            </select>
+          </label>
+          <div class="table-scroll">
+            <table class="stable">
+              <thead><tr><th>Month</th><th>Due</th><th>Paid</th><th>Balance</th></tr></thead>
+              <tbody>${ledger.rows.map(r => `<tr><td>${esc(fmtMonthLabel(r.ym))}</td><td class="money">${peso(r.due)}</td><td class="money">${peso(r.paid)}</td><td class="money">${peso(r.balance)}</td></tr>`).join("")}</tbody>
+            </table>
+          </div>
+          <div style="text-align:right; font-weight:700;">Total balance: ${peso(ledger.totalBalance)}</div>
+          ${ledger.rows.some(r=>r.due===0) ? `<div class="banner info" style="margin:0;">Assumes today's tuition rate applied across every month shown — if it changed recently, the older months here won't be exact.</div>` : ""}
+        </div>
+        <div class="modal-foot">
+          <button type="button" class="btn ghost" data-action="statement-copy" data-names="${esc(names)}">Copy as text</button>
+          <button type="button" class="btn primary" data-action="statement-print" data-names="${esc(names)}">Print / Save PDF</button>
+        </div>
+      `;
+      $("#statementSpan").addEventListener("change", (e)=>{ span = Number(e.target.value); paint(); });
+      modal.dataset.studentIds = JSON.stringify(studentIds);
+      modal.dataset.span = span;
+    }
+    paint();
+    $("#modalBackdrop").hidden = false;
+  }
+
+  function render(){
+    if(!isAuthorized()) return;
+    renderStats();
+    renderTable();
+    renderReview();
+    renderUndoBar();
+  }
+
+  function renderStats(){
+    const ym = selectedMonth;
+    const rows = billableStudents().map(s => rowFor(s, ym));
+    const totalDue = rows.reduce((n,r)=>n+r.due, 0);
+    const totalPaid = rows.reduce((n,r)=>n+r.paid, 0);
+    const outstanding = Math.max(0, totalDue - totalPaid);
+    const unpaid = rows.filter(r => r.status === "unpaid").length;
+    const pendingReview = receipts.filter(r => r.status === "pending" || r.status === "flagged").length;
+    $("#statsRow").innerHTML = `
+      <div class="stat"><div class="n">${peso(outstanding)}</div><div class="l">Outstanding this month</div></div>
+      <div class="stat ${unpaid ? "bad" : ""}"><div class="n">${unpaid}</div><div class="l">Unpaid this month</div></div>
+      <div class="stat ${pendingReview ? "warn" : ""}"><div class="n">${pendingReview}</div><div class="l">Receipts to review</div></div>
+      <div class="stat"><div class="n">${billingGroups.length}</div><div class="l">Billing groups</div></div>
+    `;
+  }
+
+  function filteredRows(){
+    const ym = selectedMonth;
+    let rows = billableStudents().map(s => rowFor(s, ym));
+    if(filters.search.trim()){
+      const q = filters.search.trim().toLowerCase();
+      rows = rows.filter(r => displayName(r.student).toLowerCase().includes(q));
+    }
+    if(filters.status !== "all"){
+      rows = rows.filter(r => r.status === filters.status);
+    }
+    return rows;
+  }
+
+  function statusPill(status){
+    const label = status === "paid" ? "Paid" : status === "partial" ? "Partial" : "Unpaid";
+    return `<span class="pill ${status}">${label}</span>`;
+  }
+
+  function renderTable(){
+    $("#tableTitle").textContent = `This month — ${fmtMonthLabel(selectedMonth)}`;
+    const rows = filteredRows();
+    $("#tableCount").textContent = rows.length ? `${rows.length} student${rows.length===1?"":"s"}` : "";
+    const body = $("#paymentsBody");
+    if(!rows.length){
+      body.innerHTML = `<tr><td colspan="7"><div class="empty">No students match this view.</div></td></tr>`;
+      return;
+    }
+    if(!groupView){
+      body.innerHTML = rows.map(r => rowHtml(r)).join("");
+      return;
+    }
+    // Group view: group students by billing_group_id, "No group" last.
+    const byGroup = new Map();
+    rows.forEach(r => {
+      const gid = r.student.billing_group_id || "__none__";
+      if(!byGroup.has(gid)) byGroup.set(gid, []);
+      byGroup.get(gid).push(r);
+    });
+    const groupIds = [...byGroup.keys()].sort((a,b)=>{
+      if(a === "__none__") return 1;
+      if(b === "__none__") return -1;
+      return (groupNameFor(a)||"").localeCompare(groupNameFor(b)||"");
+    });
+    let html = "";
+    groupIds.forEach(gid => {
+      const members = byGroup.get(gid);
+      const name = gid === "__none__" ? "No billing group" : (groupNameFor(gid) || "—");
+      const due = members.reduce((n,r)=>n+r.due,0);
+      const paid = members.reduce((n,r)=>n+r.paid,0);
+      const balance = due - paid;
+      const status = balance <= 0 ? "paid" : (paid > 0 ? "partial" : "unpaid");
+      html += `<tr class="group-row">
+        <td class="gname">${esc(name)}<span class="faint" style="font-weight:500;">(${members.length})</span></td>
+        <td></td>
+        <td class="money">${peso(due)}</td>
+        <td class="money">${peso(paid)}</td>
+        <td class="money">${peso(balance)}</td>
+        <td>${statusPill(status)}</td>
+        <td>${gid !== "__none__" ? `<div class="row-actions"><button class="btn sm ghost" data-action="open-statement" data-group="${esc(gid)}">Statement</button></div>` : ""}</td>
+      </tr>`;
+      html += members.map(r => rowHtml(r)).join("");
+    });
+    body.innerHTML = html;
+  }
+
+  function rowHtml(r){
+    const s = r.student;
+    return `<tr>
+      <td>${esc(displayName(s))}<div class="faint" style="font-size:11.5px;">${esc(s.age_grade||"")}</div></td>
+      <td class="muted">${esc(groupNameFor(s.billing_group_id) || "—")}</td>
+      <td class="money">${peso(r.due)} <button class="iconbtn" data-action="edit-tuition" data-id="${esc(s.id)}" title="Edit tuition">✎</button></td>
+      <td class="money">${peso(r.paid)}</td>
+      <td class="money">${peso(r.balance)}</td>
+      <td>${statusPill(r.status)}</td>
+      <td><div class="row-actions"><button class="btn sm ghost" data-action="open-statement" data-student="${esc(s.id)}">Statement</button><button class="btn sm" data-action="open-log-payment" data-student="${esc(s.id)}">Log payment</button></div></td>
+    </tr>`;
+  }
+
+  function renderReview(){
+    const queue = receipts.filter(r => r.status === "pending" || r.status === "flagged");
+    $("#reviewCountBadge").textContent = queue.length ? `${queue.length} waiting` : "None waiting";
+    const body = $("#reviewBody");
+    if(!queue.length){
+      body.innerHTML = `<div class="empty">Nothing waiting on review.</div>`;
+      return;
+    }
+    body.innerHTML = queue.map(r => {
+      const s = students.find(x => x.id === r.student_id);
+      const name = s ? displayName(s) : "(deleted student)";
+      const monthLabel = new Date(r.covers_month + "T00:00:00").toLocaleDateString("en-US", { month:"short", year:"numeric" });
+      return `<div class="receipt-row">
+        <div class="receipt-thumb">🧾</div>
+        <div class="receipt-info">
+          <b>${esc(name)}</b>
+          <span class="sub">${peso(r.amount)} for ${esc(monthLabel)}${r.reference_number ? " · ref #" + esc(r.reference_number) : ""}${r.uploaded_by ? " · logged by " + esc(r.uploaded_by) : ""}</span>
+          ${r.status === "flagged" && r.status_note ? `<span class="note">Flagged: ${esc(r.status_note)}</span>` : ""}
+          ${r.receipt_path ? `<a href="#" data-action="view-receipt" data-id="${esc(r.id)}" style="font-size:12px;">View receipt photo</a>` : ""}
+        </div>
+        <div class="receipt-acts">
+          <button class="btn sm good" data-action="verify-receipt" data-id="${esc(r.id)}">Verify</button>
+          <button class="btn sm warn" data-action="flag-receipt" data-id="${esc(r.id)}">Flag</button>
+          <button class="btn sm danger" data-action="reject-receipt" data-id="${esc(r.id)}">Reject</button>
+          <button class="iconbtn" data-action="delete-receipt" data-id="${esc(r.id)}" title="Delete (only if this was logged by mistake)">🗑</button>
+        </div>
+      </div>`;
+    }).join("");
+  }
+
+  // ---------------- Modals ----------------
+
+  function closeModal(){ $("#modalBackdrop").hidden = true; $("#modal").innerHTML = ""; }
+
+  function studentOptions(selected){
+    return billableStudents().map(s => `<option value="${esc(s.id)}" ${s.id===selected?"selected":""}>${esc(displayName(s))}</option>`).join("");
+  }
+
+  function openLogPaymentModal(studentId){
+    const modal = $("#modal");
+    modal.innerHTML = `
+      <div class="modal-head"><h3>Log a payment</h3><button class="iconbtn" data-action="close-modal">✕</button></div>
+      <form id="logPaymentForm">
+        <div class="modal-body">
+          <label class="field">Student
+            <select name="studentId" required>${studentOptions(studentId)}</select>
+          </label>
+          <div class="field-row">
+            <label class="field">Amount<input type="number" name="amount" min="0" step="0.01" required></label>
+            <label class="field">Covers month<input type="month" name="coversMonth" value="${esc(selectedMonth)}" required></label>
+          </div>
+          <div class="field-row">
+            <label class="field">Reference number<input type="text" name="reference" placeholder="e.g. GC48213"></label>
+            <label class="field">Logged by<input type="text" name="uploadedBy" value="${esc(currentUser ? currentUser.email : "")}"></label>
+          </div>
+          <label class="field">Receipt photo (optional)<input type="file" name="receiptFile" accept="image/*"></label>
+          <div class="banner info" style="margin:0;">New entries start "pending" — verify it from the review queue below once it's confirmed, and it'll count toward this student's paid total.</div>
+        </div>
+        <div class="modal-foot">
+          <button type="button" class="btn ghost" data-action="close-modal">Cancel</button>
+          <button type="submit" class="btn primary">Log payment</button>
+        </div>
+      </form>
+    `;
+    $("#modalBackdrop").hidden = false;
+  }
+
+  function openTuitionModal(studentId){
+    const s = students.find(x => x.id === studentId);
+    if(!s) return;
+    const modal = $("#modal");
+    modal.innerHTML = `
+      <div class="modal-head"><h3>Edit monthly tuition</h3><button class="iconbtn" data-action="close-modal">✕</button></div>
+      <form id="tuitionForm" data-id="${esc(s.id)}">
+        <div class="modal-body">
+          <div class="muted" style="font-size:13.5px;">${esc(displayName(s))}</div>
+          <label class="field">Monthly tuition (₱)<input type="number" name="tuition" min="0" step="0.01" value="${esc(s.monthly_tuition)}" required></label>
+        </div>
+        <div class="modal-foot">
+          <button type="button" class="btn ghost" data-action="close-modal">Cancel</button>
+          <button type="submit" class="btn primary">Save</button>
+        </div>
+      </form>
+    `;
+    $("#modalBackdrop").hidden = false;
+  }
+
+  function openGroupsModal(){
+    const modal = $("#modal");
+    modal.innerHTML = `
+      <div class="modal-head"><h3>Billing groups</h3><button class="iconbtn" data-action="close-modal">✕</button></div>
+      <div class="modal-body">
+        ${billingGroups.length ? billingGroups.map(g => {
+          const memberCount = students.filter(s => s.billing_group_id === g.id).length;
+          return `<div class="card" style="margin-bottom:0;">
+            <div class="card-head">
+              <div><b>${esc(g.name)}</b> <span class="muted" style="font-size:12px;">(${memberCount} student${memberCount===1?"":"s"})</span></div>
+              <div style="display:flex; gap:6px;">
+                <button class="btn sm" data-action="edit-group" data-id="${esc(g.id)}">Edit</button>
+                <button class="btn sm danger" data-action="delete-group" data-id="${esc(g.id)}">Delete</button>
+              </div>
+            </div>
+          </div>`;
+        }).join("") : `<div class="empty">No billing groups yet.</div>`}
+        <button class="btn" type="button" data-action="new-group" style="align-self:flex-start;">+ New billing group</button>
+      </div>
+      <div class="modal-foot">
+        <button type="button" class="btn primary" data-action="close-modal" style="margin-left:auto;">Done</button>
+      </div>
+    `;
+    $("#modalBackdrop").hidden = false;
+  }
+
+  function openGroupEditModal(groupId){
+    const g = groupId ? billingGroups.find(x => x.id === groupId) : null;
+    const modal = $("#modal");
+    modal.innerHTML = `
+      <div class="modal-head"><h3>${g ? "Edit" : "New"} billing group</h3><button class="iconbtn" data-action="close-modal">✕</button></div>
+      <form id="groupForm" data-id="${g ? esc(g.id) : ""}">
+        <div class="modal-body">
+          <label class="field">Group name<input type="text" name="name" value="${g ? esc(g.name) : ""}" placeholder="e.g. Lee family" required autofocus></label>
+          <label class="field">Members
+            <div class="group-list">
+              ${students.map(s => `<label class="check-row"><input type="checkbox" name="member" value="${esc(s.id)}" ${s.billing_group_id === (g ? g.id : null) ? "checked" : ""}>${esc(displayName(s))}</label>`).join("")}
+            </div>
+          </label>
+        </div>
+        <div class="modal-foot">
+          <button type="button" class="btn ghost" data-action="back-to-groups">Back</button>
+          <button type="submit" class="btn primary">Save group</button>
+        </div>
+      </form>
+    `;
+    $("#modalBackdrop").hidden = false;
+  }
+
+  // ---------------- Actions ----------------
+
+  async function uploadReceiptFile(studentId, file){
+    if(!file || !file.size) return null;
+    const path = `${studentId}/${Date.now()}-${file.name}`.replace(/\s+/g, "_");
+    const { error } = await sbClient.storage.from("receipts").upload(path, file);
+    if(error) throw error;
+    return path;
+  }
+
+  async function viewReceipt(id){
+    const r = receipts.find(x => x.id === id);
+    if(!r || !r.receipt_path) return;
+    const { data, error } = await sbClient.storage.from("receipts").createSignedUrl(r.receipt_path, 60);
+    if(error){ toast("Couldn't open that receipt: " + error.message); return; }
+    window.open(data.signedUrl, "_blank");
+  }
+
+  async function setReceiptStatus(id, status, note){
+    const patch = { status, reviewed_by: currentUser ? currentUser.id : null, reviewed_at: new Date().toISOString() };
+    if(note !== undefined) patch.status_note = note;
+    const { error } = await sbClient.from("payment_receipts").update(patch).eq("id", id);
+    if(error){ toast("Couldn't update that receipt: " + error.message); return; }
+    await loadReceipts(); render();
+  }
+
+  async function deleteReceipt(id){
+    const r = receipts.find(x => x.id === id);
+    if(!r) return;
+    if(!confirm("Delete this payment entry? Only do this if it was logged by mistake — you can undo this from the Undo button afterward.")) return;
+    const { error } = await sbClient.from("payment_receipts").delete().eq("id", id);
+    if(error){ toast("Couldn't delete: " + error.message); return; }
+    await loadReceipts(); render();
+    const s = students.find(x => x.id === r.student_id);
+    pushUndo(`Delete payment (${s ? displayName(s) : "student"})`,
+      async ()=>{
+        const { id: _drop, ...rest } = r;
+        const { error } = await sbClient.from("payment_receipts").insert(r);
+        if(error) throw error;
+        await loadReceipts(); render();
+      },
+      async ()=>{
+        const { error } = await sbClient.from("payment_receipts").delete().eq("id", id);
+        if(error) throw error;
+        await loadReceipts(); render();
+      }
+    );
+  }
+
+  async function deleteGroup(id){
+    const g = billingGroups.find(x => x.id === id);
+    if(!g) return;
+    if(!confirm(`Delete "${g.name}"? Students in it aren't deleted — they just lose the group label. You can undo this from the Undo button afterward.`)) return;
+    const memberIds = students.filter(s => s.billing_group_id === id).map(s => s.id);
+    const { error } = await sbClient.from("billing_groups").delete().eq("id", id);
+    if(error){ toast("Couldn't delete: " + error.message); return; }
+    await Promise.all([loadStudents(), loadBillingGroups()]); render();
+    closeModal();
+    pushUndo(`Delete billing group "${g.name}"`,
+      async ()=>{
+        const { error } = await sbClient.from("billing_groups").insert({ id: g.id, name: g.name });
+        if(error) throw error;
+        if(memberIds.length){
+          const { error: e2 } = await sbClient.from("students").update({ billing_group_id: g.id }).in("id", memberIds);
+          if(e2) throw e2;
+        }
+        await Promise.all([loadStudents(), loadBillingGroups()]); render();
+      },
+      async ()=>{
+        const { error } = await sbClient.from("billing_groups").delete().eq("id", g.id);
+        if(error) throw error;
+        await Promise.all([loadStudents(), loadBillingGroups()]); render();
+      }
+    );
+  }
+
+  document.addEventListener("submit", async (e)=>{
+    if(e.target.id === "loginForm"){
+      e.preventDefault();
+      const fd = new FormData(e.target);
+      const { error } = await sbClient.auth.signInWithPassword({ email: fd.get("email"), password: fd.get("password") });
+      if(error) showLogin(error.message);
+      return;
+    }
+    if(e.target.id === "logPaymentForm"){
+      e.preventDefault();
+      const fd = new FormData(e.target);
+      const studentId = fd.get("studentId");
+      const amount = Number(fd.get("amount"));
+      const coversMonth = fd.get("coversMonth") + "-01";
+      const file = fd.get("receiptFile");
+      const submitBtn = e.target.querySelector('button[type="submit"]');
+      submitBtn.disabled = true;
+      try{
+        let receiptPath = null;
+        if(file && file.size) receiptPath = await uploadReceiptFile(studentId, file);
+        const { error } = await sbClient.from("payment_receipts").insert({
+          student_id: studentId,
+          amount,
+          covers_month: coversMonth,
+          reference_number: (fd.get("reference")||"").toString().trim() || null,
+          uploaded_by: (fd.get("uploadedBy")||"").toString().trim() || null,
+          receipt_path: receiptPath,
+          status: "pending"
+        });
+        if(error) throw error;
+        closeModal();
+        await loadReceipts(); render();
+        toast("Payment logged — verify it from the review queue once confirmed.");
+      }catch(err){
+        toast("Couldn't log that payment: " + err.message);
+      }finally{
+        submitBtn.disabled = false;
+      }
+      return;
+    }
+    if(e.target.id === "tuitionForm"){
+      e.preventDefault();
+      const id = e.target.dataset.id;
+      const fd = new FormData(e.target);
+      const tuition = Number(fd.get("tuition"));
+      const { error } = await sbClient.from("students").update({ monthly_tuition: tuition }).eq("id", id);
+      if(error){ toast("Couldn't save: " + error.message); return; }
+      closeModal();
+      await loadStudents(); render();
+    }
+    if(e.target.id === "groupForm"){
+      e.preventDefault();
+      const fd = new FormData(e.target);
+      const name = (fd.get("name")||"").toString().trim();
+      if(!name){ toast("Give the group a name."); return; }
+      const memberIds = fd.getAll("member");
+      const id = e.target.dataset.id;
+      try{
+        let groupId = id;
+        if(id){
+          const { error } = await sbClient.from("billing_groups").update({ name }).eq("id", id);
+          if(error) throw error;
+        }else{
+          const { data, error } = await sbClient.from("billing_groups").insert({ name }).select().single();
+          if(error) throw error;
+          groupId = data.id;
+        }
+        // Clear this group from anyone no longer checked, then assign everyone checked.
+        const { error: clearErr } = await sbClient.from("students").update({ billing_group_id: null }).eq("billing_group_id", groupId);
+        if(clearErr) throw clearErr;
+        if(memberIds.length){
+          const { error: assignErr } = await sbClient.from("students").update({ billing_group_id: groupId }).in("id", memberIds);
+          if(assignErr) throw assignErr;
+        }
+        await Promise.all([loadStudents(), loadBillingGroups()]);
+        render();
+        openGroupsModal();
+      }catch(err){
+        toast("Couldn't save that group: " + err.message);
+      }
+    }
+  });
+
+  document.addEventListener("change", (e)=>{
+    if(e.target.id === "monthInput"){ selectedMonth = e.target.value || monthDefault(); render(); }
+    if(e.target.id === "searchInput"){ filters.search = e.target.value; render(); }
+    if(e.target.id === "statusFilter"){ filters.status = e.target.value; render(); }
+  });
+  document.addEventListener("input", (e)=>{
+    if(e.target.id === "searchInput"){ filters.search = e.target.value; render(); }
+  });
+
+  document.addEventListener("click", async (e)=>{
+    const btn = e.target.closest("[data-action]");
+    if(!btn) return;
+    const action = btn.dataset.action;
+    if(action === "logout"){ await sbClient.auth.signOut(); }
+    else if(action === "close-modal"){ closeModal(); }
+    else if(action === "run-undo"){ runUndo(); }
+    else if(action === "run-redo"){ runRedo(); }
+    else if(action === "toggle-group-view"){
+      groupView = !groupView;
+      btn.classList.toggle("on", groupView);
+      btn.textContent = groupView ? "View by student" : "View by billing group";
+      render();
+    }
+    else if(action === "open-log-payment"){ openLogPaymentModal(btn.dataset.student || null); }
+    else if(action === "edit-tuition"){ e.preventDefault(); openTuitionModal(btn.dataset.id); }
+    else if(action === "open-statement"){
+      if(btn.dataset.group){
+        const gid = btn.dataset.group;
+        const members = students.filter(s => s.billing_group_id === gid);
+        openStatementModal(members.map(s => s.id), groupNameFor(gid) || "Billing group");
+      }else{
+        const s = students.find(x => x.id === btn.dataset.student);
+        if(s) openStatementModal([s.id], displayName(s));
+      }
+    }
+    else if(action === "statement-print"){
+      const ids = JSON.parse($("#modal").dataset.studentIds || "[]");
+      const span = Number($("#modal").dataset.span || 6);
+      const ledger = ledgerFor(ids, selectedMonth, span);
+      const win = window.open("", "_blank");
+      if(!win){ toast("Your browser blocked the print window — allow pop-ups for this site and try again."); return; }
+      win.document.write(statementPrintHtml(btn.dataset.names, ledger, span));
+      win.document.close();
+    }
+    else if(action === "statement-copy"){
+      const ids = JSON.parse($("#modal").dataset.studentIds || "[]");
+      const span = Number($("#modal").dataset.span || 6);
+      const ledger = ledgerFor(ids, selectedMonth, span);
+      const text = statementPlainText(btn.dataset.names, ledger, span);
+      try{
+        await navigator.clipboard.writeText(text);
+        toast("Copied — paste it into Messenger, SMS, or email.");
+      }catch(err){
+        toast("Couldn't copy automatically — select and copy the text yourself.");
+      }
+    }
+    else if(action === "open-groups"){ openGroupsModal(); }
+    else if(action === "new-group"){ openGroupEditModal(null); }
+    else if(action === "edit-group"){ openGroupEditModal(btn.dataset.id); }
+    else if(action === "back-to-groups"){ openGroupsModal(); }
+    else if(action === "delete-group"){ await deleteGroup(btn.dataset.id); }
+    else if(action === "view-receipt"){ e.preventDefault(); await viewReceipt(btn.dataset.id); }
+    else if(action === "verify-receipt"){ await setReceiptStatus(btn.dataset.id, "verified"); toast("Marked verified."); }
+    else if(action === "reject-receipt"){
+      const note = prompt("Optional — why is this being rejected?");
+      if(note === null) return;
+      await setReceiptStatus(btn.dataset.id, "rejected", note || null);
+      toast("Marked rejected.");
+    }
+    else if(action === "flag-receipt"){
+      const note = prompt("What's off about this one?");
+      if(note === null) return;
+      await setReceiptStatus(btn.dataset.id, "flagged", note || null);
+      toast("Flagged for follow-up.");
+    }
+    else if(action === "delete-receipt"){ await deleteReceipt(btn.dataset.id); }
+  });
+
+  boot();
+})();
+</script>
+</body>
+</html>

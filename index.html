@@ -361,6 +361,7 @@
       <a class="navbtn" href="roster.html">Student roster</a>
       <a class="navbtn" href="calendar.html">Calendar</a>
       <a class="navbtn" href="reporting.html">Reporting</a>
+      <a class="navbtn" href="payments.html" id="navPaymentsLink" hidden>Payments</a>
       <a class="navbtn" href="admin.html" id="navAdminLink" hidden>Admin</a>
     </div>
     <div class="rail-divider"></div>
@@ -690,6 +691,8 @@
     if(el) el.innerHTML = currentUser ? `<div class="account-row"><span class="account-email">${esc(currentUser.email)}</span><button class="btn sm ghost" data-action="logout">Log out</button></div>` : "";
     const adminLink = $("#navAdminLink");
     if(adminLink) adminLink.hidden = currentRole !== "superadmin";
+    const paymentsLink = $("#navPaymentsLink");
+    if(paymentsLink) paymentsLink.hidden = !(currentRole === "admin" || currentRole === "superadmin");
     return false;
   }
 

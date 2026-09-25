@@ -125,6 +125,13 @@
 
   .modal-backdrop{ position:fixed; inset:0; background:rgba(10,12,18,.5); display:flex; align-items:flex-start; justify-content:center; padding:5vh 16px; overflow-y:auto; z-index:50; }
   .modal{ background:var(--surface); border-radius:16px; width:100%; max-width:440px; box-shadow:var(--shadow); }
+
+  /* Undo/redo bar — personal to this browser tab, only for destructive actions (closing out a month). */
+  .undo-bar{ position:fixed; right:22px; bottom:22px; z-index:90; display:flex; gap:6px; background:var(--surface); border:1px solid var(--border); border-radius:14px; box-shadow:var(--shadow); padding:6px; }
+  .undo-btn{ display:flex; align-items:center; gap:7px; border:none; background:transparent; cursor:pointer; font-size:12.5px; font-weight:700; color:var(--ink); padding:8px 12px; border-radius:10px; white-space:nowrap; }
+  .undo-btn:hover{ background:var(--surface-2); }
+  .undo-btn .undo-label{ font-weight:500; color:var(--ink-muted); max-width:180px; overflow:hidden; text-overflow:ellipsis; }
+  @media (max-width: 640px){ .undo-btn .undo-label{ max-width:96px; } }
   .modal-head{ display:flex; align-items:center; justify-content:space-between; padding:16px 18px; border-bottom:1px solid var(--border); }
   .modal-head h3{ font-size:15.5px; font-weight:700; }
   .modal-body{ padding:16px 18px; display:flex; flex-direction:column; gap:12px; max-height:66vh; overflow-y:auto; }
@@ -180,6 +187,7 @@
       <a class="navbtn" href="roster.html">Student roster</a>
       <a class="navbtn" href="calendar.html">Calendar</a>
       <a class="navbtn active" href="reporting.html">Reporting</a>
+      <a class="navbtn" href="payments.html" id="navPaymentsLink" hidden>Payments</a>
       <a class="navbtn" href="admin.html" id="navAdminLink" hidden>Admin</a>
     </div>
     <div class="rail-divider"></div>
@@ -243,6 +251,8 @@
   <div class="modal" id="modal"></div>
 </div>
 
+<div class="undo-bar" id="undoBar" hidden></div>
+
 <script>
 (function(){
   "use strict";
@@ -253,6 +263,51 @@
   const $ = (sel, el) => (el||document).querySelector(sel);
   const $$ = (sel, el) => Array.from((el||document).querySelectorAll(sel));
   function esc(s){ return String(s==null?"":s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+
+  /* ---------------- Undo / redo ----------------
+     Personal to this browser tab and in-memory only (a refresh clears it) — covers
+     destructive actions only (right now: closing out a month). Holds up to 2 undo
+     steps and 1 redo step. Each entry snapshots exactly what it needs to put things
+     back, so undo/redo never re-derive state from what's on screen. */
+  const undoStack = [];
+  let redoEntry = null;
+  const UNDO_CAP = 2;
+  function pushUndo(label, undo, redo){
+    undoStack.push({ label, undo, redo });
+    if(undoStack.length > UNDO_CAP) undoStack.shift();
+    redoEntry = null;
+    renderUndoBar();
+  }
+  async function runUndo(){
+    const entry = undoStack.pop();
+    if(!entry) return;
+    try{ await entry.undo(); redoEntry = entry; }
+    catch(err){ console.warn(err); undoStack.push(entry); alert("Couldn't undo that — try again."); }
+    renderUndoBar();
+  }
+  async function runRedo(){
+    const entry = redoEntry;
+    if(!entry) return;
+    try{
+      await entry.redo();
+      undoStack.push(entry);
+      if(undoStack.length > UNDO_CAP) undoStack.shift();
+      redoEntry = null;
+    }catch(err){ console.warn(err); alert("Couldn't redo that — try again."); }
+    renderUndoBar();
+  }
+  function renderUndoBar(){
+    const bar = $("#undoBar");
+    if(!bar) return;
+    const top = undoStack[undoStack.length - 1];
+    if(!top && !redoEntry){ bar.hidden = true; bar.innerHTML = ""; return; }
+    bar.hidden = false;
+    bar.innerHTML = `
+      ${top ? `<button class="undo-btn" data-action="run-undo">↶ Undo <span class="undo-label">${esc(top.label)}</span></button>` : ""}
+      ${redoEntry ? `<button class="undo-btn" data-action="run-redo">↷ Redo <span class="undo-label">${esc(redoEntry.label)}</span></button>` : ""}
+    `;
+  }
+
   function fmtPlain(v){ return v ? esc(v) : `<span class="lvl empty-lvl">—</span>`; }
   function fmtMode(mode){
     if(!mode) return `<span class="lvl empty-lvl">—</span>`;
@@ -293,6 +348,8 @@
     if(adminLink) adminLink.hidden = currentRole !== "superadmin";
     const pipelineLink = $("#navPipelineLink");
     if(pipelineLink) pipelineLink.hidden = currentRole === "teacher" || currentRole === "pending";
+    const paymentsLink = $("#navPaymentsLink");
+    if(paymentsLink) paymentsLink.hidden = !(currentRole === "admin" || currentRole === "superadmin");
     applyRoleGate();
   }
   function applyRoleGate(){
@@ -460,20 +517,57 @@
       closed_by_email: currentUser ? currentUser.email : null
     }));
 
-    const { error: histError } = await sbClient.from("enrollment_monthly_history").insert(rows);
+    // Snapshot each enrollment's own current numbers before they're cleared, so an
+    // undo can put the exact prior values back rather than just guessing at blanks.
+    const priorFieldValues = candidates.map(e => ({
+      id: e.id,
+      lwc: e.lwc, nwu: e.nwu, no_of_days: e.no_of_days, no_of_months_current_level: e.no_of_months_current_level,
+      test_date: e.test_date, test_level: e.test_level, test_time: e.test_time, test_score: e.test_score, test_group: e.test_group
+    }));
+    const candidateIds = candidates.map(e => e.id);
+
+    const { data: insertedHistory, error: histError } = await sbClient.from("enrollment_monthly_history").insert(rows).select();
     if(histError){ alert("Couldn't archive: " + histError.message); return; }
+    let historyIds = (insertedHistory || []).map(h => h.id);
 
     const clearedFields = {
       lwc: null, nwu: null, no_of_days: null, no_of_months_current_level: null,
       test_date: null, test_level: null, test_time: null, test_score: null, test_group: null,
       updated_at: new Date().toISOString()
     };
-    const { error: clearError } = await sbClient.from("subject_enrollments").update(clearedFields).in("id", candidates.map(e => e.id));
+    const { error: clearError } = await sbClient.from("subject_enrollments").update(clearedFields).in("id", candidateIds);
     if(clearError){ alert(`Archived, but couldn't clear this cycle's fields: ${clearError.message}`); }
 
     await Promise.all([loadEnrollments(), loadHistory()]);
     render();
     alert(`${candidates.length} enrollment${candidates.length===1?"":"s"} closed out for ${cycleLabel}.`);
+
+    const label = `Close out ${cycleLabel} (${candidates.length})`;
+    pushUndo(label,
+      async ()=>{
+        if(historyIds.length){
+          const { error } = await sbClient.from("enrollment_monthly_history").delete().in("id", historyIds);
+          if(error) throw error;
+        }
+        for(const p of priorFieldValues){
+          const { id, ...fields } = p;
+          fields.updated_at = new Date().toISOString();
+          const { error } = await sbClient.from("subject_enrollments").update(fields).eq("id", id);
+          if(error) throw error;
+        }
+        await Promise.all([loadEnrollments(), loadHistory()]);
+        render();
+      },
+      async ()=>{
+        const { data: reinserted, error: reErr } = await sbClient.from("enrollment_monthly_history").insert(rows).select();
+        if(reErr) throw reErr;
+        historyIds = (reinserted || []).map(h => h.id);
+        const { error: clearErr } = await sbClient.from("subject_enrollments").update(clearedFields).in("id", candidateIds);
+        if(clearErr) throw clearErr;
+        await Promise.all([loadEnrollments(), loadHistory()]);
+        render();
+      }
+    );
   }
 
   function render(){
@@ -599,6 +693,8 @@
     else if(action === "close-out-month"){ await closeOutMonth(); }
     else if(action === "edit-report"){ openEditModal(btn.dataset.id); }
     else if(action === "close-modal"){ closeModal(); }
+    else if(action === "run-undo"){ runUndo(); }
+    else if(action === "run-redo"){ runRedo(); }
   });
 
   boot();
