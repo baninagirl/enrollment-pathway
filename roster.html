@@ -192,6 +192,7 @@
       <a class="navbtn" href="index.html" id="navPipelineLink">Pipeline</a>
       <a class="navbtn active" href="roster.html">Student roster</a>
       <a class="navbtn" href="calendar.html">Calendar</a>
+      <a class="navbtn" href="history.html">Monthly history</a>
       <a class="navbtn" href="admin.html" id="navAdminLink" hidden>Admin</a>
     </div>
     <div class="rail-divider"></div>
@@ -207,9 +208,7 @@
         <h1>Student roster</h1>
         <div class="page-sub">Current level and goal, per student, per subject.</div>
       </div>
-      <div style="display:flex; gap:8px;">
-        <button class="btn primary" data-action="open-new">+ Add to roster</button>
-      </div>
+      <div style="display:flex; gap:8px; align-items:center;" id="closeOutBtnWrap"></div>
     </div>
 
     <div class="search-row">
@@ -314,11 +313,29 @@
   }
 
   let sbClient = null, currentUser = null, currentRole = null, currentTeacherName = null;
-  let students = [], trainers = [], enrollments = [], schedules = [];
+  let students = [], trainers = [], enrollments = [], schedules = [], monthlyHistory = [];
   let filters = { search:"", subject:"all", teacher:"all", status:"active" };
   let editingId = null;
   let selectedIds = new Set();
   let selectMode = false;
+
+  // Kumon's tracking month doesn't follow the calendar: a cycle runs the 21st through the
+  // 20th of the next calendar month, named after whichever month holds the 20th (Sep 21–
+  // Oct 20 is "October"). Same rule Pipeline's monthly roster uses — the one definition of
+  // "month" the hub uses anywhere it groups or archives by month.
+  function cycleMonthFor(date){
+    return date.getDate() >= 21
+      ? new Date(date.getFullYear(), date.getMonth()+1, 1)
+      : new Date(date.getFullYear(), date.getMonth(), 1);
+  }
+  function cycleKeyOf(date){ const c = cycleMonthFor(date); return `${c.getFullYear()}-${String(c.getMonth()+1).padStart(2,"0")}`; }
+  function cycleLabelOf(date){ return cycleMonthFor(date).toLocaleDateString(undefined,{ month:"long", year:"numeric" }); }
+  function cycleRangeLabel(date){
+    const labelMonth = cycleMonthFor(date);
+    const start = new Date(labelMonth.getFullYear(), labelMonth.getMonth()-1, 21);
+    const end = new Date(labelMonth.getFullYear(), labelMonth.getMonth(), 20);
+    return `${start.toLocaleDateString(undefined,{month:"short",day:"numeric"})} – ${end.toLocaleDateString(undefined,{month:"short",day:"numeric",year:"numeric"})}`;
+  }
 
   // A plain teacher and a trainer_teacher (a trainor who also carries her own roster,
   // like Queenie) both get their Student Roster locked to just their own students. The
@@ -398,7 +415,7 @@
   async function startApp(){
     if(started) return;
     started = true;
-    await Promise.all([loadStudents(), loadSettings(), loadEnrollments(), loadSchedules()]);
+    await Promise.all([loadStudents(), loadSettings(), loadEnrollments(), loadSchedules(), loadMonthlyHistory()]);
     populateTeacherFilter();
     if(isTeacherScoped() && currentTeacherName){ filters.teacher = currentTeacherName; }
     render();
@@ -408,6 +425,9 @@
       .subscribe();
     sbClient.channel("realtime:roster-schedules")
       .on("postgres_changes", { event:"*", schema:"public", table:"schedules" }, async ()=>{ await loadSchedules(); })
+      .subscribe();
+    sbClient.channel("realtime:roster-monthly-history")
+      .on("postgres_changes", { event:"*", schema:"public", table:"enrollment_monthly_history" }, async ()=>{ await loadMonthlyHistory(); render(); })
       .subscribe();
   }
 
@@ -469,6 +489,11 @@
     const { data, error } = await sbClient.from("schedules").select("*");
     if(error){ console.warn(error); schedules = []; return; }
     schedules = data || [];
+  }
+  async function loadMonthlyHistory(){
+    const { data, error } = await sbClient.from("enrollment_monthly_history").select("*").order("cycle_key", { ascending:false });
+    if(error){ console.warn(error); monthlyHistory = []; return; }
+    monthlyHistory = data || [];
   }
   function scheduleFor(enrollmentId){ return schedules.find(sc => sc.subject_enrollment_id === enrollmentId) || null; }
 
@@ -556,11 +581,100 @@
     });
   }
 
+  // Which of the enrollments a teacher can actually see still need this cycle closed out —
+  // "Add to roster" always shows; "Close out [month]" only shows once there's something
+  // left to archive, and its count is scoped the same way Roster itself already is (a
+  // plain teacher only ever sees her own).
+  function openCloseOutCandidates(){
+    const cycleKey = cycleKeyOf(new Date());
+    const closedIds = new Set(monthlyHistory.filter(h => h.cycle_key === cycleKey).map(h => h.subject_enrollment_id));
+    return enrollments.filter(e => (e.status||"active") === "active" && !closedIds.has(e.id));
+  }
+  function renderCloseOutButton(){
+    const wrap = $("#closeOutBtnWrap");
+    if(!wrap) return;
+    const cycleLabel = cycleLabelOf(new Date());
+    const candidates = openCloseOutCandidates();
+    wrap.innerHTML = `
+      ${candidates.length ? `<button class="btn sm ghost" data-action="close-out-month" title="Archive this cycle's worksheet/test numbers and start ${esc(cycleLabel)} fresh">Close out ${esc(cycleLabel)} (${candidates.length})</button>` : ""}
+      <button class="btn primary" data-action="open-new">+ Add to roster</button>
+    `;
+  }
+
+  async function closeOutMonth(){
+    const cycleKey = cycleKeyOf(new Date());
+    const cycleLabel = cycleLabelOf(new Date());
+    const candidates = openCloseOutCandidates();
+    if(!candidates.length){ alert(`Nothing to close out — every active enrollment already has a ${cycleLabel} record.`); return; }
+
+    const ok = confirm(
+      `Close out ${cycleLabel} for ${candidates.length} enrollment${candidates.length===1?"":"s"}?\n\n` +
+      `This archives their current LWC, NWU, No. of days, No. of months, Achievement test, Award, and Actual under ${cycleLabel}, then clears those fields so the next cycle starts blank.\n\n` +
+      `Current level, Goal, Schedule, Mode and Teacher are untouched.`
+    );
+    if(!ok) return;
+
+    const rows = candidates.map(e => ({
+      subject_enrollment_id: e.id, student_id: e.student_id, student_name: e.student_name,
+      subject: e.subject, teacher: e.teacher,
+      cycle_key: cycleKey, cycle_label: cycleLabel,
+      current_level: e.current_level, current_page: e.current_page,
+      goal_level: e.goal_level, goal_page: e.goal_page,
+      lwc: e.lwc, nwu: e.nwu, no_of_days: e.no_of_days, no_of_months_current_level: e.no_of_months_current_level,
+      test_date: e.test_date, test_level: e.test_level, test_time: e.test_time, test_score: e.test_score, test_group: e.test_group,
+      award: e.award, actual: e.actual,
+      closed_by_email: currentUser ? currentUser.email : null
+    }));
+
+    const { error: histError } = await sbClient.from("enrollment_monthly_history").insert(rows);
+    if(histError){ alert("Couldn't archive: " + histError.message); return; }
+
+    const clearedFields = {
+      lwc: null, nwu: null, no_of_days: null, no_of_months_current_level: null,
+      test_date: null, test_level: null, test_time: null, test_score: null, test_group: null,
+      award: null, actual: null, updated_at: new Date().toISOString()
+    };
+    const { error: clearError } = await sbClient.from("subject_enrollments").update(clearedFields).in("id", candidates.map(e => e.id));
+    if(clearError){ alert(`Archived, but couldn't clear this cycle's fields: ${clearError.message}`); }
+
+    await Promise.all([loadEnrollments(), loadMonthlyHistory()]);
+    render();
+    alert(`${candidates.length} enrollment${candidates.length===1?"":"s"} closed out for ${cycleLabel}.`);
+  }
+
+  // A student's worksheet/test numbers by cycle, most recent first — feeds the History
+  // panel inside the Edit modal.
+  function historyFor(enrollmentId){
+    return monthlyHistory.filter(h => h.subject_enrollment_id === enrollmentId)
+      .slice().sort((a,b) => b.cycle_key.localeCompare(a.cycle_key));
+  }
+  function historyPanelHtml(enrollmentId){
+    const rows = historyFor(enrollmentId);
+    if(!rows.length) return `<div class="hint" style="font-size:12px;">No closed-out months yet for this enrollment.</div>`;
+    return `<div class="table-scroll"><table class="stable" style="min-width:640px;">
+      <thead><tr><th>Month</th><th>Level</th><th>LWC</th><th>NWU</th><th>Days</th><th>Months</th><th>Test date</th><th>Test lvl</th><th>Score</th><th>Award</th><th>Actual</th></tr></thead>
+      <tbody>${rows.map(h => `<tr>
+        <td><b>${esc(h.cycle_label)}</b></td>
+        <td>${fmtPlain((h.current_level||"")+(h.current_page||""))}</td>
+        <td>${fmtPlain(h.lwc)}</td>
+        <td>${fmtPlain(h.nwu)}</td>
+        <td>${fmtPlain(h.no_of_days)}</td>
+        <td>${fmtPlain(h.no_of_months_current_level)}</td>
+        <td>${fmtPlain(h.test_date)}</td>
+        <td>${fmtPlain(h.test_level)}</td>
+        <td>${fmtPlain(h.test_score)}</td>
+        <td>${fmtPlain(h.award)}</td>
+        <td>${fmtPlain(h.actual)}</td>
+      </tr>`).join("")}</tbody>
+    </table></div>`;
+  }
+
   function render(){
     const rows = filtered().slice().sort((a,b) =>
       lastNameSortKey(a.student_id, a.student_name).localeCompare(lastNameSortKey(b.student_id, b.student_name))
     );
     $("#enrollCount").textContent = rows.length + (rows.length===1 ? " enrollment" : " enrollments");
+    renderCloseOutButton();
 
     const toggleBtn = $("#selectModeToggle");
     if(toggleBtn){
@@ -744,6 +858,9 @@
           ${scheduleSectionHtml(scheduleRows, enrollment.mode)}
           <div style="height:1px; background:var(--border); margin:12px 0;"></div>
           ${progressFieldsHtml(enrollment)}
+          <div style="height:1px; background:var(--border); margin:12px 0;"></div>
+          <div class="hint" style="font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--ink-muted); margin-bottom:8px;">History</div>
+          ${historyPanelHtml(enrollment.id)}
         </div>
         <div class="modal-foot">
           <div>${isTeacherScoped() ? "" : `<button type="button" class="btn danger" data-action="delete-enrollment" data-id="${enrollment.id}">Delete</button>`}</div>
@@ -1023,6 +1140,7 @@
     const action = btn.dataset.action;
     if(action === "logout"){ await sbClient.auth.signOut(); }
     else if(action === "open-new"){ openModal(null); }
+    else if(action === "close-out-month"){ await closeOutMonth(); }
     else if(action === "edit"){
       const id = btn.dataset.id;
       const en = enrollments.find(x => x.id === id);

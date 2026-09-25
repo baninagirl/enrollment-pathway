@@ -171,6 +171,9 @@
   .cal-toolbar{ display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; flex-wrap:wrap; gap:10px; }
   .cal-nav{ display:flex; align-items:center; gap:8px; }
   .cal-nav h2{ font-size:16px; font-weight:700; min-width:160px; text-align:center; }
+  .month-head{ display:flex; flex-direction:column; align-items:center; }
+  .month-head h2{ margin:0; }
+  .month-range{ font-size:11px; color:var(--ink-muted); margin-top:1px; }
   .cal-filters{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
   .cal-grid{ display:grid; grid-template-columns:repeat(7,1fr); gap:1px; background:var(--border); border:1px solid var(--border); border-radius:12px; overflow:hidden; }
   .cal-dow{ background:var(--surface-2); padding:8px 10px; font-size:11px; font-weight:700; color:var(--ink-muted); text-transform:uppercase; letter-spacing:.04em; }
@@ -350,6 +353,7 @@
       <a class="navbtn active" href="index.html">Pipeline</a>
       <a class="navbtn" href="roster.html">Student roster</a>
       <a class="navbtn" href="calendar.html">Calendar</a>
+      <a class="navbtn" href="history.html">Monthly history</a>
       <a class="navbtn" href="admin.html" id="navAdminLink" hidden>Admin</a>
     </div>
     <div class="rail-divider"></div>
@@ -543,7 +547,7 @@
     calFilter: "all",
     calStaff: "all",
     studentSearch: "",
-    studentMonth: (()=>{ const d=new Date(); return new Date(d.getFullYear(), d.getMonth(), 1); })(),
+    studentMonth: (()=>{ return cycleMonthFor(new Date()); })(),
     studentMonthMode: "month", // "month" = this month's roster only, "all" = every month (historical)
     enrollmentShowAll: false // false = empty sections collapse to a thin line; true = every section shows full, even with nothing in it
   };
@@ -1285,14 +1289,37 @@
     return (d && d.subject) || "";
   }
   function monthKeyOf(date){ return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,"0")}`; }
-  // Which month a student belongs to on the roster: the month of their diagnostic test if they
-  // have one, otherwise the month they were added — so the roster naturally rolls into a new
-  // month as new diagnostics come in, while every earlier month stays browsable as history.
+  // Kumon's tracking month doesn't follow the calendar — a cycle runs the 21st through
+  // the 20th of the next calendar month, and takes its name from whichever month holds
+  // the 20th: Sep 21–Oct 20 is "October", Oct 21–Nov 20 is "November". This is the one
+  // definition of "month" used anywhere the hub groups or browses by month (the
+  // Calendar tab's day/week/month picker is deliberately left on real calendar dates —
+  // a diagnostic or training still gets booked on the actual day it happens).
+  function cycleMonthFor(date){
+    return date.getDate() >= 21
+      ? new Date(date.getFullYear(), date.getMonth()+1, 1)
+      : new Date(date.getFullYear(), date.getMonth(), 1);
+  }
+  // Which cycle a student belongs to on the roster: the cycle of their diagnostic test if
+  // they have one, otherwise the cycle they were added — so the roster naturally rolls
+  // into a new cycle as new diagnostics come in, while every earlier cycle stays browsable
+  // as history.
   function studentCohortMonthKey(s){
     const d = activeDiagnosticFor(s.id);
     const iso = (d && d.date) || (s.createdAt ? s.createdAt.slice(0,10) : null);
     if(!iso) return null;
-    return iso.slice(0,7);
+    const [y,m,dd] = iso.split("-").map(Number);
+    return monthKeyOf(cycleMonthFor(new Date(y, m-1, dd)));
+  }
+
+  // "October" alone doesn't say which days it covers — this spells out the Sep 21–Oct 20
+  // cycle underneath the month name so it's never ambiguous which bucket a student's in.
+  function cycleRangeLabel(labelMonthDate){
+    const start = new Date(labelMonthDate.getFullYear(), labelMonthDate.getMonth()-1, 21);
+    const end = new Date(labelMonthDate.getFullYear(), labelMonthDate.getMonth(), 20);
+    const startStr = start.toLocaleDateString(undefined,{ month:"short", day:"numeric" });
+    const endStr = end.toLocaleDateString(undefined,{ month:"short", day:"numeric", year:"numeric" });
+    return `${startStr} – ${endStr}`;
   }
 
   function renderStudents(){
@@ -1300,6 +1327,7 @@
     const q = STATE.studentSearch.trim().toLowerCase();
     const monthKey = monthKeyOf(STATE.studentMonth);
     const monthLabel = STATE.studentMonth.toLocaleDateString(undefined,{ month:"long", year:"numeric" });
+    const monthRange = cycleRangeLabel(STATE.studentMonth);
 
     const base = pipelineStudents()
       .filter(s => !q || s.name.toLowerCase().includes(q) || (s.parentName||"").toLowerCase().includes(q))
@@ -1319,7 +1347,10 @@
       <div class="cal-toolbar" style="margin-bottom:12px;">
         <div class="cal-nav">
           <button class="btn ghost sm" data-action="student-month-prev">‹</button>
-          <h2>${STATE.studentMonthMode === "all" ? "All students" : monthLabel}</h2>
+          <div class="month-head">
+            <h2>${STATE.studentMonthMode === "all" ? "All students" : monthLabel}</h2>
+            ${STATE.studentMonthMode === "all" ? "" : `<div class="month-range">${esc(monthRange)}</div>`}
+          </div>
           <button class="btn ghost sm" data-action="student-month-next">›</button>
           <button class="btn sm" data-action="student-month-today">This month</button>
         </div>
@@ -2147,7 +2178,7 @@
     else if(a === "open-new-student"){ openNewStudentModal(); }
     else if(a === "student-month-prev"){ STATE.studentMonth = new Date(STATE.studentMonth.getFullYear(), STATE.studentMonth.getMonth()-1, 1); renderStudents(); }
     else if(a === "student-month-next"){ STATE.studentMonth = new Date(STATE.studentMonth.getFullYear(), STATE.studentMonth.getMonth()+1, 1); renderStudents(); }
-    else if(a === "student-month-today"){ const d=new Date(); STATE.studentMonth = new Date(d.getFullYear(), d.getMonth(), 1); renderStudents(); }
+    else if(a === "student-month-today"){ STATE.studentMonth = cycleMonthFor(new Date()); renderStudents(); }
     else if(a === "student-month-mode"){ STATE.studentMonthMode = el.dataset.mode; renderStudents(); }
     else if(a === "open-edit-student"){ openEditStudentModal(el.dataset.id); }
     else if(a === "logout"){ if(sbClient) sbClient.auth.signOut(); }
