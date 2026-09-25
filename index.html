@@ -258,6 +258,13 @@
 
   .toast{ position:fixed; bottom:22px; left:50%; transform:translateX(-50%); background:var(--ink); color:var(--bg); padding:10px 18px; border-radius:99px; font-size:13px; font-weight:600; z-index:80; box-shadow:var(--shadow); }
 
+  /* Undo/redo bar — personal to this browser tab, only for destructive actions (deletes). */
+  .undo-bar{ position:fixed; right:22px; bottom:22px; z-index:90; display:flex; gap:6px; background:var(--surface); border:1px solid var(--border); border-radius:14px; box-shadow:var(--shadow); padding:6px; }
+  .undo-btn{ display:flex; align-items:center; gap:7px; border:none; background:transparent; cursor:pointer; font-size:12.5px; font-weight:700; color:var(--ink); padding:8px 12px; border-radius:10px; white-space:nowrap; }
+  .undo-btn:hover{ background:var(--surface-2); }
+  .undo-btn .undo-label{ font-weight:500; color:var(--ink-muted); max-width:180px; overflow:hidden; text-overflow:ellipsis; }
+  @media (max-width: 640px){ .undo-btn .undo-label{ max-width:96px; } }
+
   /* Login gate */
   .login-screen{ position:fixed; inset:0; display:flex; align-items:center; justify-content:center; background:var(--bg); z-index:100; padding:20px; }
   .login-card{ width:100%; max-width:360px; background:var(--surface); border:1px solid var(--border); border-radius:16px; padding:28px 26px; box-shadow:var(--shadow); display:flex; flex-direction:column; gap:14px; }
@@ -408,6 +415,7 @@
 </div>
 
 <div class="toast" id="toast" hidden></div>
+<div class="undo-bar" id="undoBar" hidden></div>
 
 <datalist id="studentFirstNames"></datalist>
 <datalist id="studentLastNames"></datalist>
@@ -461,6 +469,13 @@
           const { data, error } = await sb.from(table).insert(payload).select().single();
           if(error) throw error;
           return { id: data.id };
+        },
+        // Re-inserts a row with its ORIGINAL id (unlike add(), which always assigns a new
+        // one) — used only to put back an exact row an undo is restoring after a delete.
+        async restore(obj){
+          const payload = objToSnake(obj);
+          const { error } = await sb.from(table).insert(payload);
+          if(error) throw error;
         }
       };
     }
@@ -530,6 +545,60 @@
     clearTimeout(toast._h);
     toast._h = setTimeout(()=>{ t.hidden = true; }, 2600);
   }
+
+  /* ---------------- Undo / redo ----------------
+     Personal to this browser tab and in-memory only (a refresh clears it) — covers
+     destructive actions only (right now: "delete student everywhere"). Holds up to
+     2 undo steps and 1 redo step. Each entry snapshots exactly what it needs to put
+     things back, so undo/redo never re-derive state from whatever's on screen. */
+  const undoStack = [];
+  let redoEntry = null;
+  const UNDO_CAP = 2;
+  function pushUndo(label, undo, redo){
+    undoStack.push({ label, undo, redo });
+    if(undoStack.length > UNDO_CAP) undoStack.shift();
+    redoEntry = null;
+    renderUndoBar();
+  }
+  async function runUndo(){
+    const entry = undoStack.pop();
+    if(!entry) return;
+    try{
+      await entry.undo();
+      redoEntry = entry;
+    }catch(err){
+      console.warn(err);
+      undoStack.push(entry);
+      toast("Couldn't undo that — try again.");
+    }
+    renderUndoBar();
+  }
+  async function runRedo(){
+    const entry = redoEntry;
+    if(!entry) return;
+    try{
+      await entry.redo();
+      undoStack.push(entry);
+      if(undoStack.length > UNDO_CAP) undoStack.shift();
+      redoEntry = null;
+    }catch(err){
+      console.warn(err);
+      toast("Couldn't redo that — try again.");
+    }
+    renderUndoBar();
+  }
+  function renderUndoBar(){
+    const bar = $("#undoBar");
+    if(!bar) return;
+    const top = undoStack[undoStack.length - 1];
+    if(!top && !redoEntry){ bar.hidden = true; bar.innerHTML = ""; return; }
+    bar.hidden = false;
+    bar.innerHTML = `
+      ${top ? `<button class="undo-btn" data-action="run-undo">↶ Undo <span class="undo-label">${esc(top.label)}</span></button>` : ""}
+      ${redoEntry ? `<button class="undo-btn" data-action="run-redo">↷ Redo <span class="undo-label">${esc(redoEntry.label)}</span></button>` : ""}
+    `;
+  }
+
   function initials(name){
     return (name||"?").trim().split(/\s+/).slice(0,2).map(w=>w[0]).join("").toUpperCase();
   }
@@ -2043,19 +2112,43 @@
   async function cancelTraining(id){
     await guardWrite(async ()=>{ await db.collection("trainings").doc(id).update({ status: "cancelled" }); toast("Session cancelled."); });
   }
+  async function performDeleteStudentEverywhere(ids){
+    await Promise.all([
+      ...ids.diagIds.map(id => db.collection("diagnostics").doc(id).delete()),
+      ...ids.trainIds.map(id => db.collection("trainings").doc(id).delete()),
+      ...ids.schedIds.map(id => db.collection("schedules").doc(id).delete()),
+      db.collection("students").doc(ids.studentId).delete()
+    ]);
+  }
+  async function performRestoreStudentEverywhere(snap){
+    // Parent row first — diagnostics/trainings/schedules all reference the student's id.
+    if(snap.studentSnap) await db.collection("students").restore(snap.studentSnap);
+    for(const d of snap.diagSnap) await db.collection("diagnostics").restore(d);
+    for(const t of snap.trainSnap) await db.collection("trainings").restore(t);
+    for(const s of snap.schedSnap) await db.collection("schedules").restore(s);
+  }
   async function deleteStudentEverywhere(studentId){
     if(!studentId) return;
-    const diagIds = STATE.diagnostics.filter(d => d.studentId === studentId).map(d => d.id);
-    const trainIds = STATE.trainings.filter(t => t.studentId === studentId).map(t => t.id);
-    const schedIds = STATE.schedules.filter(s => s.studentId === studentId).map(s => s.id);
+    const snap = {
+      studentSnap: studentById(studentId),
+      diagSnap: STATE.diagnostics.filter(d => d.studentId === studentId),
+      trainSnap: STATE.trainings.filter(t => t.studentId === studentId),
+      schedSnap: STATE.schedules.filter(s => s.studentId === studentId)
+    };
+    const ids = {
+      studentId,
+      diagIds: snap.diagSnap.map(d => d.id),
+      trainIds: snap.trainSnap.map(t => t.id),
+      schedIds: snap.schedSnap.map(s => s.id)
+    };
+    const label = `Delete ${(snap.studentSnap && snap.studentSnap.name) || "student"}`;
     await guardWrite(async ()=>{
-      await Promise.all([
-        ...diagIds.map(id => db.collection("diagnostics").doc(id).delete()),
-        ...trainIds.map(id => db.collection("trainings").doc(id).delete()),
-        ...schedIds.map(id => db.collection("schedules").doc(id).delete()),
-        db.collection("students").doc(studentId).delete()
-      ]);
+      await performDeleteStudentEverywhere(ids);
       toast("Removed everywhere — diagnostic, trainings, and schedule.");
+      pushUndo(label,
+        async ()=>{ await performRestoreStudentEverywhere(snap); toast(`Undid: ${label}`); },
+        async ()=>{ await performDeleteStudentEverywhere(ids); toast(`Redone: ${label}`); }
+      );
     });
   }
   async function markTrainingComplete(id){
@@ -2139,6 +2232,8 @@
       deleteStudentEverywhere(el.dataset.studentId);
       closeModal();
     }
+    else if(a === "run-undo"){ runUndo(); }
+    else if(a === "run-redo"){ runRedo(); }
     else if(a === "followup-status"){ setFollowupStatus(el.dataset.id, el.dataset.status); renderEnrollment(); }
     else if(a === "cal-prev"){
       if(STATE.calView === "week") STATE.calWeekStart = addDays(STATE.calWeekStart, -7);
