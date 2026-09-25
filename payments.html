@@ -636,6 +636,11 @@
     totalW -= spacing;
     fillTextSpaced(ctx, text, xRight - totalW, y, spacing);
   }
+  function fillTextRight(ctx, text, xRight, y){
+    ctx.textAlign = "right";
+    ctx.fillText(text, xRight, y);
+    ctx.textAlign = "left";
+  }
   function drawPill(ctx, text, x, y, bg, fg){
     ctx.font = "700 14px Arial, sans-serif";
     const padX = 13, h = 27;
@@ -648,15 +653,6 @@
     ctx.textBaseline = "alphabetic";
     return w;
   }
-  // Every active subject-enrollment across the given student(s) — a single student shows
-  // their own subjects, a family/billing-group download pools everyone's together, same as
-  // the "N Subjects" count on the on-screen pill.
-  function subjectSummaryFor(studentIds){
-    const subs = [];
-    studentIds.forEach(sid => activeSubjectsFor(sid).forEach(s => subs.push(s)));
-    return { types: [...new Set(subs)], count: subs.length };
-  }
-
   // Real Kumon wordmark (the actual franchise logo, supplied by the studio owner),
   // embedded as a data URI so the whole SOA stays a single self-contained file —
   // loaded once and cached, since it never changes.
@@ -678,15 +674,36 @@
   async function downloadTuitionImage(studentIds, names){
     const ym = selectedMonth;
     const totals = monthTotalFor(studentIds, ym);
-    const summary = subjectSummaryFor(studentIds);
     const logo = await getKumonLogo();
 
     const NAVY = "#101A3D", GRAY = "#6B7280", BORDER = "#E4E7EF", PAGE_BG = "#F4F6FA";
-    const BLUE_SOFT = "#E9EDFC", BLUE_DOT = "#3454D1";
-    const MATH_BG = "#E9EDFC", MATH_INK = "#2A41A8", READ_BG = "#FBE8E5", READ_INK = "#C23B2B";
+    const BLUE_SOFT = "#E9EDFC";
+    const MATH_INK = "#2A41A8", READ_INK = "#C23B2B";
     const GOOD_BG = "#E4F5EC", GOOD_INK = "#1E8E5A";
+    const DUE_BG = "#8C2A1E", DUE_INK = "#FFFFFF";
+    const FOOTER_BG = "#12193A", FOOTER_LABEL = "#AEB4CE", GOLD = "#F0BD3D";
 
-    const W = 1000, H = 650, M = 28;
+    // One row per student, oldest-first-no — last-name-alphabetical, same order the rest
+    // of the app uses — so a family's SOA lists siblings the same way Roster/Reporting do.
+    const rowsData = studentIds.map(sid => {
+      const s = students.find(x => x.id === sid);
+      if(!s) return null;
+      const due = tuitionDueFor(s);
+      const paid = verifiedPaidFor(sid, ym);
+      const balance = due - paid;
+      const subjects = activeSubjectsFor(sid);
+      return { student:s, due, paid, balance, subjects };
+    }).filter(Boolean).sort((a,b) => displayName(a.student).localeCompare(displayName(b.student)));
+
+    const padX = 32;
+    const rowHeights = rowsData.map(r => r.paid > 0 ? 74 : 54);
+    const tableTopPad = 20, tableHeaderH = 46, tableBottomPad = 22;
+    const footerH = 158;
+    const tableH = tableHeaderH + tableTopPad + rowHeights.reduce((a,b)=>a+b, 0) + tableBottomPad;
+    const c2h = tableH + footerH;
+
+    const c1h = 148, gap = 14, M = 28;
+    const W = 1000, H = M + c1h + gap + c2h + M;
     const canvas = document.createElement("canvas");
     canvas.width = W; canvas.height = H;
     const ctx = canvas.getContext("2d");
@@ -702,12 +719,25 @@
       ctx.lineWidth = 1;
       ctx.stroke();
     }
+    function subjectParens(subjects, x, y, font){
+      ctx.font = font;
+      let cx = x;
+      ctx.fillStyle = "#15171C";
+      ctx.fillText("(", cx, y); cx += ctx.measureText("(").width;
+      subjects.forEach((subj, i) => {
+        if(i > 0){ ctx.fillStyle = "#15171C"; ctx.fillText(" + ", cx, y); cx += ctx.measureText(" + ").width; }
+        ctx.fillStyle = subj === "Reading" ? READ_INK : MATH_INK;
+        ctx.fillText(subj, cx, y); cx += ctx.measureText(subj).width;
+      });
+      ctx.fillStyle = "#15171C";
+      ctx.fillText(")", cx, y); cx += ctx.measureText(")").width;
+      return cx;
+    }
 
     // ---------- Card 1: letterhead + period/due date ----------
-    const c1 = { x:M, y:M, w:W-M*2, h:148 };
+    const c1 = { x:M, y:M, w:W-M*2, h:c1h };
     card(c1.x, c1.y, c1.w, c1.h);
     const leftColW = c1.w * 0.46;
-    const padX = 32;
 
     // Real Kumon wordmark, embedded as a data URI (see KUMON_LOGO_DATA_URI below) —
     // drawn at its native aspect ratio so it never looks stretched.
@@ -722,7 +752,6 @@
     ctx.font = "800 21px Arial, sans-serif";
     ctx.fillText("Iligan City Learning Center", c1.x + padX, c1.y + 90);
 
-    // divider between the two header columns
     ctx.strokeStyle = BORDER;
     ctx.beginPath(); ctx.moveTo(c1.x + leftColW, c1.y + 18); ctx.lineTo(c1.x + leftColW, c1.y + c1.h - 18); ctx.stroke();
 
@@ -738,7 +767,6 @@
     roundRectPath(ctx, rx, dueBoxY, dueBoxW, dueBoxH, 10);
     ctx.fillStyle = BLUE_SOFT; ctx.fill();
     ctx.font = "16px Arial, sans-serif";
-    ctx.fillStyle = "#2A41A8";
     ctx.fillText("\u{1F4C5}", rx + 14, dueBoxY + 34);
     ctx.fillStyle = GRAY;
     ctx.font = "800 11px Arial, sans-serif";
@@ -747,100 +775,87 @@
     ctx.font = "800 20px Arial, sans-serif";
     ctx.fillText(dueDateLabel(ym), rx + 46, dueBoxY + 42);
 
-    // ---------- Card 2: rate reference table ----------
-    const c2 = { x:M, y:c1.y + c1.h + 14, w:c1.w, h:260 };
-    card(c2.x, c2.y, c2.w, c2.h);
-    ctx.fillStyle = GRAY;
-    ctx.font = "800 12px Arial, sans-serif";
-    fillTextSpaced(ctx, "DESCRIPTION", c2.x + padX, c2.y + 34, 1);
-    fillTextSpacedRight(ctx, "AMOUNT", c2.x + c2.w - padX, c2.y + 34, 1);
-    ctx.strokeStyle = BORDER;
-    ctx.beginPath(); ctx.moveTo(c2.x + padX, c2.y + 48); ctx.lineTo(c2.x + c2.w - padX, c2.y + 48); ctx.stroke();
-
-    const rows = [
-      { title:"Grade School Tuition", sub:"₱2,200 × number of students" },
-      { title:"High School Tuition", sub:"₱2,350 × number of students" },
-      { title:"Others", sub:"" }
-    ];
-    const rowH = (c2.h - 62) / rows.length;
-    rows.forEach((r, i) => {
-      const ry = c2.y + 62 + i*rowH;
-      const iconY = ry + rowH/2 - 17;
-      roundRectPath(ctx, c2.x + padX, iconY, 34, 34, 9);
-      ctx.fillStyle = BLUE_SOFT; ctx.fill();
-      ctx.fillStyle = BLUE_DOT;
-      ctx.beginPath(); ctx.arc(c2.x + padX + 17, iconY + 17, 4, 0, Math.PI*2); ctx.fill();
-
-      ctx.fillStyle = "#15171C";
-      ctx.font = "800 19px Arial, sans-serif";
-      ctx.fillText(r.title, c2.x + padX + 50, ry + rowH/2 - (r.sub ? 4 : -6));
-      if(r.sub){
-        ctx.fillStyle = GRAY;
-        ctx.font = "500 14px Arial, sans-serif";
-        ctx.fillText(r.sub, c2.x + padX + 50, ry + rowH/2 + 17);
-      }
-      ctx.strokeStyle = "#B9C0D0";
-      ctx.lineWidth = 1;
-      ctx.beginPath(); ctx.moveTo(c2.x + c2.w - padX - 240, ry + rowH/2 + 3); ctx.lineTo(c2.x + c2.w - padX, ry + rowH/2 + 3); ctx.stroke();
-
-      if(i < rows.length - 1){
-        ctx.strokeStyle = BORDER;
-        ctx.beginPath(); ctx.moveTo(c2.x + padX, ry + rowH); ctx.lineTo(c2.x + c2.w - padX, ry + rowH); ctx.stroke();
-      }
-    });
-
-    // ---------- Card 3: student name / subjects + total due ----------
-    const c3 = { x:M, y:c2.y + c2.h + 14, w:c1.w, h:150 };
-    const rightW = c3.w * 0.36;
+    // ---------- Card 2: per-student table, subjects colored so they're clear at a
+    // glance, each with their own paid/due status — plus a totals footer. Scales from
+    // one student to a whole sibling group without changing the design, just the height.
+    const c2 = { x:M, y:c1.y + c1.h + gap, w:c1.w, h:c2h };
     ctx.save();
-    roundRectPath(ctx, c3.x, c3.y, c3.w, c3.h, 14);
+    roundRectPath(ctx, c2.x, c2.y, c2.w, c2.h, 14);
     ctx.clip();
-    ctx.fillStyle = "#FFFFFF"; ctx.fillRect(c3.x, c3.y, c3.w, c3.h);
-    ctx.fillStyle = BLUE_SOFT; ctx.fillRect(c3.x + c3.w - rightW, c3.y, rightW, c3.h);
+    ctx.fillStyle = "#FFFFFF"; ctx.fillRect(c2.x, c2.y, c2.w, tableH);
+    ctx.fillStyle = FOOTER_BG; ctx.fillRect(c2.x, c2.y + tableH, c2.w, footerH);
     ctx.restore();
     ctx.strokeStyle = BORDER; ctx.lineWidth = 1;
-    roundRectPath(ctx, c3.x, c3.y, c3.w, c3.h, 14); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(c3.x + c3.w - rightW, c3.y + 18); ctx.lineTo(c3.x + c3.w - rightW, c3.y + c3.h - 18); ctx.stroke();
+    roundRectPath(ctx, c2.x, c2.y, c2.w, c2.h, 14); ctx.stroke();
 
-    // Left: name of student(s) + subject pills
-    const lx = c3.x + padX;
-    ctx.fillStyle = BLUE_DOT;
-    ctx.beginPath(); ctx.arc(lx + 3, c3.y + 30, 3, 0, Math.PI*2); ctx.fill();
+    // Table header
     ctx.fillStyle = GRAY;
-    ctx.font = "800 11px Arial, sans-serif";
-    fillTextSpaced(ctx, "NAME OF STUDENT/S", lx + 14, c3.y + 34, 0.8);
+    ctx.font = "800 12px Arial, sans-serif";
+    fillTextSpaced(ctx, "STUDENT", c2.x + padX, c2.y + 30, 1);
+    fillTextSpacedRight(ctx, "TUITION DUE", c2.x + c2.w*0.66, c2.y + 30, 1);
+    fillTextSpacedRight(ctx, "STATUS", c2.x + c2.w - padX, c2.y + 30, 1);
+    ctx.strokeStyle = NAVY;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(c2.x + padX, c2.y + tableHeaderH); ctx.lineTo(c2.x + c2.w - padX, c2.y + tableHeaderH); ctx.stroke();
 
-    const nameParts = String(names||"").split(",");
-    const nameLine1 = (nameParts[0]||"").trim().toUpperCase();
-    const nameLine2 = nameParts.slice(1).join(",").trim();
-    ctx.fillStyle = NAVY;
-    ctx.font = "800 27px Arial, sans-serif";
-    if(nameLine2){
-      ctx.fillText(nameLine1 + ",", lx, c3.y + 66);
-      ctx.fillText(nameLine2, lx, c3.y + 96);
-    }else{
-      ctx.fillText(nameLine1, lx, c3.y + 78);
-    }
-    let px = lx, py = c3.y + (nameLine2 ? 112 : 96);
-    summary.types.forEach(subj => {
-      const bg = subj === "Reading" ? READ_BG : MATH_BG;
-      const fg = subj === "Reading" ? READ_INK : MATH_INK;
-      px += drawPill(ctx, subj, px, py, bg, fg) + 8;
+    let ry = c2.y + tableHeaderH + tableTopPad;
+    rowsData.forEach((r, i) => {
+      const rh = rowHeights[i];
+      const nameY = ry + (r.paid > 0 ? 24 : 30);
+      ctx.fillStyle = NAVY;
+      ctx.font = "800 18px Arial, sans-serif";
+      const nameText = displayName(r.student).toUpperCase();
+      ctx.fillText(nameText, c2.x + padX, nameY);
+      const nameW = ctx.measureText(nameText).width;
+      if(r.subjects.length){
+        subjectParens(r.subjects, c2.x + padX + nameW + 10, nameY, "700 15px Arial, sans-serif");
+      }
+      if(r.paid > 0){
+        ctx.fillStyle = GRAY;
+        ctx.font = "500 13px Arial, sans-serif";
+        ctx.fillText("Paid this month " + peso(r.paid), c2.x + padX, nameY + 22);
+      }
+
+      ctx.fillStyle = "#15171C";
+      ctx.font = "600 16px Arial, sans-serif";
+      fillTextRight(ctx, peso(r.due), c2.x + c2.w*0.66, nameY);
+
+      const badgeText = r.balance > 0 ? "DUE · " + peso(r.balance) : "PAID";
+      const badgeBg = r.balance > 0 ? DUE_BG : GOOD_BG;
+      const badgeInk = r.balance > 0 ? DUE_INK : GOOD_INK;
+      ctx.font = "800 13px Arial, sans-serif";
+      const bw = ctx.measureText(badgeText).width + 26;
+      drawPill(ctx, badgeText, c2.x + c2.w - padX - bw, nameY - 18, badgeBg, badgeInk);
+
+      ry += rh;
+      if(i < rowsData.length - 1){
+        ctx.strokeStyle = BORDER;
+        ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.moveTo(c2.x + padX, ry - 4); ctx.lineTo(c2.x + c2.w - padX, ry - 4); ctx.stroke();
+      }
     });
-    if(summary.count){
-      drawPill(ctx, summary.count + (summary.count===1 ? " Subject" : " Subjects"), px, py, GOOD_BG, GOOD_INK);
-    }
 
-    // Right: total amount due
-    const rx2 = c3.x + c3.w - rightW + padX;
-    ctx.fillStyle = BLUE_DOT;
-    ctx.beginPath(); ctx.arc(rx2 + 3, c3.y + 30, 3, 0, Math.PI*2); ctx.fill();
-    ctx.fillStyle = GRAY;
-    ctx.font = "800 11px Arial, sans-serif";
-    fillTextSpaced(ctx, "TOTAL AMOUNT DUE", rx2 + 14, c3.y + 34, 0.8);
-    ctx.fillStyle = NAVY;
-    ctx.font = "900 46px Arial, sans-serif";
-    ctx.fillText(peso(totals.due), rx2, c3.y + 100);
+    // Footer totals
+    const fy = c2.y + tableH;
+    const totalPaid = rowsData.reduce((n,r)=>n+r.paid, 0);
+    ctx.fillStyle = FOOTER_LABEL;
+    ctx.font = "500 15px Arial, sans-serif";
+    ctx.fillText("Total tuition due", c2.x + padX, fy + 34);
+    ctx.fillText("Total paid this month", c2.x + padX, fy + 62);
+    ctx.fillStyle = "#FFFFFF";
+    ctx.font = "700 17px Arial, sans-serif";
+    fillTextRight(ctx, peso(totals.due), c2.x + c2.w - padX, fy + 34);
+    fillTextRight(ctx, peso(totalPaid), c2.x + c2.w - padX, fy + 62);
+
+    ctx.strokeStyle = "rgba(255,255,255,0.18)";
+    ctx.beginPath(); ctx.moveTo(c2.x + padX, fy + 84); ctx.lineTo(c2.x + c2.w - padX, fy + 84); ctx.stroke();
+
+    ctx.fillStyle = "#FFFFFF";
+    ctx.font = "800 17px Arial, sans-serif";
+    fillTextSpaced(ctx, "TOTAL REMAINING BALANCE", c2.x + padX, fy + 118, 0.8);
+    ctx.fillStyle = GOLD;
+    ctx.font = "900 34px Arial, sans-serif";
+    fillTextRight(ctx, peso(totals.balance), c2.x + c2.w - padX, fy + 128);
 
     const a = document.createElement("a");
     a.download = `soa-${slugify(names)}-${ym}.png`;
