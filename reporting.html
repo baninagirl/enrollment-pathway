@@ -190,7 +190,7 @@
   <nav class="rail">
     <div class="brand"><span class="dot"></span>Kumon Hub</div>
     <div class="rail-pages">
-      <a class="navbtn" href="index.html" id="navPipelineLink"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16l-6.5 8.5V19l-3 1.5v-8L4 4z"/></svg>Pipeline</a>
+      <a class="navbtn" href="index.html" id="navPipelineLink" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16l-6.5 8.5V19l-3 1.5v-8L4 4z"/></svg>Pipeline</a>
       <a class="navbtn" href="roster.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3L2 8l10 5 10-5-10-5z"/><path d="M6 10.5V15c0 1.5 2.5 3 6 3s6-1.5 6-3v-4.5"/></svg>Student roster</a>
       <a class="navbtn" href="calendar.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>Calendar</a>
       <a class="navbtn active" href="reporting.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 20V10M12 20V4M6 20v-6"/></svg>Reporting</a>
@@ -354,7 +354,7 @@
     const pipelineLink = $("#navPipelineLink");
     if(pipelineLink) pipelineLink.hidden = currentRole === "teacher" || currentRole === "pending";
     const paymentsLink = $("#navPaymentsLink");
-    if(paymentsLink) paymentsLink.hidden = !(currentRole === "admin" || currentRole === "superadmin");
+    if(paymentsLink) paymentsLink.hidden = !(currentRole === "admin" || currentRole === "superadmin" || currentRole === "teacher");
     applyRoleGate();
   }
   function applyRoleGate(){
@@ -486,9 +486,14 @@
     const closedIds = new Set(history.filter(h => h.cycle_key === cycleKey).map(h => h.subject_enrollment_id));
     return enrollments.filter(e => (e.status||"active") === "active" && !closedIds.has(e.id));
   }
+  // Closing out a cycle archives everyone's numbers and clears the slate for the next
+  // one — a front-desk/teacher mistake here isn't easily undone, so only admin/superadmin
+  // get the button at all (same bar as Payments and Admin).
+  function canCloseOut(){ return currentRole === "admin" || currentRole === "superadmin"; }
   function renderCloseOutButton(){
     const wrap = $("#closeOutBtnWrap");
     if(!wrap) return;
+    if(!canCloseOut()){ wrap.innerHTML = ""; return; }
     if(!isCurrentCycle()){ wrap.innerHTML = ""; return; }
     const cycleLabel = monthLabel(viewMonth);
     const candidates = openCloseOutCandidates();
@@ -498,6 +503,7 @@
   }
 
   async function closeOutMonth(){
+    if(!canCloseOut()) return;
     const cycleKey = cycleKeyOf(new Date());
     const cycleLabel = monthLabel(cycleMonthFor(new Date()));
     const candidates = openCloseOutCandidates();
@@ -610,6 +616,15 @@
     `).join("");
   }
 
+  // Same level lists Student Roster uses, so the dropdown here offers the exact same
+  // Kumon level codes rather than free text that could drift out of sync.
+  const MATH_LEVELS = ["7A","6A","5A","4A","3A","2A","A","B","C","D","E","F","G","H","I","J","K","L","M","N","O"];
+  const READING_LEVELS = ["7A","6A","5A","4A","3A","2A","AI","AII","BI","BII","CI","CII","DI","DII","EI","EII","FI","FII","GI","GII","HI","HII","I-I","I-II","J","K","L","M","N","O"];
+  function levelsFor(subject){ return subject === "Reading" ? READING_LEVELS : MATH_LEVELS; }
+  function levelOptions(subject, selected){
+    return `<option value="">—</option>` + levelsFor(subject).map(l=>`<option value="${l}" ${l===selected?"selected":""}>${l}</option>`).join("");
+  }
+
   function openEditModal(enrollmentId){
     const e = enrollments.find(x => x.id === enrollmentId);
     if(!e) return;
@@ -619,7 +634,11 @@
       <div class="modal-head"><h3>${esc(e.student_name||"")} — ${esc(e.subject||"")}</h3><button class="iconbtn" data-action="close-modal">✕</button></div>
       <form id="reportForm">
         <div class="modal-body">
-          <p class="hint" style="font-size:12px; color:var(--ink-muted); margin:0;">${esc(monthLabel(viewMonth))}'s numbers. Level, Goal, Schedule, Mode, Award and Actual are edited from <a href="roster.html">Student Roster</a> instead.</p>
+          <p class="hint" style="font-size:12px; color:var(--ink-muted); margin:0;">${esc(monthLabel(viewMonth))}'s numbers. Goal, Schedule, Mode, Award and Actual are edited from <a href="roster.html">Student Roster</a> instead.</p>
+          <div class="field-row">
+            <label class="field">Current level<select name="current_level">${levelOptions(e.subject, e.current_level)}</select></label>
+            <label class="field">Current page<input type="text" name="current_page" value="${v("current_page")}" placeholder="e.g. 130"></label>
+          </div>
           <div class="field-row">
             <label class="field">LWC (last worksheet)<input type="text" name="lwc" value="${v("lwc")}" placeholder="e.g. 2A 120"></label>
             <label class="field">NWU (worksheets used)<input type="text" name="nwu" value="${v("nwu")}" placeholder="e.g. 31"></label>
@@ -660,6 +679,8 @@
       e.preventDefault();
       const fd = new FormData(e.target);
       const patch = {
+        current_level: fd.get("current_level") || null,
+        current_page: fd.get("current_page") || null,
         lwc: fd.get("lwc") || null,
         nwu: fd.get("nwu") || null,
         no_of_days: fd.get("no_of_days") || null,

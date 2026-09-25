@@ -231,7 +231,7 @@
   <nav class="rail">
     <div class="brand"><span class="dot"></span>Kumon Hub</div>
     <div class="rail-pages">
-      <a class="navbtn" href="index.html" id="navPipelineLink"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16l-6.5 8.5V19l-3 1.5v-8L4 4z"/></svg>Pipeline</a>
+      <a class="navbtn" href="index.html" id="navPipelineLink" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16l-6.5 8.5V19l-3 1.5v-8L4 4z"/></svg>Pipeline</a>
       <a class="navbtn" href="roster.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3L2 8l10 5 10-5-10-5z"/><path d="M6 10.5V15c0 1.5 2.5 3 6 3s6-1.5 6-3v-4.5"/></svg>Student roster</a>
       <a class="navbtn" href="calendar.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>Calendar</a>
       <a class="navbtn" href="reporting.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 20V10M12 20V4M6 20v-6"/></svg>Reporting</a>
@@ -429,10 +429,11 @@
     applyRoleGate();
   }
 
-  // Payments is admin/superadmin only — same rule the database itself enforces (see
-  // phase16-payments.sql). A teacher or pending account gets the same friendly gate
-  // Student roster shows a pending account, rather than a page that just loads nothing.
-  function isAuthorized(){ return currentRole === "admin" || currentRole === "superadmin"; }
+  // Payments is admin/superadmin/teacher — same rule the database itself enforces (see
+  // phase16-payments.sql + phase17-teacher-payments-access.sql). A pending account gets
+  // the same friendly gate Student roster shows a pending account, rather than a page
+  // that just loads nothing.
+  function isAuthorized(){ return currentRole === "admin" || currentRole === "superadmin" || currentRole === "teacher"; }
   function applyRoleGate(){
     const blocked = !isAuthorized();
     const gate = $("#pendingGate");
@@ -441,7 +442,7 @@
       gate.innerHTML = blocked
         ? (currentRole === "pending"
             ? `<div class="banner">Your account is waiting for approval. Ask a superadmin to set your role in <a href="admin.html">Admin</a> — until then there's nothing here for you to see.</div>`
-            : `<div class="banner">Payments is only visible to admin and superadmin accounts.</div>`)
+            : `<div class="banner">Payments isn't available for your account role.</div>`)
         : "";
     }
     $$(".page-head, .cal-toolbar, .stats, .search-row, .card").forEach(el => { el.style.display = blocked ? "none" : ""; });

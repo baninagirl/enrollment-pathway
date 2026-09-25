@@ -130,12 +130,15 @@
   .bulk-bar .count{ font-size:13px; font-weight:700; color:var(--accent-soft-ink); margin-right:auto; }
   .btn.ghost.on{ background:var(--accent-soft); color:var(--accent-soft-ink); }
 
-  select, input[type=text], input[type=number], input[type=date], input[type=email], input[type=password]{
+  select, input[type=text], input[type=number], input[type=date], input[type=time], input[type=email], input[type=password]{
     font-family:inherit; font-size:13.5px; padding:8px 10px; border-radius:8px; border:1px solid var(--border);
     background:var(--surface); color:var(--ink); width:100%;
     transition: border-color .15s ease, box-shadow .15s ease;
   }
   select:focus, input:focus{ outline:none; border-color:var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+  input[type=time]::-webkit-datetime-edit, input[type=time]::-webkit-datetime-edit-fields-wrapper,
+  input[type=time]::-webkit-datetime-edit-hour-field, input[type=time]::-webkit-datetime-edit-minute-field,
+  input[type=time]::-webkit-datetime-edit-ampm-field{ font-family:inherit; }
   label.field{ display:flex; flex-direction:column; gap:5px; font-size:12.5px; font-weight:600; color:var(--ink-muted); }
   .field-row{ display:grid; grid-template-columns:1fr 1fr; gap:10px; }
 
@@ -208,7 +211,7 @@
   <nav class="rail">
     <div class="brand"><span class="dot"></span>Kumon Hub</div>
     <div class="rail-pages">
-      <a class="navbtn" href="index.html" id="navPipelineLink"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16l-6.5 8.5V19l-3 1.5v-8L4 4z"/></svg>Pipeline</a>
+      <a class="navbtn" href="index.html" id="navPipelineLink" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16l-6.5 8.5V19l-3 1.5v-8L4 4z"/></svg>Pipeline</a>
       <a class="navbtn active" href="roster.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3L2 8l10 5 10-5-10-5z"/><path d="M6 10.5V15c0 1.5 2.5 3 6 3s6-1.5 6-3v-4.5"/></svg>Student roster</a>
       <a class="navbtn" href="calendar.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>Calendar</a>
       <a class="navbtn" href="reporting.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 20V10M12 20V4M6 20v-6"/></svg>Reporting</a>
@@ -229,7 +232,7 @@
         <div class="page-sub">Current level and goal, per student, per subject.</div>
       </div>
       <div style="display:flex; gap:8px; align-items:center;">
-        <button class="btn primary" data-action="open-new">+ Add to roster</button>
+        <button class="btn primary" data-action="open-new" id="addToRosterBtn">+ Add to roster</button>
       </div>
     </div>
 
@@ -417,7 +420,9 @@
     const pipelineLink = $("#navPipelineLink");
     if(pipelineLink) pipelineLink.hidden = currentRole === "teacher" || currentRole === "pending";
     const paymentsLink = $("#navPaymentsLink");
-    if(paymentsLink) paymentsLink.hidden = !(currentRole === "admin" || currentRole === "superadmin");
+    if(paymentsLink) paymentsLink.hidden = !(currentRole === "admin" || currentRole === "superadmin" || currentRole === "teacher");
+    const addBtn = $("#addToRosterBtn");
+    if(addBtn) addBtn.hidden = isTeacherScoped();
     applyRoleGate();
   }
 
@@ -1109,7 +1114,7 @@
     if(!btn) return;
     const action = btn.dataset.action;
     if(action === "logout"){ await sbClient.auth.signOut(); }
-    else if(action === "open-new"){ openModal(null); }
+    else if(action === "open-new"){ if(isTeacherScoped()) return; openModal(null); }
     else if(action === "edit"){
       const id = btn.dataset.id;
       const en = enrollments.find(x => x.id === id);
