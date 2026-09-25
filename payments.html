@@ -127,9 +127,13 @@
   .pill.flagged{ background:var(--warn-soft); color:var(--warn); }
   .pill.verified{ background:var(--good-soft); color:var(--good); }
   .pill.rejected{ background:var(--surface-2); color:var(--ink-faint); }
-  .subj-badge{ display:inline-flex; align-items:center; justify-content:center; width:19px; height:19px; border-radius:6px; font-size:11px; font-weight:800; color:#fff; margin-left:6px; vertical-align:middle; }
-  .subj-badge.subj-m{ background:var(--accent); }
-  .subj-badge.subj-r{ background:var(--warn); }
+  /* Same subject-pill component Student Roster uses (soft background, bold colored text) —
+     just the single-letter, compact version for a name column. Reading uses --bad here, not
+     --warn: this page's --warn was repurposed to amber for the Partial/Flagged status pills,
+     but --bad kept the same red Roster's Reading pill has always used. */
+  .pill.subj-math{ background:var(--accent-soft); color:var(--accent-soft-ink); }
+  .pill.subj-reading{ background:var(--bad-soft); color:var(--bad); }
+  .name-subj-pill{ margin-left:6px; vertical-align:middle; padding:2px 7px; }
   .row-actions{ display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end; }
 
   .receipt-row{ display:flex; align-items:flex-start; gap:14px; padding:14px 16px; border-bottom:1px solid var(--border); flex-wrap:wrap; }
@@ -531,9 +535,9 @@
   function subjectBadgesFor(studentId){
     const subjects = [...new Set(enrollments.filter(e => e.student_id === studentId && e.status === "active").map(e => e.subject))];
     return subjects.map(subj => {
-      const cls = subj === "Reading" ? "subj-r" : "subj-m";
+      const cls = subj === "Reading" ? "subj-reading" : "subj-math";
       const letter = subj === "Reading" ? "R" : "M";
-      return `<span class="subj-badge ${cls}" title="${esc(subj)}">${letter}</span>`;
+      return `<span class="pill ${cls} name-subj-pill" title="${esc(subj)}">${letter}</span>`;
     }).join("");
   }
   function verifiedPaidFor(studentId, ym){
