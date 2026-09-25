@@ -329,9 +329,16 @@
   let groupView = false;
   const filters = { search: "", status: "all" };
 
+  // Tuition is due in advance — the SOA for a coverage month goes out on the 25th of the
+  // month before it (see periodLabel/dueDateLabel below). So once the 25th hits, what's
+  // actually being collected is already next month's tuition, not the current calendar
+  // month's — "This month" (and the initial view) follows that same cutover instead of
+  // just the raw calendar date.
   function monthDefault(){
     const d = new Date();
-    return d.getFullYear() + "-" + String(d.getMonth()+1).padStart(2,"0");
+    let y = d.getFullYear(), m = d.getMonth();
+    if(d.getDate() >= 25){ m += 1; if(m > 11){ m = 0; y += 1; } }
+    return y + "-" + String(m+1).padStart(2,"0");
   }
   function monthToDate(ym){ return ym + "-01"; } // matches covers_month, which is always the 1st
   function fmtMonthLabel(ym){
