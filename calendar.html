@@ -11,8 +11,8 @@
     --bg:#F5F6FA; --surface:#FFFFFF; --surface-2:#FBFBFE; --border:#E1E4EB;
     --ink:#1B1F27; --ink-muted:#636C7C; --ink-faint:#9AA1AF;
     --accent:#3454D1; --accent-ink:#FFFFFF; --accent-soft:#E9EDFC; --accent-soft-ink:#2A41A8;
-    --good:#1E8E5A; --good-soft:#E4F5EC; --warn:#C23B2B; --warn-soft:#FBE8E5; --bad:#C23B2B; --bad-soft:#FBE8E5;
-    --shadow: 0 1px 2px rgba(20,24,34,.04), 0 8px 24px -12px rgba(20,24,34,.18);
+    --good:#1E8E5A; --good-soft:#E4F5EC; --warn:#C2831F; --warn-soft:#FBF0E1; --bad:#C23B2B; --bad-soft:#FBE8E5;
+    --shadow: 0 1px 2px rgba(16,20,30,.04), 0 2px 8px rgba(16,20,30,.06), 0 20px 40px -20px rgba(16,20,30,.25);
     color-scheme: light;
   }
   @media (prefers-color-scheme: dark){
@@ -20,7 +20,7 @@
       --bg:#14161C; --surface:#1C1F27; --surface-2:#20232C; --border:#2C303B;
       --ink:#EDEFF4; --ink-muted:#9BA3B2; --ink-faint:#6B7280;
       --accent:#6C86F0; --accent-ink:#0E1220; --accent-soft:#232A47; --accent-soft-ink:#B7C3FA;
-      --good:#4FC48A; --good-soft:#173226; --warn:#F0796A; --warn-soft:#3A1F1C; --bad:#F0796A; --bad-soft:#3A1F1C;
+      --good:#4FC48A; --good-soft:#173226; --warn:#E0A23F; --warn-soft:#332711; --bad:#F0796A; --bad-soft:#3A1F1C;
       color-scheme: dark;
     }
   }
@@ -28,7 +28,7 @@
     --bg:#14161C; --surface:#1C1F27; --surface-2:#20232C; --border:#2C303B;
     --ink:#EDEFF4; --ink-muted:#9BA3B2; --ink-faint:#6B7280;
     --accent:#6C86F0; --accent-ink:#0E1220; --accent-soft:#232A47; --accent-soft-ink:#B7C3FA;
-    --good:#4FC48A; --good-soft:#173226; --warn:#F0796A; --warn-soft:#3A1F1C; --bad:#F0796A; --bad-soft:#3A1F1C;
+    --good:#4FC48A; --good-soft:#173226; --warn:#E0A23F; --warn-soft:#332711; --bad:#F0796A; --bad-soft:#3A1F1C;
     color-scheme: dark;
   }
 
@@ -55,9 +55,11 @@
     display:flex; align-items:center; gap:10px; padding:9px 10px; border-radius:9px;
     border:none; background:transparent; color:var(--ink-muted); font-size:14px; font-weight:600;
     cursor:pointer; text-align:left; width:100%; text-decoration:none;
+    transition: background .12s ease, color .12s ease, box-shadow .12s ease;
   }
   .navbtn:hover{ background:var(--surface-2); color:var(--ink); }
-  .navbtn.active{ background:var(--accent-soft); color:var(--accent-soft-ink); }
+  .navbtn.active{ background:var(--accent-soft); color:var(--accent-soft-ink); box-shadow: inset 3px 0 0 var(--accent); }
+  .navbtn:focus-visible{ outline:none; box-shadow:0 0 0 3px var(--accent-soft); }
   .rail-pages{ display:flex; flex-direction:column; gap:4px; margin-bottom:8px; }
   .rail-divider{ height:1px; background:var(--border); margin:4px 10px 10px; }
   .rail-account{ padding:0 10px 10px; }
@@ -74,9 +76,12 @@
     display:inline-flex; align-items:center; gap:7px; padding:9px 14px; border-radius:9px;
     font-size:13.5px; font-weight:600; border:1px solid var(--border); background:var(--surface);
     color:var(--ink); cursor:pointer; white-space:nowrap;
+    transition:transform .08s ease, filter .08s ease, background .12s ease, box-shadow .12s ease;
   }
   .btn:hover{ background:var(--surface-2); }
-  .btn.primary{ background:var(--accent); color:var(--accent-ink); border-color:var(--accent); }
+  .btn:active{ transform:scale(.96); }
+  .btn:focus-visible{ outline:none; box-shadow:0 0 0 3px var(--accent-soft); }
+  .btn.primary{ background:var(--accent); color:var(--accent-ink); border-color:var(--accent); box-shadow: 0 1px 2px rgba(0,0,0,.08); }
   .btn.sm{ padding:6px 10px; font-size:12.5px; border-radius:7px; }
   .btn.ghost{ border-color:transparent; background:transparent; }
 
@@ -88,21 +93,22 @@
   select, input[type=text], input[type=number], input[type=date], input[type=email], input[type=password]{
     font-family:inherit; font-size:13.5px; padding:8px 10px; border-radius:8px; border:1px solid var(--border);
     background:var(--surface); color:var(--ink); width:100%;
+    transition: border-color .15s ease, box-shadow .15s ease;
   }
-  select:focus, input:focus{ outline:2px solid var(--accent); outline-offset:1px; }
+  select:focus, input:focus{ outline:none; border-color:var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
   label.field{ display:flex; flex-direction:column; gap:5px; font-size:12.5px; font-weight:600; color:var(--ink-muted); }
 
   .cal-toolbar{ display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end; margin-bottom:16px; }
   .cal-toolbar .field{ max-width:230px; min-width:170px; flex:1; }
   .view-tabs{ display:flex; gap:3px; background:var(--surface-2); padding:3px; border-radius:11px; border:1px solid var(--border); }
-  .view-tab{ border:none; background:transparent; padding:8px 13px; border-radius:8px; font-size:12.5px; font-weight:700; color:var(--ink-muted); cursor:pointer; white-space:nowrap; }
+  .view-tab{ border:none; background:transparent; padding:8px 13px; border-radius:8px; font-size:12.5px; font-weight:700; color:var(--ink-muted); cursor:pointer; white-space:nowrap; transition: background .12s ease, color .12s ease, box-shadow .12s ease; }
   .view-tab:hover{ color:var(--ink); }
   .view-tab.active{ background:var(--surface); color:var(--ink); box-shadow:var(--shadow); }
   .cal-legend{ display:flex; gap:16px; align-items:center; font-size:12px; color:var(--ink-muted); margin-left:auto; padding-bottom:9px; }
   .cal-legend .swatch{ display:inline-flex; align-items:center; gap:6px; }
   .cal-legend .dot{ width:9px; height:9px; border-radius:50%; flex:none; }
   .cal-legend .dot.math{ background:var(--accent); }
-  .cal-legend .dot.reading{ background:var(--warn); }
+  .cal-legend .dot.reading{ background:var(--bad); } /* --bad, not --warn — --warn is now amber (caution), Reading has always been red */
   .cal-legend .dot.arrived{ background:transparent; border:1.5px solid var(--ink-muted); }
   .cal-count{ font-size:12px; color:var(--ink-muted); padding-bottom:9px; white-space:nowrap; }
 
@@ -129,10 +135,11 @@
     display:flex; flex-direction:column; gap:1px; padding:5px 8px; border-radius:8px;
     font-size:11.5px; font-weight:700; margin-bottom:4px; line-height:1.35;
     border-left:3px solid transparent;
+    transition: background-color .15s ease, color .15s ease;
   }
   .cal-chip:last-child{ margin-bottom:0; }
   .cal-chip.subj-math{ background:var(--accent-soft); color:var(--accent-soft-ink); }
-  .cal-chip.subj-reading{ background:var(--warn-soft); color:var(--warn); }
+  .cal-chip.subj-reading{ background:var(--bad-soft); color:var(--bad); }
   .cal-chip.arrived{ border-left-color:currentColor; }
   .cal-chip .teacher-sub{ font-weight:500; opacity:.82; font-size:10.5px; margin-left:19px; }
   .chip-row{ display:flex; align-items:center; gap:6px; cursor:pointer; }
