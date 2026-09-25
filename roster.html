@@ -158,6 +158,7 @@
   .iconbtn{ border:none; background:transparent; cursor:pointer; color:var(--ink-muted); padding:4px; border-radius:6px; transition: background-color .15s ease, color .15s ease, transform .08s ease; }
   .iconbtn:hover{ background:var(--surface-2); color:var(--ink); }
   .iconbtn:active{ transform:scale(.9); }
+  .copybtn{ font-size:12px; vertical-align:middle; }
   .iconbtn.sm{ padding:6px; flex:none; }
 
   .sched-section{ border:1px solid var(--border); border-radius:11px; padding:12px; background:var(--surface-2); }
@@ -525,6 +526,26 @@
     const guessLast = parts.length ? parts[parts.length-1] : raw;
     return `${guessLast} ${raw}`.toLowerCase();
   }
+  // Plain "First Last" to actually copy to the clipboard — "Last, First" is for
+  // sorting/scanning the table, not for pasting elsewhere.
+  function copyableName(studentId, fallback){
+    const s = students.find(x => x.id === studentId);
+    if(s && s.first_name && s.last_name) return `${s.first_name} ${s.last_name}`;
+    return fallback || (s ? s.name : "") || "";
+  }
+  async function copyToClipboard(text){
+    try{
+      if(navigator.clipboard && window.isSecureContext){ await navigator.clipboard.writeText(text); return true; }
+    }catch(e){}
+    try{
+      const ta = document.createElement("textarea");
+      ta.value = text; ta.style.position = "fixed"; ta.style.opacity = "0";
+      document.body.appendChild(ta); ta.select();
+      document.execCommand("copy");
+      document.body.removeChild(ta);
+      return true;
+    }catch(e){ return false; }
+  }
   async function loadSettings(){
     const { data } = await sbClient.from("settings").select("value").eq("id","staff").maybeSingle();
     const v = data ? data.value : {};
@@ -685,7 +706,7 @@
           <td class="selectcol">${selectMode
             ? `<input type="checkbox" class="row-check" data-action="toggle-select" data-id="${e.id}" ${selectedIds.has(e.id)?"checked":""}>`
             : `<span class="rownum">${idx+1}</span>`}</td>
-          <td>${esc(displayName(e.student_id, e.student_name))}</td>
+          <td>${esc(displayName(e.student_id, e.student_name))} <button type="button" class="iconbtn copybtn" data-action="copy-name" data-student="${esc(e.student_id)}" data-fallback="${esc(e.student_name||"")}" title="Copy name">📋</button></td>
           <td>${esc(gradeFor(e.student_id) || "—")}</td>
           <td><span class="pill ${e.subject==='Math'?'subj-math':'subj-reading'}">${esc(e.subject)}</span></td>
           <td>${esc(e.teacher||"—")}</td>
@@ -1123,6 +1144,13 @@
     else if(action === "close-modal"){ closeModal(); }
     else if(action === "run-undo"){ runUndo(); }
     else if(action === "run-redo"){ runRedo(); }
+    else if(action === "copy-name"){
+      const name = copyableName(btn.dataset.student, btn.dataset.fallback);
+      const ok = await copyToClipboard(name);
+      const original = btn.textContent;
+      btn.textContent = ok ? "✓" : "✕";
+      setTimeout(()=>{ btn.textContent = original; }, 1100);
+    }
     else if(action === "delete-enrollment"){
       const id = btn.dataset.id;
       if(!confirm("Delete this enrollment? You can undo this from the Undo button afterward.")) return;

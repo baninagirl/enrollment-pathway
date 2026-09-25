@@ -176,6 +176,7 @@
   .iconbtn{ border:none; background:transparent; cursor:pointer; color:var(--ink-muted); padding:4px; border-radius:6px; transition: background-color .15s ease, color .15s ease, transform .08s ease; }
   .iconbtn:hover{ background:var(--surface-2); color:var(--ink); }
   .iconbtn:active{ transform:scale(.9); }
+  .copybtn{ font-size:12px; vertical-align:middle; }
 
   .banner{ background:var(--warn-soft); color:var(--warn); border-radius:11px; padding:11px 14px; font-size:13px; font-weight:600; margin-bottom:16px; }
   .banner.info{ background:var(--accent-soft); color:var(--accent-soft-ink); }
@@ -531,6 +532,26 @@
     if(s.last_name && s.first_name) return `${s.last_name}, ${s.first_name}`;
     return s.name || "";
   }
+  // Plain "First Last" to actually copy to the clipboard — "Last, First" is for
+  // sorting/scanning the table, not for pasting elsewhere.
+  function copyableName(s){
+    if(!s) return "";
+    if(s.first_name && s.last_name) return `${s.first_name} ${s.last_name}`;
+    return s.name || "";
+  }
+  async function copyToClipboard(text){
+    try{
+      if(navigator.clipboard && window.isSecureContext){ await navigator.clipboard.writeText(text); return true; }
+    }catch(e){}
+    try{
+      const ta = document.createElement("textarea");
+      ta.value = text; ta.style.position = "fixed"; ta.style.opacity = "0";
+      document.body.appendChild(ta); ta.select();
+      document.execCommand("copy");
+      document.body.removeChild(ta);
+      return true;
+    }catch(e){ return false; }
+  }
   // Payments only applies to students who are actually on the roster (at least one active
   // subject enrollment) — a Pipeline lead who hasn't enrolled yet has no tuition to track.
   function billableStudents(){
@@ -760,7 +781,7 @@
   function rowHtml(r){
     const s = r.student;
     return `<tr>
-      <td>${esc(displayName(s))}${subjectBadgesFor(s.id)}<button class="iconbtn" data-action="download-tuition" data-student="${esc(s.id)}" title="Download tuition image">⬇</button></td>
+      <td>${esc(displayName(s))}${subjectBadgesFor(s.id)}<button class="iconbtn copybtn" data-action="copy-name" data-student="${esc(s.id)}" title="Copy name">📋</button><button class="iconbtn" data-action="download-tuition" data-student="${esc(s.id)}" title="Download tuition image">⬇</button></td>
       <td class="muted">${esc(s.age_grade || "—")}</td>
       <td class="muted">${esc(groupNameFor(s.billing_group_id) || "—")}</td>
       <td class="money">${peso(r.due)} <button class="iconbtn" data-action="edit-tuition" data-id="${esc(s.id)}" title="Edit tuition">✎</button></td>
@@ -1094,6 +1115,14 @@
     }
     else if(action === "open-log-payment"){ openLogPaymentModal(btn.dataset.student || null); }
     else if(action === "edit-tuition"){ e.preventDefault(); openTuitionModal(btn.dataset.id); }
+    else if(action === "copy-name"){
+      e.preventDefault();
+      const s = students.find(x => x.id === btn.dataset.student);
+      const ok = await copyToClipboard(copyableName(s));
+      const original = btn.textContent;
+      btn.textContent = ok ? "✓" : "✕";
+      setTimeout(()=>{ btn.textContent = original; }, 1100);
+    }
     else if(action === "download-tuition"){
       e.preventDefault();
       if(btn.dataset.group){

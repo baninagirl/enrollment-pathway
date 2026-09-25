@@ -147,6 +147,7 @@
   .iconbtn{ border:none; background:transparent; cursor:pointer; color:var(--ink-muted); padding:4px; border-radius:6px; transition: transform .08s ease, background .12s ease; }
   .iconbtn:active{ transform:scale(.9); }
   .iconbtn:hover{ background:var(--surface-2); color:var(--ink); }
+  .copybtn{ font-size:12px; vertical-align:middle; }
 
   .login-screen{ position:fixed; inset:0; display:flex; align-items:center; justify-content:center; background:var(--bg); z-index:100; padding:20px; }
   .login-card{ width:100%; max-width:360px; background:var(--surface); border:1px solid var(--border); border-radius:16px; padding:28px 26px; box-shadow:var(--shadow); display:flex; flex-direction:column; gap:14px; }
@@ -233,6 +234,12 @@
         <option value="Math">Math</option>
         <option value="Reading">Reading</option>
       </select>
+      <select id="modeFilter">
+        <option value="all">All modes</option>
+        <option value="Paper">Paper</option>
+        <option value="KC">KC</option>
+      </select>
+      <select id="gradeFilter"><option value="all">All grades</option></select>
     </div>
 
     <div class="card">
@@ -332,7 +339,7 @@
   let sbClient = null, currentUser = null, currentRole = null, currentTeacherName = null;
   let students = [], trainers = [], enrollments = [], history = [];
   let viewMonth = null; // a Date, 1st of the cycle's label month
-  let filters = { search:"", subject:"all", teacher:"all" };
+  let filters = { search:"", subject:"all", teacher:"all", mode:"all", grade:"all" };
   let editingId = null;
 
   function isTeacherScoped(){ return currentRole === "teacher" || currentRole === "trainer_teacher"; }
@@ -404,6 +411,7 @@
     viewMonth = cycleMonthFor(new Date());
     await Promise.all([loadStudents(), loadTrainers(), loadEnrollments(), loadHistory()]);
     populateTeacherFilter();
+    populateGradeFilter();
     if(isTeacherScoped() && currentTeacherName){ filters.teacher = currentTeacherName; }
     render();
 
@@ -439,11 +447,57 @@
     const s = students.find(x => x.id === studentId);
     return s ? (s.age_grade || "") : "";
   }
+  // Same "Last, First" display + last-name sort pattern used on Student Roster.
+  function displayName(studentId, fallback){
+    const s = students.find(x => x.id === studentId);
+    if(s && s.last_name && s.first_name) return `${s.last_name}, ${s.first_name}`;
+    return fallback || (s ? s.name : "") || "";
+  }
+  function lastNameSortKey(studentId, fallback){
+    const s = students.find(x => x.id === studentId);
+    if(s && s.last_name) return `${s.last_name} ${s.first_name||""}`.trim().toLowerCase();
+    const raw = (fallback || (s ? s.name : "") || "").trim();
+    const parts = raw.split(/\s+/).filter(Boolean);
+    const guessLast = parts.length ? parts[parts.length-1] : raw;
+    return `${guessLast} ${raw}`.toLowerCase();
+  }
+  // Plain "First Last" (or whatever we have) to actually copy to the clipboard —
+  // the "Last, First" form is for sorting/scanning, not for pasting elsewhere.
+  function copyableName(studentId, fallback){
+    const s = students.find(x => x.id === studentId);
+    if(s && s.first_name && s.last_name) return `${s.first_name} ${s.last_name}`;
+    return fallback || (s ? s.name : "") || "";
+  }
+  async function copyToClipboard(text){
+    try{
+      if(navigator.clipboard && window.isSecureContext){ await navigator.clipboard.writeText(text); return true; }
+    }catch(e){}
+    try{
+      const ta = document.createElement("textarea");
+      ta.value = text; ta.style.position = "fixed"; ta.style.opacity = "0";
+      document.body.appendChild(ta); ta.select();
+      document.execCommand("copy");
+      document.body.removeChild(ta);
+      return true;
+    }catch(e){ return false; }
+  }
   function populateTeacherFilter(){
     const sel = $("#teacherFilter");
     if(!sel) return;
     sel.innerHTML = `<option value="all">All teachers</option>` + trainers.map(t=>`<option value="${esc(t)}">${esc(t)}</option>`).join("");
     if(isTeacherScoped()){ sel.value = currentTeacherName || "all"; sel.disabled = true; }
+  }
+
+  // Same fixed grade order Student Roster uses (K/PK before P1..P14, not plain
+  // alphabetical — "P10" would otherwise sort ahead of "P2"), narrowed to only the
+  // grades that actually show up on the roster right now.
+  const GRADE_ORDER = ["PK1","PK2","PK3","K","P1","P2","P3","P4","P5","P6","P7","P8","P9","P10","P11","P12","P13","P14"];
+  function populateGradeFilter(){
+    const sel = $("#gradeFilter");
+    if(!sel) return;
+    const present = new Set(students.map(s => s.age_grade).filter(Boolean));
+    const grades = GRADE_ORDER.filter(g => present.has(g));
+    sel.innerHTML = `<option value="all">All grades</option>` + grades.map(g=>`<option value="${esc(g)}">${esc(g)}</option>`).join("");
   }
 
   function monthLabel(date){ return date.toLocaleDateString(undefined,{ month:"long", year:"numeric" }); }
@@ -463,8 +517,10 @@
         .filter(e => (e.status||"active") === "active")
         .filter(e => filters.subject === "all" || e.subject === filters.subject)
         .filter(e => filters.teacher === "all" || e.teacher === filters.teacher)
+        .filter(e => filters.mode === "all" || e.mode === filters.mode)
+        .filter(e => filters.grade === "all" || gradeFor(e.student_id) === filters.grade)
         .filter(e => !q || (e.student_name||"").toLowerCase().includes(q))
-        .sort((a,b) => (a.student_name||"").localeCompare(b.student_name||""))
+        .sort((a,b) => lastNameSortKey(a.student_id,a.student_name).localeCompare(lastNameSortKey(b.student_id,b.student_name)))
         .map(e => ({ source:"live", id:e.id, student_id:e.student_id, student_name:e.student_name, subject:e.subject, teacher:e.teacher, mode:e.mode,
           lwc:e.lwc, nwu:e.nwu, no_of_days:e.no_of_days, no_of_months_current_level:e.no_of_months_current_level,
           test_date:e.test_date, test_level:e.test_level, test_time:e.test_time, test_score:e.test_score, test_group:e.test_group }));
@@ -474,9 +530,11 @@
       .filter(h => h.cycle_key === cycleKey)
       .filter(h => filters.subject === "all" || h.subject === filters.subject)
       .filter(h => filters.teacher === "all" || h.teacher === filters.teacher)
+      .filter(h => filters.mode === "all" || h.mode === filters.mode)
+      .filter(h => filters.grade === "all" || gradeFor(h.student_id) === filters.grade)
       .filter(h => !q || (h.student_name||"").toLowerCase().includes(q))
-      .sort((a,b) => (a.student_name||"").localeCompare(b.student_name||""))
-      .map(h => ({ source:"archived", id:h.id, student_id:h.student_id, student_name:h.student_name, subject:h.subject, teacher:h.teacher, mode:null,
+      .sort((a,b) => lastNameSortKey(a.student_id,a.student_name).localeCompare(lastNameSortKey(b.student_id,b.student_name)))
+      .map(h => ({ source:"archived", id:h.id, student_id:h.student_id, student_name:h.student_name, subject:h.subject, teacher:h.teacher, mode:h.mode,
         lwc:h.lwc, nwu:h.nwu, no_of_days:h.no_of_days, no_of_months_current_level:h.no_of_months_current_level,
         test_date:h.test_date, test_level:h.test_level, test_time:h.test_time, test_score:h.test_score, test_group:h.test_group }));
   }
@@ -518,7 +576,7 @@
 
     const rows = candidates.map(e => ({
       subject_enrollment_id: e.id, student_id: e.student_id, student_name: e.student_name,
-      subject: e.subject, teacher: e.teacher,
+      subject: e.subject, teacher: e.teacher, mode: e.mode,
       cycle_key: cycleKey, cycle_label: cycleLabel,
       current_level: e.current_level, current_page: e.current_page,
       goal_level: e.goal_level, goal_page: e.goal_page,
@@ -599,7 +657,7 @@
     body.innerHTML = rows.map((r, idx) => `
       <tr class="${editable?"clickrow":""}" ${editable?`data-action="edit-report" data-id="${r.id}"`:""}>
         <td class="rownum">${idx+1}</td>
-        <td><b>${esc(r.student_name||"")}</b></td>
+        <td><b>${esc(displayName(r.student_id, r.student_name))}</b> <button type="button" class="iconbtn copybtn" data-action="copy-name" data-student="${esc(r.student_id)}" data-fallback="${esc(r.student_name||"")}" title="Copy name">📋</button></td>
         <td>${esc(gradeFor(r.student_id) || "—")}</td>
         <td><span class="pill ${r.subject==='Math'?'subj-math':'subj-reading'}">${esc(r.subject||"")}</span></td>
         <td>${fmtMode(r.mode)}</td>
@@ -631,7 +689,7 @@
     editingId = enrollmentId;
     const v = k => esc(e[k] || "");
     $("#modal").innerHTML = `
-      <div class="modal-head"><h3>${esc(e.student_name||"")} — ${esc(e.subject||"")}</h3><button class="iconbtn" data-action="close-modal">✕</button></div>
+      <div class="modal-head"><h3>${esc(displayName(e.student_id, e.student_name))} — ${esc(e.subject||"")} <button type="button" class="iconbtn copybtn" data-action="copy-name" data-student="${esc(e.student_id)}" data-fallback="${esc(e.student_name||"")}" title="Copy name">📋</button></h3><button class="iconbtn" data-action="close-modal">✕</button></div>
       <form id="reportForm">
         <div class="modal-body">
           <p class="hint" style="font-size:12px; color:var(--ink-muted); margin:0;">${esc(monthLabel(viewMonth))}'s numbers. Goal, Schedule, Mode, Award and Actual are edited from <a href="roster.html">Student Roster</a> instead.</p>
@@ -703,6 +761,8 @@
     if(e.target.id === "searchInput"){ filters.search = e.target.value; render(); }
     if(e.target.id === "subjectFilter"){ filters.subject = e.target.value; render(); }
     if(e.target.id === "teacherFilter"){ filters.teacher = e.target.value; render(); }
+    if(e.target.id === "modeFilter"){ filters.mode = e.target.value; render(); }
+    if(e.target.id === "gradeFilter"){ filters.grade = e.target.value; render(); }
   });
   document.addEventListener("input", (e)=>{
     if(e.target.id === "searchInput"){ filters.search = e.target.value; render(); }
@@ -721,6 +781,13 @@
     else if(action === "close-modal"){ closeModal(); }
     else if(action === "run-undo"){ runUndo(); }
     else if(action === "run-redo"){ runRedo(); }
+    else if(action === "copy-name"){
+      const name = copyableName(btn.dataset.student, btn.dataset.fallback);
+      const ok = await copyToClipboard(name);
+      const original = btn.textContent;
+      btn.textContent = ok ? "✓" : "✕";
+      setTimeout(()=>{ btn.textContent = original; }, 1100);
+    }
   });
 
   boot();

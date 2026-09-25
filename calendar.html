@@ -261,6 +261,23 @@
   const $$ = (sel, el) => Array.from((el||document).querySelectorAll(sel));
   function esc(s){ return String(s==null?"":s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
 
+  // This page only has the denormalized "First Last" string, not a split first/last
+  // name on file, so "Last, First" display and last-name sorting here are a best-effort
+  // guess (last word = last name) — same fallback roster.html uses for legacy rows.
+  function splitNameGuess(full){
+    const parts = (full||"").trim().split(/\s+/).filter(Boolean);
+    if(parts.length <= 1) return { first: parts[0]||"", last: "" };
+    return { first: parts.slice(0,-1).join(" "), last: parts[parts.length-1] };
+  }
+  function chipDisplayName(full){
+    const { first, last } = splitNameGuess(full);
+    return last ? `${last}, ${first}` : (full || "");
+  }
+  function lastNameSortKey(full){
+    const { first, last } = splitNameGuess(full);
+    return `${last} ${first}`.trim().toLowerCase();
+  }
+
   const DAY_ORDER = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
   // Attendance is only ever meaningful for whatever day it actually is — the toggle
   // shows up on today's column only, and "today" naturally moves to the next column
@@ -566,7 +583,7 @@
       html += `<div class="cal-cell cal-time-label">${fmtTime(t)}</div>`;
       for(const d of days){
         const isToday = d === today;
-        const items = (byCell[d+"|"+t] || []).slice().sort((a,b) => a.studentName.localeCompare(b.studentName));
+        const items = (byCell[d+"|"+t] || []).slice().sort((a,b) => lastNameSortKey(a.studentName).localeCompare(lastNameSortKey(b.studentName)));
         html += `<div class="cal-cell">${items.map(it => {
           const cls = it.subject === "Reading" ? "subj-reading" : "subj-math";
           const teacherLine = showTeacherLabel && it.teacher ? `<span class="teacher-sub">${esc(it.teacher)}</span>` : "";
@@ -580,7 +597,7 @@
             ? `<input type="checkbox" data-action="toggle-arrived" data-schedule="${esc(it.scheduleId)}" data-day="${esc(it.day)}" ${arrived?"checked":""}>`
             : "";
           return `<div class="cal-chip ${cls} ${isToday && arrived?"arrived":""}" title="${esc(titleBits)}">
-            <label class="chip-row">${checkbox}<span class="chip-name">${esc(it.studentName)} ${modeTag}</span></label>
+            <label class="chip-row">${checkbox}<span class="chip-name">${esc(chipDisplayName(it.studentName))} ${modeTag}</span></label>
             ${teacherLine}
           </div>`;
         }).join("")}</div>`;
@@ -604,7 +621,7 @@
 
     const pending = todays
       .filter(e => !(attendanceFor(e.scheduleId, e.day)||{}).arrived)
-      .sort((a,b) => a.studentName.localeCompare(b.studentName));
+      .sort((a,b) => lastNameSortKey(a.studentName).localeCompare(lastNameSortKey(b.studentName)));
 
     if(!pending.length){
       list.innerHTML = `<span class="noshow-empty">Everyone's checked in.</span>`;
@@ -612,7 +629,7 @@
     }
     list.innerHTML = pending.map(it => {
       const teacherLine = showTeacherLabel && it.teacher ? ` <span class="noshow-sub">(${esc(it.teacher)})</span>` : "";
-      return `<span class="noshow-item">${esc(it.studentName)}${teacherLine}</span>`;
+      return `<span class="noshow-item">${esc(chipDisplayName(it.studentName))}${teacherLine}</span>`;
     }).join("");
   }
 

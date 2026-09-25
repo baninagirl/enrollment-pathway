@@ -249,6 +249,7 @@
   .modal-foot{ display:flex; justify-content:flex-end; gap:8px; padding:14px 18px; border-top:1px solid var(--border); }
   .iconbtn{ border:none; background:transparent; cursor:pointer; color:var(--ink-muted); padding:4px; border-radius:6px; display:flex; }
   .iconbtn:hover{ background:var(--surface-2); color:var(--ink); }
+  .copybtn{ display:inline-flex; font-size:12px; vertical-align:middle; }
   .hint{ font-size:12px; color:var(--ink-muted); }
   .chooser{ display:flex; flex-direction:column; gap:8px; }
   .choose-opt{ display:flex; align-items:center; gap:12px; padding:13px 14px; border:1px solid var(--border); border-radius:11px; cursor:pointer; text-align:left; background:var(--surface); }
@@ -809,6 +810,39 @@
   // known (editing a record, joining a diagnostic/training), not for building lists.
   function pipelineStudents(){ return STATE.students.filter(s => s.origin !== "roster"); }
   function studentById(id){ return STATE.students.find(s => s.id === id); }
+  // Same "Last, First" display + last-name sort pattern used on Student Roster/Payments,
+  // adapted to this page's firstName/lastName fields (camelCase here, unlike the other
+  // pages' first_name/last_name) — falls back to a guessed split for legacy rows.
+  function displayName(s){
+    if(!s) return "";
+    if(s.firstName && s.lastName) return `${s.lastName}, ${s.firstName}`;
+    const g = splitNameGuess(s.name);
+    return g.last ? `${g.last}, ${g.first}` : (s.name || "");
+  }
+  function copyableName(s){
+    if(!s) return "";
+    if(s.firstName && s.lastName) return `${s.firstName} ${s.lastName}`;
+    return s.name || "";
+  }
+  function lastNameSortKey(s){
+    if(!s) return "";
+    if(s.lastName) return `${s.lastName} ${s.firstName||""}`.trim().toLowerCase();
+    const g = splitNameGuess(s.name);
+    return `${g.last} ${g.first}`.trim().toLowerCase();
+  }
+  async function copyToClipboard(text){
+    try{
+      if(navigator.clipboard && window.isSecureContext){ await navigator.clipboard.writeText(text); return true; }
+    }catch(e){}
+    try{
+      const ta = document.createElement("textarea");
+      ta.value = text; ta.style.position = "fixed"; ta.style.opacity = "0";
+      document.body.appendChild(ta); ta.select();
+      document.execCommand("copy");
+      document.body.removeChild(ta);
+      return true;
+    }catch(e){ return false; }
+  }
   function trainingsFor(studentId){ return STATE.trainings.filter(t => t.studentId === studentId).sort((a,b)=> a.sessionNumber - b.sessionNumber); }
   function activeDiagnosticFor(studentId){
     return STATE.diagnostics.filter(d => d.studentId === studentId).sort((a,b)=> (b.date||"").localeCompare(a.date||""))[0];
@@ -824,17 +858,17 @@
       .sort((a,b)=> (a.date+a.time).localeCompare(b.date+b.time));
   }
   function awaitingTraining(){
-    return pipelineStudents().filter(s => s.status === "enrolled_pending_training").sort((a,b)=> a.name.localeCompare(b.name));
+    return pipelineStudents().filter(s => s.status === "enrolled_pending_training").sort((a,b)=> lastNameSortKey(a).localeCompare(lastNameSortKey(b)));
   }
   function onMonitorSchedule(){
-    return pipelineStudents().filter(s => s.status === "monitor_schedule").sort((a,b)=> a.name.localeCompare(b.name));
+    return pipelineStudents().filter(s => s.status === "monitor_schedule").sort((a,b)=> lastNameSortKey(a).localeCompare(lastNameSortKey(b)));
   }
   function readyForSchedule(){
-    return pipelineStudents().filter(s => s.status === "ready_for_schedule").sort((a,b)=> a.name.localeCompare(b.name));
+    return pipelineStudents().filter(s => s.status === "ready_for_schedule").sort((a,b)=> lastNameSortKey(a).localeCompare(lastNameSortKey(b)));
   }
   function needsFollowUp(){
     return pipelineStudents().filter(s => s.status === "not_enrolled" && (s.followUpStatus||"needs_follow_up") !== "closed")
-      .sort((a,b)=> a.name.localeCompare(b.name));
+      .sort((a,b)=> lastNameSortKey(a).localeCompare(lastNameSortKey(b)));
   }
   function activeScheduleStudents(){
     // Same origin split as pipelineStudents() above — a schedule row now exists for
@@ -962,7 +996,7 @@
         while(d <= end){
           const iso = isoDate(d);
           if(iso >= (s.startDate || iso)){
-            out.push({ type:"schedule", date: iso, time: slot.time, label: s.studentName, staff: null, id: s.id });
+            out.push({ type:"schedule", date: iso, time: slot.time, label: displayName(studentById(s.studentId)) || s.studentName, staff: null, id: s.id });
           }
           d = addDays(d, 7);
         }
@@ -978,12 +1012,12 @@
     let events = [];
     if(STATE.calFilter === "all" || STATE.calFilter === "diagnostic"){
       events = events.concat(STATE.diagnostics.filter(d => d.status !== "cancelled" && d.date >= rangeStartISO && d.date <= rangeEndISO).map(d => ({
-        type:"diagnostic", date:d.date, time:d.time, label:d.studentName, staff:d.examiner, id:d.id
+        type:"diagnostic", date:d.date, time:d.time, label:displayName(studentById(d.studentId)) || d.studentName, staff:d.examiner, id:d.id
       })));
     }
     if(STATE.calFilter === "all" || STATE.calFilter === "training"){
       events = events.concat(STATE.trainings.filter(t => t.status !== "cancelled" && t.date >= rangeStartISO && t.date <= rangeEndISO).map(t => ({
-        type:"training", date:t.date, time:t.time, label:`${t.studentName} · S${t.sessionNumber}`, staff:t.trainer, id:t.id
+        type:"training", date:t.date, time:t.time, label:`${displayName(studentById(t.studentId)) || t.studentName} · S${t.sessionNumber}`, staff:t.trainer, id:t.id
       })));
     }
     if(STATE.calFilter === "all" || STATE.calFilter === "schedule"){
@@ -1192,7 +1226,7 @@
     return `<div class="rowi">
       <div class="who">
         <span class="pill diag" style="align-self:flex-start;">Diagnostic test</span>
-        <b>${esc(d.studentName)}${d.ageGrade?` <span class="pill muted">${esc(d.ageGrade)}</span>`:""}${d.subject?` <span class="pill subj">${esc(d.subject)}</span>`:""}</b>
+        <b>${esc(displayName(s) || d.studentName)}${d.ageGrade?` <span class="pill muted">${esc(d.ageGrade)}</span>`:""}${d.subject?` <span class="pill subj">${esc(d.subject)}</span>`:""}</b>
         <span>${esc(d.parentName||"")}${d.contact?" · "+esc(d.contact):""}</span>
       </div>
       <div class="when tnum">${fmtDateShort(d.date)} · ${fmtTime(d.time)}${d.examiner?" · "+esc(d.examiner):""}</div>
@@ -1208,10 +1242,11 @@
     </div>`;
   }
   function trainingRow(t, compact){
+    const s = studentById(t.studentId);
     return `<div class="rowi">
       <div class="who">
         <span class="pill train" style="align-self:flex-start;">Student training</span>
-        <b>${esc(t.studentName)}</b>
+        <b>${esc(displayName(s) || t.studentName)}</b>
         <span>Session ${t.sessionNumber} of 2${t.trainer?" · "+esc(t.trainer):""}</span>
       </div>
       <div class="when tnum">${fmtDateShort(t.date)} · ${fmtTime(t.time)}</div>
@@ -1223,10 +1258,11 @@
     </div>`;
   }
   function missedTrainingRow(t){
+    const s = studentById(t.studentId);
     return `<div class="rowi">
       <div class="who">
         <span class="pill bad" style="align-self:flex-start;">Missed training</span>
-        <b>${esc(t.studentName)}</b>
+        <b>${esc(displayName(s) || t.studentName)}</b>
         <span>Session ${t.sessionNumber} of 2${t.trainer?" · "+esc(t.trainer):""} · was ${fmtDateShort(t.date)}</span>
       </div>
       <div class="when tnum">${fmtDateShort(t.date)} · ${fmtTime(t.time)}</div>
@@ -1271,7 +1307,7 @@
       const scheduledSessions = done.filter(t=>t.status==="scheduled");
       const totalCount = doneCount + scheduledSessions.length;
       return `<div class="rowi">
-        <div class="who"><b>${esc(s.name)}</b><span>${esc(s.parentName||"")}</span></div>
+        <div class="who"><b>${esc(displayName(s))}</b><span>${esc(s.parentName||"")}</span></div>
         <div class="when">${doneCount} of 2 completed${scheduledSessions.length?`, ${scheduledSessions.length} scheduled`:""}</div>
         <select data-action="set-subject" data-id="${s.id}" style="width:auto; min-width:130px;">
           <option value="">Subject: not set</option>
@@ -1284,18 +1320,18 @@
       </div>`;
     }).join("");
     const monitorBody = monitor.map(s => `<div class="rowi">
-      <div class="who"><b>${esc(s.name)}</b><span>${esc(s.parentName||"")}</span></div>
+      <div class="who"><b>${esc(displayName(s))}</b><span>${esc(s.parentName||"")}</span></div>
       <div class="when">Both trainings completed</div>
       <div class="acts"><button class="btn sm primary" data-action="mark-ready-for-schedule" data-id="${s.id}">Mark ready for regular schedule</button></div>
     </div>`).join("");
     const readyBody = ready.map(s => `<div class="rowi">
-      <div class="who"><b>${esc(s.name)}</b><span>${esc(s.parentName||"")}</span></div>
+      <div class="who"><b>${esc(displayName(s))}</b><span>${esc(s.parentName||"")}</span></div>
       <div class="when">Both trainings completed</div>
       <div class="acts"><button class="btn sm primary" data-action="open-new-schedule" data-student="${s.id}">Set schedule</button></div>
     </div>`).join("");
     const followUpBody = followUp.map(s => followUpRow(s)).join("");
     const upcomingBody = upcoming.slice(0,8).map(d => `<div class="rowi">
-      <div class="who"><b>${esc(d.studentName)}</b><span>${esc(d.parentName||"")}</span></div>
+      <div class="who"><b>${esc(displayName(studentById(d.studentId)) || d.studentName)}</b><span>${esc(d.parentName||"")}</span></div>
       <div class="when tnum">${fmtDateShort(d.date)} · ${fmtTime(d.time)}${d.examiner?" · "+esc(d.examiner):""}</div>
     </div>`).join("");
 
@@ -1314,7 +1350,7 @@
     const status = s.followUpStatus || "needs_follow_up";
     const d = activeDiagnosticFor(s.id);
     return `<div class="rowi" style="align-items:flex-start;">
-      <div class="who"><b>${esc(s.name)}</b><span>${esc(s.parentName||"")}${s.parentPhone?" · "+esc(s.parentPhone):""}${d?" · diagnostic "+fmtDateShort(d.date):""}</span></div>
+      <div class="who"><b>${esc(displayName(s))}</b><span>${esc(s.parentName||"")}${s.parentPhone?" · "+esc(s.parentPhone):""}${d?" · diagnostic "+fmtDateShort(d.date):""}</span></div>
       <div style="flex:2 1 260px; display:flex; flex-direction:column; gap:6px;">
         <textarea rows="2" placeholder="Follow-up notes…" data-action="followup-notes" data-id="${s.id}">${esc(s.followUpNotes||"")}</textarea>
         <div class="seg">
@@ -1339,13 +1375,13 @@
       const onThisDay = [];
       active.forEach(s => {
         const slot = (s.slots||[]).find(x => x.day === short);
-        if(slot) onThisDay.push({ id: s.id, studentName: s.studentName, time: slot.time });
+        if(slot) onThisDay.push({ id: s.id, studentId: s.studentId, studentName: s.studentName, time: slot.time });
       });
       onThisDay.sort((a,b)=> (a.time||"").localeCompare(b.time||""));
       return `<div class="roster-day">
         <h4>${full}</h4>
         ${onThisDay.length ? onThisDay.map(s => `<div class="roster-slot">
-          <div class="rtop"><span style="opacity:1;">${esc(s.studentName)}</span><button class="iconbtn" title="Delete this student everywhere" data-action="delete-schedule" data-id="${s.id}">${iconTrash()}</button></div>
+          <div class="rtop"><span style="opacity:1;">${esc(displayName(studentById(s.studentId)) || s.studentName)}</span><button class="iconbtn" title="Delete this student everywhere" data-action="delete-schedule" data-id="${s.id}">${iconTrash()}</button></div>
           <span>${fmtTime(s.time)}</span>
         </div>`).join("") : `<div class="hint">—</div>`}
       </div>`;
@@ -1461,7 +1497,7 @@
               const d = activeDiagnosticFor(s.id);
               return `<tr class="clickrow" data-action="open-student" data-id="${s.id}">
                 <td class="tnum">${i+1}</td>
-                <td><b>${esc(s.name)}</b></td>
+                <td><b>${esc(displayName(s))}</b> <button type="button" class="iconbtn copybtn" data-action="copy-name" data-student="${esc(s.id)}" title="Copy name">📋</button></td>
                 <td>${esc(s.ageGrade||"—")}</td>
                 <td>${row.subj ? `<span class="pill subj">${esc(row.subj)}</span>` : "—"}</td>
                 <td>${esc(s.parentName||"—")}</td>
@@ -1490,7 +1526,7 @@
     const sched = scheduleFor(id);
     const st = STATUS_LABEL[s.status] || ["—","muted"];
     openModal(`
-      <div class="modal-head"><h3>${esc(s.name)}</h3><button class="iconbtn" data-action="close-modal">✕</button></div>
+      <div class="modal-head"><h3>${esc(displayName(s))} <button type="button" class="iconbtn copybtn" data-action="copy-name" data-student="${esc(s.id)}" title="Copy name">📋</button></h3><button class="iconbtn" data-action="close-modal">✕</button></div>
       <div class="modal-body">
         <div style="display:flex; gap:6px; flex-wrap:wrap;">
           <span class="pill ${st[1]}">${st[0]}</span>
@@ -1518,7 +1554,7 @@
     if(!s) return;
     const nameSplit = (s.firstName && s.lastName) ? {first:s.firstName,last:s.lastName} : splitNameGuess(s.name);
     openModal(`
-      <div class="modal-head"><h3>Edit ${esc(s.name)}</h3><button class="iconbtn" data-action="close-modal">✕</button></div>
+      <div class="modal-head"><h3>Edit ${esc(displayName(s))}</h3><button class="iconbtn" data-action="close-modal">✕</button></div>
       <form data-form="edit-student" data-id="${s.id}">
         <div class="modal-body">
           <div class="field-row">
@@ -1835,7 +1871,7 @@
           <label class="field">Student
             <select name="studentId" required>
               <option value="">Choose…</option>
-              ${pool.map(s => `<option value="${s.id}" ${presetStudentId===s.id?"selected":""}>${esc(s.name)}</option>`).join("")}
+              ${pool.map(s => `<option value="${s.id}" ${presetStudentId===s.id?"selected":""}>${esc(displayName(s))}</option>`).join("")}
             </select>
           </label>
           <div class="field-row">
@@ -1876,7 +1912,7 @@
           <label class="field">Student
             <select name="studentId" required>
               <option value="">Choose…</option>
-              ${pool.map(s => `<option value="${s.id}" ${presetStudentId===s.id?"selected":""}>${esc(s.name)}</option>`).join("")}
+              ${pool.map(s => `<option value="${s.id}" ${presetStudentId===s.id?"selected":""}>${esc(displayName(s))}</option>`).join("")}
             </select>
           </label>
           <div class="hint">Two days a week — each can have its own time.</div>
@@ -2264,6 +2300,14 @@
     }
     else if(a === "run-undo"){ runUndo(); }
     else if(a === "run-redo"){ runRedo(); }
+    else if(a === "copy-name"){
+      const s = studentById(el.dataset.student);
+      const original = el.textContent;
+      copyToClipboard(copyableName(s)).then(ok => {
+        el.textContent = ok ? "✓" : "✕";
+        setTimeout(()=>{ el.textContent = original; }, 1100);
+      });
+    }
     else if(a === "followup-status"){ setFollowupStatus(el.dataset.id, el.dataset.status); renderEnrollment(); }
     else if(a === "cal-prev"){
       if(STATE.calView === "week") STATE.calWeekStart = addDays(STATE.calWeekStart, -7);
