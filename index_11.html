@@ -1,0 +1,2385 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Kumon Hub — Pipeline</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700&family=Inter:wght@400;500;600;700;800&display=swap">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  :root{
+    --bg:#F5F6FA; --surface:#FFFFFF; --surface-2:#FBFBFE; --border:#E1E4EB;
+    --ink:#1B1F27; --ink-muted:#636C7C; --ink-faint:#9AA1AF;
+    --accent:#3454D1; --accent-ink:#FFFFFF; --accent-soft:#E9EDFC; --accent-soft-ink:#2A41A8;
+    --good:#1E8E5A; --good-soft:#E4F5EC; --warn:#C23B2B; --warn-soft:#FBE8E5; --bad:#C23B2B; --bad-soft:#FBE8E5;
+    --diag:#3454D1; --diag-soft:#E9EDFC; --train:#C4670E; --train-soft:#FBEBDA; --sched:#12897A; --sched-soft:#E1F3F0;
+    --shadow: 0 1px 2px rgba(20,24,34,.04), 0 8px 24px -12px rgba(20,24,34,.18);
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#14161C; --surface:#1C1F27; --surface-2:#20232C; --border:#2C303B;
+      --ink:#EDEFF4; --ink-muted:#9BA3B2; --ink-faint:#6B7280;
+      --accent:#6C86F0; --accent-ink:#0E1220; --accent-soft:#232A47; --accent-soft-ink:#B7C3FA;
+      --good:#4FC48A; --good-soft:#173226; --warn:#F0796A; --warn-soft:#3A1F1C; --bad:#F0796A; --bad-soft:#3A1F1C;
+      --diag:#6C86F0; --diag-soft:#232A47; --train:#E3924C; --train-soft:#3A2A15; --sched:#4FC0B0; --sched-soft:#132E2A;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#14161C; --surface:#1C1F27; --surface-2:#20232C; --border:#2C303B;
+    --ink:#EDEFF4; --ink-muted:#9BA3B2; --ink-faint:#6B7280;
+    --accent:#6C86F0; --accent-ink:#0E1220; --accent-soft:#232A47; --accent-soft-ink:#B7C3FA;
+    --good:#4FC48A; --good-soft:#173226; --warn:#F0796A; --warn-soft:#3A1F1C; --bad:#F0796A; --bad-soft:#3A1F1C;
+    --diag:#6C86F0; --diag-soft:#232A47; --train:#E3924C; --train-soft:#3A2A15; --sched:#4FC0B0; --sched-soft:#132E2A;
+    color-scheme: dark;
+  }
+
+  *{box-sizing:border-box;}
+  body{
+    background:var(--bg); color:var(--ink);
+    font-family:"Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  h1,h2,h3,.brand{ font-family:"Sora", system-ui, sans-serif; }
+  h1,h2,h3{ text-wrap:balance; margin:0; }
+  .tnum{ font-variant-numeric: tabular-nums; }
+  button{ font-family:inherit; }
+  a{ color:var(--accent); }
+
+  .app{
+    display:grid;
+    grid-template-columns: 216px 1fr;
+    min-height:100%;
+  }
+  .rail{
+    background:var(--surface); border-right:1px solid var(--border);
+    padding:20px 12px; display:flex; flex-direction:column; gap:4px;
+    position:sticky; top:0; align-self:start; height:100vh; height:100dvh;
+  }
+  .brand{ font-weight:700; font-size:16px; padding:6px 10px 18px; display:flex; align-items:center; gap:8px; color:var(--ink); }
+  .brand .dot{ width:9px;height:9px;border-radius:50%;background:var(--accent); flex:none; }
+  .navbtn{
+    display:flex; align-items:center; gap:10px; padding:9px 10px; border-radius:9px;
+    border:none; background:transparent; color:var(--ink-muted); font-size:14px; font-weight:600;
+    cursor:pointer; text-align:left; width:100%;
+  }
+  .navbtn:hover{ background:var(--surface-2); color:var(--ink); }
+  .navbtn.active{ background:var(--accent-soft); color:var(--accent-soft-ink); }
+  .navbtn svg{ width:17px; height:17px; flex:none; }
+  .navbtn .badge{
+    margin-left:auto; background:var(--bad); color:#fff; font-size:11px; font-weight:700;
+    border-radius:99px; padding:1px 6px; min-width:18px; text-align:center; line-height:16px;
+  }
+  .rail-foot{ margin-top:auto; padding:10px; font-size:12px; color:var(--ink-faint); line-height:1.5; }
+
+  .topbar-mobile{ display:none; }
+
+  .main{ padding:26px 30px 60px; max-width:1180px; width:100%; }
+  .page-head{ display:flex; align-items:flex-end; justify-content:space-between; gap:16px; margin-bottom:18px; flex-wrap:wrap; }
+  .page-head h1{ font-size:22px; font-weight:700; }
+  .page-sub{ color:var(--ink-muted); font-size:13.5px; margin-top:4px; }
+  .page-actions{ display:flex; gap:8px; flex-wrap:wrap; }
+
+  .btn{
+    display:inline-flex; align-items:center; gap:7px; padding:9px 14px; border-radius:9px;
+    font-size:13.5px; font-weight:600; border:1px solid var(--border); background:var(--surface);
+    color:var(--ink); cursor:pointer; white-space:nowrap;
+    transition:transform .08s ease, filter .08s ease, opacity .08s ease;
+  }
+  .btn:hover{ background:var(--surface-2); }
+  .btn:active{ transform:scale(.96); filter:brightness(.96); }
+  .btn:disabled{ transform:none; }
+  .btn.primary{ background:var(--accent); color:var(--accent-ink); border-color:var(--accent); }
+  .btn.primary:hover{ filter:brightness(1.06); }
+  .btn.primary:active{ filter:brightness(.92); }
+  .btn.danger{ color:var(--bad); border-color:var(--bad-soft); }
+  .btn.danger:hover{ background:var(--bad-soft); }
+  .btn.ghost{ border-color:transparent; background:transparent; }
+  .btn.ghost:hover{ background:var(--surface-2); }
+  .btn.sm{ padding:6px 10px; font-size:12.5px; border-radius:7px; }
+  .btn:disabled{ opacity:.5; cursor:not-allowed; }
+  .btn svg{ width:15px; height:15px; }
+
+  /* Tactile press feedback across the app — a click should always look like it registered. */
+  .iconbtn, .navbtn, .day-chip, .cal-cell, .choose-opt, .seg button, .stat, .stable tr.clickrow{
+    transition:transform .08s ease, filter .08s ease, background .12s ease;
+  }
+  .iconbtn:active, .day-chip:active, .choose-opt:active, .seg button:active{ transform:scale(.94); }
+  .navbtn:active{ transform:scale(.98); }
+  .stat:active{ transform:scale(.98); filter:brightness(.97); }
+  .cal-cell:active{ filter:brightness(.95); }
+  .stable tr.clickrow:active td{ background:var(--surface-2); }
+
+  .stats{ display:grid; grid-template-columns:repeat(8,1fr); gap:10px; margin-bottom:20px; }
+  .stat{
+    background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:13px 14px;
+    display:flex; flex-direction:column; gap:6px; cursor:pointer;
+    appearance:none; text-align:left; font:inherit; color:inherit; width:100%;
+  }
+  .stat:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
+  .stat:hover{ border-color:var(--accent); }
+  .stat .n{ font-size:22px; font-weight:700; font-family:"Sora",sans-serif; }
+  .stat .l{ font-size:12px; color:var(--ink-muted); font-weight:600; }
+  .stat.warn .n{ color:var(--warn); }
+  .stat.bad .n{ color:var(--bad); }
+  .stat.good .n{ color:var(--good); }
+
+  .card{ background:var(--surface); border:1px solid var(--border); border-radius:14px; }
+  .section-mini{ display:flex; align-items:center; justify-content:space-between; padding:9px 16px; background:var(--surface-2); border:1px solid var(--border); border-radius:10px; font-size:12.5px; font-weight:600; color:var(--ink-muted); margin-bottom:8px; }
+  .section-mini .mini-count{ color:var(--ink-faint); font-weight:700; }
+  .card-head{ display:flex; align-items:center; justify-content:space-between; padding:14px 16px; border-bottom:1px solid var(--border); gap:10px; flex-wrap:wrap; }
+  .card-head h3{ font-size:14.5px; font-weight:700; }
+  .card-head .count{ color:var(--ink-muted); font-weight:600; font-size:12.5px; }
+  .card-body{ padding:6px 16px 14px; }
+  .section{ margin-bottom:20px; }
+
+  .empty{ padding:30px 16px; text-align:center; color:var(--ink-muted); font-size:13.5px; }
+  .empty b{ color:var(--ink); }
+
+  .pill{ display:inline-flex; align-items:center; gap:5px; padding:3px 9px; border-radius:99px; font-size:11.5px; font-weight:700; white-space:nowrap; }
+  .pill.diag{ background:var(--diag-soft); color:var(--diag); }
+  .pill.train{ background:var(--train-soft); color:var(--train); }
+  .pill.sched{ background:var(--sched-soft); color:var(--sched); }
+  .pill.good{ background:var(--good-soft); color:var(--good); }
+  .pill.warn{ background:var(--warn-soft); color:var(--warn); }
+  .pill.bad{ background:var(--bad-soft); color:var(--bad); }
+  .pill.muted{ background:var(--surface-2); color:var(--ink-muted); }
+  .pill.subj{ background:var(--accent-soft); color:var(--accent-soft-ink); }
+  .dot{ width:7px; height:7px; border-radius:50%; flex:none; }
+  .dot.diag, .dot.diagnostic{ background:var(--diag); }
+  .dot.train, .dot.training{ background:var(--train); }
+  .dot.sched, .dot.schedule{ background:var(--sched); }
+
+  /* Segmented control */
+  .seg{ display:inline-flex; background:var(--surface-2); border:1px solid var(--border); border-radius:9px; padding:2px; }
+  .seg button{ border:none; background:transparent; padding:6px 11px; border-radius:7px; font-size:12.5px; font-weight:600; color:var(--ink-muted); cursor:pointer; }
+  .seg button.active{ background:var(--surface); color:var(--ink); box-shadow:var(--shadow); }
+
+  select, input[type=text], input[type=date], input[type=time], input[type=search], input[type=email], input[type=password], textarea{
+    font-family:inherit; font-size:13.5px; padding:8px 10px; border-radius:8px; border:1px solid var(--border);
+    background:var(--surface); color:var(--ink); width:100%;
+  }
+  select:focus, input:focus, textarea:focus{ outline:2px solid var(--accent); outline-offset:1px; }
+  label.field{ display:flex; flex-direction:column; gap:5px; font-size:12.5px; font-weight:600; color:var(--ink-muted); }
+  .field-row{ display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  .day-picker{ display:flex; gap:6px; flex-wrap:wrap; }
+  .day-chip{ border:1px solid var(--border); background:var(--surface); border-radius:8px; padding:7px 0; width:44px; text-align:center; font-size:12.5px; font-weight:700; color:var(--ink-muted); cursor:pointer; }
+  .day-chip.on{ background:var(--accent); border-color:var(--accent); color:var(--accent-ink); }
+
+  /* Calendar */
+  .cal-toolbar{ display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; flex-wrap:wrap; gap:10px; }
+  .cal-nav{ display:flex; align-items:center; gap:8px; }
+  .cal-nav h2{ font-size:16px; font-weight:700; min-width:160px; text-align:center; }
+  .month-head{ display:flex; flex-direction:column; align-items:center; }
+  .month-head h2{ margin:0; }
+  .month-range{ font-size:11px; color:var(--ink-muted); margin-top:1px; }
+  .cal-filters{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+  .cal-grid{ display:grid; grid-template-columns:repeat(7,1fr); gap:1px; background:var(--border); border:1px solid var(--border); border-radius:12px; overflow:hidden; }
+  .cal-dow{ background:var(--surface-2); padding:8px 10px; font-size:11px; font-weight:700; color:var(--ink-muted); text-transform:uppercase; letter-spacing:.04em; }
+  .cal-cell{ background:var(--surface); min-height:104px; padding:7px; display:flex; flex-direction:column; gap:4px; cursor:pointer; }
+  .cal-cell:hover{ background:var(--surface-2); }
+  .cal-cell.out{ background:var(--bg); }
+  .cal-cell.out .cal-date{ color:var(--ink-faint); }
+  .cal-cell.today .cal-date{ background:var(--accent); color:var(--accent-ink); }
+  .cal-date{ font-size:12px; font-weight:700; width:20px; height:20px; display:flex; align-items:center; justify-content:center; border-radius:50%; }
+  .cal-chip{ font-size:11px; padding:2px 6px; border-radius:6px; display:flex; align-items:center; gap:4px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:600; }
+  .cal-chip .tm{ opacity:.75; font-variant-numeric:tabular-nums; flex:none; }
+  .cal-chip.diagnostic{ background:var(--diag-soft); color:var(--diag); }
+  .cal-chip.training{ background:var(--train-soft); color:var(--train); }
+  .cal-chip.schedule{ background:var(--sched-soft); color:var(--sched); }
+  .cal-more{ font-size:10.5px; color:var(--ink-muted); font-weight:700; padding-left:2px; }
+
+  .cal-week{ display:grid; grid-template-columns:repeat(7,1fr); gap:10px; }
+  .week-day{ background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:10px; min-height:180px; cursor:pointer; display:flex; flex-direction:column; gap:6px; }
+  .week-day:hover{ border-color:var(--accent); }
+  .week-day.today{ border-color:var(--accent); box-shadow:0 0 0 1px var(--accent); }
+  .week-day .wd-head{ display:flex; align-items:baseline; justify-content:space-between; padding-bottom:7px; border-bottom:1px solid var(--border); }
+  .week-day .wd-name{ font-size:11px; font-weight:700; color:var(--ink-muted); text-transform:uppercase; letter-spacing:.04em; }
+  .week-day .wd-num{ font-size:14px; font-weight:700; }
+  .week-day.today .wd-num{ color:var(--accent); }
+  .week-day .cal-chip{ white-space:normal; padding:5px 7px; }
+  .cal-legend{ display:flex; gap:16px; flex-wrap:wrap; margin:2px 0 14px; }
+  .cal-legend .item{ display:flex; align-items:center; gap:6px; font-size:12px; font-weight:600; color:var(--ink-muted); }
+
+  /* Table-ish rows */
+  .row-list{ display:flex; flex-direction:column; }
+  .rowi{ display:flex; align-items:center; gap:12px; padding:11px 0; border-bottom:1px solid var(--border); flex-wrap:wrap; }
+  .rowi:last-child{ border-bottom:none; }
+  .rowi .who{ display:flex; flex-direction:column; gap:2px; min-width:150px; flex:1; }
+  .rowi .who b{ font-size:13.5px; }
+  .rowi .who span{ font-size:12px; color:var(--ink-muted); }
+  .rowi .when{ font-size:12.5px; color:var(--ink-muted); min-width:130px; }
+  .rowi .acts{ display:flex; gap:6px; margin-left:auto; flex-wrap:wrap; }
+
+  /* Roster */
+  .roster-grid{ display:grid; grid-template-columns:repeat(7,1fr); gap:10px; }
+  .roster-day{ background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:10px; min-height:120px; }
+  .roster-day h4{ font-size:12.5px; font-weight:700; margin-bottom:8px; padding-bottom:8px; border-bottom:1px solid var(--border); }
+  .roster-slot{ font-size:12px; padding:6px 8px; border-radius:8px; background:var(--sched-soft); color:var(--sched); margin-bottom:6px; font-weight:600; display:flex; flex-direction:column; gap:1px; }
+  .roster-slot span{ font-weight:500; opacity:.85; }
+  .roster-slot .rtop{ display:flex; align-items:center; justify-content:space-between; gap:6px; }
+  .roster-slot .iconbtn{ color:inherit; opacity:.6; padding:2px; }
+  .roster-slot .iconbtn:hover{ opacity:1; background:rgba(0,0,0,.08); }
+
+  /* Students search/table */
+  .search-row{ display:flex; gap:8px; margin-bottom:12px; flex-wrap:wrap; }
+  .table-scroll{ overflow-x:auto; -webkit-overflow-scrolling:touch; }
+  .stable{ width:100%; border-collapse:collapse; }
+  .stable th{ text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--ink-muted); padding:8px 10px; border-bottom:1px solid var(--border); }
+  .stable td{ padding:10px 10px; border-bottom:1px solid var(--border); font-size:13px; vertical-align:middle; }
+  .stable tr:last-child td{ border-bottom:none; }
+  .stable tr.clickrow{ cursor:pointer; }
+  .stable tr.clickrow:hover{ background:var(--surface-2); }
+
+  /* Modal */
+  .modal-backdrop{ position:fixed; inset:0; background:rgba(10,12,18,.5); display:flex; align-items:flex-start; justify-content:center; padding:5vh 16px; overflow-y:auto; z-index:50; }
+  .modal{ background:var(--surface); border-radius:16px; width:100%; max-width:480px; box-shadow:var(--shadow); }
+  .modal-head{ display:flex; align-items:center; justify-content:space-between; padding:16px 18px; border-bottom:1px solid var(--border); }
+  .modal-head h3{ font-size:15.5px; font-weight:700; }
+  .modal-body{ padding:16px 18px; display:flex; flex-direction:column; gap:12px; max-height:66vh; overflow-y:auto; }
+  .modal-foot{ display:flex; justify-content:flex-end; gap:8px; padding:14px 18px; border-top:1px solid var(--border); }
+  .iconbtn{ border:none; background:transparent; cursor:pointer; color:var(--ink-muted); padding:4px; border-radius:6px; display:flex; }
+  .iconbtn:hover{ background:var(--surface-2); color:var(--ink); }
+  .hint{ font-size:12px; color:var(--ink-muted); }
+  .chooser{ display:flex; flex-direction:column; gap:8px; }
+  .choose-opt{ display:flex; align-items:center; gap:12px; padding:13px 14px; border:1px solid var(--border); border-radius:11px; cursor:pointer; text-align:left; background:var(--surface); }
+  .choose-opt:hover{ border-color:var(--accent); background:var(--accent-soft); }
+  .choose-opt .ic{ width:34px;height:34px;border-radius:9px;display:flex;align-items:center;justify-content:center;flex:none; }
+  .choose-opt b{ font-size:13.5px; display:block; }
+  .choose-opt span{ font-size:12px; color:var(--ink-muted); }
+
+  .banner{ background:var(--warn-soft); color:var(--warn); border:1px solid transparent; border-radius:11px; padding:11px 14px; font-size:13px; font-weight:600; margin-bottom:16px; display:flex; align-items:center; gap:10px; justify-content:space-between; flex-wrap:wrap; }
+  .banner a, .banner button.link{ color:inherit; text-decoration:underline; background:none; border:none; font:inherit; font-weight:700; cursor:pointer; padding:0; }
+
+  .taglist{ display:flex; flex-wrap:wrap; gap:7px; }
+  .tagchip{ display:flex; align-items:center; gap:6px; background:var(--surface-2); border:1px solid var(--border); border-radius:99px; padding:5px 6px 5px 12px; font-size:12.5px; font-weight:600; }
+  .tagchip button{ border:none; background:var(--border); color:var(--ink); width:17px; height:17px; border-radius:50%; cursor:pointer; font-size:11px; line-height:1; }
+
+  .toast{ position:fixed; bottom:22px; left:50%; transform:translateX(-50%); background:var(--ink); color:var(--bg); padding:10px 18px; border-radius:99px; font-size:13px; font-weight:600; z-index:80; box-shadow:var(--shadow); }
+
+  /* Undo/redo bar — personal to this browser tab, only for destructive actions (deletes). */
+  .undo-bar{ position:fixed; right:22px; bottom:22px; z-index:90; display:flex; gap:6px; background:var(--surface); border:1px solid var(--border); border-radius:14px; box-shadow:var(--shadow); padding:6px; }
+  .undo-btn{ display:flex; align-items:center; gap:7px; border:none; background:transparent; cursor:pointer; font-size:12.5px; font-weight:700; color:var(--ink); padding:8px 12px; border-radius:10px; white-space:nowrap; }
+  .undo-btn:hover{ background:var(--surface-2); }
+  .undo-btn .undo-label{ font-weight:500; color:var(--ink-muted); max-width:180px; overflow:hidden; text-overflow:ellipsis; }
+  @media (max-width: 640px){ .undo-btn .undo-label{ max-width:96px; } }
+
+  /* Login gate */
+  .login-screen{ position:fixed; inset:0; display:flex; align-items:center; justify-content:center; background:var(--bg); z-index:100; padding:20px; }
+  .login-card{ width:100%; max-width:360px; background:var(--surface); border:1px solid var(--border); border-radius:16px; padding:28px 26px; box-shadow:var(--shadow); display:flex; flex-direction:column; gap:14px; }
+  .login-brand{ font-family:"Sora", system-ui, sans-serif; font-weight:700; font-size:18px; display:flex; align-items:center; gap:8px; color:var(--ink); }
+  .login-brand .dot{ width:9px; height:9px; border-radius:50%; background:var(--accent); flex:none; }
+  .login-sub{ font-size:13px; color:var(--ink-muted); margin:-6px 0 4px; }
+  .login-error{ background:var(--bad-soft); color:var(--bad); border-radius:9px; padding:9px 12px; font-size:12.5px; font-weight:600; }
+  .login-note{ background:var(--good-soft); color:var(--good); border-radius:9px; padding:9px 12px; font-size:12.5px; font-weight:600; }
+  .link-btn{ background:none; border:none; color:var(--accent); font-size:12.5px; font-weight:600; cursor:pointer; padding:2px; align-self:center; }
+  .link-btn:hover{ text-decoration:underline; }
+  .rail-account{ padding:0 10px 10px; }
+  .account-row{ display:flex; align-items:center; justify-content:space-between; gap:8px; padding:8px 8px; border-top:1px solid var(--border); font-size:12px; color:var(--ink-muted); }
+  .account-email{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+
+  /* Top-level app nav (Pipeline / Roster / Payments / Admin) — separate from the
+     within-Pipeline tabs below it. Plain links, not JS tab-switches, since each is
+     its own page. */
+  .navbtn{ text-decoration:none; }
+  .rail-pages{ display:flex; flex-direction:column; gap:4px; margin-bottom:8px; }
+  .rail-divider{ height:1px; background:var(--border); margin:4px 10px 10px; }
+
+  [hidden]{ display:none !important; }
+
+  @media (max-width: 860px){
+    body{ overflow-x:hidden; }
+    .app{ grid-template-columns:1fr; }
+    .rail{
+      position:fixed; bottom:0; left:0; right:0; top:auto; height:auto; flex-direction:row; justify-content:space-around;
+      padding:6px 6px calc(6px + env(safe-area-inset-bottom)); border-right:none; border-top:1px solid var(--border); z-index:40;
+    }
+    .brand, .rail-foot{ display:none; }
+    .navbtn{ flex-direction:column; gap:3px; font-size:10px; padding:7px 2px; text-align:center; width:auto; flex:1; min-height:48px; justify-content:center; }
+    .navbtn svg{ width:19px; height:19px; }
+    .navbtn .badge{ position:absolute; margin-left:16px; margin-top:-16px; }
+    .main{ padding:16px 14px calc(84px + env(safe-area-inset-bottom)); }
+    .page-head{ gap:10px; }
+    .page-head h1{ font-size:19px; }
+    .stats{ grid-template-columns:repeat(2,1fr); gap:8px; }
+    .stat{ padding:11px 12px; }
+    .field-row{ grid-template-columns:1fr; }
+    .roster-grid{ grid-template-columns:repeat(2,1fr); }
+    .cal-cell{ min-height:64px; padding:5px; }
+    .cal-chip{ font-size:10px; }
+    .cal-nav h2{ font-size:14px; min-width:0; flex:1; }
+    .cal-filters{ width:100%; }
+    .cal-filters select{ flex:1; min-width:0; }
+    .modal-backdrop{ padding:0; align-items:flex-end; }
+    .modal{ max-width:none; border-radius:16px 16px 0 0; max-height:92vh; padding-bottom:env(safe-area-inset-bottom); }
+    /* Bigger tap targets — icon-only buttons are too small to hit reliably on a touchscreen below 44px. */
+    .iconbtn{ padding:8px; }
+    .iconbtn svg{ width:17px; height:17px; }
+    .stable th, .stable td{ padding:9px 8px; font-size:12.5px; white-space:nowrap; }
+  }
+</style>
+</head>
+<body>
+
+<div class="login-screen" id="loginScreen">
+  <form class="login-card" id="loginForm">
+    <div class="login-brand"><span class="dot"></span>Kumon Hub</div>
+    <div class="login-sub">Sign in to view your team's schedule.</div>
+    <div class="login-error" id="loginError" hidden></div>
+    <label class="field">Email<input type="email" name="email" required autocomplete="username" autofocus></label>
+    <label class="field">Password<input type="password" name="password" required autocomplete="current-password"></label>
+    <button class="btn primary" type="submit" style="justify-content:center;">Log in</button>
+    <button class="link-btn" type="button" data-action="show-forgot">Forgot password?</button>
+  </form>
+
+  <form class="login-card" id="forgotForm" hidden>
+    <div class="login-brand"><span class="dot"></span>Reset password</div>
+    <div class="login-sub">Enter your email and we'll send you a link to reset it.</div>
+    <div class="login-error" id="forgotError" hidden></div>
+    <div class="login-note" id="forgotSent" hidden>Check your email for a reset link.</div>
+    <label class="field">Email<input type="email" name="email" required autocomplete="username"></label>
+    <button class="btn primary" type="submit" style="justify-content:center;">Send reset link</button>
+    <button class="link-btn" type="button" data-action="show-login">Back to log in</button>
+  </form>
+
+  <form class="login-card" id="resetForm" hidden>
+    <div class="login-brand"><span class="dot"></span>Set a new password</div>
+    <div class="login-sub">Choose a new password for your account.</div>
+    <div class="login-error" id="resetError" hidden></div>
+    <label class="field">New password<input type="password" name="password" required minlength="6" autocomplete="new-password"></label>
+    <label class="field">Confirm password<input type="password" name="password2" required minlength="6" autocomplete="new-password"></label>
+    <button class="btn primary" type="submit" style="justify-content:center;">Save password</button>
+  </form>
+</div>
+
+<div class="app" id="appRoot" hidden>
+  <nav class="rail">
+    <div class="brand"><span class="dot"></span>Kumon Hub</div>
+    <div class="rail-pages">
+      <a class="navbtn active" href="index.html">Pipeline</a>
+      <a class="navbtn" href="roster.html">Student roster</a>
+      <a class="navbtn" href="calendar.html">Calendar</a>
+      <a class="navbtn" href="reporting.html">Reporting</a>
+      <a class="navbtn" href="admin.html" id="navAdminLink" hidden>Admin</a>
+    </div>
+    <div class="rail-divider"></div>
+    <button class="navbtn active" data-action="switch-tab" data-tab="calendar">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>
+      Calendar
+    </button>
+    <button class="navbtn" data-action="switch-tab" data-tab="enrollment">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 12l2 2 4-4"/><circle cx="12" cy="12" r="9"/></svg>
+      Enrollment
+      <span class="badge" id="badgeEnrollment" hidden>0</span>
+    </button>
+    <button class="navbtn" data-action="switch-tab" data-tab="roster">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h10"/></svg>
+      Weekly view
+    </button>
+    <button class="navbtn" data-action="switch-tab" data-tab="students">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-7 8-7s8 3 8 7"/></svg>
+      Students
+    </button>
+    <button class="navbtn" data-action="switch-tab" data-tab="settings">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 00.34 1.87l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.7 1.7 0 00-1.87-.34 1.7 1.7 0 00-1 1.55V21a2 2 0 11-4 0v-.09a1.7 1.7 0 00-1-1.55 1.7 1.7 0 00-1.87.34l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.7 1.7 0 00.34-1.87 1.7 1.7 0 00-1.55-1H3a2 2 0 110-4h.09a1.7 1.7 0 001.55-1 1.7 1.7 0 00-.34-1.87l-.06-.06a2 2 0 112.83-2.83l.06.06a1.7 1.7 0 001.87.34H9a1.7 1.7 0 001-1.55V3a2 2 0 114 0v.09a1.7 1.7 0 001 1.55 1.7 1.7 0 001.87-.34l.06-.06a2 2 0 112.83 2.83l-.06.06a1.7 1.7 0 00-.34 1.87V9a1.7 1.7 0 001.55 1H21a2 2 0 110 4h-.09a1.7 1.7 0 00-1.55 1z"/></svg>
+      Settings
+    </button>
+    <div class="rail-account" id="railAccount"></div>
+    <div class="rail-foot">Diagnostic tests &amp; student trainings, one shared schedule for the team.</div>
+  </nav>
+
+  <main class="main">
+    <div id="dbBanner"></div>
+
+    <div class="page-head">
+      <div>
+        <h1 id="pageTitle">Calendar</h1>
+        <div class="page-sub" id="pageSub">Diagnostic tests and student trainings on one calendar.</div>
+      </div>
+      <div class="page-actions" id="pageActions"></div>
+    </div>
+
+    <div class="stats" id="statsRow"></div>
+
+    <section id="view-calendar" class="view"></section>
+    <section id="view-enrollment" class="view" hidden></section>
+    <section id="view-roster" class="view" hidden></section>
+    <section id="view-students" class="view" hidden></section>
+    <section id="view-settings" class="view" hidden></section>
+  </main>
+</div>
+
+<div class="modal-backdrop" id="modalBackdrop" hidden>
+  <div class="modal" id="modal"></div>
+</div>
+
+<div class="toast" id="toast" hidden></div>
+<div class="undo-bar" id="undoBar" hidden></div>
+
+<datalist id="studentFirstNames"></datalist>
+<datalist id="studentLastNames"></datalist>
+
+<script>
+(function(){
+  "use strict";
+
+  /* ====================================================================
+     SUPABASE SETUP — fill these two in, then redeploy. See SETUP.md for
+     the SQL schema to run first. Nothing else in this file needs to change.
+     ==================================================================== */
+  const SUPABASE_URL = "https://bcnmsryahczapnxbpkve.supabase.co";
+  const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJjbm1zcnlhaGN6YXBueGJwa3ZlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTAyMDQ4NzksImV4cCI6MjEwNTc4MDg3OX0.VgCX3CR7YCJxR9-vwD8HlYcCx0MxlY7atgD_0h3F3to";
+
+  /* ---------------- Supabase-backed db shim ----------------
+     Mimics the collection()/doc()/add()/update()/delete()/set()/onSnapshot() shape the rest of
+     this file is written against, so nothing below this block had to change. Field names stay
+     camelCase in JS (name, parentName, followUpStatus…) and are translated to snake_case columns
+     (name, parent_name, follow_up_status…) on the way in and out — see SETUP.md for the schema. */
+  function makeSupabaseDB(sb){
+    const toSnake = k => k.replace(/[A-Z]/g, m => "_" + m.toLowerCase());
+    const toCamel = k => k.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
+    const rowToCamel = row => { const out = {}; for(const k in row) out[toCamel(k)] = row[k]; return out; };
+    const objToSnake = obj => { const out = {}; for(const k in obj) out[toSnake(k)] = obj[k]; return out; };
+
+    function docRef(table, id){
+      return {
+        async update(patch){ const { error } = await sb.from(table).update(objToSnake(patch)).eq("id", id); if(error) throw error; },
+        async delete(){ const { error } = await sb.from(table).delete().eq("id", id); if(error) throw error; }
+      };
+    }
+
+    function collection(table){
+      return {
+        onSnapshot(cb, errCb){
+          async function load(){
+            const { data, error } = await sb.from(table).select("*").order("created_at", { ascending: false });
+            if(error){ errCb && errCb(error); return; }
+            cb({ docs: data.map(row => ({ id: row.id, data: () => rowToCamel(row) })) });
+          }
+          load();
+          sb.channel("realtime:" + table)
+            .on("postgres_changes", { event: "*", schema: "public", table }, load)
+            .subscribe();
+        },
+        doc(id){ return docRef(table, id); },
+        async add(obj){
+          const payload = objToSnake(obj);
+          delete payload.id;
+          const { data, error } = await sb.from(table).insert(payload).select().single();
+          if(error) throw error;
+          return { id: data.id };
+        },
+        // Re-inserts a row with its ORIGINAL id (unlike add(), which always assigns a new
+        // one) — used only to put back an exact row an undo is restoring after a delete.
+        async restore(obj){
+          const payload = objToSnake(obj);
+          const { error } = await sb.from(table).insert(payload);
+          if(error) throw error;
+        }
+      };
+    }
+
+    // Only ever called as db.doc("settings/staff") in this app — one settings row keyed by id.
+    function doc(path){
+      const id = path.split("/")[1];
+      return {
+        onSnapshot(cb, errCb){
+          async function load(){
+            const { data, error } = await sb.from("settings").select("*").eq("id", id).maybeSingle();
+            if(error){ errCb && errCb(error); return; }
+            cb({ exists: !!data, data: () => (data ? data.value : {}) });
+          }
+          load();
+          sb.channel("realtime:settings:" + id)
+            .on("postgres_changes", { event: "*", schema: "public", table: "settings" }, load)
+            .subscribe();
+        },
+        async set(obj){ const { error } = await sb.from("settings").upsert({ id, value: obj }); if(error) throw error; }
+      };
+    }
+
+    return { collection, doc };
+  }
+
+  /* ---------------- Utilities ---------------- */
+  const $ = (sel, el) => (el||document).querySelector(sel);
+  const $$ = (sel, el) => Array.from((el||document).querySelectorAll(sel));
+  const pad2 = n => String(n).padStart(2,"0");
+  const isoDate = d => `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`;
+  const parseISODate = s => { const [y,m,d] = s.split("-").map(Number); return new Date(y, m-1, d); };
+  const todayISO = () => isoDate(new Date());
+  const DOW = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+  const DOW_FULL = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+  function fmtDateLong(iso){
+    if(!iso) return "—";
+    const d = parseISODate(iso);
+    return d.toLocaleDateString(undefined,{ weekday:"short", month:"short", day:"numeric", year:"numeric" });
+  }
+  function fmtDateShort(iso){
+    if(!iso) return "—";
+    const d = parseISODate(iso);
+    return d.toLocaleDateString(undefined,{ month:"short", day:"numeric" });
+  }
+  function fmtTime(t){
+    if(!t) return "";
+    let [h,m] = t.split(":").map(Number);
+    const ap = h >= 12 ? "PM" : "AM";
+    h = h % 12; if(h===0) h = 12;
+    return `${h}:${pad2(m)} ${ap}`;
+  }
+  function fmtTimeCompact(t){
+    if(!t) return "";
+    let [h,m] = t.split(":").map(Number);
+    const ap = h >= 12 ? "p" : "a";
+    h = h % 12; if(h===0) h = 12;
+    return m===0 ? `${h}${ap}` : `${h}:${pad2(m)}${ap}`;
+  }
+  function addDays(d, n){ const r = new Date(d); r.setDate(r.getDate()+n); return r; }
+  function esc(s){
+    return String(s==null?"":s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+  }
+  function toast(msg){
+    const t = $("#toast");
+    t.textContent = msg; t.hidden = false;
+    clearTimeout(toast._h);
+    toast._h = setTimeout(()=>{ t.hidden = true; }, 2600);
+  }
+
+  /* ---------------- Undo / redo ----------------
+     Personal to this browser tab and in-memory only (a refresh clears it) — covers
+     destructive actions only (right now: "delete student everywhere"). Holds up to
+     2 undo steps and 1 redo step. Each entry snapshots exactly what it needs to put
+     things back, so undo/redo never re-derive state from whatever's on screen. */
+  const undoStack = [];
+  let redoEntry = null;
+  const UNDO_CAP = 2;
+  function pushUndo(label, undo, redo){
+    undoStack.push({ label, undo, redo });
+    if(undoStack.length > UNDO_CAP) undoStack.shift();
+    redoEntry = null;
+    renderUndoBar();
+  }
+  async function runUndo(){
+    const entry = undoStack.pop();
+    if(!entry) return;
+    try{
+      await entry.undo();
+      redoEntry = entry;
+    }catch(err){
+      console.warn(err);
+      undoStack.push(entry);
+      toast("Couldn't undo that — try again.");
+    }
+    renderUndoBar();
+  }
+  async function runRedo(){
+    const entry = redoEntry;
+    if(!entry) return;
+    try{
+      await entry.redo();
+      undoStack.push(entry);
+      if(undoStack.length > UNDO_CAP) undoStack.shift();
+      redoEntry = null;
+    }catch(err){
+      console.warn(err);
+      toast("Couldn't redo that — try again.");
+    }
+    renderUndoBar();
+  }
+  function renderUndoBar(){
+    const bar = $("#undoBar");
+    if(!bar) return;
+    const top = undoStack[undoStack.length - 1];
+    if(!top && !redoEntry){ bar.hidden = true; bar.innerHTML = ""; return; }
+    bar.hidden = false;
+    bar.innerHTML = `
+      ${top ? `<button class="undo-btn" data-action="run-undo">↶ Undo <span class="undo-label">${esc(top.label)}</span></button>` : ""}
+      ${redoEntry ? `<button class="undo-btn" data-action="run-redo">↷ Redo <span class="undo-label">${esc(redoEntry.label)}</span></button>` : ""}
+    `;
+  }
+
+  function initials(name){
+    return (name||"?").trim().split(/\s+/).slice(0,2).map(w=>w[0]).join("").toUpperCase();
+  }
+
+  /* ---------------- State ---------------- */
+  const STATE = {
+    students: [], diagnostics: [], trainings: [], schedules: [],
+    settings: { examiners: [], trainers: [] },
+    loaded: { students:false, diagnostics:false, trainings:false, schedules:false, settings:false },
+    activeTab: "calendar",
+    calMonth: (()=>{ const d=new Date(); return new Date(d.getFullYear(), d.getMonth(), 1); })(),
+    calWeekStart: (()=>{ const d=new Date(); d.setHours(0,0,0,0); d.setDate(d.getDate()-d.getDay()); return d; })(),
+    calDay: (()=>{ const d=new Date(); d.setHours(0,0,0,0); return d; })(),
+    calView: "month",
+    calFilter: "all",
+    calStaff: "all",
+    studentSearch: "",
+    studentMonth: (()=>{ return cycleMonthFor(new Date()); })(),
+    studentMonthMode: "month", // "month" = this month's roster only, "all" = every month (historical)
+    enrollmentShowAll: false // false = empty sections collapse to a thin line; true = every section shows full, even with nothing in it
+  };
+
+  const SUBJECT_OPTIONS = ["Reading", "Math", "Both"];
+  const GRADE_OPTIONS = ["PK1","PK2","PK3","K","P1","P2","P3","P4","P5","P6","P7","P8","P9","P10","P11","P12","P13","P14"];
+  function gradeSelect(name, selected){
+    return `<select name="${name}"><option value="">—</option>${GRADE_OPTIONS.map(g=>`<option value="${g}" ${g===selected?"selected":""}>${g}</option>`).join("")}</select>`;
+  }
+
+  // Curriculum levels — same lists as the Student roster page (roster.html), duplicated here
+  // (no shared build step) so a student can be assigned straight to a teacher's roster level
+  // when they graduate off the monitor schedule.
+  const MATH_LEVELS = ["7A","6A","5A","4A","3A","2A","A","B","C","D","E","F","G","H","I","J","K","L","M","N","O"];
+  const READING_LEVELS = ["7A","6A","5A","4A","3A","2A","AI","AII","BI","BII","CI","CII","DI","DII","EI","EII","FI","FII","GI","GII","HI","HII","I-I","I-II","J","K","L","M","N","O"];
+  function levelsForSubject(subject){ return subject === "Reading" ? READING_LEVELS : MATH_LEVELS; }
+  function levelSelect(name, subject){
+    return `<select name="${name}"><option value="">—</option>${levelsForSubject(subject).map(l=>`<option value="${l}">${l}</option>`).join("")}</select>`;
+  }
+  const INQUIRY_OPTIONS = ["Facebook", "Referral", "Walk-in", "Returnee", "Landline/Phone", "Other"];
+  function subjectText(v){ return v || "—"; }
+
+  let sbClient = null, db = null, writable = true, appStarted = false, currentUser = null, currentRole = null;
+
+  // Looks up the logged-in user's role from the `profiles` table (see phase1-roles.sql).
+  // Falls back to "pending" (no access at all) if anything goes wrong, so a hiccup here
+  // never accidentally grants access — it just blocks it, same as a real pending account.
+  async function loadRole(){
+    if(!sbClient || !currentUser){ currentRole = null; return; }
+    try{
+      const { data, error } = await sbClient.from("profiles").select("role").eq("id", currentUser.id).maybeSingle();
+      if(error) throw error;
+      currentRole = data ? data.role : "pending";
+    }catch(e){
+      console.warn("couldn't load role", e);
+      currentRole = "pending";
+    }
+  }
+
+  /* ---------------- Login gate ---------------- */
+  function showLogin(errMsg){
+    $("#loginScreen").hidden = false;
+    $("#appRoot").hidden = true;
+    const err = $("#loginError");
+    if(errMsg){ err.textContent = errMsg; err.hidden = false; }
+    else{ err.hidden = true; }
+  }
+  // Swaps which of the three login-screen panels (log in / forgot password / set new
+  // password) is visible. The screen itself is toggled separately by showLogin()/showApp().
+  function showLoginView(view){
+    $("#loginForm").hidden = view !== "login";
+    $("#forgotForm").hidden = view !== "forgot";
+    $("#resetForm").hidden = view !== "reset";
+  }
+  function showApp(){
+    $("#loginScreen").hidden = true;
+    $("#appRoot").hidden = false;
+  }
+  // Pipeline (diagnostics/enrollment/training/monitoring) isn't a teacher's workspace —
+  // their whole job here is the Student roster page. And a pending account (brand new,
+  // not yet approved by a superadmin) isn't cleared to see anything yet — Student roster
+  // shows them a "waiting for approval" banner of its own. Rather than paint Pipeline's
+  // sidebar and tabs first and then gate the content in the middle of it, send both
+  // straight to Student roster before any of that ever renders.
+  function renderAccount(){
+    if(currentRole === "teacher" || currentRole === "pending"){
+      location.replace("roster.html");
+      return true; // redirecting away — caller should skip starting Pipeline's data fetches
+    }
+    const el = $("#railAccount");
+    if(el) el.innerHTML = currentUser ? `<div class="account-row"><span class="account-email">${esc(currentUser.email)}</span><button class="btn sm ghost" data-action="logout">Log out</button></div>` : "";
+    const adminLink = $("#navAdminLink");
+    if(adminLink) adminLink.hidden = currentRole !== "superadmin";
+    return false;
+  }
+
+  /* ---------------- DB bootstrap ---------------- */
+  async function boot(){
+    const configured = !SUPABASE_URL.includes("YOUR_SUPABASE") && !SUPABASE_ANON_KEY.includes("YOUR_SUPABASE");
+    if(!configured || !window.supabase){
+      $("#dbBanner").innerHTML = `<div class="banner">Add your Supabase URL and anon key near the top of index.html (see SETUP.md), then redeploy, to load and save your team's schedule.</div>`;
+      showApp();
+      renderAll();
+      return;
+    }
+
+    try{ sbClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY); }
+    catch(e){ console.warn(e); showLogin("Couldn't connect to Supabase."); return; }
+    db = makeSupabaseDB(sbClient);
+
+    const { data:{ session } } = await sbClient.auth.getSession();
+    if(session){ currentUser = session.user; showApp(); await loadRole(); if(!renderAccount()) startApp(); }
+    else{ showLogin(); showLoginView("login"); }
+
+    sbClient.auth.onAuthStateChange(async (event, session)=>{
+      // Clicking the reset link in the email lands back here with a temporary "recovery"
+      // session — don't drop them straight into the app, make them set a new password first.
+      if(event === "PASSWORD_RECOVERY"){
+        showLogin(); showLoginView("reset");
+        return;
+      }
+      if(session){
+        currentUser = session.user;
+        showApp(); await loadRole(); if(!renderAccount()) startApp();
+      }else{
+        currentUser = null; currentRole = null; appStarted = false;
+        showLogin(); showLoginView("login");
+      }
+    });
+  }
+
+  function startApp(){
+    if(appStarted) return;
+    appStarted = true;
+    subscribe(db.collection("students"), rows => { STATE.students = rows; STATE.loaded.students = true; onData(); });
+    subscribe(db.collection("diagnostics"), rows => { STATE.diagnostics = rows; STATE.loaded.diagnostics = true; onData(); });
+    subscribe(db.collection("trainings"), rows => { STATE.trainings = rows; STATE.loaded.trainings = true; onData(); });
+    subscribe(db.collection("schedules"), rows => { STATE.schedules = rows; STATE.loaded.schedules = true; onData(); });
+
+    db.doc("settings/staff").onSnapshot(snap => {
+      const d = snap.exists ? snap.data() : {};
+      STATE.settings.examiners = Array.isArray(d.examiners) ? d.examiners : [];
+      // Migrates the old single-trainer setup automatically: if this settings doc still only
+      // has the old "trainer" string (from before multiple trainers were supported) and no
+      // "trainers" list yet, seed the list with that one name so nothing is lost.
+      STATE.settings.trainers = Array.isArray(d.trainers) ? d.trainers : (d.trainer ? [d.trainer] : []);
+      STATE.loaded.settings = true;
+      onData();
+    }, err => console.warn("settings sub error", err));
+  }
+
+  function subscribe(colRef, cb){
+    colRef.onSnapshot(snap => {
+      cb(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    }, err => {
+      console.warn("db subscribe error", err);
+      writable = false;
+      $("#dbBanner").innerHTML = `<div class="banner">Couldn't reach Supabase — double check the URL/key at the top of index.html, that the tables from SETUP.md exist, and that their policies allow access.</div>`;
+    });
+  }
+
+  let renderQueued = false;
+  function onData(){
+    reconcileReadiness();
+    if(renderQueued) return;
+    renderQueued = true;
+    requestAnimationFrame(()=>{ renderQueued = false; renderAll(); });
+  }
+
+  // Self-healing check: a student can end up stuck showing "2 of 2 completed" but still stuck
+  // under "Enrolled — schedule their 2 trainings" if their status field ever falls out of sync
+  // with their actual completed trainings (e.g. data edited directly, or a write that didn't
+  // fully land). Catches that every time data loads and nudges the status forward automatically.
+  let reconciling = {};
+  function reconcileReadiness(){
+    if(!db) return;
+    STATE.students.forEach(s => {
+      if(s.status !== "enrolled_pending_training" || reconciling[s.id]) return;
+      const completed = trainingsFor(s.id).filter(t => t.status === "completed").length;
+      if(completed >= 2){
+        reconciling[s.id] = true;
+        // Finishing both trainings doesn't drop a student straight onto the regular schedule —
+        // they go on monitor schedule first. A trainer promotes them from there once ready.
+        db.collection("students").doc(s.id).update({ status: "monitor_schedule" })
+          .catch(e => console.warn("reconcile failed", e))
+          .finally(()=>{ delete reconciling[s.id]; });
+      }
+    });
+  }
+
+  /* ---------------- Derived helpers ---------------- */
+  // Pipeline's own tables (the Students tab, and every stat tile below) only ever mean
+  // students who came through ITS diagnostic → training → graduation funnel. A student
+  // entered straight onto Student Roster (origin: 'roster' — see phase9) already exists
+  // and never touches that funnel, so Pipeline shouldn't list them or count them.
+  // studentById() stays unfiltered — it's used for lookups where the id is already
+  // known (editing a record, joining a diagnostic/training), not for building lists.
+  function pipelineStudents(){ return STATE.students.filter(s => s.origin !== "roster"); }
+  function studentById(id){ return STATE.students.find(s => s.id === id); }
+  function trainingsFor(studentId){ return STATE.trainings.filter(t => t.studentId === studentId).sort((a,b)=> a.sessionNumber - b.sessionNumber); }
+  function activeDiagnosticFor(studentId){
+    return STATE.diagnostics.filter(d => d.studentId === studentId).sort((a,b)=> (b.date||"").localeCompare(a.date||""))[0];
+  }
+  function scheduleFor(studentId){ return STATE.schedules.find(s => s.studentId === studentId && s.status === "active"); }
+
+  function needsOutcome(){
+    return STATE.diagnostics.filter(d => d.outcome === "pending" && d.status === "scheduled" && d.date <= todayISO())
+      .sort((a,b)=> a.date.localeCompare(b.date));
+  }
+  function upcomingDiagnostics(){
+    return STATE.diagnostics.filter(d => d.status === "scheduled" && d.outcome === "pending" && d.date > todayISO())
+      .sort((a,b)=> (a.date+a.time).localeCompare(b.date+b.time));
+  }
+  function awaitingTraining(){
+    return pipelineStudents().filter(s => s.status === "enrolled_pending_training").sort((a,b)=> a.name.localeCompare(b.name));
+  }
+  function onMonitorSchedule(){
+    return pipelineStudents().filter(s => s.status === "monitor_schedule").sort((a,b)=> a.name.localeCompare(b.name));
+  }
+  function readyForSchedule(){
+    return pipelineStudents().filter(s => s.status === "ready_for_schedule").sort((a,b)=> a.name.localeCompare(b.name));
+  }
+  function needsFollowUp(){
+    return pipelineStudents().filter(s => s.status === "not_enrolled" && (s.followUpStatus||"needs_follow_up") !== "closed")
+      .sort((a,b)=> a.name.localeCompare(b.name));
+  }
+  function activeScheduleStudents(){
+    // Same origin split as pipelineStudents() above — a schedule row now exists for
+    // Student Roster's own students too (Miss Mira's imported roster and anyone added
+    // there since), and those were never on Pipeline's regular-schedule "Weekly view"
+    // or its own Calendar tab. Only count a schedule here if it belongs to a student
+    // who actually came through Pipeline's funnel.
+    return STATE.schedules.filter(s => {
+      if(s.status !== "active") return false;
+      const student = studentById(s.studentId);
+      return !student || student.origin !== "roster";
+    });
+  }
+  function weekBounds(){
+    const now = new Date(); const day = now.getDay();
+    const start = new Date(now); start.setDate(now.getDate() - day);
+    const end = new Date(start); end.setDate(start.getDate()+6);
+    return [isoDate(start), isoDate(end)];
+  }
+  function diagnosticsThisWeek(){
+    const [s,e] = weekBounds();
+    return STATE.diagnostics.filter(d => d.status === "scheduled" && d.date >= s && d.date <= e);
+  }
+  function trainingsThisWeek(){
+    const [s,e] = weekBounds();
+    return STATE.trainings.filter(t => t.status === "scheduled" && t.date >= s && t.date <= e);
+  }
+  function missedTrainings(){
+    // Scheduled training sessions whose date has already passed without ever being marked
+    // complete (or cancelled) — i.e. the student didn't show, and no one's dealt with it yet.
+    return STATE.trainings.filter(t => t.status === "scheduled" && t.date < todayISO())
+      .sort((a,b)=> a.date.localeCompare(b.date));
+  }
+
+  /* ---------------- Render dispatch ---------------- */
+  function renderAll(){
+    renderNav();
+    renderStats();
+    renderView();
+    renderStudentDatalist();
+  }
+
+  function renderNav(){
+    $$(".navbtn").forEach(b => b.classList.toggle("active", b.dataset.tab === STATE.activeTab));
+    const n = needsOutcome().length + needsFollowUp().length + missedTrainings().length;
+    const badge = $("#badgeEnrollment");
+    if(n > 0){ badge.hidden = false; badge.textContent = n; } else { badge.hidden = true; }
+  }
+
+  const TITLES = {
+    calendar: ["Calendar", "Diagnostic tests and student trainings on one calendar."],
+    enrollment: ["Enrollment", "Tag outcomes, schedule trainings, and follow up with families."],
+    roster: ["Weekly view", "Ongoing students on their regular two-day schedule."],
+    students: ["Students", "Every family that's come through, and where they stand."],
+    settings: ["Settings", "Your examiners, your trainer, and how bookings are labeled."]
+  };
+
+  function renderView(){
+    const [title, sub] = TITLES[STATE.activeTab];
+    $("#pageTitle").textContent = title;
+    $("#pageSub").textContent = sub;
+    $$(".view").forEach(v => v.hidden = v.id !== "view-"+STATE.activeTab);
+
+    const actions = $("#pageActions");
+    actions.innerHTML = "";
+    if(STATE.activeTab === "calendar"){
+      actions.innerHTML = `<button class="btn primary" data-action="open-new-chooser">${iconPlus()} New booking</button>`;
+    } else if(STATE.activeTab === "enrollment"){
+      actions.innerHTML = `
+        <button class="btn ghost" data-action="toggle-enrollment-view">${STATE.enrollmentShowAll ? "Collapse empty sections" : "Show everything"}</button>
+        <button class="btn primary" data-action="open-new-chooser">${iconPlus()} New booking</button>
+      `;
+    } else if(STATE.activeTab === "roster"){
+      actions.innerHTML = `<button class="btn primary" data-action="open-new-schedule">${iconPlus()} New regular schedule</button>`;
+    } else if(STATE.activeTab === "students"){
+      actions.innerHTML = `<button class="btn primary" data-action="open-new-diagnostic">${iconPlus()} New diagnostic booking</button>`;
+    }
+
+    if(STATE.activeTab === "calendar") renderCalendar();
+    else if(STATE.activeTab === "enrollment") renderEnrollment();
+    else if(STATE.activeTab === "roster") renderRoster();
+    else if(STATE.activeTab === "students") renderStudents();
+    else if(STATE.activeTab === "settings") renderSettings();
+  }
+
+  function iconPlus(){ return `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>`; }
+  function iconTrash(){ return `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9 7V4h6v3M6 7l1 13a2 2 0 002 2h6a2 2 0 002-2l1-13"/><path d="M10 11v6M14 11v6"/></svg>`; }
+
+  function statTile(id, n, label, tone, target){
+    return `<button type="button" class="stat ${tone||""}" data-action="switch-tab" data-tab="${target}">
+      <div class="n tnum">${n}</div><div class="l">${label}</div>
+    </button>`;
+  }
+  function renderStats(){
+    const s = $("#statsRow");
+    s.innerHTML = [
+      statTile("s1", diagnosticsThisWeek().length, "Diagnostics this week", "", "calendar"),
+      statTile("s2", needsOutcome().length, "Need an outcome tagged", needsOutcome().length?"warn":"", "enrollment"),
+      statTile("s3", awaitingTraining().length, "Enrolled, awaiting training", "", "enrollment"),
+      statTile("s4", onMonitorSchedule().length, "On monitor schedule", "", "enrollment"),
+      statTile("s5", needsFollowUp().length, "Need follow-up", needsFollowUp().length?"bad":"", "enrollment"),
+      statTile("s6", readyForSchedule().length, "Ready for regular schedule", readyForSchedule().length?"warn":"", "enrollment"),
+      statTile("s7", activeScheduleStudents().length, "Active on regular schedule", "good", "roster"),
+      statTile("s8", missedTrainings().length, "Missed training, needs follow-up", missedTrainings().length?"bad":"", "enrollment")
+    ].join("");
+  }
+
+  /* ---------------- Calendar ---------------- */
+  function scheduleInstances(rangeStartISO, rangeEndISO){
+    const out = [];
+    const end = parseISODate(rangeEndISO);
+    // Same Pipeline-only rule as activeScheduleStudents() — a schedule belonging to a
+    // Student Roster student (origin: 'roster') never plots dots on Pipeline's own
+    // Calendar, same as it's excluded from the "Active on regular schedule" tile.
+    STATE.schedules.filter(s => {
+      if(s.status !== "active" || !Array.isArray(s.slots)) return false;
+      const student = studentById(s.studentId);
+      return !student || student.origin !== "roster";
+    }).forEach(s => {
+      s.slots.forEach(slot => {
+        const dowIndex = DOW.indexOf(slot.day);
+        if(dowIndex < 0 || !slot.time) return;
+        let d = parseISODate(rangeStartISO);
+        while(d.getDay() !== dowIndex) d = addDays(d, 1);
+        while(d <= end){
+          const iso = isoDate(d);
+          if(iso >= (s.startDate || iso)){
+            out.push({ type:"schedule", date: iso, time: slot.time, label: s.studentName, staff: null, id: s.id });
+          }
+          d = addDays(d, 7);
+        }
+      });
+    });
+    return out;
+  }
+
+  function gatherEvents(rangeStartISO, rangeEndISO){
+    // Each diagnostic and training already carries its own examiner/trainer, so filtering by a
+    // specific person just matches that field. The regular weekly schedule isn't assigned to any
+    // one trainer (any of them might run it), so those slots only show under "All staff".
+    let events = [];
+    if(STATE.calFilter === "all" || STATE.calFilter === "diagnostic"){
+      events = events.concat(STATE.diagnostics.filter(d => d.status !== "cancelled" && d.date >= rangeStartISO && d.date <= rangeEndISO).map(d => ({
+        type:"diagnostic", date:d.date, time:d.time, label:d.studentName, staff:d.examiner, id:d.id
+      })));
+    }
+    if(STATE.calFilter === "all" || STATE.calFilter === "training"){
+      events = events.concat(STATE.trainings.filter(t => t.status !== "cancelled" && t.date >= rangeStartISO && t.date <= rangeEndISO).map(t => ({
+        type:"training", date:t.date, time:t.time, label:`${t.studentName} · S${t.sessionNumber}`, staff:t.trainer, id:t.id
+      })));
+    }
+    if(STATE.calFilter === "all" || STATE.calFilter === "schedule"){
+      events = events.concat(scheduleInstances(rangeStartISO, rangeEndISO).map(e => ({ ...e, staff: null })));
+    }
+    if(STATE.calStaff !== "all") events = events.filter(e => e.staff === STATE.calStaff);
+    events.sort((a,b)=> (a.date+a.time).localeCompare(b.date+b.time));
+    return events;
+  }
+
+  function calToolbarHTML(navLabel){
+    return `
+      <div class="cal-toolbar">
+        <div class="cal-nav">
+          <button class="btn ghost sm" data-action="cal-prev">‹</button>
+          <h2>${navLabel}</h2>
+          <button class="btn ghost sm" data-action="cal-next">›</button>
+          <button class="btn sm" data-action="cal-today">Today</button>
+        </div>
+        <div class="cal-filters">
+          <div class="seg">
+            <button class="${STATE.calView==='month'?'active':''}" data-action="cal-view" data-view="month">Month</button>
+            <button class="${STATE.calView==='week'?'active':''}" data-action="cal-view" data-view="week">Week</button>
+            <button class="${STATE.calView==='day'?'active':''}" data-action="cal-view" data-view="day">Day</button>
+          </div>
+          <div class="seg">
+            <button class="${STATE.calFilter==='all'?'active':''}" data-action="cal-filter" data-filter="all">All</button>
+            <button class="${STATE.calFilter==='diagnostic'?'active':''}" data-action="cal-filter" data-filter="diagnostic">Diagnostics</button>
+            <button class="${STATE.calFilter==='training'?'active':''}" data-action="cal-filter" data-filter="training">Trainings</button>
+            <button class="${STATE.calFilter==='schedule'?'active':''}" data-action="cal-filter" data-filter="schedule">Regular</button>
+          </div>
+          <select data-action="cal-staff">
+            <option value="all">All staff</option>
+            ${STATE.settings.examiners.map(x=>`<option value="${esc(x)}" ${STATE.calStaff===x?"selected":""}>${esc(x)}</option>`).join("")}
+            ${STATE.settings.trainers.map(x=>`<option value="${esc(x)}" ${STATE.calStaff===x?"selected":""}>${esc(x)} (trainer)</option>`).join("")}
+          </select>
+        </div>
+      </div>
+      <div class="cal-legend">
+        <span class="item"><span class="dot diagnostic"></span>Diagnostic test</span>
+        <span class="item"><span class="dot training"></span>Student training</span>
+        <span class="item"><span class="dot schedule"></span>Regular schedule</span>
+      </div>
+    `;
+  }
+
+  function renderCalendar(){
+    if(STATE.calView === "week") renderCalendarWeek();
+    else if(STATE.calView === "day") renderCalendarDay();
+    else renderCalendarMonth();
+  }
+
+  function refFor(type, id){
+    if(type === "diagnostic") return STATE.diagnostics.find(x=>x.id===id);
+    if(type === "training") return STATE.trainings.find(x=>x.id===id);
+    if(type === "schedule") return STATE.schedules.find(x=>x.id===id);
+    return null;
+  }
+
+  function renderCalendarDay(){
+    const el = $("#view-calendar");
+    const d = STATE.calDay;
+    const iso = isoDate(d);
+    const label = d.toLocaleDateString(undefined, { weekday:"long", month:"long", day:"numeric", year:"numeric" });
+    const events = gatherEvents(iso, iso);
+
+    el.innerHTML = calToolbarHTML(label) + `
+      <div class="card">
+        <div class="card-head">
+          <h3>${events.length} booking${events.length===1?"":"s"}</h3>
+          <div style="display:flex; gap:8px;">
+            <button class="btn sm primary" data-action="open-new-diagnostic" data-date="${iso}">${iconPlus()} Diagnostic</button>
+            <button class="btn sm" data-action="open-new-training" data-date="${iso}">${iconPlus()} Training</button>
+          </div>
+        </div>
+        <div class="card-body row-list">
+          ${events.length===0 ? `<div class="empty">Nothing booked this day.</div>` : events.map(e => {
+            if(e.type==="diagnostic") return diagnosticRow(refFor("diagnostic", e.id), true);
+            if(e.type==="training") return trainingRow(refFor("training", e.id), true);
+            return scheduleInstanceRow(e);
+          }).join("")}
+        </div>
+      </div>
+    `;
+  }
+
+  function renderCalendarMonth(){
+    const el = $("#view-calendar");
+    const month = STATE.calMonth;
+    const monthLabel = month.toLocaleDateString(undefined,{ month:"long", year:"numeric" });
+
+    const first = new Date(month.getFullYear(), month.getMonth(), 1);
+    const startOffset = first.getDay();
+    const gridStart = addDays(first, -startOffset);
+    const gridEnd = addDays(gridStart, 41);
+    const today = todayISO();
+
+    const events = gatherEvents(isoDate(gridStart), isoDate(gridEnd));
+    const byDate = {};
+    events.forEach(e => { (byDate[e.date] = byDate[e.date] || []).push(e); });
+
+    el.innerHTML = calToolbarHTML(monthLabel) + `<div class="cal-grid" id="calGrid"></div>`;
+    const grid = $("#calGrid", el);
+    DOW.forEach(d => grid.insertAdjacentHTML("beforeend", `<div class="cal-dow">${d}</div>`));
+
+    for(let i=0;i<42;i++){
+      const d = addDays(gridStart, i);
+      const iso = isoDate(d);
+      const inMonth = d.getMonth() === month.getMonth();
+      const dayEvents = byDate[iso] || [];
+      const shown = dayEvents.slice(0,3);
+      const more = dayEvents.length - shown.length;
+      grid.insertAdjacentHTML("beforeend", `
+        <div class="cal-cell ${inMonth?"":"out"} ${iso===today?"today":""}" data-action="open-day" data-date="${iso}">
+          <div class="cal-date">${d.getDate()}</div>
+          ${shown.map(e => `<div class="cal-chip ${e.type}"><span class="dot ${e.type}"></span><span class="tm">${fmtTimeCompact(e.time)}</span>${esc(e.label)}</div>`).join("")}
+          ${more>0 ? `<div class="cal-more">+${more} more</div>` : ""}
+        </div>
+      `);
+    }
+  }
+
+  function renderCalendarWeek(){
+    const el = $("#view-calendar");
+    const start = STATE.calWeekStart;
+    const end = addDays(start, 6);
+    const sameMonth = start.getMonth() === end.getMonth();
+    const label = sameMonth
+      ? `${start.toLocaleDateString(undefined,{month:"short",day:"numeric"})} – ${end.toLocaleDateString(undefined,{day:"numeric", year:"numeric"})}`
+      : `${start.toLocaleDateString(undefined,{month:"short",day:"numeric"})} – ${end.toLocaleDateString(undefined,{month:"short",day:"numeric", year:"numeric"})}`;
+    const today = todayISO();
+
+    const events = gatherEvents(isoDate(start), isoDate(end));
+    const byDate = {};
+    events.forEach(e => { (byDate[e.date] = byDate[e.date] || []).push(e); });
+
+    const cols = DOW_FULL.map((full, i) => {
+      const d = addDays(start, i);
+      const iso = isoDate(d);
+      const dayEvents = byDate[iso] || [];
+      return `<div class="week-day ${iso===today?"today":""}" data-action="open-day" data-date="${iso}">
+        <div class="wd-head"><span class="wd-name">${DOW[i]}</span><span class="wd-num">${d.getDate()}</span></div>
+        ${dayEvents.length ? dayEvents.map(e => `<div class="cal-chip ${e.type}"><span class="dot ${e.type}"></span><span class="tm">${fmtTime(e.time)}</span>${esc(e.label)}</div>`).join("") : `<div class="hint">—</div>`}
+      </div>`;
+    }).join("");
+
+    el.innerHTML = calToolbarHTML(label) + `<div class="cal-week">${cols}</div>`;
+  }
+
+  function scheduleInstanceRow(inst){
+    return `<div class="rowi">
+      <div class="who">
+        <span class="pill sched" style="align-self:flex-start;">Regular schedule</span>
+        <b>${esc(inst.label)}</b>
+      </div>
+      <div class="when tnum">${fmtTime(inst.time)}</div>
+      <div class="acts"><button class="btn sm danger" title="Delete this student everywhere" data-action="delete-schedule" data-id="${inst.id}">${iconTrash()}</button></div>
+    </div>`;
+  }
+
+  function openDayModal(iso){
+    // Match the same scoping as the calendar grid: the type chip (All/Diagnostics/Trainings/Regular)
+    // narrows which kinds show, and within that, everything shows under "All staff" while a specific
+    // person's view only shows their own diagnostics / trainings / regular schedule.
+    const staffOk = staff => STATE.calStaff === "all" || staff === STATE.calStaff;
+    const dayEvents = [];
+    if(STATE.calFilter === "all" || STATE.calFilter === "diagnostic"){
+      STATE.diagnostics.filter(d=>d.date===iso && d.status!=="cancelled" && staffOk(d.examiner)).forEach(d => dayEvents.push({type:"diagnostic", time:d.time, ref:d}));
+    }
+    if(STATE.calFilter === "all" || STATE.calFilter === "training"){
+      STATE.trainings.filter(t=>t.date===iso && t.status!=="cancelled" && staffOk(t.trainer)).forEach(t => dayEvents.push({type:"training", time:t.time, ref:t}));
+    }
+    if(STATE.calFilter === "all" || STATE.calFilter === "schedule"){
+      // Regular schedule slots aren't tied to one trainer, so they only show under "All staff".
+      if(STATE.calStaff === "all") scheduleInstances(iso, iso).forEach(s => dayEvents.push({type:"schedule", time:s.time, ref:s}));
+    }
+    dayEvents.sort((a,b)=> (a.time||"").localeCompare(b.time||""));
+
+    openModal(`
+      <div class="modal-head"><h3>${fmtDateLong(iso)}</h3><button class="iconbtn" data-action="close-modal">✕</button></div>
+      <div class="modal-body">
+        ${dayEvents.length===0 ? `<div class="empty">Nothing booked this day.</div>` : dayEvents.map(e => e.type==="diagnostic" ? diagnosticRow(e.ref, true) : e.type==="training" ? trainingRow(e.ref, true) : scheduleInstanceRow(e.ref)).join("")}
+      </div>
+      <div class="modal-foot">
+        <button class="btn primary" data-action="open-new-diagnostic" data-date="${iso}">${iconPlus()} New diagnostic</button>
+        <button class="btn" data-action="open-new-training" data-date="${iso}">${iconPlus()} New training</button>
+      </div>
+    `);
+  }
+
+  /* ---------------- Enrollment tracker ---------------- */
+  // Always offer a button per subject — Math, Reading, and Both — regardless of what the
+  // diagnostic's own subject field says (it's often blank), so tagging an outcome never depends
+  // on that field being filled in correctly. Marks the outcome AND sets that as the student's
+  // enrolled subject in the same click. "Both" is what makes the student show up twice on the
+  // Students list, once per subject — see studentSubject()/renderStudents() below.
+  function enrollButtons(d){
+    return ["Math","Reading","Both"].map(s =>
+      `<button class="btn sm" data-action="mark-outcome" data-id="${d.id}" data-outcome="enrolled" data-subject="${s}">Enrolled in ${s}</button>`
+    ).join("");
+  }
+
+  function diagnosticRow(d, compact){
+    const resolved = d.outcome !== "pending";
+    const s = studentById(d.studentId);
+    return `<div class="rowi">
+      <div class="who">
+        <span class="pill diag" style="align-self:flex-start;">Diagnostic test</span>
+        <b>${esc(d.studentName)}${d.ageGrade?` <span class="pill muted">${esc(d.ageGrade)}</span>`:""}${d.subject?` <span class="pill subj">${esc(d.subject)}</span>`:""}</b>
+        <span>${esc(d.parentName||"")}${d.contact?" · "+esc(d.contact):""}</span>
+      </div>
+      <div class="when tnum">${fmtDateShort(d.date)} · ${fmtTime(d.time)}${d.examiner?" · "+esc(d.examiner):""}</div>
+      <div class="acts">
+        ${resolved
+          ? `<span class="pill ${d.outcome==='enrolled'?'good':'bad'}">${d.outcome==='enrolled' ? `Enrolled${s&&s.subject?" in "+esc(s.subject):""}` : 'Not enrolled'}</span>`
+          : `${enrollButtons(d)}
+             <button class="btn sm danger" data-action="mark-outcome" data-id="${d.id}" data-outcome="not_enrolled">Not enrolled</button>`}
+        ${!compact && !resolved ? `<button class="btn sm ghost" data-action="cancel-diagnostic" data-id="${d.id}">Cancel</button>` : ""}
+        <button class="btn sm ghost" data-action="edit-diagnostic" data-id="${d.id}">Edit</button>
+        <button class="btn sm danger" title="Delete this student everywhere" data-action="delete-diagnostic" data-id="${d.id}">${iconTrash()}</button>
+      </div>
+    </div>`;
+  }
+  function trainingRow(t, compact){
+    return `<div class="rowi">
+      <div class="who">
+        <span class="pill train" style="align-self:flex-start;">Student training</span>
+        <b>${esc(t.studentName)}</b>
+        <span>Session ${t.sessionNumber} of 2${t.trainer?" · "+esc(t.trainer):""}</span>
+      </div>
+      <div class="when tnum">${fmtDateShort(t.date)} · ${fmtTime(t.time)}</div>
+      <div class="acts">
+        ${t.status==="scheduled" ? `<button class="btn sm" data-action="mark-training-complete" data-id="${t.id}">Mark complete</button>` : `<span class="pill good">Completed</span>`}
+        ${!compact && t.status==="scheduled" ? `<button class="btn sm ghost" data-action="cancel-training" data-id="${t.id}">Cancel</button>` : ""}
+        <button class="btn sm danger" title="Delete this student everywhere" data-action="delete-training" data-id="${t.id}">${iconTrash()}</button>
+      </div>
+    </div>`;
+  }
+  function missedTrainingRow(t){
+    return `<div class="rowi">
+      <div class="who">
+        <span class="pill bad" style="align-self:flex-start;">Missed training</span>
+        <b>${esc(t.studentName)}</b>
+        <span>Session ${t.sessionNumber} of 2${t.trainer?" · "+esc(t.trainer):""} · was ${fmtDateShort(t.date)}</span>
+      </div>
+      <div class="when tnum">${fmtDateShort(t.date)} · ${fmtTime(t.time)}</div>
+      <div class="acts">
+        <button class="btn sm" data-action="mark-training-complete" data-id="${t.id}">Attended after all</button>
+        <button class="btn sm ghost" data-action="cancel-training" data-id="${t.id}">Cancel &amp; reschedule</button>
+        <button class="btn sm danger" title="Delete this student everywhere" data-action="delete-training" data-id="${t.id}">${iconTrash()}</button>
+      </div>
+    </div>`;
+  }
+
+  // A section with nothing in it collapses to a single thin row instead of a full empty-state
+  // card, so an all-caught-up day doesn't read as a wall of "nothing here" boxes. The "show
+  // everything" toggle (STATE.enrollmentShowAll) forces every section back to its full card.
+  function enrollmentSection(title, count, bodyHtml, emptyText){
+    if(count > 0 || STATE.enrollmentShowAll){
+      return `<div class="section card">
+        <div class="card-head"><h3>${title}</h3><span class="count">${count}</span></div>
+        <div class="card-body row-list">
+          ${count ? bodyHtml : `<div class="empty">${emptyText}</div>`}
+        </div>
+      </div>`;
+    }
+    return `<div class="section-mini"><span>${title}</span><span class="mini-count">0</span></div>`;
+  }
+
+  function renderEnrollment(){
+    const el = $("#view-enrollment");
+    const outcome = needsOutcome();
+    const upcoming = upcomingDiagnostics();
+    const training = awaitingTraining();
+    const monitor = onMonitorSchedule();
+    const ready = readyForSchedule();
+    const followUp = needsFollowUp();
+    const missed = missedTrainings();
+
+    const outcomeBody = outcome.map(d=>diagnosticRow(d)).join("");
+    const missedBody = missed.map(t=>missedTrainingRow(t)).join("");
+    const trainingBody = training.map(s => {
+      const done = trainingsFor(s.id);
+      const doneCount = done.filter(t=>t.status==="completed").length;
+      const scheduledSessions = done.filter(t=>t.status==="scheduled");
+      const totalCount = doneCount + scheduledSessions.length;
+      return `<div class="rowi">
+        <div class="who"><b>${esc(s.name)}</b><span>${esc(s.parentName||"")}</span></div>
+        <div class="when">${doneCount} of 2 completed${scheduledSessions.length?`, ${scheduledSessions.length} scheduled`:""}</div>
+        <select data-action="set-subject" data-id="${s.id}" style="width:auto; min-width:130px;">
+          <option value="">Subject: not set</option>
+          ${SUBJECT_OPTIONS.map(o=>`<option value="${esc(o)}" ${s.subject===o?"selected":""}>${esc(o)}</option>`).join("")}
+        </select>
+        <div class="acts">
+          ${scheduledSessions.map(t => `<button class="btn sm" data-action="mark-training-complete" data-id="${t.id}">Mark session ${t.sessionNumber} complete</button>`).join("")}
+          ${totalCount < 2 ? `<button class="btn sm primary" data-action="open-new-training" data-student="${s.id}">Schedule session ${totalCount+1}</button>` : ""}
+        </div>
+      </div>`;
+    }).join("");
+    const monitorBody = monitor.map(s => `<div class="rowi">
+      <div class="who"><b>${esc(s.name)}</b><span>${esc(s.parentName||"")}</span></div>
+      <div class="when">Both trainings completed</div>
+      <div class="acts"><button class="btn sm primary" data-action="mark-ready-for-schedule" data-id="${s.id}">Mark ready for regular schedule</button></div>
+    </div>`).join("");
+    const readyBody = ready.map(s => `<div class="rowi">
+      <div class="who"><b>${esc(s.name)}</b><span>${esc(s.parentName||"")}</span></div>
+      <div class="when">Both trainings completed</div>
+      <div class="acts"><button class="btn sm primary" data-action="open-new-schedule" data-student="${s.id}">Set schedule</button></div>
+    </div>`).join("");
+    const followUpBody = followUp.map(s => followUpRow(s)).join("");
+    const upcomingBody = upcoming.slice(0,8).map(d => `<div class="rowi">
+      <div class="who"><b>${esc(d.studentName)}</b><span>${esc(d.parentName||"")}</span></div>
+      <div class="when tnum">${fmtDateShort(d.date)} · ${fmtTime(d.time)}${d.examiner?" · "+esc(d.examiner):""}</div>
+    </div>`).join("");
+
+    el.innerHTML = `
+      ${enrollmentSection("Needs an outcome", outcome.length, outcomeBody, "Nothing overdue. Diagnostics show up here once their date has passed and no outcome is tagged.")}
+      ${enrollmentSection("Missed a training — needs follow-up", missed.length, missedBody, "No missed sessions. This fills in when a scheduled training's date passes without being marked complete.")}
+      ${enrollmentSection("Enrolled — schedule their 2 trainings", training.length, trainingBody, "No one's waiting on trainings right now.")}
+      ${enrollmentSection("On monitor schedule", monitor.length, monitorBody, "No one's on monitor schedule right now. Students land here automatically once both trainings are complete.")}
+      ${enrollmentSection("Trained — set their regular schedule", ready.length, readyBody, "No one's ready for a regular schedule yet.")}
+      ${enrollmentSection("Not enrolled — follow up", followUp.length, followUpBody, "No open follow-ups.")}
+      ${enrollmentSection("Upcoming diagnostics", upcoming.length, upcomingBody, "Nothing booked ahead yet.")}
+    `;
+  }
+
+  function followUpRow(s){
+    const status = s.followUpStatus || "needs_follow_up";
+    const d = activeDiagnosticFor(s.id);
+    return `<div class="rowi" style="align-items:flex-start;">
+      <div class="who"><b>${esc(s.name)}</b><span>${esc(s.parentName||"")}${s.parentPhone?" · "+esc(s.parentPhone):""}${d?" · diagnostic "+fmtDateShort(d.date):""}</span></div>
+      <div style="flex:2 1 260px; display:flex; flex-direction:column; gap:6px;">
+        <textarea rows="2" placeholder="Follow-up notes…" data-action="followup-notes" data-id="${s.id}">${esc(s.followUpNotes||"")}</textarea>
+        <div class="seg">
+          <button class="${status==='needs_follow_up'?'active':''}" data-action="followup-status" data-id="${s.id}" data-status="needs_follow_up">Needs follow-up</button>
+          <button class="${status==='contacted'?'active':''}" data-action="followup-status" data-id="${s.id}" data-status="contacted">Contacted</button>
+          <button class="${status==='closed'?'active':''}" data-action="followup-status" data-id="${s.id}" data-status="closed">Closed</button>
+        </div>
+      </div>
+    </div>`;
+  }
+
+  /* ---------------- Weekly roster ---------------- */
+  function renderRoster(){
+    const el = $("#view-roster");
+    const active = activeScheduleStudents();
+    if(!active.length){
+      el.innerHTML = `<div class="card"><div class="empty">No one's on a regular schedule yet. Once a student finishes both trainings, set their 2 days a week from the Enrollment tab.</div></div>`;
+      return;
+    }
+    const cols = DOW_FULL.map((full, i) => {
+      const short = DOW[i];
+      const onThisDay = [];
+      active.forEach(s => {
+        const slot = (s.slots||[]).find(x => x.day === short);
+        if(slot) onThisDay.push({ id: s.id, studentName: s.studentName, time: slot.time });
+      });
+      onThisDay.sort((a,b)=> (a.time||"").localeCompare(b.time||""));
+      return `<div class="roster-day">
+        <h4>${full}</h4>
+        ${onThisDay.length ? onThisDay.map(s => `<div class="roster-slot">
+          <div class="rtop"><span style="opacity:1;">${esc(s.studentName)}</span><button class="iconbtn" title="Delete this student everywhere" data-action="delete-schedule" data-id="${s.id}">${iconTrash()}</button></div>
+          <span>${fmtTime(s.time)}</span>
+        </div>`).join("") : `<div class="hint">—</div>`}
+      </div>`;
+    }).join("");
+    el.innerHTML = `<div class="roster-grid">${cols}</div>`;
+  }
+
+  /* ---------------- Students ---------------- */
+  const STATUS_LABEL = {
+    diagnostic_scheduled: ["Diagnostic scheduled","muted"],
+    enrolled_pending_training: ["Awaiting training","warn"],
+    monitor_schedule: ["On monitor schedule","warn"],
+    ready_for_schedule: ["Ready for schedule","warn"],
+    active: ["Active","good"],
+    not_enrolled: ["Not enrolled","bad"]
+  };
+
+  // Effective subject for a student: their own field if set, otherwise falls back to whatever
+  // was picked on their diagnostic booking (covers students created before this field existed).
+  function studentSubject(s){
+    if(s.subject) return s.subject;
+    const d = activeDiagnosticFor(s.id);
+    return (d && d.subject) || "";
+  }
+  function monthKeyOf(date){ return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,"0")}`; }
+  // Kumon's tracking month doesn't follow the calendar — a cycle runs the 21st through
+  // the 20th of the next calendar month, and takes its name from whichever month holds
+  // the 20th: Sep 21–Oct 20 is "October", Oct 21–Nov 20 is "November". This is the one
+  // definition of "month" used anywhere the hub groups or browses by month (the
+  // Calendar tab's day/week/month picker is deliberately left on real calendar dates —
+  // a diagnostic or training still gets booked on the actual day it happens).
+  function cycleMonthFor(date){
+    return date.getDate() >= 21
+      ? new Date(date.getFullYear(), date.getMonth()+1, 1)
+      : new Date(date.getFullYear(), date.getMonth(), 1);
+  }
+  // Which cycle a student belongs to on the roster: the cycle of their diagnostic test if
+  // they have one, otherwise the cycle they were added — so the roster naturally rolls
+  // into a new cycle as new diagnostics come in, while every earlier cycle stays browsable
+  // as history.
+  function studentCohortMonthKey(s){
+    const d = activeDiagnosticFor(s.id);
+    const iso = (d && d.date) || (s.createdAt ? s.createdAt.slice(0,10) : null);
+    if(!iso) return null;
+    const [y,m,dd] = iso.split("-").map(Number);
+    return monthKeyOf(cycleMonthFor(new Date(y, m-1, dd)));
+  }
+
+  // "October" alone doesn't say which days it covers — this spells out the Sep 21–Oct 20
+  // cycle underneath the month name so it's never ambiguous which bucket a student's in.
+  function cycleRangeLabel(labelMonthDate){
+    const start = new Date(labelMonthDate.getFullYear(), labelMonthDate.getMonth()-1, 21);
+    const end = new Date(labelMonthDate.getFullYear(), labelMonthDate.getMonth(), 20);
+    const startStr = start.toLocaleDateString(undefined,{ month:"short", day:"numeric" });
+    const endStr = end.toLocaleDateString(undefined,{ month:"short", day:"numeric", year:"numeric" });
+    return `${startStr} – ${endStr}`;
+  }
+
+  function renderStudents(){
+    const el = $("#view-students");
+    const q = STATE.studentSearch.trim().toLowerCase();
+    const monthKey = monthKeyOf(STATE.studentMonth);
+    const monthLabel = STATE.studentMonth.toLocaleDateString(undefined,{ month:"long", year:"numeric" });
+    const monthRange = cycleRangeLabel(STATE.studentMonth);
+
+    const base = pipelineStudents()
+      .filter(s => !q || s.name.toLowerCase().includes(q) || (s.parentName||"").toLowerCase().includes(q))
+      .filter(s => STATE.studentMonthMode === "all" || studentCohortMonthKey(s) === monthKey)
+      .sort((a,b)=> (b.createdAt||"").localeCompare(a.createdAt||""));
+
+    // A student enrolled in "Both" subjects gets a row per subject, since that's how the roster
+    // is actually tracked (one line per subject enrollment); Math/Reading-only students get one.
+    const rows = [];
+    base.forEach(s => {
+      const subj = studentSubject(s);
+      const subjects = subj === "Both" ? ["Math","Reading"] : [subj || ""];
+      subjects.forEach(sub => rows.push({ s, subj: sub }));
+    });
+
+    el.innerHTML = `
+      <div class="cal-toolbar" style="margin-bottom:12px;">
+        <div class="cal-nav">
+          <button class="btn ghost sm" data-action="student-month-prev">‹</button>
+          <div class="month-head">
+            <h2>${STATE.studentMonthMode === "all" ? "All students" : monthLabel}</h2>
+            ${STATE.studentMonthMode === "all" ? "" : `<div class="month-range">${esc(monthRange)}</div>`}
+          </div>
+          <button class="btn ghost sm" data-action="student-month-next">›</button>
+          <button class="btn sm" data-action="student-month-today">This month</button>
+        </div>
+        <div class="cal-filters">
+          <div class="seg">
+            <button class="${STATE.studentMonthMode==='month'?'active':''}" data-action="student-month-mode" data-mode="month">Monthly roster</button>
+            <button class="${STATE.studentMonthMode==='all'?'active':''}" data-action="student-month-mode" data-mode="all">All time</button>
+          </div>
+        </div>
+      </div>
+      <div class="search-row">
+        <input type="search" id="studentSearchInput" placeholder="Search by student or parent name…" value="${esc(STATE.studentSearch)}">
+        <button type="button" class="btn primary sm" data-action="open-new-student">${iconPlus()} Add student</button>
+      </div>
+      <div class="card">
+        ${rows.length ? `<div class="table-scroll"><table class="stable">
+          <thead><tr><th>#</th><th>Student</th><th>Age / grade</th><th>Subject</th><th>Parent / guardian</th><th>Contact</th><th>Stage</th><th>Diagnostic</th></tr></thead>
+          <tbody>
+            ${rows.map((row, i) => {
+              const s = row.s;
+              const st = STATUS_LABEL[s.status] || ["—","muted"];
+              const d = activeDiagnosticFor(s.id);
+              return `<tr class="clickrow" data-action="open-student" data-id="${s.id}">
+                <td class="tnum">${i+1}</td>
+                <td><b>${esc(s.name)}</b></td>
+                <td>${esc(s.ageGrade||"—")}</td>
+                <td>${row.subj ? `<span class="pill subj">${esc(row.subj)}</span>` : "—"}</td>
+                <td>${esc(s.parentName||"—")}</td>
+                <td>${esc(s.parentPhone||s.parentEmail||"—")}</td>
+                <td><span class="pill ${st[1]}">${st[0]}</span></td>
+                <td class="tnum">${d ? fmtDateShort(d.date) : "—"}</td>
+              </tr>`;
+            }).join("")}
+          </tbody>
+        </table></div>` : `<div class="empty">${q ? "No students match that search." : STATE.studentMonthMode==="month" ? `No students on the ${esc(monthLabel)} roster. Try <b>All time</b>, or <b>New diagnostic booking</b> / <b>Add student</b> adds one here.` : "No students yet. <b>New diagnostic booking</b> or <b>Add student</b> creates your first."}</div>`}
+      </div>
+    `;
+    const input = $("#studentSearchInput", el);
+    input.addEventListener("input", ()=>{ STATE.studentSearch = input.value; renderStudents(); input.focus(); input.setSelectionRange(input.value.length, input.value.length); });
+  }
+
+  function openStudentModal(id){
+    const s = studentById(id);
+    if(!s) return;
+    const d = activeDiagnosticFor(id);
+    const trs = trainingsFor(id);
+    const sched = scheduleFor(id);
+    const st = STATUS_LABEL[s.status] || ["—","muted"];
+    openModal(`
+      <div class="modal-head"><h3>${esc(s.name)}</h3><button class="iconbtn" data-action="close-modal">✕</button></div>
+      <div class="modal-body">
+        <div style="display:flex; gap:6px; flex-wrap:wrap;">
+          <span class="pill ${st[1]}">${st[0]}</span>
+          ${s.ageGrade?`<span class="pill muted">${esc(s.ageGrade)}</span>`:""}
+        </div>
+        <div>
+          <div class="hint">Parent / guardian</div>
+          <div>${esc(s.parentName||"—")} ${s.parentPhone?" · "+esc(s.parentPhone):""} ${s.parentEmail?" · "+esc(s.parentEmail):""}</div>
+        </div>
+        ${d ? `<div><div class="hint">Diagnostic test</div><div>${fmtDateLong(d.date)} at ${fmtTime(d.time)}${d.examiner?" with "+esc(d.examiner):""}${d.subject?" · "+esc(d.subject):""}${d.inquiry?" · via "+esc(d.inquiry):""} — <span class="pill ${d.outcome==='enrolled'?'good':d.outcome==='not_enrolled'?'bad':'muted'}">${d.outcome==='pending'?'awaiting outcome':d.outcome==='enrolled'?`Enrolled${s.subject?" in "+esc(s.subject):""}`:'Not enrolled'}</span></div></div>` : ""}
+        ${trs.length ? `<div><div class="hint">Student trainings</div>${trs.map(t=>`<div>Session ${t.sessionNumber}: ${fmtDateLong(t.date)} at ${fmtTime(t.time)} — <span class="pill ${t.status==='completed'?'good':'muted'}">${t.status}</span></div>`).join("")}</div>` : ""}
+        ${sched ? `<div><div class="hint">Regular schedule</div><div>${(sched.slots||[]).map(x=>`${x.day} at ${fmtTime(x.time)}`).join(" & ")}, since ${fmtDateShort(sched.startDate)}</div></div>` : ""}
+        ${s.status==='not_enrolled' ? `<div><div class="hint">Follow-up notes</div><div>${esc(s.followUpNotes||"—")}</div></div>` : ""}
+        ${s.notes ? `<div><div class="hint">Notes</div><div>${esc(s.notes)}</div></div>` : ""}
+      </div>
+      <div class="modal-foot">
+        <button class="btn danger" data-action="delete-student" data-id="${s.id}">Delete student</button>
+        <button class="btn primary" data-action="open-edit-student" data-id="${s.id}">Edit details</button>
+      </div>
+    `);
+  }
+
+  function openEditStudentModal(id){
+    const s = studentById(id);
+    if(!s) return;
+    const nameSplit = (s.firstName && s.lastName) ? {first:s.firstName,last:s.lastName} : splitNameGuess(s.name);
+    openModal(`
+      <div class="modal-head"><h3>Edit ${esc(s.name)}</h3><button class="iconbtn" data-action="close-modal">✕</button></div>
+      <form data-form="edit-student" data-id="${s.id}">
+        <div class="modal-body">
+          <div class="field-row">
+            <label class="field">First name<input type="text" name="firstName" required value="${esc(nameSplit.first)}"></label>
+            <label class="field">Last name<input type="text" name="lastName" required value="${esc(nameSplit.last)}"></label>
+          </div>
+          <div class="field-row">
+            <label class="field">Parent / guardian<input type="text" name="parentName" value="${esc(s.parentName||"")}"></label>
+            <label class="field">Grade${gradeSelect("ageGrade", s.ageGrade||"")}</label>
+          </div>
+          <div class="field-row">
+            <label class="field">Mobile number<input type="text" name="parentPhone" value="${esc(s.parentPhone||"")}"></label>
+            <label class="field">Subject
+              <select name="subject">
+                <option value="">Choose…</option>
+                ${SUBJECT_OPTIONS.map(o=>`<option value="${esc(o)}" ${s.subject===o?"selected":""}>${esc(o)}</option>`).join("")}
+              </select>
+            </label>
+          </div>
+          <label class="field">Notes<textarea name="notes" rows="2">${esc(s.notes||"")}</textarea></label>
+        </div>
+        <div class="modal-foot">
+          <button type="button" class="btn ghost" data-action="close-modal">Cancel</button>
+          <button type="submit" class="btn primary">Save changes</button>
+        </div>
+      </form>
+    `);
+  }
+
+  async function submitEditStudent(form){
+    const id = form.dataset.id;
+    const fd = new FormData(form);
+    const firstName = fd.get("firstName").toString().trim();
+    const lastName = fd.get("lastName").toString().trim();
+    const name = `${firstName} ${lastName}`.trim();
+    if(!id || !firstName || !lastName) return;
+    await guardWrite(async ()=>{
+      await db.collection("students").doc(id).update({
+        name, firstName, lastName,
+        parentName: fd.get("parentName").toString().trim(),
+        parentPhone: fd.get("parentPhone").toString().trim(),
+        ageGrade: fd.get("ageGrade").toString().trim(),
+        subject: fd.get("subject").toString(),
+        notes: fd.get("notes").toString().trim()
+      });
+      toast("Student updated.");
+    });
+  }
+
+  async function setStudentSubject(id, subject){
+    await guardWrite(async ()=>{
+      await db.collection("students").doc(id).update({ subject });
+      toast("Subject saved.");
+    });
+  }
+
+  function openNewStudentModal(){
+    openModal(`
+      <div class="modal-head"><h3>Add student</h3><button class="iconbtn" data-action="close-modal">✕</button></div>
+      <form data-form="new-student">
+        <div class="modal-body">
+          <div class="field-row">
+            <label class="field">First name<input type="text" name="firstName" required autofocus autocomplete="off" list="studentFirstNames" placeholder="Ava"></label>
+            <label class="field">Last name<input type="text" name="lastName" required autocomplete="off" list="studentLastNames" placeholder="Santos"></label>
+          </div>
+          <div class="field-row">
+            <label class="field">Parent / guardian<input type="text" name="parentName"></label>
+            <label class="field">Grade${gradeSelect("ageGrade", "")}</label>
+          </div>
+          <label class="field">Mobile number<input type="text" name="parentPhone"></label>
+          <p class="hint">For a student already going through a diagnostic booking, use <b>New diagnostic booking</b> instead — this is for adding someone straight onto the roster (e.g. an existing student from your old spreadsheet).</p>
+        </div>
+        <div class="modal-foot">
+          <button type="button" class="btn ghost" data-action="close-modal">Cancel</button>
+          <button type="submit" class="btn primary">Add to roster</button>
+        </div>
+      </form>
+    `);
+  }
+
+  async function submitNewStudent(form){
+    const fd = new FormData(form);
+    const firstName = fd.get("firstName").toString().trim();
+    const lastName = fd.get("lastName").toString().trim();
+    const name = `${firstName} ${lastName}`.trim();
+    if(!firstName || !lastName) return;
+    if(findExistingStudentId(name)){ toast("A student with that name is already on the roster."); return; }
+    await guardWrite(async ()=>{
+      await db.collection("students").add({
+        name, firstName, lastName,
+        parentName: fd.get("parentName").toString().trim(),
+        parentPhone: fd.get("parentPhone").toString().trim(),
+        parentEmail: "", ageGrade: fd.get("ageGrade").toString().trim(), notes: "",
+        status: "active", followUpStatus: "", followUpNotes: "",
+        createdAt: new Date().toISOString()
+      });
+      toast("Student added to roster.");
+    });
+  }
+
+  /* ---------------- Settings ---------------- */
+  function renderSettings(){
+    const el = $("#view-settings");
+    el.innerHTML = `
+      <div class="section card">
+        <div class="card-head"><h3>DT teachers</h3><span class="count">conduct diagnostic tests</span></div>
+        <div class="card-body">
+          <p class="hint" style="margin:6px 0 10px;">These names fill the DT teacher picker when booking a diagnostic test. Add everyone who conducts them.</p>
+          <div class="taglist" id="examinerTags"></div>
+          <div style="display:flex; gap:8px; margin-top:12px;">
+            <input type="text" id="newExaminer" placeholder="Add a DT teacher's name">
+            <button class="btn primary sm" data-action="add-examiner">Add</button>
+          </div>
+        </div>
+      </div>
+      <div class="section card">
+        <div class="card-head"><h3>Trainers</h3><span class="count">conduct student trainings</span></div>
+        <div class="card-body">
+          <p class="hint" style="margin:6px 0 10px;">These names fill the trainer picker when booking a training. Add everyone who conducts them.</p>
+          <div class="taglist" id="trainerTags"></div>
+          <div style="display:flex; gap:8px; margin-top:12px;">
+            <input type="text" id="newTrainer" placeholder="Add a trainer's name">
+            <button class="btn primary sm" data-action="add-trainer">Add</button>
+          </div>
+        </div>
+      </div>
+    `;
+    const tags = $("#examinerTags", el);
+    tags.innerHTML = STATE.settings.examiners.length
+      ? STATE.settings.examiners.map(x => `<span class="tagchip">${esc(x)}<button data-action="remove-examiner" data-name="${esc(x)}">✕</button></span>`).join("")
+      : `<span class="hint">No examiners added yet.</span>`;
+    const trainerTags = $("#trainerTags", el);
+    trainerTags.innerHTML = STATE.settings.trainers.length
+      ? STATE.settings.trainers.map(x => `<span class="tagchip">${esc(x)}<button data-action="remove-trainer" data-name="${esc(x)}">✕</button></span>`).join("")
+      : `<span class="hint">No trainers added yet.</span>`;
+  }
+
+  /* ---------------- Modal plumbing ---------------- */
+  function openModal(html){
+    $("#modal").innerHTML = html;
+    $("#modalBackdrop").hidden = false;
+  }
+  function closeModal(){
+    $("#modalBackdrop").hidden = true;
+    $("#modal").innerHTML = "";
+  }
+
+  // Best-effort split for a legacy student who doesn't have firstName/lastName yet — last
+  // word of whatever single name we have becomes the guessed last name. Used only to
+  // pre-fill forms so re-entering someone isn't starting from blank fields.
+  function splitNameGuess(full){
+    const parts = (full||"").trim().split(/\s+/).filter(Boolean);
+    if(parts.length <= 1) return { first: parts[0]||"", last: "" };
+    return { first: parts.slice(0,-1).join(" "), last: parts[parts.length-1] };
+  }
+
+  function renderStudentDatalist(){
+    const firstDl = $("#studentFirstNames"), lastDl = $("#studentLastNames");
+    const firsts = [...new Set(STATE.students.map(s => s.firstName || splitNameGuess(s.name).first).filter(Boolean))].sort((a,b)=>a.localeCompare(b));
+    const lasts = [...new Set(STATE.students.map(s => s.lastName || splitNameGuess(s.name).last).filter(Boolean))].sort((a,b)=>a.localeCompare(b));
+    if(firstDl) firstDl.innerHTML = firsts.map(n => `<option value="${esc(n)}">`).join("");
+    if(lastDl) lastDl.innerHTML = lasts.map(n => `<option value="${esc(n)}">`).join("");
+  }
+
+  /* ---------------- Forms (modal content builders) ---------------- */
+  function fieldSelectStaff(name, options, label, required){
+    return `<label class="field">${label}
+      <select name="${name}" ${required?"required":""}>
+        <option value="">Choose…</option>
+        ${options.map(o=>`<option value="${esc(o)}">${esc(o)}</option>`).join("")}
+      </select>
+    </label>`;
+  }
+
+  function openNewChooser(){
+    openModal(`
+      <div class="modal-head"><h3>New booking</h3><button class="iconbtn" data-action="close-modal">✕</button></div>
+      <div class="modal-body chooser">
+        <button class="choose-opt" data-action="open-new-diagnostic">
+          <span class="ic" style="background:var(--diag-soft); color:var(--diag);">${iconPlus()}</span>
+          <span><b>Diagnostic test</b><span>First step for a new student</span></span>
+        </button>
+        <button class="choose-opt" data-action="open-new-training">
+          <span class="ic" style="background:var(--train-soft); color:var(--train);">${iconPlus()}</span>
+          <span><b>Student training</b><span>For a student who's already enrolled</span></span>
+        </button>
+        <button class="choose-opt" data-action="open-new-schedule">
+          <span class="ic" style="background:var(--sched-soft); color:var(--sched);">${iconPlus()}</span>
+          <span><b>Regular schedule</b><span>Weekly slot for a trained student</span></span>
+        </button>
+      </div>
+    `);
+  }
+
+  function openNewDiagnostic(presetDate){
+    if(!STATE.settings.examiners.length){
+      openModal(needStaffModal("examiner", "Settings"));
+      return;
+    }
+    openModal(`
+      <div class="modal-head"><h3>New diagnostic booking</h3><button class="iconbtn" data-action="close-modal">✕</button></div>
+      <form data-form="new-diagnostic">
+        <div class="modal-body">
+          <div class="field-row">
+            <label class="field">First name<input type="text" name="firstName" list="studentFirstNames" required autocomplete="off" placeholder="Ava"></label>
+            <label class="field">Last name<input type="text" name="lastName" list="studentLastNames" required autocomplete="off" placeholder="Santos"></label>
+          </div>
+          <div class="field-row">
+            <label class="field">Parent / guardian<input type="text" name="parentName" required></label>
+            <label class="field">Age / grade${gradeSelect("ageGrade", "")}</label>
+          </div>
+          <label class="field">Phone or email<input type="text" name="contact"></label>
+          <div class="field-row">
+            <label class="field">Date<input type="date" name="date" required value="${presetDate||todayISO()}"></label>
+            <label class="field">Time<input type="time" name="time" required value="10:00"></label>
+          </div>
+          <div class="field-row">
+            <label class="field">Subject
+              <select name="subject">
+                <option value="">Choose…</option>
+                ${SUBJECT_OPTIONS.map(o=>`<option value="${esc(o)}">${esc(o)}</option>`).join("")}
+              </select>
+            </label>
+            <label class="field">Inquiry source
+              <select name="inquiry">
+                <option value="">Choose…</option>
+                ${INQUIRY_OPTIONS.map(o=>`<option value="${esc(o)}">${esc(o)}</option>`).join("")}
+              </select>
+            </label>
+          </div>
+          ${fieldSelectStaff("examiner", STATE.settings.examiners, "DT teacher", true)}
+          <label class="field">Remarks<textarea name="notes" rows="2" placeholder="e.g. cant be reached, try call, referred by…"></textarea></label>
+        </div>
+        <div class="modal-foot">
+          <button type="button" class="btn ghost" data-action="close-modal">Cancel</button>
+          <button type="submit" class="btn primary">Book diagnostic</button>
+        </div>
+      </form>
+    `);
+  }
+
+  function openEditDiagnosticModal(id){
+    const d = STATE.diagnostics.find(x=>x.id===id);
+    if(!d) return;
+    openModal(`
+      <div class="modal-head"><h3>Edit diagnostic booking</h3><button class="iconbtn" data-action="close-modal">✕</button></div>
+      <form data-form="edit-diagnostic" data-id="${d.id}">
+        <div class="modal-body">
+          <div class="field-row">
+            <label class="field">First name<input type="text" name="firstName" list="studentFirstNames" required autocomplete="off" value="${esc((d.studentId && studentById(d.studentId) && studentById(d.studentId).firstName) || splitNameGuess(d.studentName).first)}"></label>
+            <label class="field">Last name<input type="text" name="lastName" list="studentLastNames" required autocomplete="off" value="${esc((d.studentId && studentById(d.studentId) && studentById(d.studentId).lastName) || splitNameGuess(d.studentName).last)}"></label>
+          </div>
+          <div class="field-row">
+            <label class="field">Parent / guardian<input type="text" name="parentName" required value="${esc(d.parentName||"")}"></label>
+            <label class="field">Age / grade${gradeSelect("ageGrade", d.ageGrade||"")}</label>
+          </div>
+          <label class="field">Phone or email<input type="text" name="contact" value="${esc(d.contact||"")}"></label>
+          <div class="field-row">
+            <label class="field">Date<input type="date" name="date" required value="${d.date||todayISO()}"></label>
+            <label class="field">Time<input type="time" name="time" required value="${d.time||"10:00"}"></label>
+          </div>
+          <div class="field-row">
+            <label class="field">Subject
+              <select name="subject">
+                <option value="">Choose…</option>
+                ${SUBJECT_OPTIONS.map(o=>`<option value="${esc(o)}" ${d.subject===o?"selected":""}>${esc(o)}</option>`).join("")}
+              </select>
+            </label>
+            <label class="field">Inquiry source
+              <select name="inquiry">
+                <option value="">Choose…</option>
+                ${INQUIRY_OPTIONS.map(o=>`<option value="${esc(o)}" ${d.inquiry===o?"selected":""}>${esc(o)}</option>`).join("")}
+              </select>
+            </label>
+          </div>
+          <label class="field">DT teacher
+            <select name="examiner" required>
+              <option value="">Choose…</option>
+              ${STATE.settings.examiners.map(o=>`<option value="${esc(o)}" ${d.examiner===o?"selected":""}>${esc(o)}</option>`).join("")}
+            </select>
+          </label>
+          <label class="field">Remarks<textarea name="notes" rows="2" placeholder="e.g. cant be reached, try call, referred by…">${esc(d.notes||"")}</textarea></label>
+        </div>
+        <div class="modal-foot">
+          <button type="button" class="btn ghost" data-action="close-modal">Cancel</button>
+          <button type="submit" class="btn primary">Save changes</button>
+        </div>
+      </form>
+    `);
+  }
+
+  function openNewTraining(presetStudentId, presetDate){
+    if(!STATE.settings.trainers.length){
+      openModal(needStaffModal("trainer", "Settings"));
+      return;
+    }
+    const pool = awaitingTraining();
+    if(!pool.length){
+      openModal(`
+        <div class="modal-head"><h3>New training</h3><button class="iconbtn" data-action="close-modal">✕</button></div>
+        <div class="modal-body"><div class="empty">No students are awaiting training right now. A student appears here after their diagnostic is tagged <b>Enrolled</b>.</div></div>
+      `);
+      return;
+    }
+    openModal(`
+      <div class="modal-head"><h3>New training session</h3><button class="iconbtn" data-action="close-modal">✕</button></div>
+      <form data-form="new-training">
+        <div class="modal-body">
+          <label class="field">Student
+            <select name="studentId" required>
+              <option value="">Choose…</option>
+              ${pool.map(s => `<option value="${s.id}" ${presetStudentId===s.id?"selected":""}>${esc(s.name)}</option>`).join("")}
+            </select>
+          </label>
+          <div class="field-row">
+            <label class="field">Date<input type="date" name="date" required value="${presetDate||todayISO()}"></label>
+            <label class="field">Time<input type="time" name="time" required value="10:00"></label>
+          </div>
+          ${fieldSelectStaff("trainer", STATE.settings.trainers, "Trainer", true)}
+        </div>
+        <div class="modal-foot">
+          <button type="button" class="btn ghost" data-action="close-modal">Cancel</button>
+          <button type="submit" class="btn primary">Schedule session</button>
+        </div>
+      </form>
+    `);
+  }
+
+  const WEEK_ORDER = [1,2,3,4,5,6,0]; // Mon..Sun
+  function daySelectOptions(selected){
+    return WEEK_ORDER.map(i => `<option value="${DOW[i]}" ${selected===DOW[i]?"selected":""}>${DOW_FULL[i]}</option>`).join("");
+  }
+
+  function openNewSchedule(presetStudentId){
+    const pool = readyForSchedule();
+    if(!pool.length){
+      openModal(`
+        <div class="modal-head"><h3>New regular schedule</h3><button class="iconbtn" data-action="close-modal">✕</button></div>
+        <div class="modal-body"><div class="empty">No students are ready yet. A student appears here once both trainings are marked complete.</div></div>
+      `);
+      return;
+    }
+    const presetSubject = presetStudentId ? (studentById(presetStudentId)||{}).subject : null;
+    const mathChecked = presetSubject === "Math" || presetSubject === "Both";
+    const readingChecked = presetSubject === "Reading" || presetSubject === "Both";
+    openModal(`
+      <div class="modal-head"><h3>New regular schedule</h3><button class="iconbtn" data-action="close-modal">✕</button></div>
+      <form data-form="new-schedule">
+        <div class="modal-body">
+          <label class="field">Student
+            <select name="studentId" required>
+              <option value="">Choose…</option>
+              ${pool.map(s => `<option value="${s.id}" ${presetStudentId===s.id?"selected":""}>${esc(s.name)}</option>`).join("")}
+            </select>
+          </label>
+          <div class="hint">Two days a week — each can have its own time.</div>
+          <div class="field-row">
+            <label class="field">Day 1
+              <select name="day1" required>${daySelectOptions("Tue")}</select>
+            </label>
+            <label class="field">Time<input type="time" name="time1" required value="16:00"></label>
+          </div>
+          <div class="field-row">
+            <label class="field">Day 2
+              <select name="day2" required>${daySelectOptions("Thu")}</select>
+            </label>
+            <label class="field">Time<input type="time" name="time2" required value="16:00"></label>
+          </div>
+          <label class="field">Start date<input type="date" name="startDate" required value="${todayISO()}"></label>
+
+          <div style="height:1px; background:var(--border); margin:14px 0;"></div>
+          <div class="hint" style="font-size:11px; text-transform:uppercase; letter-spacing:.04em; margin:0 0 8px;">Graduating — assign to a teacher's roster</div>
+
+          <label class="field" style="flex-direction:row; align-items:center; gap:8px;">
+            <input type="checkbox" name="mathOn" data-action="toggle-subject-block" data-target="mathScheduleBlock" ${mathChecked?"checked":""}> Math
+          </label>
+          <div id="mathScheduleBlock" ${mathChecked?"":"hidden"} style="margin:8px 0 4px;">
+            ${fieldSelectStaff("mathTeacher", STATE.settings.trainers, "Math teacher", false)}
+            <div class="field-row">
+              <label class="field">Current level${levelSelect("mathCurLevel","Math")}</label>
+              <label class="field">Current page<input type="text" name="mathCurPage" placeholder="e.g. 130"></label>
+            </div>
+            <div class="field-row">
+              <label class="field">Goal level${levelSelect("mathGoalLevel","Math")}</label>
+              <label class="field">Goal page<input type="text" name="mathGoalPage" placeholder="e.g. 180"></label>
+            </div>
+          </div>
+
+          <label class="field" style="flex-direction:row; align-items:center; gap:8px; margin-top:6px;">
+            <input type="checkbox" name="readingOn" data-action="toggle-subject-block" data-target="readingScheduleBlock" ${readingChecked?"checked":""}> Reading
+          </label>
+          <div id="readingScheduleBlock" ${readingChecked?"":"hidden"} style="margin:8px 0 4px;">
+            ${fieldSelectStaff("readingTeacher", STATE.settings.trainers, "Reading teacher", false)}
+            <div class="field-row">
+              <label class="field">Current level${levelSelect("readingCurLevel","Reading")}</label>
+              <label class="field">Current page<input type="text" name="readingCurPage" placeholder="e.g. 130"></label>
+            </div>
+            <div class="field-row">
+              <label class="field">Goal level${levelSelect("readingGoalLevel","Reading")}</label>
+              <label class="field">Goal page<input type="text" name="readingGoalPage" placeholder="e.g. 180"></label>
+            </div>
+          </div>
+          <p class="hint" style="font-size:12px; margin:4px 0 0;">This is what puts them on the Student roster page, under their teacher.</p>
+        </div>
+        <div class="modal-foot">
+          <button type="button" class="btn ghost" data-action="close-modal">Cancel</button>
+          <button type="submit" class="btn primary">Set schedule</button>
+        </div>
+      </form>
+    `);
+  }
+
+  function studentIdForRecord(kind, id){
+    if(kind === "diagnostic"){ const d = STATE.diagnostics.find(x=>x.id===id); return d ? d.studentId : null; }
+    if(kind === "training"){ const t = STATE.trainings.find(x=>x.id===id); return t ? t.studentId : null; }
+    if(kind === "schedule"){ const s = STATE.schedules.find(x=>x.id===id); return s ? s.studentId : null; }
+    if(kind === "student") return id;
+    return null;
+  }
+
+  function confirmDeleteModal(name, studentId){
+    return `
+      <div class="modal-head"><h3>Delete ${esc(name || "this student")}?</h3><button class="iconbtn" data-action="close-modal">✕</button></div>
+      <div class="modal-body">
+        <div style="font-size:13.5px;">This removes <b>${esc(name || "this student")}</b> everywhere — their diagnostic booking, both trainings, and their regular schedule, wherever they show up. This can't be undone.</div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn ghost" data-action="close-modal">Cancel</button>
+        <button class="btn danger" data-action="confirm-delete" data-student-id="${studentId}">Delete everywhere</button>
+      </div>
+    `;
+  }
+  function openDeleteConfirm(kind, id){
+    const studentId = studentIdForRecord(kind, id);
+    const name = studentId ? (studentById(studentId)?.name || "") : "";
+    openModal(confirmDeleteModal(name, studentId));
+  }
+
+  function needStaffModal(kind, tab){
+    const label = kind === "examiner" ? "at least one DT teacher" : "at least one trainer";
+    return `
+      <div class="modal-head"><h3>Add staff first</h3><button class="iconbtn" data-action="close-modal">✕</button></div>
+      <div class="modal-body"><div class="empty">Add ${label} in Settings before booking this.</div></div>
+      <div class="modal-foot"><button class="btn primary" data-action="goto-settings">Go to Settings</button></div>
+    `;
+  }
+
+  /* ---------------- Write operations ---------------- */
+  async function guardWrite(fn){
+    if(!db){ toast("Not connected — open this from its Claude link."); return; }
+    try{ await fn(); }
+    catch(e){
+      console.warn(e);
+      toast(e && e.code === "quota_exceeded" ? "Storage limit reached." : "Couldn't save that. Try again.");
+    }
+  }
+
+  function findExistingStudentId(name){
+    const hit = STATE.students.find(s => s.name.trim().toLowerCase() === name.trim().toLowerCase());
+    return hit ? hit.id : null;
+  }
+
+  async function submitNewDiagnostic(form){
+    const fd = new FormData(form);
+    const firstName = fd.get("firstName").toString().trim();
+    const lastName = fd.get("lastName").toString().trim();
+    const studentName = `${firstName} ${lastName}`.trim();
+    const parentName = fd.get("parentName").toString().trim();
+    const ageGrade = fd.get("ageGrade").toString().trim();
+    const contact = fd.get("contact").toString().trim();
+    const date = fd.get("date");
+    const time = fd.get("time");
+    const subject = fd.get("subject").toString();
+    const inquiry = fd.get("inquiry").toString();
+    const examiner = fd.get("examiner");
+    const notes = fd.get("notes").toString().trim();
+    if(!firstName || !lastName || !date || !time || !examiner) return;
+
+    await guardWrite(async ()=>{
+      let studentId = findExistingStudentId(studentName);
+      const now = new Date().toISOString();
+      if(!studentId){
+        const ref = await db.collection("students").add({
+          name: studentName, firstName, lastName, parentName, parentPhone: contact, parentEmail: "", ageGrade, subject,
+          notes: "", status: "diagnostic_scheduled", followUpStatus: "", followUpNotes: "",
+          createdAt: now
+        });
+        studentId = ref.id;
+      } else {
+        const patch = { status: "diagnostic_scheduled", firstName, lastName, parentName, parentPhone: contact, ageGrade };
+        if(subject && !studentById(studentId).subject) patch.subject = subject;
+        await db.collection("students").doc(studentId).update(patch);
+      }
+      await db.collection("diagnostics").add({
+        studentId, studentName, parentName, contact, ageGrade, date, time, examiner, subject, inquiry,
+        status: "scheduled", outcome: "pending", notes,
+        followUpStatus: "", followUpNotes: "", createdAt: now
+      });
+      toast("Diagnostic booked.");
+    });
+  }
+
+  async function submitEditDiagnostic(form){
+    const id = form.dataset.id;
+    const d = STATE.diagnostics.find(x=>x.id===id);
+    if(!id || !d) return;
+    const fd = new FormData(form);
+    const firstName = fd.get("firstName").toString().trim();
+    const lastName = fd.get("lastName").toString().trim();
+    const studentName = `${firstName} ${lastName}`.trim();
+    const parentName = fd.get("parentName").toString().trim();
+    const ageGrade = fd.get("ageGrade").toString().trim();
+    const contact = fd.get("contact").toString().trim();
+    const date = fd.get("date");
+    const time = fd.get("time");
+    const subject = fd.get("subject").toString();
+    const inquiry = fd.get("inquiry").toString();
+    const examiner = fd.get("examiner");
+    const notes = fd.get("notes").toString().trim();
+    if(!firstName || !lastName || !date || !time || !examiner) return;
+
+    await guardWrite(async ()=>{
+      await db.collection("diagnostics").doc(id).update({
+        studentName, parentName, ageGrade, contact, date, time, subject, inquiry, examiner, notes
+      });
+      // Keep the linked student record's own details in step with what was just corrected here.
+      if(d.studentId && studentById(d.studentId)){
+        await db.collection("students").doc(d.studentId).update({ name: studentName, firstName, lastName, parentName, parentPhone: contact, ageGrade });
+      }
+      toast("Booking updated.");
+    });
+  }
+
+  async function submitNewTraining(form){
+    const fd = new FormData(form);
+    const studentId = fd.get("studentId");
+    const date = fd.get("date");
+    const time = fd.get("time");
+    const trainer = fd.get("trainer");
+    if(!studentId || !date || !time || !trainer) return;
+    const s = studentById(studentId);
+    if(!s) return;
+    const existing = trainingsFor(studentId).filter(t=>t.status!=="cancelled");
+    const sessionNumber = existing.length + 1;
+    if(sessionNumber > 2){ toast("Both trainings are already scheduled."); return; }
+
+    await guardWrite(async ()=>{
+      await db.collection("trainings").add({
+        studentId, studentName: s.name, sessionNumber, date, time,
+        trainer, status: "scheduled", createdAt: new Date().toISOString()
+      });
+      toast(`Training session ${sessionNumber} scheduled.`);
+    });
+  }
+
+  async function submitNewSchedule(form){
+    const fd = new FormData(form);
+    const studentId = fd.get("studentId");
+    const day1 = fd.get("day1"), time1 = fd.get("time1");
+    const day2 = fd.get("day2"), time2 = fd.get("time2");
+    const startDate = fd.get("startDate");
+    if(!studentId || !day1 || !time1 || !day2 || !time2 || !startDate) return;
+    if(day1 === day2){ toast("Pick two different days."); return; }
+    const s = studentById(studentId);
+    if(!s) return;
+    const mathOn = fd.get("mathOn") === "on";
+    const readingOn = fd.get("readingOn") === "on";
+    const slots = [{ day: day1, time: time1 }, { day: day2, time: time2 }];
+    await guardWrite(async ()=>{
+      await db.collection("schedules").add({
+        studentId, studentName: s.name, slots, startDate, status: "active", createdAt: new Date().toISOString()
+      });
+      await db.collection("students").doc(studentId).update({ status: "active" });
+      if(mathOn){
+        await db.collection("subject_enrollments").add({
+          studentId, studentName: s.name, subject: "Math",
+          teacher: fd.get("mathTeacher") || "",
+          currentLevel: fd.get("mathCurLevel") || "", currentPage: fd.get("mathCurPage") || "",
+          goalLevel: fd.get("mathGoalLevel") || "", goalPage: fd.get("mathGoalPage") || ""
+        });
+      }
+      if(readingOn){
+        await db.collection("subject_enrollments").add({
+          studentId, studentName: s.name, subject: "Reading",
+          teacher: fd.get("readingTeacher") || "",
+          currentLevel: fd.get("readingCurLevel") || "", currentPage: fd.get("readingCurPage") || "",
+          goalLevel: fd.get("readingGoalLevel") || "", goalPage: fd.get("readingGoalPage") || ""
+        });
+      }
+      toast(mathOn || readingOn ? "Regular schedule set — now on their teacher's roster." : "Regular schedule set.");
+    });
+  }
+
+  async function markOutcome(id, outcome, subject){
+    const d = STATE.diagnostics.find(x=>x.id===id);
+    if(!d) return;
+    await guardWrite(async ()=>{
+      await db.collection("diagnostics").doc(id).update({ outcome });
+      const patch = {
+        status: outcome === "enrolled" ? "enrolled_pending_training" : "not_enrolled",
+        followUpStatus: outcome === "not_enrolled" ? "needs_follow_up" : ""
+      };
+      if(outcome === "enrolled" && subject) patch.subject = subject;
+      await db.collection("students").doc(d.studentId).update(patch);
+      toast(outcome === "enrolled" ? `Marked enrolled${subject ? " — "+subject : ""}.` : "Marked not enrolled.");
+    });
+  }
+
+  async function cancelDiagnostic(id){
+    await guardWrite(async ()=>{ await db.collection("diagnostics").doc(id).update({ status: "cancelled" }); toast("Booking cancelled."); });
+  }
+  async function cancelTraining(id){
+    await guardWrite(async ()=>{ await db.collection("trainings").doc(id).update({ status: "cancelled" }); toast("Session cancelled."); });
+  }
+  async function performDeleteStudentEverywhere(ids){
+    await Promise.all([
+      ...ids.diagIds.map(id => db.collection("diagnostics").doc(id).delete()),
+      ...ids.trainIds.map(id => db.collection("trainings").doc(id).delete()),
+      ...ids.schedIds.map(id => db.collection("schedules").doc(id).delete()),
+      db.collection("students").doc(ids.studentId).delete()
+    ]);
+  }
+  async function performRestoreStudentEverywhere(snap){
+    // Parent row first — diagnostics/trainings/schedules all reference the student's id.
+    if(snap.studentSnap) await db.collection("students").restore(snap.studentSnap);
+    for(const d of snap.diagSnap) await db.collection("diagnostics").restore(d);
+    for(const t of snap.trainSnap) await db.collection("trainings").restore(t);
+    for(const s of snap.schedSnap) await db.collection("schedules").restore(s);
+  }
+  async function deleteStudentEverywhere(studentId){
+    if(!studentId) return;
+    const snap = {
+      studentSnap: studentById(studentId),
+      diagSnap: STATE.diagnostics.filter(d => d.studentId === studentId),
+      trainSnap: STATE.trainings.filter(t => t.studentId === studentId),
+      schedSnap: STATE.schedules.filter(s => s.studentId === studentId)
+    };
+    const ids = {
+      studentId,
+      diagIds: snap.diagSnap.map(d => d.id),
+      trainIds: snap.trainSnap.map(t => t.id),
+      schedIds: snap.schedSnap.map(s => s.id)
+    };
+    const label = `Delete ${(snap.studentSnap && snap.studentSnap.name) || "student"}`;
+    await guardWrite(async ()=>{
+      await performDeleteStudentEverywhere(ids);
+      toast("Removed everywhere — diagnostic, trainings, and schedule.");
+      pushUndo(label,
+        async ()=>{ await performRestoreStudentEverywhere(snap); toast(`Undid: ${label}`); },
+        async ()=>{ await performDeleteStudentEverywhere(ids); toast(`Redone: ${label}`); }
+      );
+    });
+  }
+  async function markTrainingComplete(id){
+    const t = STATE.trainings.find(x=>x.id===id);
+    if(!t) return;
+    await guardWrite(async ()=>{
+      await db.collection("trainings").doc(id).update({ status: "completed" });
+      const others = trainingsFor(t.studentId).filter(x=>x.id!==id);
+      const completedCount = others.filter(x=>x.status==="completed").length + 1;
+      if(completedCount >= 2){
+        await db.collection("students").doc(t.studentId).update({ status: "monitor_schedule" });
+      }
+      toast("Training marked complete.");
+    });
+  }
+  async function markReadyForSchedule(studentId){
+    await guardWrite(async ()=>{
+      await db.collection("students").doc(studentId).update({ status: "ready_for_schedule" });
+      toast("Marked ready for regular schedule.");
+    });
+  }
+
+  let followupTimers = {};
+  function scheduleFollowupSave(id, value){
+    clearTimeout(followupTimers[id]);
+    followupTimers[id] = setTimeout(()=>{
+      guardWrite(async ()=>{ await db.collection("students").doc(id).update({ followUpNotes: value }); });
+    }, 650);
+  }
+  async function setFollowupStatus(id, status){
+    await guardWrite(async ()=>{ await db.collection("students").doc(id).update({ followUpStatus: status }); toast("Follow-up updated."); });
+  }
+
+
+  async function addExaminer(name){
+    name = name.trim();
+    if(!name) return;
+    if(STATE.settings.examiners.includes(name)) return;
+    await guardWrite(async ()=>{ await db.doc("settings/staff").set({ examiners: [...STATE.settings.examiners, name], trainers: STATE.settings.trainers }); });
+  }
+  async function removeExaminer(name){
+    await guardWrite(async ()=>{ await db.doc("settings/staff").set({ examiners: STATE.settings.examiners.filter(x=>x!==name), trainers: STATE.settings.trainers }); });
+  }
+  async function addTrainer(name){
+    name = name.trim();
+    if(!name) return;
+    if(STATE.settings.trainers.includes(name)) return;
+    await guardWrite(async ()=>{ await db.doc("settings/staff").set({ examiners: STATE.settings.examiners, trainers: [...STATE.settings.trainers, name] }); });
+  }
+  async function removeTrainer(name){
+    await guardWrite(async ()=>{ await db.doc("settings/staff").set({ examiners: STATE.settings.examiners, trainers: STATE.settings.trainers.filter(x=>x!==name) }); });
+  }
+
+  /* ---------------- Event delegation ---------------- */
+  document.addEventListener("click", e => {
+    const el = e.target.closest("[data-action]");
+    if(!el) return;
+    const a = el.dataset.action;
+
+    if(a === "switch-tab"){ STATE.activeTab = el.dataset.tab; renderAll(); }
+    else if(a === "toggle-enrollment-view"){ STATE.enrollmentShowAll = !STATE.enrollmentShowAll; renderView(); }
+    else if(a === "goto-settings"){ STATE.activeTab = "settings"; closeModal(); renderAll(); }
+    else if(a === "close-modal"){ closeModal(); }
+    else if(a === "open-new-chooser"){ openNewChooser(); }
+    else if(a === "open-new-diagnostic"){ openNewDiagnostic(el.dataset.date); }
+    else if(a === "open-new-training"){ openNewTraining(el.dataset.student, el.dataset.date); }
+    else if(a === "open-new-schedule"){ openNewSchedule(el.dataset.student); }
+    else if(a === "open-day"){ openDayModal(el.dataset.date); }
+    else if(a === "open-student"){ openStudentModal(el.dataset.id); }
+    else if(a === "delete-student"){ openDeleteConfirm("student", el.dataset.id); }
+    else if(a === "mark-outcome"){ markOutcome(el.dataset.id, el.dataset.outcome, el.dataset.subject); }
+    else if(a === "cancel-diagnostic"){ cancelDiagnostic(el.dataset.id); }
+    else if(a === "edit-diagnostic"){ openEditDiagnosticModal(el.dataset.id); }
+    else if(a === "cancel-training"){ cancelTraining(el.dataset.id); }
+    else if(a === "mark-training-complete"){ markTrainingComplete(el.dataset.id); }
+    else if(a === "mark-ready-for-schedule"){ markReadyForSchedule(el.dataset.id); }
+    else if(a === "delete-diagnostic"){ openDeleteConfirm("diagnostic", el.dataset.id); }
+    else if(a === "delete-training"){ openDeleteConfirm("training", el.dataset.id); }
+    else if(a === "delete-schedule"){ openDeleteConfirm("schedule", el.dataset.id); }
+    else if(a === "confirm-delete"){
+      deleteStudentEverywhere(el.dataset.studentId);
+      closeModal();
+    }
+    else if(a === "run-undo"){ runUndo(); }
+    else if(a === "run-redo"){ runRedo(); }
+    else if(a === "followup-status"){ setFollowupStatus(el.dataset.id, el.dataset.status); renderEnrollment(); }
+    else if(a === "cal-prev"){
+      if(STATE.calView === "week") STATE.calWeekStart = addDays(STATE.calWeekStart, -7);
+      else if(STATE.calView === "day") STATE.calDay = addDays(STATE.calDay, -1);
+      else STATE.calMonth = new Date(STATE.calMonth.getFullYear(), STATE.calMonth.getMonth()-1, 1);
+      renderCalendar();
+    }
+    else if(a === "cal-next"){
+      if(STATE.calView === "week") STATE.calWeekStart = addDays(STATE.calWeekStart, 7);
+      else if(STATE.calView === "day") STATE.calDay = addDays(STATE.calDay, 1);
+      else STATE.calMonth = new Date(STATE.calMonth.getFullYear(), STATE.calMonth.getMonth()+1, 1);
+      renderCalendar();
+    }
+    else if(a === "cal-today"){
+      const d=new Date();
+      STATE.calMonth = new Date(d.getFullYear(), d.getMonth(), 1);
+      const w = new Date(d); w.setHours(0,0,0,0); w.setDate(w.getDate()-w.getDay());
+      STATE.calWeekStart = w;
+      const dd = new Date(d); dd.setHours(0,0,0,0);
+      STATE.calDay = dd;
+      renderCalendar();
+    }
+    else if(a === "cal-view"){ STATE.calView = el.dataset.view; renderCalendar(); }
+    else if(a === "cal-filter"){ STATE.calFilter = el.dataset.filter; renderCalendar(); }
+    else if(a === "add-examiner"){
+      const input = $("#newExaminer");
+      addExaminer(input.value);
+      input.value = "";
+    }
+    else if(a === "remove-examiner"){ removeExaminer(el.dataset.name); }
+    else if(a === "add-trainer"){
+      const input = $("#newTrainer");
+      addTrainer(input.value);
+      input.value = "";
+    }
+    else if(a === "remove-trainer"){ removeTrainer(el.dataset.name); }
+    else if(a === "open-new-student"){ openNewStudentModal(); }
+    else if(a === "student-month-prev"){ STATE.studentMonth = new Date(STATE.studentMonth.getFullYear(), STATE.studentMonth.getMonth()-1, 1); renderStudents(); }
+    else if(a === "student-month-next"){ STATE.studentMonth = new Date(STATE.studentMonth.getFullYear(), STATE.studentMonth.getMonth()+1, 1); renderStudents(); }
+    else if(a === "student-month-today"){ STATE.studentMonth = cycleMonthFor(new Date()); renderStudents(); }
+    else if(a === "student-month-mode"){ STATE.studentMonthMode = el.dataset.mode; renderStudents(); }
+    else if(a === "open-edit-student"){ openEditStudentModal(el.dataset.id); }
+    else if(a === "logout"){ if(sbClient) sbClient.auth.signOut(); }
+    else if(a === "show-forgot"){ showLoginView("forgot"); }
+    else if(a === "show-login"){ showLoginView("login"); }
+    else if(el.closest(".stat")){ /* handled by switch-tab above via data-action on the tile itself */ }
+  });
+
+  document.addEventListener("change", e => {
+    if(e.target.matches('[data-action="cal-staff"]')){ STATE.calStaff = e.target.value; renderCalendar(); }
+    else if(e.target.matches('[data-action="set-subject"]')){ setStudentSubject(e.target.dataset.id, e.target.value); }
+    else if(e.target.matches('[data-action="toggle-subject-block"]')){
+      const box = $("#" + e.target.dataset.target);
+      if(box) box.hidden = !e.target.checked;
+    }
+  });
+
+  document.addEventListener("input", e => {
+    if(e.target.matches('[data-action="followup-notes"]')){
+      scheduleFollowupSave(e.target.dataset.id, e.target.value);
+    }
+  });
+
+  const FORM_HANDLERS = {
+    "new-diagnostic": submitNewDiagnostic,
+    "edit-diagnostic": submitEditDiagnostic,
+    "new-training": submitNewTraining,
+    "new-student": submitNewStudent,
+    "edit-student": submitEditStudent,
+    "new-schedule": submitNewSchedule
+  };
+  document.addEventListener("submit", e => {
+    const form = e.target;
+    const handler = FORM_HANDLERS[form.dataset.form];
+    if(!handler) return;
+    e.preventDefault();
+    // Disable the submit button and swap its label for the duration of the save, so a click
+    // always visibly registers — no more silent pause that reads as "did that even work?"
+    // and invites a second click (which used to create duplicate bookings).
+    const btn = form.querySelector('button[type="submit"]');
+    if(btn && btn.disabled) return;
+    if(btn){ btn.dataset.label = btn.textContent; btn.textContent = "Saving…"; btn.disabled = true; }
+    handler(form)
+      .then(()=>{ if(db) closeModal(); })
+      .finally(()=>{ if(btn){ btn.disabled = false; btn.textContent = btn.dataset.label; } });
+  });
+
+  $("#modalBackdrop").addEventListener("click", e => { if(e.target.id === "modalBackdrop") closeModal(); });
+  document.addEventListener("keydown", e => { if(e.key === "Escape") closeModal(); });
+
+  $("#loginForm").addEventListener("submit", async e => {
+    e.preventDefault();
+    if(!sbClient) return;
+    const fd = new FormData(e.target);
+    const email = String(fd.get("email")||"").trim();
+    const password = String(fd.get("password")||"");
+    const btn = e.target.querySelector('button[type="submit"]');
+    btn.disabled = true; btn.textContent = "Logging in…";
+    const { error } = await sbClient.auth.signInWithPassword({ email, password });
+    if(error) showLogin(error.message === "Invalid login credentials" ? "Wrong email or password." : error.message);
+    btn.disabled = false; btn.textContent = "Log in";
+  });
+
+  $("#forgotForm").addEventListener("submit", async e => {
+    e.preventDefault();
+    if(!sbClient) return;
+    const fd = new FormData(e.target);
+    const email = String(fd.get("email")||"").trim();
+    const btn = e.target.querySelector('button[type="submit"]');
+    const err = $("#forgotError"), sent = $("#forgotSent");
+    err.hidden = true; sent.hidden = true;
+    btn.disabled = true; btn.textContent = "Sending…";
+    // redirectTo must be added under Authentication > URL Configuration > Redirect URLs
+    // in Supabase, or it'll bounce to Supabase's default instead of back to this site.
+    const { error } = await sbClient.auth.resetPasswordForEmail(email, { redirectTo: window.location.origin + window.location.pathname });
+    btn.disabled = false; btn.textContent = "Send reset link";
+    if(error){ err.textContent = error.message; err.hidden = false; }
+    else{ sent.hidden = false; }
+  });
+
+  $("#resetForm").addEventListener("submit", async e => {
+    e.preventDefault();
+    if(!sbClient) return;
+    const fd = new FormData(e.target);
+    const password = String(fd.get("password")||"");
+    const password2 = String(fd.get("password2")||"");
+    const err = $("#resetError");
+    if(password.length < 6){ err.textContent = "Password must be at least 6 characters."; err.hidden = false; return; }
+    if(password !== password2){ err.textContent = "Passwords don't match."; err.hidden = false; return; }
+    err.hidden = true;
+    const btn = e.target.querySelector('button[type="submit"]');
+    btn.disabled = true; btn.textContent = "Saving…";
+    const { data, error } = await sbClient.auth.updateUser({ password });
+    btn.disabled = false; btn.textContent = "Save password";
+    if(error){ err.textContent = error.message; err.hidden = false; return; }
+    currentUser = data.user;
+    toast("Password updated.");
+    showLoginView("login");
+    showApp(); renderAccount(); startApp();
+  });
+
+  /* ---------------- Go ---------------- */
+  renderAll();
+  boot();
+})();
+</script>
+
+</body>
+</html>
