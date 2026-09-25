@@ -240,7 +240,7 @@
         <table class="stable">
           <thead><tr>
             <th class="selectcol" id="selectHeaderCell">#</th>
-            <th>Student</th><th>Grade</th><th>Subject</th><th>Teacher</th><th>Current level</th><th>Goal</th><th>Schedule</th><th>Mode</th><th>Status</th>
+            <th>Student</th><th>Grade</th><th>Subject</th><th>Teacher</th><th>Current level</th><th>Goal</th><th>Award</th><th>Actual</th><th>Schedule</th><th>Mode</th><th>LWC</th><th>NWU</th><th>No. of days</th><th>No. of months</th><th>Test date</th><th>Test level</th><th>Test time</th><th>Test score</th><th>Test group</th><th>Status</th>
           </tr></thead>
           <tbody id="rosterBody"></tbody>
         </table>
@@ -306,6 +306,11 @@
   function fmtLevel(level, page){
     if(!level && !page) return `<span class="lvl empty-lvl">not yet recorded</span>`;
     return `<span class="lvl">${esc(level||"")}${esc(page||"")}</span>`;
+  }
+  // Plain worksheet-tracking / achievement-test fields — straight off the roster sheet,
+  // no formatting of their own beyond a dash when nothing's been entered yet.
+  function fmtPlain(v){
+    return v ? esc(v) : `<span class="lvl empty-lvl">—</span>`;
   }
 
   let sbClient = null, currentUser = null, currentRole = null, currentTeacherName = null;
@@ -569,7 +574,7 @@
 
     const body = $("#rosterBody");
     if(rows.length === 0){
-      body.innerHTML = `<tr><td colspan="10"><div class="empty">${enrollments.length===0 ? "No enrollments yet — add your first one." : "Nothing matches your filters."}</div></td></tr>`;
+      body.innerHTML = `<tr><td colspan="21"><div class="empty">${enrollments.length===0 ? "No enrollments yet — add your first one." : "Nothing matches your filters."}</div></td></tr>`;
     }else{
       body.innerHTML = rows.map((e, idx) => `
         <tr class="clickrow" data-action="edit" data-id="${e.id}">
@@ -582,8 +587,19 @@
           <td>${esc(e.teacher||"—")}</td>
           <td>${fmtLevel(e.current_level, e.current_page)}</td>
           <td>${fmtLevel(e.goal_level, e.goal_page)}</td>
+          <td>${fmtPlain(e.award)}</td>
+          <td>${fmtPlain(e.actual)}</td>
           <td>${fmtSchedule(e)}</td>
           <td>${fmtMode(e.mode)}</td>
+          <td>${fmtPlain(e.lwc)}</td>
+          <td>${fmtPlain(e.nwu)}</td>
+          <td>${fmtPlain(e.no_of_days)}</td>
+          <td>${fmtPlain(e.no_of_months_current_level)}</td>
+          <td>${fmtPlain(e.test_date)}</td>
+          <td>${fmtPlain(e.test_level)}</td>
+          <td>${fmtPlain(e.test_time)}</td>
+          <td>${fmtPlain(e.test_score)}</td>
+          <td>${fmtPlain(e.test_group)}</td>
           <td><span class="pill ${(e.status||'active')==='inactive'?'status-inactive':'status-active'}">${(e.status||"active")==="inactive"?"Inactive":"Active"}</span></td>
         </tr>
       `).join("");
@@ -612,6 +628,38 @@
       <button type="button" class="btn sm primary" data-action="bulk-edit">Edit selected</button>
       ${isTeacherScoped() ? "" : `<button type="button" class="btn sm danger" data-action="bulk-delete">Delete</button>`}
       <button type="button" class="btn sm ghost" data-action="bulk-clear">Clear</button>
+    `;
+  }
+
+  // Worksheet-tracking + achievement-test fields — everything from the roster sheet that
+  // isn't Current/Goal level or Schedule/Mode. `e` is an enrollment object or null (Add
+  // form), so every value falls back to "".
+  function progressFieldsHtml(e){
+    const v = k => esc((e && e[k]) || "");
+    return `
+      <div class="field-row">
+        <label class="field">Award<input type="text" name="award" value="${v("award")}" placeholder="e.g. Certificate"></label>
+        <label class="field">Actual<input type="text" name="actual" value="${v("actual")}"></label>
+      </div>
+      <div class="hint" style="font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--ink-muted); margin:10px 0 8px;">Worksheet tracking</div>
+      <div class="field-row">
+        <label class="field">LWC (last worksheet)<input type="text" name="lwc" value="${v("lwc")}" placeholder="e.g. 2A 120"></label>
+        <label class="field">NWU (worksheets used)<input type="text" name="nwu" value="${v("nwu")}" placeholder="e.g. 31"></label>
+      </div>
+      <div class="field-row">
+        <label class="field">No. of days<input type="text" name="no_of_days" value="${v("no_of_days")}"></label>
+        <label class="field">No. of months (current level)<input type="text" name="no_of_months_current_level" value="${v("no_of_months_current_level")}"></label>
+      </div>
+      <div class="hint" style="font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--ink-muted); margin:10px 0 8px;">Achievement test</div>
+      <div class="field-row">
+        <label class="field">Test date<input type="text" name="test_date" value="${v("test_date")}" placeholder="e.g. 8/14/26"></label>
+        <label class="field">Test level<input type="text" name="test_level" value="${v("test_level")}"></label>
+      </div>
+      <div class="field-row">
+        <label class="field">Test time<input type="text" name="test_time" value="${v("test_time")}" placeholder="e.g. 5 MINUTES"></label>
+        <label class="field">Test score<input type="text" name="test_score" value="${v("test_score")}" placeholder="e.g. 100/100"></label>
+      </div>
+      <label class="field">Test group<input type="text" name="test_group" value="${v("test_group")}"></label>
     `;
   }
 
@@ -694,6 +742,8 @@
             <label class="field">Goal page<input type="text" name="goal_page" value="${esc(enrollment.goal_page||"")}" placeholder="e.g. 180"></label>
           </div>
           ${scheduleSectionHtml(scheduleRows, enrollment.mode)}
+          <div style="height:1px; background:var(--border); margin:12px 0;"></div>
+          ${progressFieldsHtml(enrollment)}
         </div>
         <div class="modal-foot">
           <div>${isTeacherScoped() ? "" : `<button type="button" class="btn danger" data-action="delete-enrollment" data-id="${enrollment.id}">Delete</button>`}</div>
@@ -741,6 +791,8 @@
             <label class="field">Goal page<input type="text" name="goal_page" placeholder="e.g. 180"></label>
           </div>
           ${scheduleSectionHtml(null, null)}
+          <div style="height:1px; background:var(--border); margin:12px 0;"></div>
+          ${progressFieldsHtml(null)}
           <p class="hint" style="font-size:12px; color:var(--ink-muted); margin:8px 0 0;">For a student who still needs a diagnostic test, add them from Pipeline instead — this is for a student already enrolled and taking classes.</p>
         </div>
         <div class="modal-foot">
@@ -822,6 +874,17 @@
           goal_level: fd.get("goal_level") || null,
           goal_page: fd.get("goal_page") || null,
           mode: fd.get("mode") || null,
+          award: fd.get("award") || null,
+          actual: fd.get("actual") || null,
+          lwc: fd.get("lwc") || null,
+          nwu: fd.get("nwu") || null,
+          no_of_days: fd.get("no_of_days") || null,
+          no_of_months_current_level: fd.get("no_of_months_current_level") || null,
+          test_date: fd.get("test_date") || null,
+          test_level: fd.get("test_level") || null,
+          test_time: fd.get("test_time") || null,
+          test_score: fd.get("test_score") || null,
+          test_group: fd.get("test_group") || null,
           updated_at: new Date().toISOString()
         };
         const { error } = await sbClient.from("subject_enrollments").update(patch).eq("id", editingId);
@@ -871,7 +934,18 @@
         current_page: fd.get("current_page") || null,
         goal_level: fd.get("goal_level") || null,
         goal_page: fd.get("goal_page") || null,
-        mode: fd.get("mode") || null
+        mode: fd.get("mode") || null,
+        award: fd.get("award") || null,
+        actual: fd.get("actual") || null,
+        lwc: fd.get("lwc") || null,
+        nwu: fd.get("nwu") || null,
+        no_of_days: fd.get("no_of_days") || null,
+        no_of_months_current_level: fd.get("no_of_months_current_level") || null,
+        test_date: fd.get("test_date") || null,
+        test_level: fd.get("test_level") || null,
+        test_time: fd.get("test_time") || null,
+        test_score: fd.get("test_score") || null,
+        test_group: fd.get("test_group") || null
       };
       const { data: newEnrollment, error: enrollError } = await sbClient.from("subject_enrollments").insert(enrollPayload).select().single();
       if(enrollError){ alert("Couldn't save: " + enrollError.message); return; }
