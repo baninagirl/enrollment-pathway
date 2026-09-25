@@ -278,7 +278,7 @@
       <div class="table-scroll">
         <table class="stable">
           <thead><tr>
-            <th>Student</th><th>Group</th><th>Tuition due</th><th>Paid</th><th>Balance</th><th>Status</th><th></th>
+            <th>Student</th><th>Grade</th><th>Group</th><th>Tuition due</th><th>Paid</th><th>Balance</th><th>Status</th><th></th>
           </tr></thead>
           <tbody id="paymentsBody"></tbody>
         </table>
@@ -693,7 +693,7 @@
     $("#tableCount").textContent = rows.length ? `${rows.length} student${rows.length===1?"":"s"}` : "";
     const body = $("#paymentsBody");
     if(!rows.length){
-      body.innerHTML = `<tr><td colspan="7"><div class="empty">No students match this view.</div></td></tr>`;
+      body.innerHTML = `<tr><td colspan="8"><div class="empty">No students match this view.</div></td></tr>`;
       return;
     }
     if(!groupView){
@@ -723,6 +723,7 @@
       html += `<tr class="group-row">
         <td class="gname">${esc(name)}<span class="faint" style="font-weight:500;">(${members.length})</span>${gid !== "__none__" ? `<button class="iconbtn" data-action="download-tuition" data-group="${esc(gid)}" title="Download tuition image">⬇</button>` : ""}</td>
         <td></td>
+        <td></td>
         <td class="money">${peso(due)}</td>
         <td class="money">${peso(paid)}</td>
         <td class="money">${peso(balance)}</td>
@@ -737,7 +738,8 @@
   function rowHtml(r){
     const s = r.student;
     return `<tr>
-      <td>${esc(displayName(s))}${subjectBadgesFor(s.id)}<button class="iconbtn" data-action="download-tuition" data-student="${esc(s.id)}" title="Download tuition image">⬇</button><div class="faint" style="font-size:11.5px;">${esc(s.age_grade||"")}</div></td>
+      <td>${esc(displayName(s))}${subjectBadgesFor(s.id)}<button class="iconbtn" data-action="download-tuition" data-student="${esc(s.id)}" title="Download tuition image">⬇</button></td>
+      <td class="muted">${esc(s.age_grade || "—")}</td>
       <td class="muted">${esc(groupNameFor(s.billing_group_id) || "—")}</td>
       <td class="money">${peso(r.due)} <button class="iconbtn" data-action="edit-tuition" data-id="${esc(s.id)}" title="Edit tuition">✎</button></td>
       <td class="money">${peso(r.paid)}</td>
