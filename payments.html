@@ -99,6 +99,14 @@
   .stat.warn .n{ color:var(--warn); }
   .stat.bad .n{ color:var(--bad); }
 
+  .cal-toolbar{ display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; flex-wrap:wrap; gap:10px; }
+  .cal-nav{ display:flex; align-items:center; gap:8px; }
+  .cal-nav h2{ font-size:16px; font-weight:700; min-width:160px; text-align:center; }
+  .month-head{ display:flex; flex-direction:column; align-items:center; }
+  .month-head h2{ margin:0; }
+  .month-range{ font-size:11px; color:var(--ink-muted); margin-top:1px; }
+  @media (max-width: 640px){ .cal-nav h2{ font-size:14px; min-width:0; flex:1; } }
+
   .search-row{ display:flex; gap:8px; margin-bottom:14px; flex-wrap:wrap; align-items:center; }
   .search-row input, .search-row select{ font-size:13.5px; }
   .table-scroll{ overflow-x:auto; }
@@ -119,6 +127,9 @@
   .pill.flagged{ background:var(--warn-soft); color:var(--warn); }
   .pill.verified{ background:var(--good-soft); color:var(--good); }
   .pill.rejected{ background:var(--surface-2); color:var(--ink-faint); }
+  .subj-badge{ display:inline-flex; align-items:center; justify-content:center; width:19px; height:19px; border-radius:6px; font-size:11px; font-weight:800; color:#fff; margin-left:6px; vertical-align:middle; }
+  .subj-badge.subj-m{ background:var(--accent); }
+  .subj-badge.subj-r{ background:var(--warn); }
   .row-actions{ display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end; }
 
   .receipt-row{ display:flex; align-items:flex-start; gap:14px; padding:14px 16px; border-bottom:1px solid var(--border); flex-wrap:wrap; }
@@ -230,10 +241,21 @@
       </div>
     </div>
 
+    <div class="cal-toolbar">
+      <div class="cal-nav">
+        <button class="btn ghost sm" data-action="month-prev">‹</button>
+        <div class="month-head">
+          <h2 id="paymentsMonthLabel"></h2>
+          <div class="month-range" id="paymentsMonthRange"></div>
+        </div>
+        <button class="btn ghost sm" data-action="month-next">›</button>
+        <button class="btn sm" data-action="month-today">This month</button>
+      </div>
+    </div>
+
     <div class="stats" id="statsRow"></div>
 
     <div class="search-row">
-      <input type="month" id="monthInput">
       <input type="text" id="searchInput" placeholder="Search student…" style="max-width:200px;">
       <select id="statusFilter">
         <option value="all">All statuses</option>
@@ -299,6 +321,23 @@
   function fmtMonthLabel(ym){
     const [y,m] = ym.split("-").map(Number);
     return new Date(y, m-1, 1).toLocaleDateString("en-US", { month:"long", year:"numeric" });
+  }
+  // Plain calendar month, 1st to last day — same nav look as Reporting's cycle header,
+  // but Payments tracks tuition by calendar month, not Reporting's 21st–20th close-out cycle.
+  function monthRangeLabel(ym){
+    const [y,m] = ym.split("-").map(Number);
+    const start = new Date(y, m-1, 1);
+    const end = new Date(y, m, 0);
+    return `${start.toLocaleDateString("en-US",{month:"short",day:"numeric"})} – ${end.toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"})}`;
+  }
+  function shiftMonth(ym, delta){
+    const [y,m] = ym.split("-").map(Number);
+    const d = new Date(y, m-1+delta, 1);
+    return d.getFullYear() + "-" + String(d.getMonth()+1).padStart(2,"0");
+  }
+  function renderMonthNav(){
+    $("#paymentsMonthLabel").textContent = fmtMonthLabel(selectedMonth);
+    $("#paymentsMonthRange").textContent = monthRangeLabel(selectedMonth);
   }
 
   let toastTimer = null;
@@ -389,7 +428,7 @@
             : `<div class="banner">Payments is only visible to admin and superadmin accounts.</div>`)
         : "";
     }
-    $$(".page-head, .stats, .search-row, .card").forEach(el => { el.style.display = blocked ? "none" : ""; });
+    $$(".page-head, .cal-toolbar, .stats, .search-row, .card").forEach(el => { el.style.display = blocked ? "none" : ""; });
   }
 
   async function loadRole(){
@@ -406,7 +445,7 @@
     try{ sbClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY); }
     catch(e){ showLogin("Couldn't connect to Supabase."); return; }
 
-    $("#monthInput").value = selectedMonth;
+    renderMonthNav();
 
     const { data:{ session } } = await sbClient.auth.getSession();
     if(session){ currentUser = session.user; showApp(); await loadRole(); renderAccount(); startApp(); }
@@ -442,15 +481,21 @@
       .subscribe();
   }
 
+  // Sorted by last name (falling back to the plain `name` field for legacy rows that were
+  // never split into first/last) — everywhere students show up on this page follows this
+  // same order: the table, the group member lists, and the Log payment dropdown.
+  function byLastName(a, b){
+    const keyOf = s => (s.last_name && s.first_name) ? `${s.last_name}, ${s.first_name}` : (s.name || "");
+    return keyOf(a).localeCompare(keyOf(b));
+  }
   async function loadStudents(){
     const { data, error } = await sbClient.from("students")
-      .select("id,name,first_name,last_name,age_grade,status,monthly_tuition,billing_group_id")
-      .order("name");
+      .select("id,name,first_name,last_name,age_grade,status,monthly_tuition,billing_group_id");
     if(error){ console.warn(error); students = []; return; }
-    students = data || [];
+    students = (data || []).sort(byLastName);
   }
   async function loadEnrollments(){
-    const { data, error } = await sbClient.from("subject_enrollments").select("id,student_id,status");
+    const { data, error } = await sbClient.from("subject_enrollments").select("id,student_id,status,subject");
     if(error){ console.warn(error); enrollments = []; return; }
     enrollments = data || [];
   }
@@ -479,6 +524,17 @@
     if(!id) return null;
     const g = billingGroups.find(x => x.id === id);
     return g ? g.name : null;
+  }
+  // Which subjects a student is actively enrolled in, as clear M/R badges next to their
+  // name — a Math+Reading student still gets one row here (tuition is tracked per student,
+  // not per subject), just both badges on it.
+  function subjectBadgesFor(studentId){
+    const subjects = [...new Set(enrollments.filter(e => e.student_id === studentId && e.status === "active").map(e => e.subject))];
+    return subjects.map(subj => {
+      const cls = subj === "Reading" ? "subj-r" : "subj-m";
+      const letter = subj === "Reading" ? "R" : "M";
+      return `<span class="subj-badge ${cls}" title="${esc(subj)}">${letter}</span>`;
+    }).join("");
   }
   function verifiedPaidFor(studentId, ym){
     const monthDate = monthToDate(ym);
@@ -586,6 +642,7 @@
 
   function render(){
     if(!isAuthorized()) return;
+    renderMonthNav();
     renderStats();
     renderTable();
     renderReview();
@@ -676,7 +733,7 @@
   function rowHtml(r){
     const s = r.student;
     return `<tr>
-      <td>${esc(displayName(s))}<button class="iconbtn" data-action="download-tuition" data-student="${esc(s.id)}" title="Download tuition image">⬇</button><div class="faint" style="font-size:11.5px;">${esc(s.age_grade||"")}</div></td>
+      <td>${esc(displayName(s))}${subjectBadgesFor(s.id)}<button class="iconbtn" data-action="download-tuition" data-student="${esc(s.id)}" title="Download tuition image">⬇</button><div class="faint" style="font-size:11.5px;">${esc(s.age_grade||"")}</div></td>
       <td class="muted">${esc(groupNameFor(s.billing_group_id) || "—")}</td>
       <td class="money">${peso(r.due)} <button class="iconbtn" data-action="edit-tuition" data-id="${esc(s.id)}" title="Edit tuition">✎</button></td>
       <td class="money">${peso(r.paid)}</td>
@@ -982,7 +1039,6 @@
   });
 
   document.addEventListener("change", (e)=>{
-    if(e.target.id === "monthInput"){ selectedMonth = e.target.value || monthDefault(); render(); }
     if(e.target.id === "searchInput"){ filters.search = e.target.value; render(); }
     if(e.target.id === "statusFilter"){ filters.status = e.target.value; render(); }
   });
@@ -998,6 +1054,9 @@
     else if(action === "close-modal"){ closeModal(); }
     else if(action === "run-undo"){ runUndo(); }
     else if(action === "run-redo"){ runRedo(); }
+    else if(action === "month-prev"){ selectedMonth = shiftMonth(selectedMonth, -1); render(); }
+    else if(action === "month-next"){ selectedMonth = shiftMonth(selectedMonth, 1); render(); }
+    else if(action === "month-today"){ selectedMonth = monthDefault(); render(); }
     else if(action === "toggle-group-view"){
       groupView = !groupView;
       btn.classList.toggle("on", groupView);
