@@ -1534,7 +1534,7 @@
               const st = STATUS_LABEL[s.status] || ["—","muted"];
               return `<tr class="clickrow" data-action="open-student" data-id="${s.id}">
                 <td class="tnum">${i+1}</td>
-                <td><b>${esc(displayName(s))}</b></td>
+                <td>${esc(displayName(s))}</td>
                 <td>${esc(s.ageGrade||"—")}</td>
                 <td>${row.subj ? fmtSubjectPill(row.subj) : "—"}</td>
                 <td>${pipelineScheduleLabel(s.id)}</td>
@@ -1553,7 +1553,7 @@
               const d = activeDiagnosticFor(s.id);
               return `<tr class="clickrow" data-action="open-student" data-id="${s.id}">
                 <td class="tnum">${i+1}</td>
-                <td><b>${esc(displayName(s))}</b></td>
+                <td>${esc(displayName(s))}</td>
                 <td>${esc(s.ageGrade||"—")}</td>
                 <td>${row.subj ? fmtSubjectPill(row.subj) : "—"}</td>
                 <td>${esc((d && d.startPoint) || "—")}</td>
