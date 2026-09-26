@@ -1268,14 +1268,7 @@
             <label class="field">Current level<select name="current_level" id="curLevelSelect">${levelOptions(subject, enrollment.current_level)}</select></label>
             <label class="field">Current page<input type="text" name="current_page" value="${esc(enrollment.current_page||"")}" placeholder="e.g. 130"></label>
           </div>
-          <div class="field-row">
-            <label class="field">Goal level<select name="goal_level" id="goalLevelSelect">${levelOptions(subject, enrollment.goal_level)}</select></label>
-            <label class="field">Goal page<input type="text" name="goal_page" value="${esc(enrollment.goal_page||"")}" placeholder="e.g. 180"></label>
-          </div>
           ${scheduleSectionHtml(scheduleRows, enrollment.mode)}
-          <div style="height:1px; background:var(--border); margin:12px 0;"></div>
-          ${progressFieldsHtml(enrollment)}
-          <p class="hint" style="font-size:12px; color:var(--ink-muted); margin:4px 0 0;">Worksheet counts and achievement test results are tracked in the Student Roster Report view now, month by month.</p>
         </div>
         <div class="modal-foot">
           <div>${isTeacherScoped() ? "" : `<button type="button" class="btn danger" data-action="delete-enrollment" data-id="${enrollment.id}">Delete</button>`}</div>
@@ -1403,14 +1396,11 @@
           teacher: isTeacherScoped() ? currentTeacherName : (fd.get("teacher") || null),
           current_level: fd.get("current_level") || null,
           current_page: fd.get("current_page") || null,
-          goal_level: fd.get("goal_level") || null,
-          goal_page: fd.get("goal_page") || null,
           mode: fd.get("mode") || null,
-          award: fd.get("award") || null,
-          actual: fd.get("actual") || null,
           // LWC/NWU/No. of days/No. of months/Achievement test are edited on the
-          // Reporting page now, not here — deliberately left out of this patch so
-          // saving a roster edit never touches (or blanks) this cycle's numbers.
+          // Reporting page now, not here. Goal level/page and Award/Actual are hidden
+          // from this form too (for now) — all deliberately left out of this patch so
+          // saving a roster edit never touches (or blanks) values the form no longer shows.
           updated_at: new Date().toISOString()
         };
         const { error } = await sbClient.from("subject_enrollments").update(patch).eq("id", editingId);
