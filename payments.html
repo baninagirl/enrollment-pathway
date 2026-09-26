@@ -113,6 +113,11 @@
   .month-range{ font-size:11px; color:var(--ink-muted); margin-top:1px; }
   @media (max-width: 640px){ .cal-nav h2{ font-size:14px; min-width:0; flex:1; } }
 
+  .seg{ display:inline-flex; background:var(--surface-2); border:1px solid var(--border); border-radius:9px; padding:2px; }
+  .seg button{ border:none; background:transparent; padding:6px 11px; border-radius:7px; font-size:12.5px; font-weight:600; color:var(--ink-muted); cursor:pointer; }
+  .seg button:active{ transform:scale(.94); }
+  .seg button.active{ background:var(--surface); color:var(--ink); box-shadow:var(--shadow); }
+
   .search-row{ display:flex; gap:8px; margin-bottom:14px; flex-wrap:wrap; align-items:center; }
   .search-row input, .search-row select{ font-size:13.5px; width:auto; flex:0 0 auto; }
   .search-row select{ min-width:132px; }
@@ -271,6 +276,10 @@
     <div class="stats" id="statsRow"></div>
 
     <div class="search-row">
+      <div class="seg payments-view-toggle">
+        <button data-action="payments-view" data-view="month">Payments</button>
+        <button data-action="payments-view" data-view="stopped">Stopped</button>
+      </div>
       <input type="text" id="searchInput" placeholder="Search student…" style="max-width:200px;">
       <select id="statusFilter">
         <option value="all">All statuses</option>
@@ -281,24 +290,44 @@
       <button type="button" class="btn sm ghost" id="groupViewToggle" data-action="toggle-group-view">View by billing group</button>
     </div>
 
-    <div class="card">
-      <div class="card-head">
-        <h3 id="tableTitle">This month</h3>
-        <span class="muted" id="tableCount" style="font-size:12.5px;"></span>
+    <div id="view-month">
+      <div class="card">
+        <div class="card-head">
+          <h3 id="tableTitle">This month</h3>
+          <span class="muted" id="tableCount" style="font-size:12.5px;"></span>
+        </div>
+        <div class="table-scroll">
+          <table class="stable">
+            <thead><tr>
+              <th>Student</th><th>Grade</th><th>Group</th><th>Tuition due</th><th>Paid</th><th>Balance</th><th>Status</th><th></th>
+            </tr></thead>
+            <tbody id="paymentsBody"></tbody>
+          </table>
+        </div>
       </div>
-      <div class="table-scroll">
-        <table class="stable">
-          <thead><tr>
-            <th>Student</th><th>Grade</th><th>Group</th><th>Tuition due</th><th>Paid</th><th>Balance</th><th>Status</th><th></th>
-          </tr></thead>
-          <tbody id="paymentsBody"></tbody>
-        </table>
+
+      <div class="card">
+        <div class="card-head"><h3>Pending receipt review</h3><span class="pill pending" id="reviewCountBadge"></span></div>
+        <div id="reviewBody"></div>
       </div>
     </div>
 
-    <div class="card">
-      <div class="card-head"><h3>Pending receipt review</h3><span class="pill pending" id="reviewCountBadge"></span></div>
-      <div id="reviewBody"></div>
+    <div id="view-stopped" hidden>
+      <div class="card">
+        <div class="card-head">
+          <h3 id="stoppedTitle">Stopped</h3>
+          <span class="muted" id="stoppedCount" style="font-size:12.5px;"></span>
+        </div>
+        <p class="hint" style="padding:10px 16px 0;">Was fully paid last cycle, hasn't logged any payment yet for the month you're viewing above, and is still marked active on the roster. This list shrinks on its own as payments come in — early in a new cycle, most families just haven't paid yet.</p>
+        <div class="table-scroll">
+          <table class="stable">
+            <thead><tr>
+              <th>Student</th><th>Grade</th><th>Group</th><th>Last paid</th><th>Tuition due</th><th></th>
+            </tr></thead>
+            <tbody id="stoppedBody"></tbody>
+          </table>
+        </div>
+      </div>
     </div>
   </main>
 </div>
@@ -326,6 +355,7 @@
   let students = [], enrollments = [], billingGroups = [], receipts = [];
   let selectedMonth = monthDefault(); // "YYYY-MM"
   let groupView = false;
+  let pageView = "month"; // "month" | "stopped"
   const filters = { search: "", status: "all" };
 
   // Tuition is due in advance — the SOA for a coverage month goes out on the 25th of the
@@ -597,6 +627,20 @@
     const balance = due - paid;
     const status = balance <= 0 ? "paid" : (paid > 0 ? "partial" : "unpaid");
     return { student: s, due, paid, balance, status };
+  }
+
+  // "Stopped" — still marked active on the roster, was fully paid last cycle, but has
+  // logged NOTHING (not even a partial payment) for the cycle currently being viewed.
+  // Computed live off the same receipts/enrollments Payments already loads, so it needs
+  // no new table and a student drops off the moment a payment comes in for that month.
+  // Requiring last cycle to have been fully paid (not just started) keeps a brand-new
+  // enrollee's very first bill from ever looking like a "stop".
+  function stoppedCandidates(ym){
+    const prevYm = shiftMonth(ym, -1);
+    return billableStudents()
+      .map(s => ({ student: s, prevRow: rowFor(s, prevYm), row: rowFor(s, ym) }))
+      .filter(x => x.prevRow.status === "paid" && x.row.paid === 0)
+      .map(x => ({ student: x.student, lastPaidMonth: prevYm, due: x.row.due }));
   }
 
   // ---------------- Tuition image download ----------------
@@ -875,9 +919,24 @@
     if(!isAuthorized()) return;
     renderMonthNav();
     renderStats();
+    renderPageView();
     renderTable();
     renderReview();
+    renderStoppedTable();
     renderUndoBar();
+  }
+
+  // Switches between the Payments and Stopped views — same pattern as Student Roster's
+  // own view toggle: flips the seg's active state, shows/hides the right container. The
+  // status filter and "View by billing group" only mean anything on the Payments table,
+  // so they're hidden (not just disabled) while Stopped is showing.
+  function renderPageView(){
+    $$('[data-action="payments-view"]').forEach(b => b.classList.toggle("active", b.dataset.view === pageView));
+    $("#view-month").hidden = pageView !== "month";
+    $("#view-stopped").hidden = pageView !== "stopped";
+    const statusFilterEl = $("#statusFilter"), groupToggleEl = $("#groupViewToggle");
+    if(statusFilterEl) statusFilterEl.hidden = pageView !== "month";
+    if(groupToggleEl) groupToggleEl.hidden = pageView !== "month";
   }
 
   function renderStats(){
@@ -888,10 +947,12 @@
     const outstanding = Math.max(0, totalDue - totalPaid);
     const unpaid = rows.filter(r => r.status === "unpaid").length;
     const pendingReview = receipts.filter(r => r.status === "pending" || r.status === "flagged").length;
+    const stopped = stoppedCandidates(ym).length;
     $("#statsRow").innerHTML = `
       <div class="stat"><div class="n">${peso(outstanding)}</div><div class="l">Outstanding this month</div></div>
       <div class="stat ${unpaid ? "bad" : ""}"><div class="n">${unpaid}</div><div class="l">Unpaid this month</div></div>
       <div class="stat ${pendingReview ? "warn" : ""}"><div class="n">${pendingReview}</div><div class="l">Receipts to review</div></div>
+      <div class="stat ${stopped ? "bad" : ""}"><div class="n">${stopped}</div><div class="l">Stopped</div></div>
       <div class="stat"><div class="n">${billingGroups.length}</div><div class="l">Billing groups</div></div>
     `;
   }
@@ -974,6 +1035,38 @@
       <td>${statusPill(r.status)}</td>
       <td><div class="row-actions"><button class="iconbtn" data-action="open-payment-history" data-student="${esc(s.id)}" title="Payment history — undo a payment">🕘</button><button class="btn sm" data-action="open-log-payment" data-student="${esc(s.id)}">Log payment</button></div></td>
     </tr>`;
+  }
+
+  function filteredStoppedRows(){
+    let rows = stoppedCandidates(selectedMonth);
+    if(filters.search.trim()){
+      const q = filters.search.trim().toLowerCase();
+      rows = rows.filter(x => displayName(x.student).toLowerCase().includes(q));
+    }
+    return rows;
+  }
+
+  function renderStoppedTable(){
+    if(pageView !== "stopped") return;
+    const rows = filteredStoppedRows();
+    $("#stoppedTitle").textContent = `Stopped — as of ${fmtMonthLabel(selectedMonth)}`;
+    $("#stoppedCount").textContent = rows.length ? `${rows.length} student${rows.length===1?"":"s"}` : "";
+    const body = $("#stoppedBody");
+    if(!rows.length){
+      body.innerHTML = `<tr><td colspan="6"><div class="empty">Nobody matches — everyone who was paid last cycle has either paid this one too, or isn't showing as active anymore.</div></td></tr>`;
+      return;
+    }
+    body.innerHTML = rows.map(x => {
+      const s = x.student;
+      return `<tr>
+        <td>${esc(displayName(s))}${subjectBadgesFor(s.id)}</td>
+        <td class="muted">${esc(s.age_grade || "—")}</td>
+        <td class="muted">${esc(groupNameFor(s.billing_group_id) || "—")}</td>
+        <td class="muted">${esc(fmtMonthLabel(x.lastPaidMonth))}</td>
+        <td class="money">${peso(x.due)}</td>
+        <td><div class="row-actions"><button class="iconbtn" data-action="open-payment-history" data-student="${esc(s.id)}" title="Payment history">🕘</button><button class="btn sm" data-action="open-log-payment" data-student="${esc(s.id)}">Log payment</button></div></td>
+      </tr>`;
+    }).join("");
   }
 
   function renderReview(){
@@ -1355,6 +1448,7 @@
     else if(action === "month-prev"){ selectedMonth = shiftMonth(selectedMonth, -1); render(); }
     else if(action === "month-next"){ selectedMonth = shiftMonth(selectedMonth, 1); render(); }
     else if(action === "month-today"){ selectedMonth = monthDefault(); render(); }
+    else if(action === "payments-view"){ pageView = btn.dataset.view; render(); }
     else if(action === "toggle-group-view"){
       groupView = !groupView;
       btn.classList.toggle("on", groupView);
