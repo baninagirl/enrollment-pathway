@@ -629,6 +629,7 @@
     studentSearch: "",
     studentMonth: (()=>{ return cycleMonthFor(new Date()); })(),
     studentMonthMode: "month", // "month" = this month's roster only, "all" = every month (historical)
+    studentsView: "list", // "list" = New Students, "report" = New Students Report
     enrollmentShowAll: false // false = empty sections collapse to a thin line; true = every section shows full, even with nothing in it
   };
 
@@ -644,8 +645,34 @@
   const MATH_LEVELS = ["7A","6A","5A","4A","3A","2A","A","B","C","D","E","F","G","H","I","J","K","L","M","N","O"];
   const READING_LEVELS = ["7A","6A","5A","4A","3A","2A","AI","AII","BI","BII","CI","CII","DI","DII","EI","EII","FI","FII","GI","GII","HI","HII","I-I","I-II","J","K","L","M","N","O"];
   function levelsForSubject(subject){ return subject === "Reading" ? READING_LEVELS : MATH_LEVELS; }
-  function levelSelect(name, subject){
-    return `<select name="${name}"><option value="">—</option>${levelsForSubject(subject).map(l=>`<option value="${l}">${l}</option>`).join("")}</select>`;
+  function levelSelect(name, subject, selected){
+    return `<select name="${name}"><option value="">—</option>${levelsForSubject(subject).map(l=>`<option value="${l}" ${l===selected?"selected":""}>${l}</option>`).join("")}</select>`;
+  }
+  // Best-effort match of a diagnostic's free-text start point (e.g. "Math 3A", "Reading BII",
+  // just "3A", or a combined "Math 3A, Reading BI" for a Both-subject diagnostic) against the
+  // fixed level list for a subject — used only to default the Current level select when
+  // graduating a student onto a teacher's roster, never to overwrite anything typed by hand.
+  // If the text names both subjects, only the half belonging to this one is searched — early
+  // Math and Reading levels share the same codes (7A..2A), so without this a combined start
+  // point could pull the other subject's level by mistake. Longest levels are checked first so
+  // "BII" doesn't get matched as "B", and each candidate has to be its own token (bounded by a
+  // non-letter/number) so "A" doesn't match inside "AI". Returns "" if nothing confidently matches.
+  function guessLevelFromStartPoint(startPoint, subject){
+    if(!startPoint) return "";
+    const otherSubject = subject === "Reading" ? "Math" : "Reading";
+    let text = startPoint;
+    const mine = new RegExp(subject, "i"), other = new RegExp(otherSubject, "i");
+    if(mine.test(text) && other.test(text)){
+      const mineIdx = text.search(mine), otherIdx = text.search(other);
+      text = mineIdx < otherIdx ? text.slice(mineIdx, otherIdx) : text.slice(mineIdx);
+    }
+    const upper = text.toUpperCase();
+    const sorted = [...levelsForSubject(subject)].sort((a,b)=> b.length - a.length);
+    for(const lvl of sorted){
+      const re = new RegExp(`(^|[^A-Z0-9])${lvl}([^A-Z0-9]|$)`);
+      if(re.test(upper)) return lvl;
+    }
+    return "";
   }
   const INQUIRY_OPTIONS = ["Facebook", "Referral", "Walk-in", "Returnee", "Landline/Phone", "Other"];
   function subjectText(v){ return v || "—"; }
@@ -1380,6 +1407,22 @@
     not_enrolled: ["Not enrolled","bad"]
   };
 
+  // Plain-text rendering of a Pipeline student's own weekly schedule (the studentId-keyed
+  // `schedules` row set from "New regular schedule") — this is the same slots array shown on
+  // the Weekly view tab, just formatted for a table cell instead of the calendar grid.
+  function pipelineScheduleLabel(studentId){
+    const sc = scheduleFor(studentId);
+    const slots = sc && Array.isArray(sc.slots) ? sc.slots.filter(x => x && x.day) : [];
+    if(!slots.length) return `<span class="muted">Not set yet</span>`;
+    return esc(slots.map(x => `${x.day}${x.time ? " " + fmtTime(x.time) : ""}`).join(" & "));
+  }
+  // Same KC/Paper pill Student Roster uses (.pill.subj already matches roster.html's KC
+  // color, .pill.muted already matches its Paper color — no new CSS needed here).
+  function fmtModePill(mode){
+    if(!mode) return `<span class="pill muted">—</span>`;
+    return mode === "KC" ? `<span class="pill subj">KC</span>` : `<span class="pill muted">Paper</span>`;
+  }
+
   // Effective subject for a student: their own field if set, otherwise falls back to whatever
   // was picked on their diagnostic booking (covers students created before this field existed).
   function studentSubject(s){
@@ -1446,6 +1489,49 @@
       subjects.forEach(sub => rows.push({ s, subj: sub }));
     });
 
+    const isReport = STATE.studentsView === "report";
+    const emptyMsg = q ? "No students match that search." : STATE.studentMonthMode==="month" ? `No enrolled students on the ${esc(monthLabel)} roster yet. Try <b>All time</b> — a student shows up here once their diagnostic is marked <b>Enrolled</b>.` : "No enrolled students yet. A student shows up here once their diagnostic is marked <b>Enrolled</b>.";
+
+    const listTable = `<table class="stable">
+          <thead><tr><th>#</th><th>Student</th><th>Grade</th><th>Subject</th><th>Schedule</th><th>Mode</th><th>Status</th></tr></thead>
+          <tbody>
+            ${rows.map((row, i) => {
+              const s = row.s;
+              const st = STATUS_LABEL[s.status] || ["—","muted"];
+              return `<tr class="clickrow" data-action="open-student" data-id="${s.id}">
+                <td class="tnum">${i+1}</td>
+                <td><b>${esc(displayName(s))}</b></td>
+                <td>${esc(s.ageGrade||"—")}</td>
+                <td>${row.subj ? `<span class="pill subj">${esc(row.subj)}</span>` : "—"}</td>
+                <td>${pipelineScheduleLabel(s.id)}</td>
+                <td>${fmtModePill(s.mode)}</td>
+                <td><span class="pill ${st[1]}">${st[0]}</span></td>
+              </tr>`;
+            }).join("")}
+          </tbody>
+        </table>`;
+
+    const reportTable = `<table class="stable">
+          <thead><tr><th>#</th><th>Student</th><th>Grade</th><th>Subject</th><th>Start point</th><th>DT test</th><th>DT date</th><th>Score</th><th>Time</th></tr></thead>
+          <tbody>
+            ${rows.map((row, i) => {
+              const s = row.s;
+              const d = activeDiagnosticFor(s.id);
+              return `<tr class="clickrow" data-action="open-student" data-id="${s.id}">
+                <td class="tnum">${i+1}</td>
+                <td><b>${esc(displayName(s))}</b></td>
+                <td>${esc(s.ageGrade||"—")}</td>
+                <td>${row.subj ? `<span class="pill subj">${esc(row.subj)}</span>` : "—"}</td>
+                <td>${esc((d && d.startPoint) || "—")}</td>
+                <td>${esc((d && d.dtTest) || "—")}</td>
+                <td class="tnum">${d ? fmtDateShort(d.date) : "—"}</td>
+                <td>${esc((d && d.score) || "—")}</td>
+                <td class="tnum">${d ? fmtTime(d.time) : "—"}</td>
+              </tr>`;
+            }).join("")}
+          </tbody>
+        </table>`;
+
     el.innerHTML = `
       <div class="cal-toolbar" style="margin-bottom:12px;">
         <div class="cal-nav">
@@ -1465,34 +1551,15 @@
         </div>
       </div>
       <div class="search-row">
+        <div class="seg">
+          <button class="${!isReport?'active':''}" data-action="students-view" data-view="list">New Students</button>
+          <button class="${isReport?'active':''}" data-action="students-view" data-view="report">New Students Report</button>
+        </div>
         <input type="search" id="studentSearchInput" placeholder="Search by student or parent name…" value="${esc(STATE.studentSearch)}" style="max-width:260px;">
         <button type="button" class="btn primary sm" data-action="open-new-student">${iconPlus()} Add student</button>
       </div>
       <div class="card">
-        ${rows.length ? `<div class="table-scroll"><table class="stable">
-          <thead><tr><th>#</th><th>Student</th><th>Age / grade</th><th>Subject</th><th>Parent / guardian</th><th>Contact</th><th>Stage</th><th>Start point</th><th>DT test</th><th>DT date</th><th>Score</th><th>Time</th></tr></thead>
-          <tbody>
-            ${rows.map((row, i) => {
-              const s = row.s;
-              const st = STATUS_LABEL[s.status] || ["—","muted"];
-              const d = activeDiagnosticFor(s.id);
-              return `<tr class="clickrow" data-action="open-student" data-id="${s.id}">
-                <td class="tnum">${i+1}</td>
-                <td><b>${esc(displayName(s))}</b></td>
-                <td>${esc(s.ageGrade||"—")}</td>
-                <td>${row.subj ? `<span class="pill subj">${esc(row.subj)}</span>` : "—"}</td>
-                <td>${esc(s.parentName||"—")}</td>
-                <td>${esc(s.parentPhone||s.parentEmail||"—")}</td>
-                <td><span class="pill ${st[1]}">${st[0]}</span></td>
-                <td>${esc((d && d.startPoint) || "—")}</td>
-                <td>${esc((d && d.dtTest) || "—")}</td>
-                <td class="tnum">${d ? fmtDateShort(d.date) : "—"}</td>
-                <td>${esc((d && d.score) || "—")}</td>
-                <td class="tnum">${d ? fmtTime(d.time) : "—"}</td>
-              </tr>`;
-            }).join("")}
-          </tbody>
-        </table></div>` : `<div class="empty">${q ? "No students match that search." : STATE.studentMonthMode==="month" ? `No enrolled students on the ${esc(monthLabel)} roster yet. Try <b>All time</b> — a student shows up here once their diagnostic is marked <b>Enrolled</b>.` : "No enrolled students yet. A student shows up here once their diagnostic is marked <b>Enrolled</b>."}</div>`}
+        ${rows.length ? `<div class="table-scroll">${isReport ? reportTable : listTable}</div>` : `<div class="empty">${emptyMsg}</div>`}
       </div>
     `;
     const input = $("#studentSearchInput", el);
@@ -1555,6 +1622,13 @@
               </select>
             </label>
           </div>
+          <label class="field">Worksheet mode
+            <select name="mode">
+              <option value="" ${!s.mode?"selected":""}>—</option>
+              <option value="KC" ${s.mode==="KC"?"selected":""}>KC</option>
+              <option value="Paper" ${s.mode==="Paper"?"selected":""}>Paper</option>
+            </select>
+          </label>
           <label class="field">Notes<textarea name="notes" rows="2">${esc(s.notes||"")}</textarea></label>
         </div>
         <div class="modal-foot">
@@ -1579,6 +1653,7 @@
         parentPhone: fd.get("parentPhone").toString().trim(),
         ageGrade: fd.get("ageGrade").toString().trim(),
         subject: fd.get("subject").toString(),
+        mode: fd.get("mode").toString(),
         notes: fd.get("notes").toString().trim()
       });
       toast("Student updated.");
@@ -1883,9 +1958,18 @@
       `);
       return;
     }
-    const presetSubject = presetStudentId ? (studentById(presetStudentId)||{}).subject : null;
+    const presetStudent = presetStudentId ? studentById(presetStudentId) : null;
+    const presetSubject = presetStudent ? presetStudent.subject : null;
     const mathChecked = presetSubject === "Math" || presetSubject === "Both";
     const readingChecked = presetSubject === "Reading" || presetSubject === "Both";
+    // Best-effort defaults pulled straight from what Pipeline already collected on this
+    // student — Worksheet mode from their own record, Current level guessed off their
+    // diagnostic's start point — so assigning a teacher doesn't mean retyping everything
+    // that's already on file. Every one of these stays a normal, editable field.
+    const presetMode = presetStudent ? presetStudent.mode : null;
+    const presetDiag = presetStudentId ? activeDiagnosticFor(presetStudentId) : null;
+    const presetMathLevel = presetDiag ? guessLevelFromStartPoint(presetDiag.startPoint, "Math") : "";
+    const presetReadingLevel = presetDiag ? guessLevelFromStartPoint(presetDiag.startPoint, "Reading") : "";
     openModal(`
       <div class="modal-head"><h3>New regular schedule</h3><button class="iconbtn" data-action="close-modal">✕</button></div>
       <form data-form="new-schedule">
@@ -1910,6 +1994,13 @@
             <label class="field">Time<input type="time" name="time2" required value="16:00"></label>
           </div>
           <label class="field">Start date<input type="date" name="startDate" required value="${todayISO()}"></label>
+          <label class="field">Worksheet mode
+            <select name="mode">
+              <option value="" ${!presetMode?"selected":""}>—</option>
+              <option value="KC" ${presetMode==="KC"?"selected":""}>KC</option>
+              <option value="Paper" ${presetMode==="Paper"?"selected":""}>Paper</option>
+            </select>
+          </label>
 
           <div style="height:1px; background:var(--border); margin:14px 0;"></div>
           <div class="hint" style="font-size:11px; text-transform:uppercase; letter-spacing:.04em; margin:0 0 8px;">Graduating — assign to a teacher's roster</div>
@@ -1920,7 +2011,7 @@
           <div id="mathScheduleBlock" ${mathChecked?"":"hidden"} style="margin:8px 0 4px;">
             ${fieldSelectStaff("mathTeacher", STATE.settings.trainers, "Math teacher", false)}
             <div class="field-row">
-              <label class="field">Current level${levelSelect("mathCurLevel","Math")}</label>
+              <label class="field">Current level${levelSelect("mathCurLevel","Math",presetMathLevel)}</label>
               <label class="field">Current page<input type="text" name="mathCurPage" placeholder="e.g. 130"></label>
             </div>
             <div class="field-row">
@@ -1935,7 +2026,7 @@
           <div id="readingScheduleBlock" ${readingChecked?"":"hidden"} style="margin:8px 0 4px;">
             ${fieldSelectStaff("readingTeacher", STATE.settings.trainers, "Reading teacher", false)}
             <div class="field-row">
-              <label class="field">Current level${levelSelect("readingCurLevel","Reading")}</label>
+              <label class="field">Current level${levelSelect("readingCurLevel","Reading",presetReadingLevel)}</label>
               <label class="field">Current page<input type="text" name="readingCurPage" placeholder="e.g. 130"></label>
             </div>
             <div class="field-row">
@@ -2112,26 +2203,45 @@
     if(!s) return;
     const mathOn = fd.get("mathOn") === "on";
     const readingOn = fd.get("readingOn") === "on";
+    const mode = fd.get("mode") || "";
     const slots = [{ day: day1, time: time1 }, { day: day2, time: time2 }];
+    // Same two days/times, but tagged IC (In Center) by default for the linked, per-subject
+    // schedule row below — Pipeline doesn't ask In Center vs Remote here, so this is just a
+    // starting point the teacher can flip per row from Student Roster if a slot's remote.
+    const linkedSlots = [{ day: day1, time: time1, mode: "IC" }, { day: day2, time: time2, mode: "IC" }];
     await guardWrite(async ()=>{
       await db.collection("schedules").add({
         studentId, studentName: s.name, slots, startDate, status: "active", createdAt: new Date().toISOString()
       });
-      await db.collection("students").doc(studentId).update({ status: "active" });
+      await db.collection("students").doc(studentId).update({ status: "active", mode });
+      // Each subject enrollment gets its own linked schedule row (subjectEnrollmentId) —
+      // that's what Student Roster's Schedule column actually reads (scheduleFor(enrollment.id),
+      // see roster.html), so the days/times just picked above show up there immediately
+      // instead of the teacher having to re-enter them from scratch.
       if(mathOn){
-        await db.collection("subject_enrollments").add({
+        const enr = await db.collection("subject_enrollments").add({
           studentId, studentName: s.name, subject: "Math",
           teacher: fd.get("mathTeacher") || "",
           currentLevel: fd.get("mathCurLevel") || "", currentPage: fd.get("mathCurPage") || "",
-          goalLevel: fd.get("mathGoalLevel") || "", goalPage: fd.get("mathGoalPage") || ""
+          goalLevel: fd.get("mathGoalLevel") || "", goalPage: fd.get("mathGoalPage") || "",
+          mode
+        });
+        await db.collection("schedules").add({
+          studentId, studentName: s.name, subjectEnrollmentId: enr.id,
+          slots: linkedSlots, startDate, status: "active", createdAt: new Date().toISOString()
         });
       }
       if(readingOn){
-        await db.collection("subject_enrollments").add({
+        const enr = await db.collection("subject_enrollments").add({
           studentId, studentName: s.name, subject: "Reading",
           teacher: fd.get("readingTeacher") || "",
           currentLevel: fd.get("readingCurLevel") || "", currentPage: fd.get("readingCurPage") || "",
-          goalLevel: fd.get("readingGoalLevel") || "", goalPage: fd.get("readingGoalPage") || ""
+          goalLevel: fd.get("readingGoalLevel") || "", goalPage: fd.get("readingGoalPage") || "",
+          mode
+        });
+        await db.collection("schedules").add({
+          studentId, studentName: s.name, subjectEnrollmentId: enr.id,
+          slots: linkedSlots, startDate, status: "active", createdAt: new Date().toISOString()
         });
       }
       toast(mathOn || readingOn ? "Regular schedule set — now on their teacher's roster." : "Regular schedule set.");
@@ -2322,6 +2432,7 @@
     else if(a === "student-month-next"){ STATE.studentMonth = new Date(STATE.studentMonth.getFullYear(), STATE.studentMonth.getMonth()+1, 1); renderStudents(); }
     else if(a === "student-month-today"){ STATE.studentMonth = cycleMonthFor(new Date()); renderStudents(); }
     else if(a === "student-month-mode"){ STATE.studentMonthMode = el.dataset.mode; renderStudents(); }
+    else if(a === "students-view"){ STATE.studentsView = el.dataset.view; renderStudents(); }
     else if(a === "open-edit-student"){ openEditStudentModal(el.dataset.id); }
     else if(a === "logout"){ if(sbClient) sbClient.auth.signOut(); }
     else if(a === "show-forgot"){ showLoginView("forgot"); }
