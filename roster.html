@@ -307,7 +307,7 @@
           <table class="stable">
             <thead><tr>
               <th class="selectcol" id="selectHeaderCell">#</th>
-              <th>Student</th><th>Grade</th><th>Subject</th><th>Teacher</th><th>Current level</th><th>Goal</th><th>Schedule</th><th>Mode</th><th>Status</th>
+              <th>Student</th><th>Grade</th><th>Subject</th><th>Teacher</th><th>Current level</th><th>Schedule</th><th>Mode</th><th>Status</th>
             </tr></thead>
             <tbody id="rosterBody"></tbody>
           </table>
@@ -1135,7 +1135,7 @@
       const emptyMsg = !editable ? `Nothing closed out for ${esc(monthLabel(viewMonth))} yet.`
         : enrollments.length===0 ? "No enrollments yet — add your first one."
         : "Nothing matches your filters.";
-      body.innerHTML = `<tr><td colspan="10"><div class="empty">${emptyMsg}</div></td></tr>`;
+      body.innerHTML = `<tr><td colspan="9"><div class="empty">${emptyMsg}</div></td></tr>`;
     }else{
       body.innerHTML = rows.map((e, idx) => `
         <tr class="${editable?'clickrow':''}" ${editable?`data-action="edit" data-id="${e.id}"`:""}>
@@ -1147,7 +1147,6 @@
           <td><span class="pill ${e.subject==='Math'?'subj-math':'subj-reading'}">${esc(e.subject)}</span></td>
           <td>${esc(e.teacher||"—")}</td>
           <td>${fmtLevel(e.current_level, e.current_page)}</td>
-          <td>${fmtLevel(e.goal_level, e.goal_page)}</td>
           <td>${e.archived ? `<span class="lvl empty-lvl" title="Schedules aren't part of a monthly close-out — only the roster's own numbers are.">not tracked</span>` : fmtSchedule(e)}</td>
           <td>${fmtMode(e.mode)}</td>
           <td><span class="pill ${(e.status||'active')==='inactive'?'status-inactive':'status-active'}">${(e.status||"active")==="inactive"?"Inactive":"Active"}</span></td>
