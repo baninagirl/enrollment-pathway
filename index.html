@@ -414,6 +414,7 @@
       <div class="page-actions" id="pageActions"></div>
     </div>
 
+    <div id="statsRowAnchor" hidden></div>
     <div class="stats" id="statsRow"></div>
 
     <section id="view-calendar" class="view"></section>
@@ -963,6 +964,26 @@
     else if(STATE.activeTab === "roster") renderRoster();
     else if(STATE.activeTab === "students") renderStudents();
     else if(STATE.activeTab === "settings") renderSettings();
+
+    positionStatsRow();
+  }
+
+  // New Students is the one tab whose stat tiles are scoped to the same "which cycle am I
+  // looking at" question its own month nav asks — same relationship Payments' stats have to
+  // its month nav — so those tiles move to sit right after that toolbar, same slot Payments
+  // uses. Every other tab's stats are page-wide counts with no month toggle of their own, so
+  // they stay put in the shared header, right above the tab content. `#statsRow` is one real
+  // node that gets physically re-parented (not rebuilt) each render, since New Students'
+  // section innerHTML is rebuilt fresh every time and would otherwise wipe it out.
+  function positionStatsRow(){
+    const statsEl = $("#statsRow");
+    if(STATE.activeTab === "students"){
+      const toolbar = document.querySelector("#view-students .cal-toolbar");
+      if(toolbar) toolbar.insertAdjacentElement("afterend", statsEl);
+    }else{
+      const anchor = $("#statsRowAnchor");
+      if(anchor) anchor.insertAdjacentElement("afterend", statsEl);
+    }
   }
 
   function iconPlus(){ return `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>`; }

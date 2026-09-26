@@ -96,7 +96,8 @@
 
   .search-row{ display:flex; gap:8px; margin-bottom:14px; flex-wrap:wrap; align-items:center; }
   .search-row input, .search-row select{ font-size:13.5px; width:auto; flex:0 0 auto; }
-  .search-row select{ min-width:132px; }
+  .search-row select{ min-width:112px; }
+  .search-row input[type=text], .search-row input[type=search]{ max-width:180px; }
   .table-scroll{ overflow-x:auto; }
   .stable{ width:100%; border-collapse:collapse; }
   .stable th{ text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--ink-muted); padding:8px 16px; border-bottom:1px solid var(--border); }
@@ -253,19 +254,13 @@
     <div id="view-roster">
       <div class="cal-toolbar" id="rosterToolbar" style="margin-bottom:12px;">
         <div class="cal-nav">
-          <button class="btn ghost sm" data-action="roster-month-prev">‹</button>
+          <button class="btn ghost sm" data-action="rep-prev">‹</button>
           <div class="month-head">
             <h2 id="rosterMonthLabel"></h2>
             <div class="month-range" id="rosterMonthRange"></div>
           </div>
-          <button class="btn ghost sm" data-action="roster-month-next">›</button>
-          <button class="btn sm" data-action="roster-month-today">This month</button>
-        </div>
-        <div class="cal-filters">
-          <div class="seg">
-            <button data-action="roster-month-mode" data-mode="month">Monthly roster</button>
-            <button data-action="roster-month-mode" data-mode="all">All time</button>
-          </div>
+          <button class="btn ghost sm" data-action="rep-next">›</button>
+          <button class="btn sm" data-action="rep-today">This month</button>
         </div>
       </div>
 
@@ -274,7 +269,7 @@
           <button data-action="roster-view" data-view="roster">Student Roster</button>
           <button data-action="roster-view" data-view="report">Student Roster Report</button>
         </div>
-        <input type="text" id="searchInput" placeholder="Search student…" style="max-width:220px;">
+        <input type="text" id="searchInput" placeholder="Search student…">
         <select id="subjectFilter">
           <option value="all">All subjects</option>
           <option value="Math">Math</option>
@@ -327,7 +322,7 @@
           <button data-action="roster-view" data-view="roster">Student Roster</button>
           <button data-action="roster-view" data-view="report">Student Roster Report</button>
         </div>
-        <input type="text" id="repSearchInput" placeholder="Search student…" style="max-width:220px;">
+        <input type="text" id="repSearchInput" placeholder="Search student…">
         <select id="repTeacherFilter"><option value="all">All teachers</option></select>
         <select id="repSubjectFilter">
           <option value="all">All subjects</option>
@@ -483,17 +478,13 @@
   // otherwise be toggled between independently without one resetting the other.
   let viewMode = "roster"; // "roster" | "report"
   let history = [];
+  // Roster and Report browse the same cycle timeline off this one shared Date — the current
+  // cycle reads live off `enrollments`, any earlier cycle reads the archived snapshot in
+  // `history` for that cycle_key. Roster projects that data onto its own columns (level,
+  // goal, teacher, mode, award, actual); Report projects it onto LWC/NWU/test numbers.
   let viewMonth = null; // a Date, 1st of the cycle's label month
   let reportFilters = { search:"", subject:"all", teacher:"all", mode:"all", grade:"all" };
   let editingReportId = null;
-
-  // Student Roster's own month nav — same "Monthly roster / All time" pattern Pipeline's
-  // New Students tab uses, so browsing the roster by cohort month works the same way in
-  // both places. Defaults to "all" (the roster's normal, everyone-active view) rather than
-  // Pipeline's "month" default, since narrowing to one cohort by default would hide most of
-  // the roster the moment someone opens this page.
-  let rosterMonth = null; // a Date, 1st of the cycle's label month
-  let rosterMonthMode = "all"; // "month" | "all"
 
   // A plain teacher and a trainer_teacher (a trainor who also carries her own roster,
   // like Queenie) both get their Student Roster locked to just their own students. The
@@ -579,7 +570,6 @@
     if(started) return;
     started = true;
     viewMonth = cycleMonthFor(new Date());
-    rosterMonth = cycleMonthFor(new Date());
     await Promise.all([loadStudents(), loadSettings(), loadEnrollments(), loadSchedules(), loadHistory()]);
     populateTeacherFilter();
     populateReportTeacherFilter();
@@ -862,7 +852,9 @@
     const wrap = $("#pageHeadActions");
     if(!wrap) return;
     if(viewMode === "roster"){
-      wrap.innerHTML = isTeacherScoped() ? "" : `<button class="btn primary" data-action="open-new" id="addToRosterBtn">+ Add to roster</button>`;
+      // Adding only ever adds to the live roster, so the button only makes sense while
+      // you're looking at the current cycle — browsing an archived one is read-only.
+      wrap.innerHTML = (isTeacherScoped() || !isCurrentCycle()) ? "" : `<button class="btn primary" data-action="open-new" id="addToRosterBtn">+ Add to roster</button>`;
       return;
     }
     if(!canCloseOut() || !isCurrentCycle()){ wrap.innerHTML = ""; return; }
@@ -1044,28 +1036,34 @@
   }
   /* ==================== /Student Roster Report ==================== */
 
-  // Which cycle an enrollment belongs to on the roster — same idea as Pipeline's New Students
-  // cohort key, just anchored on when the enrollment record itself was created rather than a
-  // diagnostic date, since roster entries don't have a diagnostic to fall back on.
-  function rosterCohortMonthKey(e){
-    const iso = e.created_at ? e.created_at.slice(0,10) : null;
-    if(!iso) return null;
-    const [y,m,dd] = iso.split("-").map(Number);
-    return monthKeyOf(cycleMonthFor(new Date(y, m-1, dd)));
+  // The roster's row source for whichever cycle is selected: the live enrollment for the
+  // current cycle (fully editable, same as always), or that enrollment's archived snapshot
+  // for any earlier, closed-out cycle. Both shapes carry the same fields the roster table
+  // reads, so `filtered()` and `render()` below don't need to know which one they got —
+  // except Schedule and Status, which close-out never snapshots (see the hint in the empty
+  // Schedule cell on an archived row).
+  function rosterSourceRows(){
+    if(isCurrentCycle()) return enrollments;
+    const cycleKey = monthKeyOf(viewMonth);
+    return history.filter(h => h.cycle_key === cycleKey).map(h => ({
+      id: h.id, student_id: h.student_id, student_name: h.student_name, subject: h.subject,
+      teacher: h.teacher, mode: h.mode, current_level: h.current_level, current_page: h.current_page,
+      goal_level: h.goal_level, goal_page: h.goal_page, award: h.award, actual: h.actual,
+      status: "active", // only active enrollments ever get closed out, so this always held then
+      archived: true
+    }));
   }
 
   function filtered(){
     // A teacher (and a trainer_teacher, like Queenie) only ever sees their own students,
     // no matter what the filter says.
     const lockedTeacher = isTeacherScoped() ? currentTeacherName : null;
-    const monthKey = monthKeyOf(rosterMonth);
-    return enrollments.filter(e=>{
+    return rosterSourceRows().filter(e=>{
       if(lockedTeacher !== null && e.teacher !== lockedTeacher) return false;
       if(filters.subject !== "all" && e.subject !== filters.subject) return false;
       if(lockedTeacher === null && filters.teacher !== "all" && e.teacher !== filters.teacher) return false;
       if(filters.status !== "all" && (e.status || "active") !== filters.status) return false;
       if(filters.search && !(e.student_name||"").toLowerCase().includes(filters.search.toLowerCase())) return false;
-      if(rosterMonthMode === "month" && rosterCohortMonthKey(e) !== monthKey) return false;
       return true;
     });
   }
@@ -1073,38 +1071,42 @@
   function renderRosterToolbar(){
     const label = $("#rosterMonthLabel");
     if(!label) return; // not in the DOM yet on first paint
-    label.textContent = rosterMonthMode === "all" ? "All students" : monthLabel(rosterMonth);
-    $("#rosterMonthRange").textContent = rosterMonthMode === "all" ? "" : monthRangeLabel(rosterMonth);
-    $$('#rosterToolbar [data-action="roster-month-mode"]').forEach(b => b.classList.toggle("active", b.dataset.mode === rosterMonthMode));
+    label.textContent = monthLabel(viewMonth);
+    $("#rosterMonthRange").textContent = monthRangeLabel(viewMonth);
   }
 
   function render(){
     renderRosterToolbar();
+    const editable = isCurrentCycle();
     const rows = filtered().slice().sort((a,b) =>
       lastNameSortKey(a.student_id, a.student_name).localeCompare(lastNameSortKey(b.student_id, b.student_name))
     );
     $("#enrollCount").textContent = rows.length + (rows.length===1 ? " enrollment" : " enrollments");
 
+    // Editing, selecting and bulk actions only make sense against the live, current-cycle
+    // roster — an archived cycle is a read-only snapshot of what it looked like back then.
     const toggleBtn = $("#selectModeToggle");
     if(toggleBtn){
+      toggleBtn.hidden = !editable;
       toggleBtn.textContent = selectMode ? "Done" : "Select";
       toggleBtn.classList.toggle("on", selectMode);
     }
+    if(!editable && selectMode){ selectMode = false; selectedIds.clear(); }
     const headerCell = $("#selectHeaderCell");
     if(headerCell){
-      headerCell.innerHTML = selectMode ? `<input type="checkbox" id="selectAllCheckbox" title="Select all">` : `#`;
+      headerCell.innerHTML = (editable && selectMode) ? `<input type="checkbox" id="selectAllCheckbox" title="Select all">` : `#`;
     }
 
     const body = $("#rosterBody");
     if(rows.length === 0){
-      const emptyMsg = enrollments.length===0 ? "No enrollments yet — add your first one."
-        : rosterMonthMode === "month" ? `No enrollments added on the ${esc(monthLabel(rosterMonth))} roster. Try <b>All time</b> to see everyone.`
+      const emptyMsg = !editable ? `Nothing closed out for ${esc(monthLabel(viewMonth))} yet.`
+        : enrollments.length===0 ? "No enrollments yet — add your first one."
         : "Nothing matches your filters.";
       body.innerHTML = `<tr><td colspan="12"><div class="empty">${emptyMsg}</div></td></tr>`;
     }else{
       body.innerHTML = rows.map((e, idx) => `
-        <tr class="clickrow" data-action="edit" data-id="${e.id}">
-          <td class="selectcol">${selectMode
+        <tr class="${editable?'clickrow':''}" ${editable?`data-action="edit" data-id="${e.id}"`:""}>
+          <td class="selectcol">${(editable && selectMode)
             ? `<input type="checkbox" class="row-check" data-action="toggle-select" data-id="${e.id}" ${selectedIds.has(e.id)?"checked":""}>`
             : `<span class="rownum">${idx+1}</span>`}</td>
           <td>${esc(displayName(e.student_id, e.student_name))}</td>
@@ -1115,14 +1117,14 @@
           <td>${fmtLevel(e.goal_level, e.goal_page)}</td>
           <td>${fmtPlain(e.award)}</td>
           <td>${fmtPlain(e.actual)}</td>
-          <td>${fmtSchedule(e)}</td>
+          <td>${e.archived ? `<span class="lvl empty-lvl" title="Schedules aren't part of a monthly close-out — only the roster's own numbers are.">not tracked</span>` : fmtSchedule(e)}</td>
           <td>${fmtMode(e.mode)}</td>
           <td><span class="pill ${(e.status||'active')==='inactive'?'status-inactive':'status-active'}">${(e.status||"active")==="inactive"?"Inactive":"Active"}</span></td>
         </tr>
       `).join("");
     }
 
-    if(selectMode){
+    if(editable && selectMode){
       const visibleIds = rows.map(r => r.id);
       const selectedVisible = visibleIds.filter(id => selectedIds.has(id));
       const selectAll = $("#selectAllCheckbox");
@@ -1564,13 +1566,12 @@
     const action = btn.dataset.action;
     if(action === "logout"){ await sbClient.auth.signOut(); }
     else if(action === "roster-view"){ viewMode = btn.dataset.view; renderView(); }
-    else if(action === "roster-month-prev"){ rosterMonth = new Date(rosterMonth.getFullYear(), rosterMonth.getMonth()-1, 1); render(); }
-    else if(action === "roster-month-next"){ rosterMonth = new Date(rosterMonth.getFullYear(), rosterMonth.getMonth()+1, 1); render(); }
-    else if(action === "roster-month-today"){ rosterMonth = cycleMonthFor(new Date()); render(); }
-    else if(action === "roster-month-mode"){ rosterMonthMode = btn.dataset.mode; render(); }
-    else if(action === "rep-prev"){ viewMonth = new Date(viewMonth.getFullYear(), viewMonth.getMonth()-1, 1); renderReportAndActions(); }
-    else if(action === "rep-next"){ viewMonth = new Date(viewMonth.getFullYear(), viewMonth.getMonth()+1, 1); renderReportAndActions(); }
-    else if(action === "rep-today"){ viewMonth = cycleMonthFor(new Date()); renderReportAndActions(); }
+    // Roster and Report now browse the very same cycle timeline — one shared viewMonth — so
+    // stepping the nav from either view's toolbar moves both, and renderBoth() keeps whichever
+    // one isn't on screen right now caught up too, ready the instant you switch to it.
+    else if(action === "rep-prev"){ viewMonth = new Date(viewMonth.getFullYear(), viewMonth.getMonth()-1, 1); renderBoth(); }
+    else if(action === "rep-next"){ viewMonth = new Date(viewMonth.getFullYear(), viewMonth.getMonth()+1, 1); renderBoth(); }
+    else if(action === "rep-today"){ viewMonth = cycleMonthFor(new Date()); renderBoth(); }
     else if(action === "close-out-month"){ await closeOutMonth(); }
     else if(action === "edit-report"){
       const id = btn.dataset.id;
