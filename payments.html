@@ -155,7 +155,7 @@
   .receipt-info .note{ display:block; font-size:12px; color:var(--warn); margin-top:2px; font-weight:600; }
   .receipt-acts{ display:flex; gap:6px; flex-wrap:wrap; align-items:flex-start; }
 
-  select, input[type=text], input[type=number], input[type=date], input[type=month], input[type=email], input[type=password], input[type=file]{
+  select, input[type=text], input[type=number], input[type=date], input[type=month], input[type=email], input[type=password], input[type=file], input[type=search]{
     font-family:inherit; font-size:13.5px; padding:8px 10px; border-radius:8px; border:1px solid var(--border);
     background:var(--surface); color:var(--ink); width:100%;
   }
@@ -1318,7 +1318,15 @@
         downloadTuitionImage(members.map(s => s.id), groupNameFor(gid) || "Billing group");
       }else{
         const s = students.find(x => x.id === btn.dataset.student);
-        if(s) downloadTuitionImage([s.id], displayName(s));
+        if(!s) return;
+        // Student is part of a billing group (siblings) — pull in the whole group's
+        // tuition rather than just this one student, same as the group-row download does.
+        if(s.billing_group_id){
+          const members = students.filter(x => x.billing_group_id === s.billing_group_id);
+          downloadTuitionImage(members.map(x => x.id), groupNameFor(s.billing_group_id) || "Billing group");
+        }else{
+          downloadTuitionImage([s.id], displayName(s));
+        }
       }
     }
     else if(action === "open-groups"){ openGroupsModal(); }
