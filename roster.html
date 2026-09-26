@@ -99,9 +99,14 @@
   .search-row select{ min-width:112px; }
   .search-row input[type=text], .search-row input[type=search]{ max-width:180px; }
   .table-scroll{ overflow-x:auto; }
-  .stable{ width:100%; border-collapse:collapse; }
-  .stable th{ text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--ink-muted); padding:8px 16px; border-bottom:1px solid var(--border); }
-  .stable td{ padding:10px 16px; border-bottom:1px solid var(--border); font-size:13px; vertical-align:middle; }
+  /* width:auto + min-width:100% (not a fixed width:100%) lets the table stretch to fill a
+     roomy container like before, but grow past it when a wide row (a long name, a 14-column
+     report) needs more space — .table-scroll then scrolls horizontally instead of the browser
+     squeezing every column and wrapping cell text onto 2-3 lines. */
+  .stable{ width:auto; min-width:100%; border-collapse:collapse; }
+  .stable th{ text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--ink-muted); padding:8px 16px; border-bottom:1px solid var(--border); white-space:nowrap; }
+  .stable td{ padding:10px 16px; border-bottom:1px solid var(--border); font-size:13px; vertical-align:middle; white-space:nowrap; }
+  .stable .empty{ white-space:normal; }
   .stable tr:last-child td{ border-bottom:none; }
   .stable tbody tr td{ transition: background-color .12s ease; }
   .stable tbody tr:hover td{ background:var(--surface-2); }
@@ -276,6 +281,12 @@
           <option value="Reading">Reading</option>
         </select>
         <select id="teacherFilter"><option value="all">All teachers</option></select>
+        <select id="modeFilter">
+          <option value="all">All modes</option>
+          <option value="Paper">Paper</option>
+          <option value="KC">KC</option>
+        </select>
+        <select id="gradeFilter"><option value="all">All grades</option></select>
         <select id="statusFilter">
           <option value="active" selected>Active</option>
           <option value="inactive">Inactive</option>
@@ -323,18 +334,23 @@
           <button data-action="roster-view" data-view="report">Student Roster Report</button>
         </div>
         <input type="text" id="repSearchInput" placeholder="Search student…">
-        <select id="repTeacherFilter"><option value="all">All teachers</option></select>
         <select id="repSubjectFilter">
           <option value="all">All subjects</option>
           <option value="Math">Math</option>
           <option value="Reading">Reading</option>
         </select>
+        <select id="repTeacherFilter"><option value="all">All teachers</option></select>
         <select id="repModeFilter">
           <option value="all">All modes</option>
           <option value="Paper">Paper</option>
           <option value="KC">KC</option>
         </select>
         <select id="repGradeFilter"><option value="all">All grades</option></select>
+        <select id="repStatusFilter">
+          <option value="active" selected>Active</option>
+          <option value="inactive">Inactive</option>
+          <option value="all">All statuses</option>
+        </select>
       </div>
 
       <div class="card">
@@ -467,7 +483,7 @@
 
   let sbClient = null, currentUser = null, currentRole = null, currentTeacherName = null;
   let students = [], trainers = [], enrollments = [], schedules = [];
-  let filters = { search:"", subject:"all", teacher:"all", status:"active" };
+  let filters = { search:"", subject:"all", teacher:"all", mode:"all", grade:"all", status:"active" };
   let editingId = null;
   let selectedIds = new Set();
   let selectMode = false;
@@ -483,7 +499,7 @@
   // `history` for that cycle_key. Roster projects that data onto its own columns (level,
   // goal, teacher, mode, award, actual); Report projects it onto LWC/NWU/test numbers.
   let viewMonth = null; // a Date, 1st of the cycle's label month
-  let reportFilters = { search:"", subject:"all", teacher:"all", mode:"all", grade:"all" };
+  let reportFilters = { search:"", subject:"all", teacher:"all", mode:"all", grade:"all", status:"active" };
   let editingReportId = null;
 
   // A plain teacher and a trainer_teacher (a trainor who also carries her own roster,
@@ -573,6 +589,7 @@
     await Promise.all([loadStudents(), loadSettings(), loadEnrollments(), loadSchedules(), loadHistory()]);
     populateTeacherFilter();
     populateReportTeacherFilter();
+    populateGradeFilter();
     populateReportGradeFilter();
     if(isTeacherScoped() && currentTeacherName){ filters.teacher = currentTeacherName; reportFilters.teacher = currentTeacherName; }
     renderView();
@@ -796,13 +813,17 @@
   // Same fixed grade order Student Roster uses (K/PK before P1..P14, not plain alphabetical),
   // narrowed to only the grades that actually show up right now.
   const GRADE_ORDER = ["PK1","PK2","PK3","K","P1","P2","P3","P4","P5","P6","P7","P8","P9","P10","P11","P12","P13","P14"];
-  function populateReportGradeFilter(){
-    const sel = $("#repGradeFilter");
+  // Shared by Roster's own #gradeFilter and Report's #repGradeFilter — same grade list,
+  // same fixed order, on both views.
+  function populateGradeFilterInto(selId){
+    const sel = $(selId);
     if(!sel) return;
     const present = new Set(students.map(s => s.age_grade).filter(Boolean));
     const grades = GRADE_ORDER.filter(g => present.has(g));
     sel.innerHTML = `<option value="all">All grades</option>` + grades.map(g=>`<option value="${esc(g)}">${esc(g)}</option>`).join("");
   }
+  function populateGradeFilter(){ populateGradeFilterInto("#gradeFilter"); }
+  function populateReportGradeFilter(){ populateGradeFilterInto("#repGradeFilter"); }
 
   // The current (open) cycle reads live off subject_enrollments — that's the row a close-out
   // hasn't archived yet, so it's what's still editable. Any past cycle reads the frozen
@@ -811,27 +832,30 @@
     const q = reportFilters.search.trim().toLowerCase();
     if(isCurrentCycle()){
       return enrollments
-        .filter(e => (e.status||"active") === "active")
+        .filter(e => reportFilters.status === "all" || (e.status||"active") === reportFilters.status)
         .filter(e => reportFilters.subject === "all" || e.subject === reportFilters.subject)
         .filter(e => reportFilters.teacher === "all" || e.teacher === reportFilters.teacher)
         .filter(e => reportFilters.mode === "all" || e.mode === reportFilters.mode)
         .filter(e => reportFilters.grade === "all" || gradeFor(e.student_id) === reportFilters.grade)
         .filter(e => !q || (e.student_name||"").toLowerCase().includes(q))
         .sort((a,b) => lastNameSortKey(a.student_id,a.student_name).localeCompare(lastNameSortKey(b.student_id,b.student_name)))
-        .map(e => ({ source:"live", id:e.id, student_id:e.student_id, student_name:e.student_name, subject:e.subject, teacher:e.teacher, mode:e.mode,
+        .map(e => ({ source:"live", id:e.id, student_id:e.student_id, student_name:e.student_name, subject:e.subject, teacher:e.teacher, mode:e.mode, status:e.status||"active",
           lwc:e.lwc, nwu:e.nwu, no_of_days:e.no_of_days, no_of_months_current_level:e.no_of_months_current_level,
           test_date:e.test_date, test_level:e.test_level, test_time:e.test_time, test_score:e.test_score, test_group:e.test_group }));
     }
     const cycleKey = monthKeyOf(viewMonth);
     return history
       .filter(h => h.cycle_key === cycleKey)
+      // Only active enrollments ever get closed out, so an archived row is always
+      // effectively "active" — filtering to "inactive" correctly shows none of them.
+      .filter(h => reportFilters.status === "all" || reportFilters.status === "active")
       .filter(h => reportFilters.subject === "all" || h.subject === reportFilters.subject)
       .filter(h => reportFilters.teacher === "all" || h.teacher === reportFilters.teacher)
       .filter(h => reportFilters.mode === "all" || h.mode === reportFilters.mode)
       .filter(h => reportFilters.grade === "all" || gradeFor(h.student_id) === reportFilters.grade)
       .filter(h => !q || (h.student_name||"").toLowerCase().includes(q))
       .sort((a,b) => lastNameSortKey(a.student_id,a.student_name).localeCompare(lastNameSortKey(b.student_id,b.student_name)))
-      .map(h => ({ source:"archived", id:h.id, student_id:h.student_id, student_name:h.student_name, subject:h.subject, teacher:h.teacher, mode:h.mode,
+      .map(h => ({ source:"archived", id:h.id, student_id:h.student_id, student_name:h.student_name, subject:h.subject, teacher:h.teacher, mode:h.mode, status:"active",
         lwc:h.lwc, nwu:h.nwu, no_of_days:h.no_of_days, no_of_months_current_level:h.no_of_months_current_level,
         test_date:h.test_date, test_level:h.test_level, test_time:h.test_time, test_score:h.test_score, test_group:h.test_group }));
   }
@@ -846,23 +870,30 @@
   // button at all (same bar as Payments and Admin).
   function canCloseOut(){ return currentRole === "admin" || currentRole === "superadmin"; }
 
-  // Renders whichever action belongs in the page-head's right slot for the active view: the
-  // roster view's "+ Add to roster" button, or the report view's close-out button/status.
+  // Renders the page-head's right slot with BOTH actions together — "+ Add to roster" and
+  // the close-out button/status — regardless of which view (Roster or Report) is on screen,
+  // so switching views is never required just to find the button you need. Each stays gated
+  // by its own existing permission/state checks.
   function renderPageHeadActions(){
     const wrap = $("#pageHeadActions");
     if(!wrap) return;
-    if(viewMode === "roster"){
-      // Adding only ever adds to the live roster, so the button only makes sense while
-      // you're looking at the current cycle — browsing an archived one is read-only.
-      wrap.innerHTML = (isTeacherScoped() || !isCurrentCycle()) ? "" : `<button class="btn primary" data-action="open-new" id="addToRosterBtn">+ Add to roster</button>`;
-      return;
+
+    // Adding only ever adds to the live roster, so the button only makes sense while
+    // you're looking at the current cycle — browsing an archived one is read-only.
+    const addBtnHtml = (isTeacherScoped() || !isCurrentCycle()) ? ""
+      : `<button class="btn primary" data-action="open-new" id="addToRosterBtn">+ Add to roster</button>`;
+
+    // Closing out is likewise only meaningful for the current cycle, and admin-only.
+    let closeOutHtml = "";
+    if(canCloseOut() && isCurrentCycle()){
+      const cycleLabel = monthLabel(viewMonth);
+      const candidates = openCloseOutCandidates();
+      closeOutHtml = candidates.length
+        ? `<button class="btn primary" data-action="close-out-month" title="Archive this cycle's numbers and start ${esc(cycleLabel)} fresh">Close out ${esc(cycleLabel)} (${candidates.length})</button>`
+        : `<span class="hint" style="font-size:12px; color:var(--ink-muted);">Everything's closed out for ${esc(cycleLabel)}.</span>`;
     }
-    if(!canCloseOut() || !isCurrentCycle()){ wrap.innerHTML = ""; return; }
-    const cycleLabel = monthLabel(viewMonth);
-    const candidates = openCloseOutCandidates();
-    wrap.innerHTML = candidates.length
-      ? `<button class="btn primary" data-action="close-out-month" title="Archive this cycle's numbers and start ${esc(cycleLabel)} fresh">Close out ${esc(cycleLabel)} (${candidates.length})</button>`
-      : `<span class="hint" style="font-size:12px; color:var(--ink-muted);">Everything's closed out for ${esc(cycleLabel)}.</span>`;
+
+    wrap.innerHTML = [addBtnHtml, closeOutHtml].filter(Boolean).join("");
   }
 
   async function closeOutMonth(){
@@ -963,7 +994,7 @@
     body.innerHTML = rows.map((r, idx) => `
       <tr class="${editable?"clickrow":""}" ${editable?`data-action="edit-report" data-id="${r.id}"`:""}>
         <td class="rownum">${idx+1}</td>
-        <td><b>${esc(displayName(r.student_id, r.student_name))}</b></td>
+        <td>${esc(displayName(r.student_id, r.student_name))}</td>
         <td>${esc(gradeFor(r.student_id) || "—")}</td>
         <td><span class="pill ${r.subject==='Math'?'subj-math':'subj-reading'}">${esc(r.subject||"")}</span></td>
         <td>${fmtMode(r.mode)}</td>
@@ -1062,6 +1093,8 @@
       if(lockedTeacher !== null && e.teacher !== lockedTeacher) return false;
       if(filters.subject !== "all" && e.subject !== filters.subject) return false;
       if(lockedTeacher === null && filters.teacher !== "all" && e.teacher !== filters.teacher) return false;
+      if(filters.mode !== "all" && e.mode !== filters.mode) return false;
+      if(filters.grade !== "all" && gradeFor(e.student_id) !== filters.grade) return false;
       if(filters.status !== "all" && (e.status || "active") !== filters.status) return false;
       if(filters.search && !(e.student_name||"").toLowerCase().includes(filters.search.toLowerCase())) return false;
       return true;
@@ -1534,6 +1567,8 @@
     if(e.target.id === "searchInput"){ filters.search = e.target.value; render(); }
     if(e.target.id === "subjectFilter"){ filters.subject = e.target.value; render(); }
     if(e.target.id === "teacherFilter"){ filters.teacher = e.target.value; render(); }
+    if(e.target.id === "modeFilter"){ filters.mode = e.target.value; render(); }
+    if(e.target.id === "gradeFilter"){ filters.grade = e.target.value; render(); }
     if(e.target.id === "statusFilter"){ filters.status = e.target.value; render(); }
     if(e.target.id === "selectAllCheckbox"){
       const visibleIds = filtered().map(r => r.id);
@@ -1541,10 +1576,11 @@
       else{ visibleIds.forEach(id => selectedIds.delete(id)); }
       render();
     }
-    if(e.target.id === "repTeacherFilter"){ reportFilters.teacher = e.target.value; renderReport(); }
     if(e.target.id === "repSubjectFilter"){ reportFilters.subject = e.target.value; renderReport(); }
+    if(e.target.id === "repTeacherFilter"){ reportFilters.teacher = e.target.value; renderReport(); }
     if(e.target.id === "repModeFilter"){ reportFilters.mode = e.target.value; renderReport(); }
     if(e.target.id === "repGradeFilter"){ reportFilters.grade = e.target.value; renderReport(); }
+    if(e.target.id === "repStatusFilter"){ reportFilters.status = e.target.value; renderReport(); }
   });
 
   document.addEventListener("input", (e)=>{
