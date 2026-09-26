@@ -234,7 +234,6 @@
       <a class="navbtn" href="index.html" id="navPipelineLink" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16l-6.5 8.5V19l-3 1.5v-8L4 4z"/></svg>Pipeline</a>
       <a class="navbtn" href="roster.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3L2 8l10 5 10-5-10-5z"/><path d="M6 10.5V15c0 1.5 2.5 3 6 3s6-1.5 6-3v-4.5"/></svg>Student roster</a>
       <a class="navbtn" href="calendar.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>Calendar</a>
-      <a class="navbtn" href="reporting.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 20V10M12 20V4M6 20v-6"/></svg>Reporting</a>
       <a class="navbtn active" href="payments.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20M6 15h4"/></svg>Payments</a>
       <a class="navbtn" href="admin.html" id="navAdminLink" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v6c0 5-3.5 8-7 9-3.5-1-7-4-7-9V6l7-3z"/></svg>Admin</a>
     </div>
@@ -973,7 +972,7 @@
       <td class="money">${peso(r.paid)}</td>
       <td class="money">${peso(r.balance)}</td>
       <td>${statusPill(r.status)}</td>
-      <td><div class="row-actions"><button class="btn sm" data-action="open-log-payment" data-student="${esc(s.id)}">Log payment</button></div></td>
+      <td><div class="row-actions"><button class="iconbtn" data-action="open-payment-history" data-student="${esc(s.id)}" title="Payment history — undo a payment">🕘</button><button class="btn sm" data-action="open-log-payment" data-student="${esc(s.id)}">Log payment</button></div></td>
     </tr>`;
   }
 
@@ -1042,6 +1041,57 @@
       </form>
     `;
     $("#modalBackdrop").hidden = false;
+  }
+
+  // Payment history / undo — every logged payment for one student, whatever its status
+  // (pending, verified, flagged, rejected), each with its own delete button. This is the
+  // only place a payment can be removed once it's already verified — the review queue
+  // below only ever shows pending/flagged entries, so a "Paid" row had no way back until
+  // this modal. Deleting reuses deleteReceipt(), which already has full undo/redo support.
+  function openPaymentHistoryModal(studentId){
+    const s = students.find(x => x.id === studentId);
+    if(!s) return;
+    const modal = $("#modal");
+    modal.innerHTML = `
+      <div class="modal-head"><h3>${esc(displayName(s))} — payment history</h3><button class="iconbtn" data-action="close-modal">✕</button></div>
+      <div class="modal-body" id="paymentHistoryBody" data-student="${esc(studentId)}">
+        ${paymentHistoryRowsHtml(studentId)}
+      </div>
+      <div class="modal-foot">
+        <button type="button" class="btn primary" data-action="close-modal" style="margin-left:auto;">Done</button>
+      </div>
+    `;
+    $("#modalBackdrop").hidden = false;
+  }
+
+  function paymentHistoryRowsHtml(studentId){
+    const mine = receipts.filter(r => r.student_id === studentId)
+      .sort((a,b) => new Date(b.created_at) - new Date(a.created_at));
+    if(!mine.length) return `<div class="empty">No payments logged yet.</div>`;
+    return mine.map(r => {
+      const monthLabel = r.covers_month ? new Date(r.covers_month + "T00:00:00").toLocaleDateString("en-US", { month:"short", year:"numeric" }) : "—";
+      const label = (r.status||"").charAt(0).toUpperCase() + (r.status||"").slice(1);
+      return `<div class="receipt-row">
+        <div class="receipt-thumb">🧾</div>
+        <div class="receipt-info">
+          <b>${peso(r.amount)} — ${esc(monthLabel)}</b>
+          <span class="sub"><span class="pill ${esc(r.status)}">${esc(label)}</span>${r.reference_number ? " · ref #" + esc(r.reference_number) : ""}${r.uploaded_by ? " · logged by " + esc(r.uploaded_by) : ""}</span>
+          ${r.status === "flagged" && r.status_note ? `<span class="note">Flagged: ${esc(r.status_note)}</span>` : ""}
+          ${r.receipt_path ? `<a href="#" data-action="view-receipt" data-id="${esc(r.id)}" style="font-size:12px;">View receipt photo</a>` : ""}
+        </div>
+        <div class="receipt-acts">
+          <button class="iconbtn" data-action="delete-receipt" data-id="${esc(r.id)}" title="Undo this payment">🗑</button>
+        </div>
+      </div>`;
+    }).join("");
+  }
+
+  // If the payment-history modal is open, keeps it in sync after a delete/undo/redo
+  // instead of leaving it showing a stale list until the admin closes and reopens it.
+  function refreshPaymentHistoryModalIfOpen(){
+    const body = $("#paymentHistoryBody");
+    if(!body) return;
+    body.innerHTML = paymentHistoryRowsHtml(body.dataset.student);
   }
 
   function openTuitionModal(studentId){
@@ -1152,22 +1202,25 @@
   async function deleteReceipt(id){
     const r = receipts.find(x => x.id === id);
     if(!r) return;
-    if(!confirm("Delete this payment entry? Only do this if it was logged by mistake — you can undo this from the Undo button afterward.")) return;
+    const msg = r.status === "verified"
+      ? "Undo this payment? This removes it from the student's paid total — only do this if it was logged in error. You can undo this undo from the Undo button afterward."
+      : "Delete this payment entry? Only do this if it was logged by mistake — you can undo this from the Undo button afterward.";
+    if(!confirm(msg)) return;
     const { error } = await sbClient.from("payment_receipts").delete().eq("id", id);
     if(error){ toast("Couldn't delete: " + error.message); return; }
-    await loadReceipts(); render();
+    await loadReceipts(); render(); refreshPaymentHistoryModalIfOpen();
     const s = students.find(x => x.id === r.student_id);
     pushUndo(`Delete payment (${s ? displayName(s) : "student"})`,
       async ()=>{
         const { id: _drop, ...rest } = r;
         const { error } = await sbClient.from("payment_receipts").insert(r);
         if(error) throw error;
-        await loadReceipts(); render();
+        await loadReceipts(); render(); refreshPaymentHistoryModalIfOpen();
       },
       async ()=>{
         const { error } = await sbClient.from("payment_receipts").delete().eq("id", id);
         if(error) throw error;
-        await loadReceipts(); render();
+        await loadReceipts(); render(); refreshPaymentHistoryModalIfOpen();
       }
     );
   }
@@ -1309,6 +1362,7 @@
       render();
     }
     else if(action === "open-log-payment"){ openLogPaymentModal(btn.dataset.student || null); }
+    else if(action === "open-payment-history"){ openPaymentHistoryModal(btn.dataset.student); }
     else if(action === "edit-tuition"){ e.preventDefault(); openTuitionModal(btn.dataset.id); }
     else if(action === "download-tuition"){
       e.preventDefault();

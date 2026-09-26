@@ -149,6 +149,10 @@
   .pill.bad{ background:var(--bad-soft); color:var(--bad); }
   .pill.muted{ background:var(--surface-2); color:var(--ink-muted); }
   .pill.subj{ background:var(--accent-soft); color:var(--accent-soft-ink); }
+  /* Same Math/Reading colors Student Roster and Reporting use — Math blue, Reading red
+     (--bad, not --warn — --warn is amber/caution now, Reading has always been red). */
+  .pill.subj-math{ background:var(--accent-soft); color:var(--accent-soft-ink); }
+  .pill.subj-reading{ background:var(--bad-soft); color:var(--bad); }
   .dot{ width:7px; height:7px; border-radius:50%; flex:none; }
   .dot.diag, .dot.diagnostic{ background:var(--diag); }
   .dot.train, .dot.training{ background:var(--train); }
@@ -369,7 +373,6 @@
       <a class="navbtn active" href="index.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16l-6.5 8.5V19l-3 1.5v-8L4 4z"/></svg>Pipeline</a>
       <a class="navbtn" href="roster.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3L2 8l10 5 10-5-10-5z"/><path d="M6 10.5V15c0 1.5 2.5 3 6 3s6-1.5 6-3v-4.5"/></svg>Student roster</a>
       <a class="navbtn" href="calendar.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>Calendar</a>
-      <a class="navbtn" href="reporting.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 20V10M12 20V4M6 20v-6"/></svg>Reporting</a>
       <a class="navbtn" href="payments.html" id="navPaymentsLink" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20M6 15h4"/></svg>Payments</a>
       <a class="navbtn" href="admin.html" id="navAdminLink" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v6c0 5-3.5 8-7 9-3.5-1-7-4-7-9V6l7-3z"/></svg>Admin</a>
     </div>
@@ -1234,7 +1237,7 @@
     return `<div class="rowi">
       <div class="who">
         <span class="pill diag" style="align-self:flex-start;">Diagnostic test</span>
-        <b>${esc(displayName(s) || d.studentName)}${d.ageGrade?` <span class="pill muted">${esc(d.ageGrade)}</span>`:""}${d.subject?` <span class="pill subj">${esc(d.subject)}</span>`:""}</b>
+        <b>${esc(displayName(s) || d.studentName)}${d.ageGrade?` <span class="pill muted">${esc(d.ageGrade)}</span>`:""}${d.subject?` ${fmtSubjectPill(d.subject)}`:""}</b>
         <span>${esc(d.parentName||"")}${d.contact?" · "+esc(d.contact):""}</span>
       </div>
       <div class="when tnum">${fmtDateShort(d.date)} · ${fmtTime(d.time)}${d.examiner?" · "+esc(d.examiner):""}</div>
@@ -1422,6 +1425,16 @@
     if(!mode) return `<span class="pill muted">—</span>`;
     return mode === "KC" ? `<span class="pill subj">KC</span>` : `<span class="pill muted">Paper</span>`;
   }
+  // Same Math (blue) / Reading (red) pill Student Roster and Reporting use. "Both" (or
+  // anything else) falls back to the plain neutral pill — Student Roster/Reporting never
+  // hit this case since a subject_enrollment is always exactly Math or Reading, but Pipeline's
+  // own students can still be tagged "Both" before that split happens.
+  function fmtSubjectPill(subject){
+    if(subject === "Math") return `<span class="pill subj-math">Math</span>`;
+    if(subject === "Reading") return `<span class="pill subj-reading">Reading</span>`;
+    if(!subject) return "";
+    return `<span class="pill subj">${esc(subject)}</span>`;
+  }
 
   // Effective subject for a student: their own field if set, otherwise falls back to whatever
   // was picked on their diagnostic booking (covers students created before this field existed).
@@ -1502,7 +1515,7 @@
                 <td class="tnum">${i+1}</td>
                 <td><b>${esc(displayName(s))}</b></td>
                 <td>${esc(s.ageGrade||"—")}</td>
-                <td>${row.subj ? `<span class="pill subj">${esc(row.subj)}</span>` : "—"}</td>
+                <td>${row.subj ? fmtSubjectPill(row.subj) : "—"}</td>
                 <td>${pipelineScheduleLabel(s.id)}</td>
                 <td>${fmtModePill(s.mode)}</td>
                 <td><span class="pill ${st[1]}">${st[0]}</span></td>
@@ -1521,7 +1534,7 @@
                 <td class="tnum">${i+1}</td>
                 <td><b>${esc(displayName(s))}</b></td>
                 <td>${esc(s.ageGrade||"—")}</td>
-                <td>${row.subj ? `<span class="pill subj">${esc(row.subj)}</span>` : "—"}</td>
+                <td>${row.subj ? fmtSubjectPill(row.subj) : "—"}</td>
                 <td>${esc((d && d.startPoint) || "—")}</td>
                 <td>${esc((d && d.dtTest) || "—")}</td>
                 <td class="tnum">${d ? fmtDateShort(d.date) : "—"}</td>
@@ -1553,7 +1566,7 @@
       <div class="search-row">
         <div class="seg">
           <button class="${!isReport?'active':''}" data-action="students-view" data-view="list">New Students</button>
-          <button class="${isReport?'active':''}" data-action="students-view" data-view="report">New Students Report</button>
+          <button class="${isReport?'active':''}" data-action="students-view" data-view="report">DT Results</button>
         </div>
         <input type="search" id="studentSearchInput" placeholder="Search by student or parent name…" value="${esc(STATE.studentSearch)}" style="max-width:260px;">
         <button type="button" class="btn primary sm" data-action="open-new-student">${iconPlus()} Add student</button>

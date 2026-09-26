@@ -170,6 +170,18 @@
   .banner{ background:var(--warn-soft); color:var(--warn); border-radius:11px; padding:11px 14px; font-size:13px; font-weight:600; margin-bottom:16px; }
   .banner.info{ background:var(--accent-soft); color:var(--accent-soft-ink); }
 
+  /* Student Roster Report view — same toggle look Pipeline's New Students uses, and the
+     same month-cycle toolbar Reporting used to have on its own page. */
+  .seg{ display:inline-flex; background:var(--surface-2); border:1px solid var(--border); border-radius:9px; padding:2px; margin-bottom:14px; }
+  .seg button{ border:none; background:transparent; padding:6px 11px; border-radius:7px; font-size:12.5px; font-weight:600; color:var(--ink-muted); cursor:pointer; }
+  .seg button:active{ transform:scale(.94); }
+  .seg button.active{ background:var(--surface); color:var(--ink); box-shadow:var(--shadow); }
+  .cal-toolbar{ display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; flex-wrap:wrap; gap:10px; }
+  .cal-nav{ display:flex; align-items:center; gap:8px; }
+  .cal-nav h2{ font-size:16px; font-weight:700; min-width:160px; text-align:center; margin:0; }
+  .month-head{ display:flex; flex-direction:column; align-items:center; }
+  .month-range{ font-size:11px; color:var(--ink-muted); margin-top:1px; }
+
   .login-screen{ position:fixed; inset:0; display:flex; align-items:center; justify-content:center; background:var(--bg); z-index:100; padding:20px; }
   .login-card{ width:100%; max-width:360px; background:var(--surface); border:1px solid var(--border); border-radius:16px; padding:28px 26px; box-shadow:var(--shadow); display:flex; flex-direction:column; gap:14px; }
   .login-brand{ font-family:"Sora", system-ui, sans-serif; font-weight:700; font-size:18px; display:flex; align-items:center; gap:8px; color:var(--ink); }
@@ -214,7 +226,6 @@
       <a class="navbtn" href="index.html" id="navPipelineLink" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16l-6.5 8.5V19l-3 1.5v-8L4 4z"/></svg>Pipeline</a>
       <a class="navbtn active" href="roster.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3L2 8l10 5 10-5-10-5z"/><path d="M6 10.5V15c0 1.5 2.5 3 6 3s6-1.5 6-3v-4.5"/></svg>Student roster</a>
       <a class="navbtn" href="calendar.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>Calendar</a>
-      <a class="navbtn" href="reporting.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 20V10M12 20V4M6 20v-6"/></svg>Reporting</a>
       <a class="navbtn" href="payments.html" id="navPaymentsLink" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20M6 15h4"/></svg>Payments</a>
       <a class="navbtn" href="admin.html" id="navAdminLink" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v6c0 5-3.5 8-7 9-3.5-1-7-4-7-9V6l7-3z"/></svg>Admin</a>
     </div>
@@ -231,43 +242,93 @@
         <h1>Student roster</h1>
         <div class="page-sub">Current level and goal, per student, per subject.</div>
       </div>
-      <div style="display:flex; gap:8px; align-items:center;">
-        <button class="btn primary" data-action="open-new" id="addToRosterBtn">+ Add to roster</button>
+      <div style="display:flex; gap:8px; align-items:center;" id="pageHeadActions"></div>
+    </div>
+
+    <div class="seg" id="rosterViewToggle">
+      <button data-action="roster-view" data-view="roster">Student Roster</button>
+      <button data-action="roster-view" data-view="report">Student Roster Report</button>
+    </div>
+
+    <div id="view-roster">
+      <div class="search-row">
+        <input type="text" id="searchInput" placeholder="Search student…" style="max-width:220px;">
+        <select id="subjectFilter">
+          <option value="all">All subjects</option>
+          <option value="Math">Math</option>
+          <option value="Reading">Reading</option>
+        </select>
+        <select id="teacherFilter"><option value="all">All teachers</option></select>
+        <select id="statusFilter">
+          <option value="active" selected>Active</option>
+          <option value="inactive">Inactive</option>
+          <option value="all">All statuses</option>
+        </select>
       </div>
-    </div>
 
-    <div class="search-row">
-      <input type="text" id="searchInput" placeholder="Search student…" style="max-width:220px;">
-      <select id="subjectFilter">
-        <option value="all">All subjects</option>
-        <option value="Math">Math</option>
-        <option value="Reading">Reading</option>
-      </select>
-      <select id="teacherFilter"><option value="all">All teachers</option></select>
-      <select id="statusFilter">
-        <option value="active" selected>Active</option>
-        <option value="inactive">Inactive</option>
-        <option value="all">All statuses</option>
-      </select>
-    </div>
-
-    <div class="card">
-      <div class="card-head">
-        <h3>Enrollments</h3>
-        <div style="display:flex; align-items:center; gap:10px;">
-          <span class="hint" id="enrollCount"></span>
-          <button type="button" class="btn sm ghost" id="selectModeToggle" data-action="toggle-select-mode" title="Select multiple to bulk edit">Select</button>
+      <div class="card">
+        <div class="card-head">
+          <h3>Enrollments</h3>
+          <div style="display:flex; align-items:center; gap:10px;">
+            <span class="hint" id="enrollCount"></span>
+            <button type="button" class="btn sm ghost" id="selectModeToggle" data-action="toggle-select-mode" title="Select multiple to bulk edit">Select</button>
+          </div>
+        </div>
+        <div id="bulkBar" class="bulk-bar" hidden></div>
+        <div class="table-scroll">
+          <table class="stable">
+            <thead><tr>
+              <th class="selectcol" id="selectHeaderCell">#</th>
+              <th>Student</th><th>Grade</th><th>Subject</th><th>Teacher</th><th>Current level</th><th>Goal</th><th>Award</th><th>Actual</th><th>Schedule</th><th>Mode</th><th>Status</th>
+            </tr></thead>
+            <tbody id="rosterBody"></tbody>
+          </table>
         </div>
       </div>
-      <div id="bulkBar" class="bulk-bar" hidden></div>
-      <div class="table-scroll">
-        <table class="stable">
-          <thead><tr>
-            <th class="selectcol" id="selectHeaderCell">#</th>
-            <th>Student</th><th>Grade</th><th>Subject</th><th>Teacher</th><th>Current level</th><th>Goal</th><th>Award</th><th>Actual</th><th>Schedule</th><th>Mode</th><th>Status</th>
-          </tr></thead>
-          <tbody id="rosterBody"></tbody>
-        </table>
+    </div>
+
+    <div id="view-report" hidden>
+      <div class="cal-toolbar" id="repToolbar">
+        <div class="cal-nav">
+          <button class="btn ghost sm" data-action="rep-prev">‹</button>
+          <div class="month-head">
+            <h2 id="repMonthLabel"></h2>
+            <div class="month-range" id="repMonthRange"></div>
+          </div>
+          <button class="btn ghost sm" data-action="rep-next">›</button>
+          <button class="btn sm" data-action="rep-today">This month</button>
+        </div>
+      </div>
+
+      <div class="search-row">
+        <input type="text" id="repSearchInput" placeholder="Search student…" style="max-width:220px;">
+        <select id="repTeacherFilter"><option value="all">All teachers</option></select>
+        <select id="repSubjectFilter">
+          <option value="all">All subjects</option>
+          <option value="Math">Math</option>
+          <option value="Reading">Reading</option>
+        </select>
+        <select id="repModeFilter">
+          <option value="all">All modes</option>
+          <option value="Paper">Paper</option>
+          <option value="KC">KC</option>
+        </select>
+        <select id="repGradeFilter"><option value="all">All grades</option></select>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <h3 id="repCardTitle">This cycle</h3>
+          <span class="hint" id="repCount" style="font-size:12px; color:var(--ink-muted);"></span>
+        </div>
+        <div class="table-scroll">
+          <table class="stable">
+            <thead><tr>
+              <th>#</th><th>Student</th><th>Grade</th><th>Subject</th><th>Mode</th><th>LWC</th><th>NWU</th><th>No. of days</th><th>No. of months</th><th>Test date</th><th>Test level</th><th>Test time</th><th>Test score</th><th>Test group</th>
+            </tr></thead>
+            <tbody id="repBody"></tbody>
+          </table>
+        </div>
       </div>
     </div>
   </main>
@@ -390,6 +451,16 @@
   let selectedIds = new Set();
   let selectMode = false;
 
+  // Student Roster Report view — folded in from what used to be reporting.html's own page.
+  // Kept as its own filter object and its own editingReportId (rather than reusing `filters`/
+  // `editingId` above) since the two views filter and edit completely different things and can
+  // otherwise be toggled between independently without one resetting the other.
+  let viewMode = "roster"; // "roster" | "report"
+  let history = [];
+  let viewMonth = null; // a Date, 1st of the cycle's label month
+  let reportFilters = { search:"", subject:"all", teacher:"all", mode:"all", grade:"all" };
+  let editingReportId = null;
+
   // A plain teacher and a trainer_teacher (a trainor who also carries her own roster,
   // like Queenie) both get their Student Roster locked to just their own students. The
   // difference between the two roles is Pipeline access, handled separately — this is
@@ -421,8 +492,9 @@
     if(pipelineLink) pipelineLink.hidden = currentRole === "teacher" || currentRole === "pending";
     const paymentsLink = $("#navPaymentsLink");
     if(paymentsLink) paymentsLink.hidden = !(currentRole === "admin" || currentRole === "superadmin" || currentRole === "teacher");
-    const addBtn = $("#addToRosterBtn");
-    if(addBtn) addBtn.hidden = isTeacherScoped();
+    // The "+ Add to roster" button (roster view) and the close-out button (report view) are
+    // both rendered by renderPageHeadActions() instead, since which one shows depends on the
+    // active view as well as the role.
     applyRoleGate();
   }
 
@@ -435,7 +507,7 @@
       gate.hidden = !isPending;
       gate.innerHTML = isPending ? `<div class="banner">Your account is waiting for approval. Ask a superadmin to set your role in <a href="admin.html">Admin</a> — until then there's nothing here for you to see.</div>` : "";
     }
-    $$(".page-head, .search-row, .card").forEach(el => { el.style.display = isPending ? "none" : ""; });
+    $$(".page-head, .seg, .search-row, .card").forEach(el => { el.style.display = isPending ? "none" : ""; });
   }
 
   async function loadRole(){
@@ -472,17 +544,31 @@
   async function startApp(){
     if(started) return;
     started = true;
-    await Promise.all([loadStudents(), loadSettings(), loadEnrollments(), loadSchedules()]);
+    viewMonth = cycleMonthFor(new Date());
+    await Promise.all([loadStudents(), loadSettings(), loadEnrollments(), loadSchedules(), loadHistory()]);
     populateTeacherFilter();
-    if(isTeacherScoped() && currentTeacherName){ filters.teacher = currentTeacherName; }
-    render();
+    populateReportTeacherFilter();
+    populateReportGradeFilter();
+    if(isTeacherScoped() && currentTeacherName){ filters.teacher = currentTeacherName; reportFilters.teacher = currentTeacherName; }
+    renderView();
 
     sbClient.channel("realtime:subject_enrollments")
-      .on("postgres_changes", { event:"*", schema:"public", table:"subject_enrollments" }, async ()=>{ await loadEnrollments(); render(); })
+      .on("postgres_changes", { event:"*", schema:"public", table:"subject_enrollments" }, async ()=>{ await loadEnrollments(); renderBoth(); })
       .subscribe();
     sbClient.channel("realtime:roster-schedules")
       .on("postgres_changes", { event:"*", schema:"public", table:"schedules" }, async ()=>{ await loadSchedules(); })
       .subscribe();
+    sbClient.channel("realtime:enrollment-history")
+      .on("postgres_changes", { event:"*", schema:"public", table:"enrollment_monthly_history" }, async ()=>{ await loadHistory(); if(viewMode==="report") renderReport(); })
+      .subscribe();
+  }
+
+  // Keeps whichever view is on screen showing fresh data after a mutation, and quietly
+  // refreshes the other one underneath so switching to it afterward doesn't show stale rows.
+  function renderBoth(){
+    if(viewMode === "roster"){ render(); renderReport(); }
+    else { renderReport(); render(); }
+    renderPageHeadActions();
   }
 
   async function loadStudents(){
@@ -646,6 +732,280 @@
     }
   }
 
+  /* ==================== Student Roster Report (folded in from reporting.html) ====================
+     Same underlying `enrollments` this page already loads for the roster view — this section
+     just adds the monthly-cycle numbers (LWC, NWU, achievement test results), the archived
+     history of past cycles, and the close-out flow. Students/trainers/enrollments are shared
+     with the roster view above; only `history` and the report's own filters are new state. */
+
+  function monthKeyOf(date){ return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,"0")}`; }
+  // Kumon's tracking month doesn't follow the calendar: a cycle runs the 21st through the
+  // 20th of the next calendar month, named after whichever month holds the 20th (Sep 21–
+  // Oct 20 is "October"). Same rule every other page in the hub uses.
+  function cycleMonthFor(date){
+    return date.getDate() >= 21
+      ? new Date(date.getFullYear(), date.getMonth()+1, 1)
+      : new Date(date.getFullYear(), date.getMonth(), 1);
+  }
+  function cycleKeyOf(date){ const c = cycleMonthFor(date); return monthKeyOf(c); }
+  function isCurrentCycle(){ return monthKeyOf(viewMonth) === cycleKeyOf(new Date()); }
+  function monthLabel(date){ return date.toLocaleDateString(undefined,{ month:"long", year:"numeric" }); }
+  function monthRangeLabel(date){
+    const start = new Date(date.getFullYear(), date.getMonth()-1, 21);
+    const end = new Date(date.getFullYear(), date.getMonth(), 20);
+    return `${start.toLocaleDateString(undefined,{month:"short",day:"numeric"})} – ${end.toLocaleDateString(undefined,{month:"short",day:"numeric",year:"numeric"})}`;
+  }
+
+  async function loadHistory(){
+    const { data, error } = await sbClient.from("enrollment_monthly_history").select("*").order("cycle_key", { ascending:false });
+    if(error){ console.warn(error); history = []; return; }
+    history = data || [];
+  }
+
+  function populateReportTeacherFilter(){
+    const sel = $("#repTeacherFilter");
+    if(!sel) return;
+    sel.innerHTML = `<option value="all">All teachers</option>` + trainers.map(t=>`<option value="${esc(t)}">${esc(t)}</option>`).join("");
+    if(isTeacherScoped()){ sel.value = currentTeacherName || "all"; sel.disabled = true; }
+  }
+  // Same fixed grade order Student Roster uses (K/PK before P1..P14, not plain alphabetical),
+  // narrowed to only the grades that actually show up right now.
+  const GRADE_ORDER = ["PK1","PK2","PK3","K","P1","P2","P3","P4","P5","P6","P7","P8","P9","P10","P11","P12","P13","P14"];
+  function populateReportGradeFilter(){
+    const sel = $("#repGradeFilter");
+    if(!sel) return;
+    const present = new Set(students.map(s => s.age_grade).filter(Boolean));
+    const grades = GRADE_ORDER.filter(g => present.has(g));
+    sel.innerHTML = `<option value="all">All grades</option>` + grades.map(g=>`<option value="${esc(g)}">${esc(g)}</option>`).join("");
+  }
+
+  // The current (open) cycle reads live off subject_enrollments — that's the row a close-out
+  // hasn't archived yet, so it's what's still editable. Any past cycle reads the frozen
+  // snapshot in enrollment_monthly_history instead.
+  function rowsForReportView(){
+    const q = reportFilters.search.trim().toLowerCase();
+    if(isCurrentCycle()){
+      return enrollments
+        .filter(e => (e.status||"active") === "active")
+        .filter(e => reportFilters.subject === "all" || e.subject === reportFilters.subject)
+        .filter(e => reportFilters.teacher === "all" || e.teacher === reportFilters.teacher)
+        .filter(e => reportFilters.mode === "all" || e.mode === reportFilters.mode)
+        .filter(e => reportFilters.grade === "all" || gradeFor(e.student_id) === reportFilters.grade)
+        .filter(e => !q || (e.student_name||"").toLowerCase().includes(q))
+        .sort((a,b) => lastNameSortKey(a.student_id,a.student_name).localeCompare(lastNameSortKey(b.student_id,b.student_name)))
+        .map(e => ({ source:"live", id:e.id, student_id:e.student_id, student_name:e.student_name, subject:e.subject, teacher:e.teacher, mode:e.mode,
+          lwc:e.lwc, nwu:e.nwu, no_of_days:e.no_of_days, no_of_months_current_level:e.no_of_months_current_level,
+          test_date:e.test_date, test_level:e.test_level, test_time:e.test_time, test_score:e.test_score, test_group:e.test_group }));
+    }
+    const cycleKey = monthKeyOf(viewMonth);
+    return history
+      .filter(h => h.cycle_key === cycleKey)
+      .filter(h => reportFilters.subject === "all" || h.subject === reportFilters.subject)
+      .filter(h => reportFilters.teacher === "all" || h.teacher === reportFilters.teacher)
+      .filter(h => reportFilters.mode === "all" || h.mode === reportFilters.mode)
+      .filter(h => reportFilters.grade === "all" || gradeFor(h.student_id) === reportFilters.grade)
+      .filter(h => !q || (h.student_name||"").toLowerCase().includes(q))
+      .sort((a,b) => lastNameSortKey(a.student_id,a.student_name).localeCompare(lastNameSortKey(b.student_id,b.student_name)))
+      .map(h => ({ source:"archived", id:h.id, student_id:h.student_id, student_name:h.student_name, subject:h.subject, teacher:h.teacher, mode:h.mode,
+        lwc:h.lwc, nwu:h.nwu, no_of_days:h.no_of_days, no_of_months_current_level:h.no_of_months_current_level,
+        test_date:h.test_date, test_level:h.test_level, test_time:h.test_time, test_score:h.test_score, test_group:h.test_group }));
+  }
+
+  function openCloseOutCandidates(){
+    const cycleKey = cycleKeyOf(new Date());
+    const closedIds = new Set(history.filter(h => h.cycle_key === cycleKey).map(h => h.subject_enrollment_id));
+    return enrollments.filter(e => (e.status||"active") === "active" && !closedIds.has(e.id));
+  }
+  // Closing out a cycle archives everyone's numbers and clears the slate for the next one —
+  // a front-desk/teacher mistake here isn't easily undone, so only admin/superadmin get the
+  // button at all (same bar as Payments and Admin).
+  function canCloseOut(){ return currentRole === "admin" || currentRole === "superadmin"; }
+
+  // Renders whichever action belongs in the page-head's right slot for the active view: the
+  // roster view's "+ Add to roster" button, or the report view's close-out button/status.
+  function renderPageHeadActions(){
+    const wrap = $("#pageHeadActions");
+    if(!wrap) return;
+    if(viewMode === "roster"){
+      wrap.innerHTML = isTeacherScoped() ? "" : `<button class="btn primary" data-action="open-new" id="addToRosterBtn">+ Add to roster</button>`;
+      return;
+    }
+    if(!canCloseOut() || !isCurrentCycle()){ wrap.innerHTML = ""; return; }
+    const cycleLabel = monthLabel(viewMonth);
+    const candidates = openCloseOutCandidates();
+    wrap.innerHTML = candidates.length
+      ? `<button class="btn primary" data-action="close-out-month" title="Archive this cycle's numbers and start ${esc(cycleLabel)} fresh">Close out ${esc(cycleLabel)} (${candidates.length})</button>`
+      : `<span class="hint" style="font-size:12px; color:var(--ink-muted);">Everything's closed out for ${esc(cycleLabel)}.</span>`;
+  }
+
+  async function closeOutMonth(){
+    if(!canCloseOut()) return;
+    const cycleKey = cycleKeyOf(new Date());
+    const cycleLabel = monthLabel(cycleMonthFor(new Date()));
+    const candidates = openCloseOutCandidates();
+    if(!candidates.length){ alert(`Nothing to close out — every active enrollment already has a ${cycleLabel} record.`); return; }
+
+    const ok = confirm(
+      `Close out ${cycleLabel} for ${candidates.length} enrollment${candidates.length===1?"":"s"}?\n\n` +
+      `This archives their current LWC, NWU, No. of days, No. of months, and Achievement test numbers under ${cycleLabel}, then clears those fields so the next cycle starts blank.\n\n` +
+      `Level, Goal, Schedule, Mode, Award and Actual are untouched.`
+    );
+    if(!ok) return;
+
+    const rows = candidates.map(e => ({
+      subject_enrollment_id: e.id, student_id: e.student_id, student_name: e.student_name,
+      subject: e.subject, teacher: e.teacher, mode: e.mode,
+      cycle_key: cycleKey, cycle_label: cycleLabel,
+      current_level: e.current_level, current_page: e.current_page,
+      goal_level: e.goal_level, goal_page: e.goal_page,
+      lwc: e.lwc, nwu: e.nwu, no_of_days: e.no_of_days, no_of_months_current_level: e.no_of_months_current_level,
+      test_date: e.test_date, test_level: e.test_level, test_time: e.test_time, test_score: e.test_score, test_group: e.test_group,
+      award: e.award, actual: e.actual,
+      closed_by_email: currentUser ? currentUser.email : null
+    }));
+
+    // Snapshot each enrollment's own current numbers before they're cleared, so an undo can
+    // put the exact prior values back rather than just guessing at blanks.
+    const priorFieldValues = candidates.map(e => ({
+      id: e.id,
+      lwc: e.lwc, nwu: e.nwu, no_of_days: e.no_of_days, no_of_months_current_level: e.no_of_months_current_level,
+      test_date: e.test_date, test_level: e.test_level, test_time: e.test_time, test_score: e.test_score, test_group: e.test_group
+    }));
+    const candidateIds = candidates.map(e => e.id);
+
+    const { data: insertedHistory, error: histError } = await sbClient.from("enrollment_monthly_history").insert(rows).select();
+    if(histError){ alert("Couldn't archive: " + histError.message); return; }
+    let historyIds = (insertedHistory || []).map(h => h.id);
+
+    const clearedFields = {
+      lwc: null, nwu: null, no_of_days: null, no_of_months_current_level: null,
+      test_date: null, test_level: null, test_time: null, test_score: null, test_group: null,
+      updated_at: new Date().toISOString()
+    };
+    const { error: clearError } = await sbClient.from("subject_enrollments").update(clearedFields).in("id", candidateIds);
+    if(clearError){ alert(`Archived, but couldn't clear this cycle's fields: ${clearError.message}`); }
+
+    await Promise.all([loadEnrollments(), loadHistory()]);
+    renderReportAndActions();
+    alert(`${candidates.length} enrollment${candidates.length===1?"":"s"} closed out for ${cycleLabel}.`);
+
+    const label = `Close out ${cycleLabel} (${candidates.length})`;
+    pushUndo(label,
+      async ()=>{
+        if(historyIds.length){
+          const { error } = await sbClient.from("enrollment_monthly_history").delete().in("id", historyIds);
+          if(error) throw error;
+        }
+        for(const p of priorFieldValues){
+          const { id, ...fields } = p;
+          fields.updated_at = new Date().toISOString();
+          const { error } = await sbClient.from("subject_enrollments").update(fields).eq("id", id);
+          if(error) throw error;
+        }
+        await Promise.all([loadEnrollments(), loadHistory()]);
+        renderReportAndActions();
+      },
+      async ()=>{
+        const { data: reinserted, error: reErr } = await sbClient.from("enrollment_monthly_history").insert(rows).select();
+        if(reErr) throw reErr;
+        historyIds = (reinserted || []).map(h => h.id);
+        const { error: clearErr } = await sbClient.from("subject_enrollments").update(clearedFields).in("id", candidateIds);
+        if(clearErr) throw clearErr;
+        await Promise.all([loadEnrollments(), loadHistory()]);
+        renderReportAndActions();
+      }
+    );
+  }
+
+  function renderReport(){
+    const rmLabel = $("#repMonthLabel"), rmRange = $("#repMonthRange"), rcTitle = $("#repCardTitle");
+    if(!rmLabel) return; // report view not in the DOM yet on first paint — nothing to do
+    rmLabel.textContent = monthLabel(viewMonth);
+    rmRange.textContent = monthRangeLabel(viewMonth);
+    rcTitle.textContent = isCurrentCycle() ? "This cycle — editable" : "Archived cycle";
+
+    const rows = rowsForReportView();
+    $("#repCount").textContent = rows.length + (rows.length===1 ? " record" : " records");
+
+    const body = $("#repBody");
+    if(!rows.length){
+      body.innerHTML = `<tr><td colspan="14"><div class="empty">${isCurrentCycle() ? "No active enrollments match this view." : `Nothing closed out for ${esc(monthLabel(viewMonth))} yet.`}</div></td></tr>`;
+      return;
+    }
+    const editable = isCurrentCycle();
+    body.innerHTML = rows.map((r, idx) => `
+      <tr class="${editable?"clickrow":""}" ${editable?`data-action="edit-report" data-id="${r.id}"`:""}>
+        <td class="rownum">${idx+1}</td>
+        <td><b>${esc(displayName(r.student_id, r.student_name))}</b></td>
+        <td>${esc(gradeFor(r.student_id) || "—")}</td>
+        <td><span class="pill ${r.subject==='Math'?'subj-math':'subj-reading'}">${esc(r.subject||"")}</span></td>
+        <td>${fmtMode(r.mode)}</td>
+        <td>${fmtPlain(r.lwc)}</td>
+        <td>${fmtPlain(r.nwu)}</td>
+        <td>${fmtPlain(r.no_of_days)}</td>
+        <td>${fmtPlain(r.no_of_months_current_level)}</td>
+        <td>${fmtPlain(r.test_date)}</td>
+        <td>${fmtPlain(r.test_level)}</td>
+        <td>${fmtPlain(r.test_time)}</td>
+        <td>${fmtPlain(r.test_score)}</td>
+        <td>${fmtPlain(r.test_group)}</td>
+      </tr>
+    `).join("");
+  }
+  function renderReportAndActions(){ renderPageHeadActions(); renderReport(); }
+
+  function openReportModal(enrollmentId){
+    const e = enrollments.find(x => x.id === enrollmentId);
+    if(!e) return;
+    editingReportId = enrollmentId;
+    const v = k => esc(e[k] || "");
+    $("#modal").innerHTML = `
+      <div class="modal-head"><h3>${esc(displayName(e.student_id, e.student_name))} — ${esc(e.subject||"")}</h3><button class="iconbtn" data-action="close-modal">✕</button></div>
+      <form id="reportForm">
+        <div class="modal-body">
+          <p class="hint" style="font-size:12px; color:var(--ink-muted); margin:0;">${esc(monthLabel(viewMonth))}'s numbers. Current level, Goal, Schedule, Mode, Award and Actual are edited from the Student Roster view instead.</p>
+          <div class="field-row">
+            <label class="field">LWC (last worksheet)<input type="text" name="lwc" value="${v("lwc")}" placeholder="e.g. 2A 120"></label>
+            <label class="field">NWU (worksheets used)<input type="text" name="nwu" value="${v("nwu")}" placeholder="e.g. 31"></label>
+          </div>
+          <div class="field-row">
+            <label class="field">No. of days<input type="text" name="no_of_days" value="${v("no_of_days")}"></label>
+            <label class="field">No. of months (current level)<input type="text" name="no_of_months_current_level" value="${v("no_of_months_current_level")}"></label>
+          </div>
+          <div class="field-row">
+            <label class="field">Test date<input type="text" name="test_date" value="${v("test_date")}" placeholder="e.g. 8/14/26"></label>
+            <label class="field">Test level<input type="text" name="test_level" value="${v("test_level")}"></label>
+          </div>
+          <div class="field-row">
+            <label class="field">Test time<input type="text" name="test_time" value="${v("test_time")}" placeholder="e.g. 5 MINUTES"></label>
+            <label class="field">Test score<input type="text" name="test_score" value="${v("test_score")}" placeholder="e.g. 100/100"></label>
+          </div>
+          <label class="field">Test group<input type="text" name="test_group" value="${v("test_group")}"></label>
+        </div>
+        <div class="modal-foot">
+          <div></div>
+          <div style="display:flex; gap:8px;">
+            <button type="button" class="btn ghost" data-action="close-modal">Cancel</button>
+            <button type="submit" class="btn primary">Save</button>
+          </div>
+        </div>
+      </form>
+    `;
+    $("#modalBackdrop").hidden = false;
+  }
+
+  // Switches between the Student Roster and Student Roster Report views — shows/hides the
+  // right container, flips the toggle's active state, and refreshes whichever just appeared
+  // (the other one stays rendered underneath so switching back is instant).
+  function renderView(){
+    $$("#rosterViewToggle button").forEach(b => b.classList.toggle("active", b.dataset.view === viewMode));
+    $("#view-roster").hidden = viewMode !== "roster";
+    $("#view-report").hidden = viewMode !== "report";
+    renderPageHeadActions();
+    if(viewMode === "report") renderReport(); else render();
+  }
+  /* ==================== /Student Roster Report ==================== */
+
   function filtered(){
     // A teacher (and a trainer_teacher, like Queenie) only ever sees their own students,
     // no matter what the filter says.
@@ -727,7 +1087,7 @@
   }
 
   // Award/Actual — the two fields from the roster sheet that aren't monthly report
-  // numbers (those now live on the Reporting page instead; see reporting.html) and
+  // numbers (those live in the Student Roster Report view instead) and
   // aren't Current/Goal level or Schedule/Mode either. `e` is an enrollment object or
   // null (Add form), so every value falls back to "".
   function progressFieldsHtml(e){
@@ -821,7 +1181,7 @@
           ${scheduleSectionHtml(scheduleRows, enrollment.mode)}
           <div style="height:1px; background:var(--border); margin:12px 0;"></div>
           ${progressFieldsHtml(enrollment)}
-          <p class="hint" style="font-size:12px; color:var(--ink-muted); margin:4px 0 0;">Worksheet counts and achievement test results are tracked on the <a href="reporting.html">Reporting</a> page now, month by month.</p>
+          <p class="hint" style="font-size:12px; color:var(--ink-muted); margin:4px 0 0;">Worksheet counts and achievement test results are tracked in the Student Roster Report view now, month by month.</p>
         </div>
         <div class="modal-foot">
           <div>${isTeacherScoped() ? "" : `<button type="button" class="btn danger" data-action="delete-enrollment" data-id="${enrollment.id}">Delete</button>`}</div>
@@ -884,7 +1244,7 @@
     `; })();
     $("#modalBackdrop").hidden = false;
   }
-  function closeModal(){ $("#modalBackdrop").hidden = true; $("#modal").innerHTML = ""; editingId = null; }
+  function closeModal(){ $("#modalBackdrop").hidden = true; $("#modal").innerHTML = ""; editingId = null; editingReportId = null; }
 
   // Bulk edit touches only the fields the admin actually changes — everything starts on
   // "No change" (or blank, for the level/page text fields) so applying it to a mixed batch
@@ -965,7 +1325,7 @@
           await saveScheduleForEnrollment(editingId, editingEnrollment.student_id, editingEnrollment.student_name, readScheduleRowsFromForm(fd));
         }
         closeModal();
-        await loadEnrollments(); render();
+        await loadEnrollments(); renderBoth();
         return;
       }
 
@@ -1020,7 +1380,29 @@
 
       closeModal();
       await Promise.all([loadStudents(), loadEnrollments()]);
-      render();
+      renderBoth();
+    }
+    if(e.target.id === "reportForm"){
+      e.preventDefault();
+      const fd = new FormData(e.target);
+      const id = editingReportId;
+      const patch = {
+        lwc: fd.get("lwc") || null,
+        nwu: fd.get("nwu") || null,
+        no_of_days: fd.get("no_of_days") || null,
+        no_of_months_current_level: fd.get("no_of_months_current_level") || null,
+        test_date: fd.get("test_date") || null,
+        test_level: fd.get("test_level") || null,
+        test_time: fd.get("test_time") || null,
+        test_score: fd.get("test_score") || null,
+        test_group: fd.get("test_group") || null,
+        updated_at: new Date().toISOString()
+      };
+      const { error } = await sbClient.from("subject_enrollments").update(patch).eq("id", id);
+      if(error){ alert("Couldn't save: " + error.message); return; }
+      closeModal();
+      await loadEnrollments(); renderReportAndActions();
+      return;
     }
     if(e.target.id === "bulkEditForm"){
       e.preventDefault();
@@ -1056,7 +1438,7 @@
       if(error){ alert("Couldn't apply changes: " + error.message); return; }
       closeModal();
       selectedIds.clear();
-      await loadEnrollments(); render();
+      await loadEnrollments(); renderBoth();
 
       const label = `Bulk edit ${ids.length} enrollment${ids.length===1?"":"s"}`;
       pushUndo(label,
@@ -1067,12 +1449,12 @@
             const { error } = await sbClient.from("subject_enrollments").update(fields).eq("id", id);
             if(error) throw error;
           }
-          await loadEnrollments(); render();
+          await loadEnrollments(); renderBoth();
         },
         async ()=>{
           const { error } = await sbClient.from("subject_enrollments").update(patch).in("id", ids);
           if(error) throw error;
-          await loadEnrollments(); render();
+          await loadEnrollments(); renderBoth();
         }
       );
     }
@@ -1095,10 +1477,15 @@
       else{ visibleIds.forEach(id => selectedIds.delete(id)); }
       render();
     }
+    if(e.target.id === "repTeacherFilter"){ reportFilters.teacher = e.target.value; renderReport(); }
+    if(e.target.id === "repSubjectFilter"){ reportFilters.subject = e.target.value; renderReport(); }
+    if(e.target.id === "repModeFilter"){ reportFilters.mode = e.target.value; renderReport(); }
+    if(e.target.id === "repGradeFilter"){ reportFilters.grade = e.target.value; renderReport(); }
   });
 
   document.addEventListener("input", (e)=>{
     if(e.target.id === "searchInput"){ filters.search = e.target.value; render(); }
+    if(e.target.id === "repSearchInput"){ reportFilters.search = e.target.value; renderReport(); }
     if(e.target.id === "firstNameInput" || e.target.id === "lastNameInput"){
       const first = ($("#firstNameInput")||{}).value || "";
       const last = ($("#lastNameInput")||{}).value || "";
@@ -1114,6 +1501,15 @@
     if(!btn) return;
     const action = btn.dataset.action;
     if(action === "logout"){ await sbClient.auth.signOut(); }
+    else if(action === "roster-view"){ viewMode = btn.dataset.view; renderView(); }
+    else if(action === "rep-prev"){ viewMonth = new Date(viewMonth.getFullYear(), viewMonth.getMonth()-1, 1); renderReportAndActions(); }
+    else if(action === "rep-next"){ viewMonth = new Date(viewMonth.getFullYear(), viewMonth.getMonth()+1, 1); renderReportAndActions(); }
+    else if(action === "rep-today"){ viewMonth = cycleMonthFor(new Date()); renderReportAndActions(); }
+    else if(action === "close-out-month"){ await closeOutMonth(); }
+    else if(action === "edit-report"){
+      const id = btn.dataset.id;
+      openReportModal(id);
+    }
     else if(action === "open-new"){ if(isTeacherScoped()) return; openModal(null); }
     else if(action === "edit"){
       const id = btn.dataset.id;
@@ -1130,12 +1526,12 @@
       try{ await performDeleteEnrollments([id]); }
       catch(error){ alert("Couldn't delete: " + error.message); return; }
       closeModal();
-      await Promise.all([loadEnrollments(), loadSchedules()]); render();
+      await Promise.all([loadEnrollments(), loadSchedules()]); renderBoth();
 
       const label = `Delete ${(snap.enrollmentRow && snap.enrollmentRow.student_name) || "enrollment"}`;
       pushUndo(label,
-        async ()=>{ await restoreEnrollmentCascade(snap); await Promise.all([loadEnrollments(), loadSchedules()]); render(); },
-        async ()=>{ await performDeleteEnrollments([id]); await Promise.all([loadEnrollments(), loadSchedules()]); render(); }
+        async ()=>{ await restoreEnrollmentCascade(snap); await Promise.all([loadEnrollments(), loadSchedules()]); renderBoth(); },
+        async ()=>{ await performDeleteEnrollments([id]); await Promise.all([loadEnrollments(), loadSchedules()]); renderBoth(); }
       );
     }
     else if(action === "toggle-select"){
@@ -1159,15 +1555,15 @@
       try{ await performDeleteEnrollments(ids); }
       catch(error){ alert("Couldn't delete: " + error.message); return; }
       selectedIds.clear();
-      await Promise.all([loadEnrollments(), loadSchedules()]); render();
+      await Promise.all([loadEnrollments(), loadSchedules()]); renderBoth();
 
       const label = `Delete ${ids.length} enrollment${ids.length===1?"":"s"}`;
       pushUndo(label,
         async ()=>{
           for(const snap of snaps) await restoreEnrollmentCascade(snap);
-          await Promise.all([loadEnrollments(), loadSchedules()]); render();
+          await Promise.all([loadEnrollments(), loadSchedules()]); renderBoth();
         },
-        async ()=>{ await performDeleteEnrollments(ids); await Promise.all([loadEnrollments(), loadSchedules()]); render(); }
+        async ()=>{ await performDeleteEnrollments(ids); await Promise.all([loadEnrollments(), loadSchedules()]); renderBoth(); }
       );
     }
     else if(action === "add-schedule-row"){
