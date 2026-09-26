@@ -172,12 +172,14 @@
 
   /* Student Roster Report view — same toggle look Pipeline's New Students uses, and the
      same month-cycle toolbar Reporting used to have on its own page. */
-  .seg{ display:inline-flex; background:var(--surface-2); border:1px solid var(--border); border-radius:9px; padding:2px; margin-bottom:14px; }
+  .seg{ display:inline-flex; background:var(--surface-2); border:1px solid var(--border); border-radius:9px; padding:2px; }
   .seg button{ border:none; background:transparent; padding:6px 11px; border-radius:7px; font-size:12.5px; font-weight:600; color:var(--ink-muted); cursor:pointer; }
   .seg button:active{ transform:scale(.94); }
   .seg button.active{ background:var(--surface); color:var(--ink); box-shadow:var(--shadow); }
   .cal-toolbar{ display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; flex-wrap:wrap; gap:10px; }
   .cal-nav{ display:flex; align-items:center; gap:8px; }
+  .cal-filters{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+  .cal-filters select{ width:auto; flex:0 0 auto; min-width:132px; }
   .cal-nav h2{ font-size:16px; font-weight:700; min-width:160px; text-align:center; margin:0; }
   .month-head{ display:flex; flex-direction:column; align-items:center; }
   .month-range{ font-size:11px; color:var(--ink-muted); margin-top:1px; }
@@ -201,6 +203,9 @@
     .main{ padding:16px 14px calc(70px + env(safe-area-inset-bottom)); }
     .stable th, .stable td{ padding:9px 8px; font-size:12.5px; }
     .field-row{ grid-template-columns:1fr; }
+    .cal-nav h2{ font-size:14px; min-width:0; flex:1; }
+    .cal-filters{ width:100%; }
+    .cal-filters select{ flex:1; min-width:0; }
     .modal-backdrop{ padding:0; align-items:flex-end; }
     .modal{ max-width:none; border-radius:16px 16px 0 0; max-height:92vh; }
   }
@@ -245,13 +250,30 @@
       <div style="display:flex; gap:8px; align-items:center;" id="pageHeadActions"></div>
     </div>
 
-    <div class="seg" id="rosterViewToggle">
-      <button data-action="roster-view" data-view="roster">Student Roster</button>
-      <button data-action="roster-view" data-view="report">Student Roster Report</button>
-    </div>
-
     <div id="view-roster">
+      <div class="cal-toolbar" id="rosterToolbar" style="margin-bottom:12px;">
+        <div class="cal-nav">
+          <button class="btn ghost sm" data-action="roster-month-prev">‹</button>
+          <div class="month-head">
+            <h2 id="rosterMonthLabel"></h2>
+            <div class="month-range" id="rosterMonthRange"></div>
+          </div>
+          <button class="btn ghost sm" data-action="roster-month-next">›</button>
+          <button class="btn sm" data-action="roster-month-today">This month</button>
+        </div>
+        <div class="cal-filters">
+          <div class="seg">
+            <button data-action="roster-month-mode" data-mode="month">Monthly roster</button>
+            <button data-action="roster-month-mode" data-mode="all">All time</button>
+          </div>
+        </div>
+      </div>
+
       <div class="search-row">
+        <div class="seg roster-view-toggle">
+          <button data-action="roster-view" data-view="roster">Student Roster</button>
+          <button data-action="roster-view" data-view="report">Student Roster Report</button>
+        </div>
         <input type="text" id="searchInput" placeholder="Search student…" style="max-width:220px;">
         <select id="subjectFilter">
           <option value="all">All subjects</option>
@@ -301,6 +323,10 @@
       </div>
 
       <div class="search-row">
+        <div class="seg roster-view-toggle">
+          <button data-action="roster-view" data-view="roster">Student Roster</button>
+          <button data-action="roster-view" data-view="report">Student Roster Report</button>
+        </div>
         <input type="text" id="repSearchInput" placeholder="Search student…" style="max-width:220px;">
         <select id="repTeacherFilter"><option value="all">All teachers</option></select>
         <select id="repSubjectFilter">
@@ -461,6 +487,14 @@
   let reportFilters = { search:"", subject:"all", teacher:"all", mode:"all", grade:"all" };
   let editingReportId = null;
 
+  // Student Roster's own month nav — same "Monthly roster / All time" pattern Pipeline's
+  // New Students tab uses, so browsing the roster by cohort month works the same way in
+  // both places. Defaults to "all" (the roster's normal, everyone-active view) rather than
+  // Pipeline's "month" default, since narrowing to one cohort by default would hide most of
+  // the roster the moment someone opens this page.
+  let rosterMonth = null; // a Date, 1st of the cycle's label month
+  let rosterMonthMode = "all"; // "month" | "all"
+
   // A plain teacher and a trainer_teacher (a trainor who also carries her own roster,
   // like Queenie) both get their Student Roster locked to just their own students. The
   // difference between the two roles is Pipeline access, handled separately — this is
@@ -545,6 +579,7 @@
     if(started) return;
     started = true;
     viewMonth = cycleMonthFor(new Date());
+    rosterMonth = cycleMonthFor(new Date());
     await Promise.all([loadStudents(), loadSettings(), loadEnrollments(), loadSchedules(), loadHistory()]);
     populateTeacherFilter();
     populateReportTeacherFilter();
@@ -998,7 +1033,10 @@
   // right container, flips the toggle's active state, and refreshes whichever just appeared
   // (the other one stays rendered underneath so switching back is instant).
   function renderView(){
-    $$("#rosterViewToggle button").forEach(b => b.classList.toggle("active", b.dataset.view === viewMode));
+    // The toggle is duplicated into both views' own search-rows (same look Pipeline's New
+    // Students uses — toggle sitting inline with that view's own search/filters) rather than
+    // living as one standalone element, so both copies need their active state set together.
+    $$('[data-action="roster-view"]').forEach(b => b.classList.toggle("active", b.dataset.view === viewMode));
     $("#view-roster").hidden = viewMode !== "roster";
     $("#view-report").hidden = viewMode !== "report";
     renderPageHeadActions();
@@ -1006,21 +1044,42 @@
   }
   /* ==================== /Student Roster Report ==================== */
 
+  // Which cycle an enrollment belongs to on the roster — same idea as Pipeline's New Students
+  // cohort key, just anchored on when the enrollment record itself was created rather than a
+  // diagnostic date, since roster entries don't have a diagnostic to fall back on.
+  function rosterCohortMonthKey(e){
+    const iso = e.created_at ? e.created_at.slice(0,10) : null;
+    if(!iso) return null;
+    const [y,m,dd] = iso.split("-").map(Number);
+    return monthKeyOf(cycleMonthFor(new Date(y, m-1, dd)));
+  }
+
   function filtered(){
     // A teacher (and a trainer_teacher, like Queenie) only ever sees their own students,
     // no matter what the filter says.
     const lockedTeacher = isTeacherScoped() ? currentTeacherName : null;
+    const monthKey = monthKeyOf(rosterMonth);
     return enrollments.filter(e=>{
       if(lockedTeacher !== null && e.teacher !== lockedTeacher) return false;
       if(filters.subject !== "all" && e.subject !== filters.subject) return false;
       if(lockedTeacher === null && filters.teacher !== "all" && e.teacher !== filters.teacher) return false;
       if(filters.status !== "all" && (e.status || "active") !== filters.status) return false;
       if(filters.search && !(e.student_name||"").toLowerCase().includes(filters.search.toLowerCase())) return false;
+      if(rosterMonthMode === "month" && rosterCohortMonthKey(e) !== monthKey) return false;
       return true;
     });
   }
 
+  function renderRosterToolbar(){
+    const label = $("#rosterMonthLabel");
+    if(!label) return; // not in the DOM yet on first paint
+    label.textContent = rosterMonthMode === "all" ? "All students" : monthLabel(rosterMonth);
+    $("#rosterMonthRange").textContent = rosterMonthMode === "all" ? "" : monthRangeLabel(rosterMonth);
+    $$('#rosterToolbar [data-action="roster-month-mode"]').forEach(b => b.classList.toggle("active", b.dataset.mode === rosterMonthMode));
+  }
+
   function render(){
+    renderRosterToolbar();
     const rows = filtered().slice().sort((a,b) =>
       lastNameSortKey(a.student_id, a.student_name).localeCompare(lastNameSortKey(b.student_id, b.student_name))
     );
@@ -1038,7 +1097,10 @@
 
     const body = $("#rosterBody");
     if(rows.length === 0){
-      body.innerHTML = `<tr><td colspan="12"><div class="empty">${enrollments.length===0 ? "No enrollments yet — add your first one." : "Nothing matches your filters."}</div></td></tr>`;
+      const emptyMsg = enrollments.length===0 ? "No enrollments yet — add your first one."
+        : rosterMonthMode === "month" ? `No enrollments added on the ${esc(monthLabel(rosterMonth))} roster. Try <b>All time</b> to see everyone.`
+        : "Nothing matches your filters.";
+      body.innerHTML = `<tr><td colspan="12"><div class="empty">${emptyMsg}</div></td></tr>`;
     }else{
       body.innerHTML = rows.map((e, idx) => `
         <tr class="clickrow" data-action="edit" data-id="${e.id}">
@@ -1502,6 +1564,10 @@
     const action = btn.dataset.action;
     if(action === "logout"){ await sbClient.auth.signOut(); }
     else if(action === "roster-view"){ viewMode = btn.dataset.view; renderView(); }
+    else if(action === "roster-month-prev"){ rosterMonth = new Date(rosterMonth.getFullYear(), rosterMonth.getMonth()-1, 1); render(); }
+    else if(action === "roster-month-next"){ rosterMonth = new Date(rosterMonth.getFullYear(), rosterMonth.getMonth()+1, 1); render(); }
+    else if(action === "roster-month-today"){ rosterMonth = cycleMonthFor(new Date()); render(); }
+    else if(action === "roster-month-mode"){ rosterMonthMode = btn.dataset.mode; render(); }
     else if(action === "rep-prev"){ viewMonth = new Date(viewMonth.getFullYear(), viewMonth.getMonth()-1, 1); renderReportAndActions(); }
     else if(action === "rep-next"){ viewMonth = new Date(viewMonth.getFullYear(), viewMonth.getMonth()+1, 1); renderReportAndActions(); }
     else if(action === "rep-today"){ viewMonth = cycleMonthFor(new Date()); renderReportAndActions(); }
