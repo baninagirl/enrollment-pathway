@@ -201,6 +201,7 @@
       <a class="navbtn" href="payments.html" id="navPaymentsLink" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20M6 15h4"/></svg>Payments</a>
       <a class="navbtn" href="absent.html" id="navAbsentLink" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.5-7 8-7s8 3 8 7"/><path d="M2 2l20 20"/></svg>Retention</a>
       <a class="navbtn" href="admin.html" id="navAdminLink" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v6c0 5-3.5 8-7 9-3.5-1-7-4-7-9V6l7-3z"/></svg>Admin</a>
+      <a class="navbtn" href="activity.html" id="navActivityLink" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></svg>Activity</a>
     </div>
     <div class="rail-divider"></div>
     <div class="rail-account" id="railAccount"></div>
@@ -331,6 +332,23 @@
   let sbClient = null, currentUser = null, currentRole = null, currentTeacherName = null;
   let schedules = [], enrollments = [], trainers = [], attendance = [];
   let filters = { teacher:"all", group:"all", mode:"all" };
+
+  // Site-wide edit history (Activity page, admin/superadmin only) — every page logs its own
+  // significant writes into the same edit_history table. Fire-and-forget on purpose: a slow
+  // or failed history insert should never hold up (or fail) the actual save it's describing.
+  function logHistory(action, summary, entityType, entityId, details){
+    if(!sbClient || !currentUser) return;
+    sbClient.from("edit_history").insert({
+      actor_email: currentUser.email || null,
+      actor_role: currentRole || null,
+      page: "calendar",
+      action,
+      summary,
+      entity_type: entityType || null,
+      entity_id: entityId != null ? String(entityId) : null,
+      details: details || null
+    }).then(({ error }) => { if(error) console.warn("Couldn't log history:", error); });
+  }
   // Which of the three tabs is active — only meaningful for non-teacher-scoped roles,
   // who are the only ones who ever see the tabs at all.
   let viewMode = "all";
@@ -357,6 +375,8 @@
     if(paymentsLink) paymentsLink.hidden = !(currentRole === "admin" || currentRole === "superadmin" || currentRole === "teacher");
     const absentLink = $("#navAbsentLink");
     if(absentLink) absentLink.hidden = !(currentRole === "admin" || currentRole === "superadmin" || currentRole === "teacher" || currentRole === "trainer_teacher");
+    const activityLink = $("#navActivityLink");
+    if(activityLink) activityLink.hidden = !(currentRole === "admin" || currentRole === "superadmin");
     applyRoleGate();
   }
 
@@ -536,6 +556,10 @@
         .insert({ schedule_id: scheduleId, day, week_start: weekStart, arrived, arrived_at: arrived ? new Date().toISOString() : null });
       if(error){ console.warn(error); return; }
     }
+    const sc = schedules.find(s => s.id === scheduleId);
+    const en = sc ? enrollments.find(e => e.id === sc.subject_enrollment_id || e.student_id === sc.student_id) : null;
+    const name = (sc && sc.student_name) || (en && en.student_name) || "a student";
+    logHistory("toggle_arrived", `Marked ${name} ${arrived ? "arrived" : "not arrived"} for ${day}`, "schedule_attendance", scheduleId);
     await loadAttendance();
     renderCalendar();
   }

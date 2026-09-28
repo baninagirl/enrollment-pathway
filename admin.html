@@ -175,6 +175,7 @@
       <a class="navbtn" href="payments.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20M6 15h4"/></svg>Payments</a>
       <a class="navbtn" href="absent.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.5-7 8-7s8 3 8 7"/><path d="M2 2l20 20"/></svg>Retention</a>
       <a class="navbtn active" href="admin.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v6c0 5-3.5 8-7 9-3.5-1-7-4-7-9V6l7-3z"/></svg>Admin</a>
+      <a class="navbtn" href="activity.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></svg>Activity</a>
     </div>
     <div class="rail-divider"></div>
     <div class="rail-account" id="railAccount"></div>
@@ -210,6 +211,23 @@
   function esc(s){ return String(s==null?"":s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
 
   let sbClient = null, currentUser = null, currentRole = null, profiles = [], trainers = [];
+
+  // Site-wide edit history (Activity page, admin/superadmin only) — every page logs its own
+  // significant writes into the same edit_history table. Fire-and-forget on purpose: a slow
+  // or failed history insert should never hold up (or fail) the actual save it's describing.
+  function logHistory(action, summary, entityType, entityId, details){
+    if(!sbClient || !currentUser) return;
+    sbClient.from("edit_history").insert({
+      actor_email: currentUser.email || null,
+      actor_role: currentRole || null,
+      page: "admin",
+      action,
+      summary,
+      entity_type: entityType || null,
+      entity_id: entityId != null ? String(entityId) : null,
+      details: details || null
+    }).then(({ error }) => { if(error) console.warn("Couldn't log history:", error); });
+  }
 
   function showLogin(errMsg){
     $("#loginScreen").hidden = false;
@@ -412,6 +430,7 @@
         // (before they've even confirmed their email), so this update is safe right away.
         await sbClient.from("profiles").update(patch).eq("id", newId);
         if(role === "teacher" || role === "trainer_teacher") await ensureTrainer(teacherName);
+        logHistory("create_login", `Created a login for ${email} (${role}${teacherName ? " — " + teacherName : ""})`, "profile", newId);
       }
       closeModal();
       [profiles, trainers] = await Promise.all([loadProfiles(), loadTrainers()]);
@@ -444,6 +463,8 @@
       }
       const { error } = await sbClient.from("profiles").update({ role }).eq("id", id);
       if(error){ alert("Couldn't update that role: " + error.message); return; }
+      const changedProfile = profiles.find(p => p.id === id);
+      logHistory("change_role", `Changed ${changedProfile ? changedProfile.email : "a login"}'s role to ${role}`, "profile", id, { field:"role", to: role });
       if(isSelf) await loadRole();
       profiles = await loadProfiles();
       renderAdmin();
@@ -453,6 +474,8 @@
       const teacher_name = e.target.value.trim() || null;
       const { error } = await sbClient.from("profiles").update({ teacher_name }).eq("id", id);
       if(error){ alert("Couldn't save that: " + error.message); return; }
+      const renamedProfile = profiles.find(p => p.id === id);
+      logHistory("change_teacher_name", `Set ${renamedProfile ? renamedProfile.email : "a login"}'s teacher name to ${teacher_name || "(none)"}`, "profile", id);
       if(teacher_name) await ensureTrainer(teacher_name);
       [profiles, trainers] = await Promise.all([loadProfiles(), loadTrainers()]);
       const sharedTrainerList = $("#trainerNamesListInline");

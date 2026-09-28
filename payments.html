@@ -128,6 +128,7 @@
   .stable tr:last-child td{ border-bottom:none; }
   .stable tbody tr td{ transition: background-color .12s ease; }
   .stable tbody tr:hover td{ background:var(--surface-2); }
+  .stable tr.clickrow{ cursor:pointer; }
   .stable tr.group-row td{ background:var(--surface-2); font-weight:700; }
   .stable tr.group-row td.gname{ display:flex; align-items:center; gap:6px; }
   .money{ font-variant-numeric:tabular-nums; font-weight:600; }
@@ -243,6 +244,7 @@
       <a class="navbtn active" href="payments.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20M6 15h4"/></svg>Payments</a>
       <a class="navbtn" href="absent.html" id="navAbsentLink" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.5-7 8-7s8 3 8 7"/><path d="M2 2l20 20"/></svg>Retention</a>
       <a class="navbtn" href="admin.html" id="navAdminLink" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v6c0 5-3.5 8-7 9-3.5-1-7-4-7-9V6l7-3z"/></svg>Admin</a>
+      <a class="navbtn" href="activity.html" id="navActivityLink" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></svg>Activity</a>
     </div>
     <div class="rail-divider"></div>
     <div class="rail-account" id="railAccount"></div>
@@ -381,6 +383,23 @@
   const filters = { search: "", status: "all", teacher: "all" };
   function isBillingAdmin(){ return currentRole === "admin" || currentRole === "superadmin"; }
 
+  // Site-wide edit history (Activity page, admin/superadmin only) — every page logs its own
+  // significant writes into the same edit_history table. Fire-and-forget on purpose: a slow
+  // or failed history insert should never hold up (or fail) the actual save it's describing.
+  function logHistory(action, summary, entityType, entityId, details){
+    if(!sbClient || !currentUser) return;
+    sbClient.from("edit_history").insert({
+      actor_email: currentUser.email || null,
+      actor_role: currentRole || null,
+      page: "payments",
+      action,
+      summary,
+      entity_type: entityType || null,
+      entity_id: entityId != null ? String(entityId) : null,
+      details: details || null
+    }).then(({ error }) => { if(error) console.warn("Couldn't log history:", error); });
+  }
+
   // Tuition is due in advance — the SOA for a coverage month goes out on the 25th of the
   // month before it (see periodLabel/dueDateLabel below). So once the 25th hits, what's
   // actually being collected is already next month's tuition, not the current calendar
@@ -497,6 +516,7 @@
     try{
       await entry.undo();
       redoEntry = entry;
+      logHistory("undo", `Undid: ${entry.label}`);
     }catch(err){ console.warn(err); toast("Couldn't undo that — try again."); }
     renderUndoBar();
   }
@@ -505,6 +525,7 @@
     if(!entry) return;
     try{
       await entry.redo();
+      logHistory("redo", `Redid: ${entry.label}`);
       undoStack.push(entry);
       if(undoStack.length > UNDO_CAP) undoStack.shift();
       redoEntry = null;
@@ -539,6 +560,8 @@
     if(pipelineLink) pipelineLink.hidden = currentRole === "teacher" || currentRole === "pending";
     const absentLink = $("#navAbsentLink");
     if(absentLink) absentLink.hidden = !(currentRole === "admin" || currentRole === "superadmin" || currentRole === "teacher" || currentRole === "trainer_teacher");
+    const activityLink = $("#navActivityLink");
+    if(activityLink) activityLink.hidden = !(currentRole === "admin" || currentRole === "superadmin");
     applyRoleGate();
   }
 
@@ -772,6 +795,7 @@
       marked_absent_by: currentUser ? currentUser.email : null
     });
     if(absErr) console.warn("Marked inactive, but couldn't create the absence record:", absErr);
+    logHistory("mark_absent", `Marked ${displayName(s)} absent`, "student", studentId);
     await Promise.all([loadEnrollments(), loadAbsences()]);
     render();
   }
@@ -1210,7 +1234,7 @@
       const s = x.student;
       // Still just a flag, not a verdict — being overdue never marks anyone absent by itself.
       // It just tells staff this one's worth a look; Mark absent (below) is still their call.
-      return `<tr>
+      return `<tr class="clickrow" data-action="open-payment-history" data-student="${esc(s.id)}" title="Click for payment history">
         <td>${esc(displayName(s))}${subjectBadgesFor(s.id)}${overdue ? ` <span class="pill overdue" title="Still unpaid past the 10th of ${esc(fmtMonthLabel(selectedMonth))} — worth a decision.">Overdue</span>` : ""}</td>
         <td class="muted">${esc(s.age_grade || "—")}</td>
         <td class="muted">${esc(groupNameFor(s.billing_group_id) || "—")}</td>
@@ -1263,13 +1287,13 @@
     body.innerHTML = rows.map(a => {
       const s = students.find(x => x.id === a.student_id);
       const monthsGone = monthDiff(a.last_paid_month, monthKeyOfToday());
-      return `<tr>
+      return `<tr class="clickrow" data-action="open-payment-history" data-student="${esc(a.student_id)}" title="Click for payment history">
         <td>${esc(s ? displayName(s) : "—")}${subjectBadgesForIds(a.subject_enrollment_ids)}</td>
         <td class="muted">${esc(s ? (s.age_grade || "—") : "—")}</td>
         <td class="muted">${esc(fmtMonthLabel(a.last_paid_month))}</td>
         <td class="muted">${new Date(a.marked_absent_at).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"})}</td>
         <td class="muted">${monthsGone == null ? "—" : `${monthsGone} month${monthsGone===1?"":"s"}`}</td>
-        <td><button class="btn sm" data-action="resume-absence" data-id="${esc(a.id)}">Resume</button></td>
+        <td><div class="row-actions"><button class="iconbtn" data-action="open-payment-history" data-student="${esc(a.student_id)}" title="Payment history">🕘</button><button class="btn sm" data-action="resume-absence" data-id="${esc(a.id)}">Resume</button></div></td>
       </tr>`;
     }).join("");
   }
@@ -1304,6 +1328,7 @@
       .update({ resumed_at: nowIso, resumed_by: currentUser ? currentUser.email : null })
       .eq("id", absenceId);
     if(e2){ alert("Reactivated the enrollment, but couldn't close out the absence record: " + e2.message); }
+    logHistory("resume_absence", `Resumed ${displayName(s)} (tagged RETURNEE)`, "absence_record", absenceId);
     await Promise.all([loadEnrollments(), loadAbsences()]);
     render();
   }
@@ -1387,13 +1412,35 @@
     modal.innerHTML = `
       <div class="modal-head"><h3>${esc(displayName(s))} — payment history</h3><button class="iconbtn" data-action="close-modal">✕</button></div>
       <div class="modal-body" id="paymentHistoryBody" data-student="${esc(studentId)}">
-        ${paymentHistoryRowsHtml(studentId)}
+        ${paymentHistoryModalBodyHtml(studentId)}
       </div>
       <div class="modal-foot">
         <button type="button" class="btn primary" data-action="close-modal" style="margin-left:auto;">Done</button>
       </div>
     `;
     $("#modalBackdrop").hidden = false;
+  }
+
+  // Everything shown inside the payment-history modal's body — factored out so a refresh
+  // (after a delete/undo) redraws the same absence context, not just the bare receipt list.
+  function paymentHistoryModalBodyHtml(studentId){
+    return absenceSummaryHtml(studentId) + paymentHistoryRowsHtml(studentId);
+  }
+
+  // Clicking through from the Absent tab (or Unpaid, if someone's since gone absent) into
+  // "payment history" should also say where they stand on catching back up — not just list
+  // receipts with no context for why they matter right now.
+  function absenceSummaryHtml(studentId){
+    const a = openAbsences().find(x => x.student_id === studentId);
+    if(!a) return "";
+    const catchUpYm = shiftMonth(a.last_paid_month, 1);
+    const due = tuitionDueForAbsence(a);
+    const paid = verifiedPaidFor(studentId, catchUpYm);
+    const balance = due - paid;
+    return `<div class="hint" style="margin-bottom:12px;">
+      Currently absent since ${esc(new Date(a.marked_absent_at).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"}))} — last paid through ${esc(fmtMonthLabel(a.last_paid_month))}.
+      To catch up: ${peso(due)} due for ${esc(fmtMonthLabel(catchUpYm))}, ${peso(paid)} paid${balance > 0 ? `, ${peso(balance)} remaining` : " — fully covered"}.
+    </div>`;
   }
 
   function paymentHistoryRowsHtml(studentId){
@@ -1423,7 +1470,7 @@
   function refreshPaymentHistoryModalIfOpen(){
     const body = $("#paymentHistoryBody");
     if(!body) return;
-    body.innerHTML = paymentHistoryRowsHtml(body.dataset.student);
+    body.innerHTML = paymentHistoryModalBodyHtml(body.dataset.student);
   }
 
   function openTuitionModal(studentId){
@@ -1523,12 +1570,67 @@
     window.open(data.signedUrl, "_blank");
   }
 
+  // Returns the resumed student's display name when verifying this receipt auto-resumed
+  // them, or null otherwise — callers fold that into whatever toast they show, rather than
+  // this function toasting on its own and getting immediately overwritten by the caller's.
   async function setReceiptStatus(id, status, note){
+    const before = receipts.find(x => x.id === id);
+    const s = before ? students.find(x => x.id === before.student_id) : null;
     const patch = { status, reviewed_by: currentUser ? currentUser.id : null, reviewed_at: new Date().toISOString() };
     if(note !== undefined) patch.status_note = note;
     const { error } = await sbClient.from("payment_receipts").update(patch).eq("id", id);
-    if(error){ toast("Couldn't update that receipt: " + error.message); return; }
-    await loadReceipts(); render();
+    if(error){ toast("Couldn't update that receipt: " + error.message); return null; }
+    logHistory(
+      `${status}_receipt`,
+      `${status.charAt(0).toUpperCase() + status.slice(1)} ${before ? peso(before.amount) : ""} payment for ${s ? displayName(s) : "a student"}${note ? " — " + note : ""}`,
+      "payment_receipt", id
+    );
+    await loadReceipts();
+    const autoResumedName = status === "verified" ? await maybeAutoResumeFromReceipt(id) : null;
+    render();
+    return autoResumedName;
+  }
+
+  // Same subject count basis as Retention's own tuitionDueForAbsence — an absent student's
+  // enrollments are inactive, so activeSubjectsFor would wrongly read as zero/one subject.
+  function tuitionDueForAbsence(a){
+    const s = students.find(x => x.id === a.student_id);
+    const subjCount = (a.subject_enrollment_ids || []).length || 1;
+    return Number((s && s.monthly_tuition) || 0) * subjCount;
+  }
+  // Verifying a receipt is the one place a payment actually becomes "Paid" — if it's for a
+  // currently-absent student and it covers their catch-up month in full, bring them back the
+  // same way Resume does (reactivate their snapshotted enrollments, tag RETURNEE, close the
+  // absence record), so nobody has to remember to also click Resume after verifying. Logging
+  // a payment on its own never triggers this — only a verified one does, same trigger point
+  // Retention's own Log payment relies on if this session is the one that verifies it.
+  async function maybeAutoResumeFromReceipt(receiptId){
+    const r = receipts.find(x => x.id === receiptId);
+    if(!r) return null;
+    const a = absences.find(x => x.student_id === r.student_id && !x.resumed_at);
+    if(!a) return null;
+    const catchUpYm = shiftMonth(a.last_paid_month, 1);
+    if(r.covers_month !== monthToDate(catchUpYm)) return null; // this payment isn't for their catch-up month
+    const due = tuitionDueForAbsence(a);
+    const paid = verifiedPaidFor(a.student_id, catchUpYm);
+    if(paid < due) return null;
+    const nowIso = new Date().toISOString();
+    const ids = a.subject_enrollment_ids || [];
+    if(ids.length){
+      const { error: e1 } = await sbClient.from("subject_enrollments")
+        .update({ status:"active", enrollment_type:"resume", enrollment_type_set_at: nowIso, updated_at: nowIso })
+        .in("id", ids);
+      if(e1){ console.warn("Auto-resume: couldn't reactivate enrollments", e1); return null; }
+    }
+    const { error: e2 } = await sbClient.from("absence_records")
+      .update({ resumed_at: nowIso, resumed_by: currentUser ? currentUser.email + " (auto, via payment)" : "auto (via payment)" })
+      .eq("id", a.id);
+    if(e2) console.warn("Auto-resume: couldn't close the absence record", e2);
+    await Promise.all([loadEnrollments(), loadAbsences()]);
+    const s = students.find(x => x.id === r.student_id);
+    const name = s ? displayName(s) : "Student";
+    logHistory("auto_resume", `${name} automatically resumed (tagged RETURNEE) — payment covers their return`, "absence_record", a.id);
+    return name;
   }
 
   async function deleteReceipt(id){
@@ -1542,6 +1644,7 @@
     if(error){ toast("Couldn't delete: " + error.message); return; }
     await loadReceipts(); render(); refreshPaymentHistoryModalIfOpen();
     const s = students.find(x => x.id === r.student_id);
+    logHistory("delete_receipt", `Deleted ${peso(r.amount)} payment (${s ? displayName(s) : "student"})`, "payment_receipt", id);
     pushUndo(`Delete payment (${s ? displayName(s) : "student"})`,
       async ()=>{
         const { id: _drop, ...rest } = r;
@@ -1564,6 +1667,7 @@
     const memberIds = students.filter(s => s.billing_group_id === id).map(s => s.id);
     const { error } = await sbClient.from("billing_groups").delete().eq("id", id);
     if(error){ toast("Couldn't delete: " + error.message); return; }
+    logHistory("delete_group", `Deleted billing group "${g.name}"`, "billing_group", id);
     await Promise.all([loadStudents(), loadBillingGroups()]); render();
     closeModal();
     pushUndo(`Delete billing group "${g.name}"`,
@@ -1614,6 +1718,8 @@
           status: "pending"
         });
         if(error) throw error;
+        const loggedStudent = students.find(x => x.id === studentId);
+        logHistory("log_payment", `Logged ${peso(amount)} payment for ${loggedStudent ? displayName(loggedStudent) : "a student"}`, "payment_receipt", null);
         closeModal();
         await loadReceipts(); render();
         toast("Payment logged — verify it from the review queue once confirmed.");
@@ -1631,6 +1737,8 @@
       const tuition = Number(fd.get("tuition"));
       const { error } = await sbClient.from("students").update({ monthly_tuition: tuition }).eq("id", id);
       if(error){ toast("Couldn't save: " + error.message); return; }
+      const tuitionStudent = students.find(x => x.id === id);
+      logHistory("edit_tuition", `Set ${tuitionStudent ? displayName(tuitionStudent) : "a student"}'s tuition to ${peso(tuition)}/subject`, "student", id);
       closeModal();
       await loadStudents(); render();
     }
@@ -1658,6 +1766,7 @@
           const { error: assignErr } = await sbClient.from("students").update({ billing_group_id: groupId }).in("id", memberIds);
           if(assignErr) throw assignErr;
         }
+        logHistory(id ? "edit_group" : "add_group", `${id ? "Edited" : "Created"} billing group "${name}" (${memberIds.length} member${memberIds.length===1?"":"s"})`, "billing_group", groupId);
         await Promise.all([loadStudents(), loadBillingGroups()]);
         render();
         openGroupsModal();
@@ -1725,7 +1834,10 @@
     else if(action === "back-to-groups"){ openGroupsModal(); }
     else if(action === "delete-group"){ await deleteGroup(btn.dataset.id); }
     else if(action === "view-receipt"){ e.preventDefault(); await viewReceipt(btn.dataset.id); }
-    else if(action === "verify-receipt"){ await setReceiptStatus(btn.dataset.id, "verified"); toast("Marked verified."); }
+    else if(action === "verify-receipt"){
+      const autoResumedName = await setReceiptStatus(btn.dataset.id, "verified");
+      toast(autoResumedName ? `Marked verified — ${autoResumedName} automatically resumed, payment covers their return.` : "Marked verified.");
+    }
     else if(action === "reject-receipt"){
       const note = prompt("Optional — why is this being rejected?");
       if(note === null) return;

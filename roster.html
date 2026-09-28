@@ -244,6 +244,7 @@
       <a class="navbtn" href="payments.html" id="navPaymentsLink" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20M6 15h4"/></svg>Payments</a>
       <a class="navbtn" href="absent.html" id="navAbsentLink" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.5-7 8-7s8 3 8 7"/><path d="M2 2l20 20"/></svg>Retention</a>
       <a class="navbtn" href="admin.html" id="navAdminLink" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v6c0 5-3.5 8-7 9-3.5-1-7-4-7-9V6l7-3z"/></svg>Admin</a>
+      <a class="navbtn" href="activity.html" id="navActivityLink" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></svg>Activity</a>
     </div>
     <div class="rail-divider"></div>
     <div class="rail-account" id="railAccount"></div>
@@ -366,7 +367,7 @@
         <div class="table-scroll">
           <table class="stable">
             <thead><tr>
-              <th>#</th><th>Student</th><th>Subject</th><th>Mode</th><th>LWC</th><th>NWU</th><th>No. of days</th><th>No. of months</th><th>Test date</th><th>Test level</th><th>Test time</th><th>Test score</th><th>Test group</th><th>Grade</th><th>Payment</th>
+              <th>#</th><th>Student</th><th>Subject</th><th>LWC</th><th>NWU</th><th>No. of days</th><th>No. of months</th><th>Test date</th><th>Test level</th><th>Test time</th><th>Test score</th><th>Test group</th><th>Grade</th><th>Payment</th><th>Mode</th>
             </tr></thead>
             <tbody id="repBody"></tbody>
           </table>
@@ -410,7 +411,7 @@
   async function runUndo(){
     const entry = undoStack.pop();
     if(!entry) return;
-    try{ await entry.undo(); redoEntry = entry; }
+    try{ await entry.undo(); redoEntry = entry; logHistory("undo", `Undid: ${entry.label}`); }
     catch(err){ console.warn(err); undoStack.push(entry); alert("Couldn't undo that — try again."); }
     renderUndoBar();
   }
@@ -419,6 +420,7 @@
     if(!entry) return;
     try{
       await entry.redo();
+      logHistory("redo", `Redid: ${entry.label}`);
       undoStack.push(entry);
       if(undoStack.length > UNDO_CAP) undoStack.shift();
       redoEntry = null;
@@ -525,6 +527,23 @@
   // purely about roster scoping, so both count the same way here.
   function isTeacherScoped(){ return currentRole === "teacher" || currentRole === "trainer_teacher"; }
 
+  // Site-wide edit history (Activity page, admin/superadmin only) — every page logs its own
+  // significant writes into the same edit_history table. Fire-and-forget on purpose: a slow
+  // or failed history insert should never hold up (or fail) the actual save it's describing.
+  function logHistory(action, summary, entityType, entityId, details){
+    if(!sbClient || !currentUser) return;
+    sbClient.from("edit_history").insert({
+      actor_email: currentUser.email || null,
+      actor_role: currentRole || null,
+      page: "roster",
+      action,
+      summary,
+      entity_type: entityType || null,
+      entity_id: entityId != null ? String(entityId) : null,
+      details: details || null
+    }).then(({ error }) => { if(error) console.warn("Couldn't log history:", error); });
+  }
+
   function gradeFor(studentId){
     const s = students.find(x => x.id === studentId);
     return s ? (s.age_grade || "") : "";
@@ -552,6 +571,8 @@
     if(paymentsLink) paymentsLink.hidden = !(currentRole === "admin" || currentRole === "superadmin" || currentRole === "teacher");
     const absentLink = $("#navAbsentLink");
     if(absentLink) absentLink.hidden = !(currentRole === "admin" || currentRole === "superadmin" || currentRole === "teacher" || currentRole === "trainer_teacher");
+    const activityLink = $("#navActivityLink");
+    if(activityLink) activityLink.hidden = !(currentRole === "admin" || currentRole === "superadmin");
     // The "+ Add to roster" button (roster view) and the close-out button (report view) are
     // both rendered by renderPageHeadActions() instead, since which one shows depends on the
     // active view as well as the role.
@@ -1053,6 +1074,7 @@
     alert(`${candidates.length} enrollment${candidates.length===1?"":"s"} closed out for ${cycleLabel}.`);
 
     const label = `Close out ${cycleLabel} (${candidates.length})`;
+    logHistory("close_out_month", label, "enrollment_monthly_history", cycleKey);
     pushUndo(label,
       async ()=>{
         if(historyIds.length){
@@ -1101,7 +1123,6 @@
         <td class="rownum">${idx+1}</td>
         <td>${esc(displayName(r.student_id, r.student_name))}</td>
         <td><span class="pill ${r.subject==='Math'?'subj-math':'subj-reading'}">${esc(r.subject||"")}</span></td>
-        <td>${fmtMode(r.mode)}</td>
         <td>${fmtPlain(r.lwc)}</td>
         <td>${fmtPlain(r.nwu)}</td>
         <td>${fmtPlain(r.no_of_days)}</td>
@@ -1113,6 +1134,7 @@
         <td>${fmtPlain(r.test_group)}</td>
         <td>${esc(gradeFor(r.student_id) || "—")}</td>
         <td>${editable ? fmtPaymentPill(r.student_id) : `<span class="lvl empty-lvl" title="An archived cycle is a snapshot — payment status only makes sense for the live roster.">not tracked</span>`}</td>
+        <td>${fmtMode(r.mode)}</td>
       </tr>
     `).join("");
   }
@@ -1510,6 +1532,12 @@
         if(editingEnrollment){
           await saveScheduleForEnrollment(editingId, editingEnrollment.student_id, editingEnrollment.student_name, readScheduleRowsFromForm(fd));
         }
+        logHistory(
+          "edit_enrollment",
+          `Edited ${editingEnrollment ? editingEnrollment.student_name : "an enrollment"}${editingEnrollment && editingEnrollment.subject ? "'s " + editingEnrollment.subject : ""} enrollment`,
+          "subject_enrollment",
+          editingId
+        );
         closeModal();
         await loadEnrollments(); renderBoth();
         return;
@@ -1574,6 +1602,7 @@
         await saveScheduleForEnrollment(newEnrollment.id, studentId, name, slots);
       }
 
+      logHistory("add_enrollment", `Added ${name} — ${subject} (${isNewStudent ? "NEW" : "EO"})`, "subject_enrollment", newEnrollment ? newEnrollment.id : null);
       closeModal();
       await Promise.all([loadStudents(), loadEnrollments()]);
       renderBoth();
@@ -1596,6 +1625,8 @@
       };
       const { error } = await sbClient.from("subject_enrollments").update(patch).eq("id", id);
       if(error){ alert("Couldn't save: " + error.message); return; }
+      const reportEnrollment = enrollments.find(en => en.id === id);
+      logHistory("edit_report_fields", `Updated ${reportEnrollment ? reportEnrollment.student_name : "a student"}'s report fields (LWC/NWU/test info)`, "subject_enrollment", id);
       closeModal();
       await loadEnrollments(); renderReportAndActions();
       return;
@@ -1637,6 +1668,7 @@
       await loadEnrollments(); renderBoth();
 
       const label = `Bulk edit ${ids.length} enrollment${ids.length===1?"":"s"}`;
+      logHistory("bulk_edit_enrollments", `${label} (${patchKeys.join(", ")})`, "subject_enrollment", ids.join(","));
       pushUndo(label,
         async ()=>{
           for(const p of priorValues){
@@ -1731,6 +1763,7 @@
       await Promise.all([loadEnrollments(), loadSchedules()]); renderBoth();
 
       const label = `Delete ${(snap.enrollmentRow && snap.enrollmentRow.student_name) || "enrollment"}`;
+      logHistory("delete_enrollment", label, "subject_enrollment", id);
       pushUndo(label,
         async ()=>{ await restoreEnrollmentCascade(snap); await Promise.all([loadEnrollments(), loadSchedules()]); renderBoth(); },
         async ()=>{ await performDeleteEnrollments([id]); await Promise.all([loadEnrollments(), loadSchedules()]); renderBoth(); }
@@ -1760,6 +1793,7 @@
       await Promise.all([loadEnrollments(), loadSchedules()]); renderBoth();
 
       const label = `Delete ${ids.length} enrollment${ids.length===1?"":"s"}`;
+      logHistory("bulk_delete_enrollments", label, "subject_enrollment", ids.join(","));
       pushUndo(label,
         async ()=>{
           for(const snap of snaps) await restoreEnrollmentCascade(snap);

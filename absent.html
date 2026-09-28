@@ -131,15 +131,25 @@
   .stable tr:last-child td{ border-bottom:none; }
   .stable tbody tr td{ transition: background-color .12s ease; }
   .stable tbody tr:hover td{ background:var(--surface-2); }
+  .stable tr.clickrow{ cursor:pointer; }
+  .stable tr.clickrow:hover{ background:var(--surface-2); }
   .muted{ color:var(--ink-muted); }
   .hint{ font-size:12px; color:var(--ink-muted); font-weight:500; }
   .faint{ color:var(--ink-faint); }
+  .money{ font-variant-numeric:tabular-nums; font-weight:600; }
+  .money.good{ color:var(--good); }
   .pill{ display:inline-flex; align-items:center; gap:5px; padding:3px 9px; border-radius:99px; font-size:11.5px; font-weight:700; white-space:nowrap; transition: background-color .15s ease, color .15s ease; }
   .pill.subj-math{ background:var(--accent-soft); color:var(--accent-soft-ink); }
   .pill.subj-reading{ background:var(--bad-soft); color:var(--bad); }
   .pill.m1, .pill.m2{ background:var(--warn-soft); color:var(--warn); }
   .pill.m3, .pill.m4{ background:var(--bad-soft); color:var(--bad); }
   .pill.resumed{ background:var(--good-soft); color:var(--good); }
+  .pill.pending{ background:var(--accent-soft); color:var(--accent-soft-ink); }
+  .pill.flagged{ background:var(--warn-soft); color:var(--warn); }
+  .pill.verified{ background:var(--good-soft); color:var(--good); }
+  .pill.rejected{ background:var(--surface-2); color:var(--ink-faint); }
+  .field-row{ display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  .lvl.empty-lvl{ color:var(--ink-faint); }
   .pill.beyond{ background:var(--surface-2); color:var(--ink-faint); }
   .name-subj-pill{ margin-left:6px; vertical-align:middle; padding:2px 7px; }
   .row-actions{ display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end; }
@@ -193,6 +203,7 @@
     .stable th, .stable td{ padding:9px 8px; font-size:12.5px; }
     .modal-backdrop{ padding:0; align-items:flex-end; }
     .modal{ max-width:none; border-radius:16px 16px 0 0; max-height:92vh; }
+    .field-row{ grid-template-columns:1fr; }
   }
 </style>
 </head>
@@ -219,6 +230,7 @@
       <a class="navbtn" href="payments.html" id="navPaymentsLink" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20M6 15h4"/></svg>Payments</a>
       <a class="navbtn active" href="absent.html" id="navAbsentLink" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.5-7 8-7s8 3 8 7"/><path d="M2 2l20 20" stroke="currentColor"/></svg>Retention</a>
       <a class="navbtn" href="admin.html" id="navAdminLink" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v6c0 5-3.5 8-7 9-3.5-1-7-4-7-9V6l7-3z"/></svg>Admin</a>
+      <a class="navbtn" href="activity.html" id="navActivityLink" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></svg>Activity</a>
     </div>
     <div class="rail-divider"></div>
     <div class="rail-account" id="railAccount"></div>
@@ -293,8 +305,25 @@
   function esc(s){ return String(s==null?"":s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
 
   let sbClient = null, currentUser = null, currentRole = null, currentTeacherName = null;
-  let students = [], enrollments = [], absences = [];
+  let students = [], enrollments = [], absences = [], receipts = [];
   const notesCache = new Map(); // absence_id -> [{id, note, author_email, created_at}]
+
+  // Site-wide edit history (Activity page, admin/superadmin only) — every page logs its own
+  // significant writes into the same edit_history table. Fire-and-forget on purpose: a slow
+  // or failed history insert should never hold up (or fail) the actual save it's describing.
+  function logHistory(action, summary, entityType, entityId, details){
+    if(!sbClient || !currentUser) return;
+    sbClient.from("edit_history").insert({
+      actor_email: currentUser.email || null,
+      actor_role: currentRole || null,
+      page: "absent",
+      action,
+      summary,
+      entity_type: entityType || null,
+      entity_id: entityId != null ? String(entityId) : null,
+      details: details || null
+    }).then(({ error }) => { if(error) console.warn("Couldn't log history:", error); });
+  }
 
   // Same calendar-month billing convention Payments uses (not Student Roster's 21st–20th
   // cycle) — "months absent" is measured in cycles of unpaid tuition, so it has to line up
@@ -333,6 +362,27 @@
     const [fy,fm] = fromYm.split("-").map(Number);
     const [ty,tm] = toYm.split("-").map(Number);
     return (ty - fy) * 12 + (tm - fm);
+  }
+  function monthToDate(ym){ return ym + "-01"; } // matches covers_month, which is always the 1st
+  function peso(n){ const v = Number(n)||0; return "₱" + v.toLocaleString("en-PH", { minimumFractionDigits: v % 1 ? 2 : 0, maximumFractionDigits: 2 }); }
+  // The catch-up month for an open absence — the first cycle they missed. This is what
+  // "Tuition due" here means: what it'd take, for that one month, to come back current.
+  // Same 4-month return policy applies regardless (see resumeAbsence) — this is just the
+  // billing side of it.
+  function catchUpMonthFor(a){ return shiftMonth(a.last_paid_month, 1); }
+  // Tuition due is based on exactly how many subjects were active when this episode
+  // started (subject_enrollment_ids, snapshotted by Mark absent) — not activeSubjectsFor,
+  // since those enrollments are inactive now.
+  function tuitionDueForAbsence(a){
+    const s = students.find(x => x.id === a.student_id);
+    const subjCount = (a.subject_enrollment_ids || []).length || 1;
+    return Number((s && s.monthly_tuition) || 0) * subjCount;
+  }
+  function verifiedPaidForAbsence(a){
+    const monthDate = monthToDate(catchUpMonthFor(a));
+    return receipts
+      .filter(r => r.student_id === a.student_id && r.status === "verified" && r.covers_month === monthDate)
+      .reduce((sum, r) => sum + Number(r.amount||0), 0);
   }
 
   let selectedMonth = monthDefault();
@@ -374,6 +424,15 @@
     if(errMsg){ err.textContent = errMsg; err.hidden = false; } else { err.hidden = true; }
   }
   function showApp(){ $("#loginScreen").hidden = true; $("#appRoot").hidden = false; }
+  let toastTimer = null;
+  function toast(msg){
+    const el = $("#toast");
+    if(!el) return;
+    el.textContent = msg;
+    el.hidden = false;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(()=>{ el.hidden = true; }, 3200);
+  }
   function renderAccount(){
     const el = $("#railAccount");
     if(el) el.innerHTML = currentUser ? `<div class="account-row"><span class="account-email">${esc(currentUser.email)}</span><button class="btn sm ghost" data-action="logout">Log out</button></div>` : "";
@@ -385,6 +444,8 @@
     if(paymentsLink) paymentsLink.hidden = !(currentRole === "admin" || currentRole === "superadmin" || currentRole === "teacher");
     const absentLink = $("#navAbsentLink");
     if(absentLink) absentLink.hidden = !isAuthorized();
+    const activityLink = $("#navActivityLink");
+    if(activityLink) activityLink.hidden = !(currentRole === "admin" || currentRole === "superadmin");
     applyRoleGate();
   }
   function applyRoleGate(){
@@ -439,7 +500,7 @@
     started = true;
     if(!isAuthorized()) return;
     if(isTeacherScoped()) teacherFilterVal = currentTeacherName || "all";
-    await Promise.all([loadStudents(), loadEnrollments(), loadAbsences()]);
+    await Promise.all([loadStudents(), loadEnrollments(), loadAbsences(), loadReceipts()]);
     populateTeacherFilter();
     render();
 
@@ -449,10 +510,15 @@
     sbClient.channel("realtime:absent-enrollments")
       .on("postgres_changes", { event:"*", schema:"public", table:"subject_enrollments" }, async ()=>{ await loadEnrollments(); render(); })
       .subscribe();
+    sbClient.channel("realtime:absent-receipts")
+      .on("postgres_changes", { event:"*", schema:"public", table:"payment_receipts" }, async ()=>{ await loadReceipts(); render(); })
+      .subscribe();
   }
 
   async function loadStudents(){
-    const { data, error } = await sbClient.from("students").select("id,name,first_name,last_name,age_grade,status");
+    // monthly_tuition is for the Tuition due / Balance columns below — Retention otherwise
+    // never touched billing fields before.
+    const { data, error } = await sbClient.from("students").select("id,name,first_name,last_name,age_grade,status,monthly_tuition");
     if(error){ console.warn(error); students = []; return; }
     students = data || [];
   }
@@ -465,6 +531,11 @@
     const { data, error } = await sbClient.from("absence_records").select("*").order("marked_absent_at", { ascending:false });
     if(error){ console.warn(error); absences = []; return; }
     absences = data || [];
+  }
+  async function loadReceipts(){
+    const { data, error } = await sbClient.from("payment_receipts").select("*");
+    if(error){ console.warn(error); receipts = []; return; }
+    receipts = data || [];
   }
 
   function populateTeacherFilter(){
@@ -569,15 +640,19 @@
     }
   }
 
+  // Every row is clickable — opens the details modal (notes thread, payment history, and a
+  // manual "Resume anyway" fallback for edge cases). Log payment stays its own button in the
+  // row itself, since that's the day-to-day action; clicking it takes priority over the row
+  // click since it's the more specific data-action match.
   function renderList(){
     const isTracking = viewMode === "tracking";
     $("#listTitle").textContent = isTracking ? `Tracking — as of ${fmtMonthLabel(selectedMonth)}` : "All time";
     $("#listHint").textContent = isTracking
-      ? "Students within the 4-month return window — come back in this window and their progress continues, with no new assessment or registration fee."
-      : "Every student ever marked absent, resumed or not. Browsing here ignores the month picker above.";
+      ? "Students within the 4-month return window — come back in this window and their progress continues, with no new assessment or registration fee. Click a row for notes and history; logging a payment that fully covers what's due brings them back automatically."
+      : "Every student ever marked absent, resumed or not. Browsing here ignores the month picker above. Click a row for notes and history.";
     $("#listHead").innerHTML = isTracking
-      ? `<tr><th>Student</th><th>Grade</th><th>Teacher</th><th>Last paid</th><th>Months absent</th><th>Notes</th><th></th></tr>`
-      : `<tr><th>Student</th><th>Grade</th><th>Teacher</th><th>Marked absent</th><th>Last paid</th><th>Status</th><th>Notes</th><th></th></tr>`;
+      ? `<tr><th>Student</th><th>Grade</th><th>Teacher</th><th>Last paid</th><th>Months absent</th><th>Tuition due</th><th>Paid</th><th>Balance</th><th>Log payment</th></tr>`
+      : `<tr><th>Student</th><th>Grade</th><th>Teacher</th><th>Marked absent</th><th>Last paid</th><th>Status</th><th>Tuition due</th><th>Paid</th><th>Balance</th><th>Log payment</th></tr>`;
 
     const rows = isTracking ? trackingRows() : allTimeRows();
     $("#listCount").textContent = rows.length ? `${rows.length} student${rows.length===1?"":"s"}` : "";
@@ -586,39 +661,45 @@
       const emptyMsg = bucketFilter !== null
         ? `Nobody's at exactly ${bucketFilter} month${bucketFilter===1?"":"s"} absent right now.`
         : (isTracking ? "Nobody's in the 1–4 month window right now." : "No one's ever been marked absent yet.");
-      body.innerHTML = `<tr><td colspan="8"><div class="empty">${emptyMsg}</div></td></tr>`;
+      body.innerHTML = `<tr><td colspan="9"><div class="empty">${emptyMsg}</div></td></tr>`;
       return;
     }
     body.innerHTML = rows.map(x => {
       const a = x.absence;
       const s = students.find(st => st.id === a.student_id);
-      const noteCount = notesCache.has(a.id) ? notesCache.get(a.id).length : (a.note_count || null);
       const teacherList = teachersFor(a.student_id).join(", ") || "—";
-      const notesBtn = `<button class="iconbtn" data-action="open-notes" data-absence="${esc(a.id)}" title="Notes">🗒${noteCount ? ` ${noteCount}` : ""}</button>`;
-      const resumeBtn = !a.resumed_at ? `<button class="btn sm good" data-action="resume-absence" data-absence="${esc(a.id)}">Resume</button>` : "";
+      const due = tuitionDueForAbsence(a);
+      const paid = verifiedPaidForAbsence(a);
+      const balance = Math.max(0, due - paid);
+      const moneyCells = `
+        <td class="money">${peso(due)}</td>
+        <td class="money">${peso(paid)}</td>
+        <td class="money${balance<=0?" good":""}">${peso(balance)}</td>
+      `;
+      const logBtn = !a.resumed_at ? `<button class="btn sm" data-action="log-payment" data-absence="${esc(a.id)}">Log payment</button>` : `<span class="lvl empty-lvl">—</span>`;
       if(isTracking){
-        return `<tr>
+        return `<tr class="clickrow" data-action="open-details" data-absence="${esc(a.id)}">
           <td>${esc(displayName(s))}${subjectBadgesFor(a.student_id)}</td>
           <td class="muted">${esc(gradeFor(a.student_id) || "—")}</td>
           <td class="muted">${esc(teacherList)}</td>
           <td class="muted">${esc(fmtMonthLabel(a.last_paid_month))}</td>
           <td>${bucketPillHtml(x.months)}</td>
-          <td>${notesBtn}</td>
-          <td><div class="row-actions">${resumeBtn}</div></td>
+          ${moneyCells}
+          <td>${logBtn}</td>
         </tr>`;
       }
       const statusHtml = a.resumed_at
         ? `<span class="pill resumed">Resumed ${esc(new Date(a.resumed_at).toLocaleDateString(undefined,{month:"short",day:"numeric",year:"numeric"}))}</span>`
         : bucketPillHtml(x.months);
-      return `<tr>
+      return `<tr class="clickrow" data-action="open-details" data-absence="${esc(a.id)}">
         <td>${esc(displayName(s))}${subjectBadgesFor(a.student_id)}</td>
         <td class="muted">${esc(gradeFor(a.student_id) || "—")}</td>
         <td class="muted">${esc(teacherList)}</td>
         <td class="muted">${esc(new Date(a.marked_absent_at).toLocaleDateString(undefined,{month:"short",day:"numeric",year:"numeric"}))}</td>
         <td class="muted">${esc(fmtMonthLabel(a.last_paid_month))}</td>
         <td>${statusHtml}</td>
-        <td>${notesBtn}</td>
-        <td><div class="row-actions">${resumeBtn}</div></td>
+        ${a.resumed_at ? `<td class="muted">—</td><td class="muted">—</td><td class="muted">—</td>` : moneyCells}
+        <td>${logBtn}</td>
       </tr>`;
     }).join("");
   }
@@ -650,41 +731,69 @@
       .update({ resumed_at: nowIso, resumed_by: currentUser ? currentUser.email : null })
       .eq("id", absenceId);
     if(e2){ alert("Reactivated the enrollment, but couldn't close out the absence record: " + e2.message); }
+    logHistory("resume_absence", `Resumed ${displayName(s)} (tagged RETURNEE)`, "absence_record", absenceId);
     await Promise.all([loadEnrollments(), loadAbsences()]);
     render();
   }
 
-  // ---------------- Notes modal ----------------
-  async function openNotesModal(absenceId){
+  // ---------------- Details modal (click a row) ----------------
+  // Everything that used to be a separate Notes button, plus payment history and a manual
+  // Resume fallback — clicking through from the row is now how you see all of that, since
+  // the row itself only has room for the billing columns and Log payment.
+  async function openDetailsModal(absenceId){
     openNotesAbsenceId = absenceId;
-    noteDraft = "";
-    renderNotesModal(true);
+    renderDetailsModal(true);
     $("#modalBackdrop").hidden = false;
     const { data, error } = await sbClient.from("absence_notes").select("*").eq("absence_id", absenceId).order("created_at");
     if(error){ console.warn(error); notesCache.set(absenceId, []); }
     else notesCache.set(absenceId, data || []);
-    renderNotesModal(false);
+    renderDetailsModal(false);
   }
-  function renderNotesModal(loading){
+  function paymentHistoryRowsHtml(studentId){
+    const mine = receipts.filter(r => r.student_id === studentId).sort((a,b) => new Date(b.created_at) - new Date(a.created_at));
+    if(!mine.length) return `<div class="hint">No payments logged for this student yet.</div>`;
+    return mine.map(r => {
+      const monthLabel = r.covers_month ? fmtMonthLabel(r.covers_month.slice(0,7)) : "—";
+      const label = (r.status||"").charAt(0).toUpperCase() + (r.status||"").slice(1);
+      return `<div class="note-item"><div class="note-meta"><b>${peso(r.amount)}</b> — ${esc(monthLabel)} <span class="pill ${esc(r.status)}">${esc(label)}</span></div></div>`;
+    }).join("");
+  }
+  function renderDetailsModal(loading){
     const a = absences.find(x => x.id === openNotesAbsenceId);
     if(!a) return;
     const s = students.find(x => x.id === a.student_id);
     const notes = notesCache.get(openNotesAbsenceId) || [];
+    const due = tuitionDueForAbsence(a);
+    const paid = verifiedPaidForAbsence(a);
+    const balance = Math.max(0, due - paid);
+    const resumeBtn = !a.resumed_at ? `<button type="button" class="btn good" data-action="resume-absence" data-absence="${esc(a.id)}">Resume anyway</button>` : "";
     $("#modal").innerHTML = `
-      <div class="modal-head"><h3>${esc(displayName(s))} — notes</h3><button class="iconbtn" data-action="close-modal">✕</button></div>
+      <div class="modal-head"><h3>${esc(displayName(s))}</h3><button class="iconbtn" data-action="close-modal">✕</button></div>
       <div class="modal-body">
-        ${loading ? `<div class="hint">Loading…</div>` : (notes.length ? notes.map(n => `
-          <div class="note-item">
-            <div class="note-meta">${esc(new Date(n.created_at).toLocaleDateString(undefined,{month:"short",day:"numeric",year:"numeric"}))}${n.author_email ? " · " + esc(n.author_email) : ""}</div>
-            <div class="note-text">${esc(n.note)}</div>
-          </div>
-        `).join("") : `<div class="hint">No notes yet — why they stopped, what's been tried to bring them back.</div>`)}
-        <form class="note-form" id="addNoteForm">
-          <label class="field">Add a note<textarea name="note" rows="3" placeholder="e.g. Texted mom Sept 5, no reply yet"></textarea></label>
-          <button type="submit" class="btn primary sm" style="align-self:flex-end;">Add note</button>
-        </form>
+        <div>
+          <div class="hint">Absence</div>
+          <div>Marked absent ${esc(new Date(a.marked_absent_at).toLocaleDateString(undefined,{month:"short",day:"numeric",year:"numeric"}))}${a.marked_absent_by ? " by " + esc(a.marked_absent_by) : ""} — last paid through ${esc(fmtMonthLabel(a.last_paid_month))}.</div>
+          ${a.resumed_at ? `<div>Resumed ${esc(new Date(a.resumed_at).toLocaleDateString(undefined,{month:"short",day:"numeric",year:"numeric"}))}${a.resumed_by ? " by " + esc(a.resumed_by) : ""}.</div>` : `<div>To catch up: ${peso(due)} due for ${esc(fmtMonthLabel(catchUpMonthFor(a)))} — ${peso(paid)} paid, ${peso(balance)} balance. A verified payment covering the balance brings them back automatically, tagged RETURNEE.</div>`}
+        </div>
+        <div>
+          <div class="hint">Payment history</div>
+          ${paymentHistoryRowsHtml(a.student_id)}
+        </div>
+        <div>
+          <div class="hint">Notes</div>
+          ${loading ? `<div class="hint">Loading…</div>` : (notes.length ? notes.map(n => `
+            <div class="note-item">
+              <div class="note-meta">${esc(new Date(n.created_at).toLocaleDateString(undefined,{month:"short",day:"numeric",year:"numeric"}))}${n.author_email ? " · " + esc(n.author_email) : ""}</div>
+              <div class="note-text">${esc(n.note)}</div>
+            </div>
+          `).join("") : `<div class="hint">No notes yet — why they stopped, what's been tried to bring them back.</div>`)}
+          <form class="note-form" id="addNoteForm">
+            <label class="field">Add a note<textarea name="note" rows="3" placeholder="e.g. Texted mom Sept 5, no reply yet"></textarea></label>
+            <button type="submit" class="btn primary sm" style="align-self:flex-end;">Add note</button>
+          </form>
+        </div>
       </div>
-      <div class="modal-foot"><button type="button" class="btn ghost" data-action="close-modal">Close</button></div>
+      <div class="modal-foot">${resumeBtn}<button type="button" class="btn ghost" data-action="close-modal" style="margin-left:auto;">Close</button></div>
     `;
   }
   async function submitNote(form){
@@ -695,10 +804,69 @@
       absence_id: openNotesAbsenceId, note: text, author_email: currentUser ? currentUser.email : null
     });
     if(error){ alert("Couldn't save note: " + error.message); return; }
+    const noteAbsence = absences.find(x => x.id === openNotesAbsenceId);
+    const noteStudent = noteAbsence ? students.find(x => x.id === noteAbsence.student_id) : null;
+    logHistory("add_absence_note", `Added a note for ${noteStudent ? displayName(noteStudent) : "a student"}`, "absence_record", openNotesAbsenceId);
     const { data } = await sbClient.from("absence_notes").select("*").eq("absence_id", openNotesAbsenceId).order("created_at");
     notesCache.set(openNotesAbsenceId, data || []);
-    renderNotesModal(false);
-    renderList(); // refresh note counts in the table
+    renderDetailsModal(false);
+  }
+
+  // ---------------- Log payment modal ----------------
+  // Always creates a "pending" receipt, same as Payments' own Log payment — verify it from
+  // Payments' review queue once confirmed. If that verification brings the student's catch-up
+  // month fully paid, they're resumed automatically (see setReceiptStatus in payments.html —
+  // same effect is mirrored here too, in case this session is the one that verifies it).
+  function openLogPaymentModal(absenceId){
+    const a = absences.find(x => x.id === absenceId);
+    if(!a) return;
+    const s = students.find(x => x.id === a.student_id);
+    if(!s) return;
+    $("#modal").innerHTML = `
+      <div class="modal-head"><h3>Log a payment — ${esc(displayName(s))}</h3><button class="iconbtn" data-action="close-modal">✕</button></div>
+      <form id="logPaymentForm" data-absence="${esc(a.id)}">
+        <div class="modal-body">
+          <div class="field-row">
+            <label class="field">Amount<input type="number" name="amount" min="0" step="0.01" required></label>
+            <label class="field">Covers month<input type="month" name="coversMonth" value="${esc(catchUpMonthFor(a))}" required></label>
+          </div>
+          <div class="field-row">
+            <label class="field">Reference number<input type="text" name="reference" placeholder="e.g. GC48213"></label>
+            <label class="field">Logged by<input type="text" name="uploadedBy" value="${esc(currentUser ? currentUser.email : "")}"></label>
+          </div>
+          <div class="banner info" style="margin:0;">New entries start "pending" — verify it from Payments' review queue once it's confirmed. A verified payment that fully covers the balance above resumes this student automatically.</div>
+        </div>
+        <div class="modal-foot">
+          <button type="button" class="btn ghost" data-action="close-modal">Cancel</button>
+          <button type="submit" class="btn primary">Log payment</button>
+        </div>
+      </form>
+    `;
+    $("#modalBackdrop").hidden = false;
+  }
+  async function submitLogPayment(form){
+    const absenceId = form.dataset.absence;
+    const a = absences.find(x => x.id === absenceId);
+    if(!a) return;
+    const fd = new FormData(form);
+    const amount = Number(fd.get("amount"));
+    const coversMonth = fd.get("coversMonth");
+    if(!amount || !coversMonth) return;
+    const { error } = await sbClient.from("payment_receipts").insert({
+      student_id: a.student_id,
+      amount,
+      covers_month: monthToDate(coversMonth),
+      reference_number: (fd.get("reference")||"").toString().trim() || null,
+      uploaded_by: (fd.get("uploadedBy")||"").toString().trim() || null,
+      status: "pending"
+    });
+    if(error){ alert("Couldn't log payment: " + error.message); return; }
+    const payingStudent = students.find(x => x.id === a.student_id);
+    logHistory("log_payment", `Logged ${peso(amount)} catch-up payment for ${payingStudent ? displayName(payingStudent) : "a student"}`, "payment_receipt", null);
+    await loadReceipts();
+    closeModal();
+    renderList();
+    toast("Payment logged — verify it from Payments once confirmed.");
   }
   function closeModal(){
     $("#modalBackdrop").hidden = true;
@@ -717,6 +885,10 @@
     if(e.target.id === "addNoteForm"){
       e.preventDefault();
       submitNote(e.target);
+    }
+    if(e.target.id === "logPaymentForm"){
+      e.preventDefault();
+      submitLogPayment(e.target);
     }
   });
 
@@ -744,8 +916,9 @@
       render();
     }
     else if(action === "clear-bucket-filter"){ bucketFilter = null; render(); }
-    else if(action === "open-notes"){ openNotesModal(btn.dataset.absence); }
-    else if(action === "resume-absence"){ await resumeAbsence(btn.dataset.absence); }
+    else if(action === "open-details"){ openDetailsModal(btn.dataset.absence); }
+    else if(action === "log-payment"){ openLogPaymentModal(btn.dataset.absence); }
+    else if(action === "resume-absence"){ await resumeAbsence(btn.dataset.absence); closeModal(); }
   });
 
   boot();

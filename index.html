@@ -376,6 +376,7 @@
       <a class="navbtn" href="payments.html" id="navPaymentsLink" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20M6 15h4"/></svg>Payments</a>
       <a class="navbtn" href="absent.html" id="navAbsentLink" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.5-7 8-7s8 3 8 7"/><path d="M2 2l20 20"/></svg>Retention</a>
       <a class="navbtn" href="admin.html" id="navAdminLink" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v6c0 5-3.5 8-7 9-3.5-1-7-4-7-9V6l7-3z"/></svg>Admin</a>
+      <a class="navbtn" href="activity.html" id="navActivityLink" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></svg>Activity</a>
     </div>
     <div class="rail-divider"></div>
     <div class="rail-section-label">Pipeline views</div>
@@ -582,6 +583,7 @@
     try{
       await entry.undo();
       redoEntry = entry;
+      logHistory("undo", `Undid: ${entry.label}`);
     }catch(err){
       console.warn(err);
       undoStack.push(entry);
@@ -594,6 +596,7 @@
     if(!entry) return;
     try{
       await entry.redo();
+      logHistory("redo", `Redid: ${entry.label}`);
       undoStack.push(entry);
       if(undoStack.length > UNDO_CAP) undoStack.shift();
       redoEntry = null;
@@ -737,6 +740,8 @@
     if(paymentsLink) paymentsLink.hidden = !(currentRole === "admin" || currentRole === "superadmin" || currentRole === "teacher");
     const absentLink = $("#navAbsentLink");
     if(absentLink) absentLink.hidden = !(currentRole === "admin" || currentRole === "superadmin" || currentRole === "teacher" || currentRole === "trainer_teacher");
+    const activityLink = $("#navActivityLink");
+    if(activityLink) activityLink.hidden = !(currentRole === "admin" || currentRole === "superadmin");
     return false;
   }
 
@@ -1653,15 +1658,24 @@
       </div>
       <div class="modal-foot">
         <button class="btn danger" data-action="delete-student" data-id="${s.id}">Delete student</button>
+        ${d ? `<button class="btn ghost" data-action="edit-diagnostic" data-id="${d.id}">Edit diagnostic details</button>` : ""}
         <button class="btn primary" data-action="open-edit-student" data-id="${s.id}">Edit details</button>
       </div>
     `);
   }
 
+  // Covers every column shown on New Students / DT Results: name, grade, subject, mode,
+  // status and the regular schedule live here; the diagnostic-specific columns (Start
+  // point, DT test, DT date, Score, Time) are edited through the existing "Edit diagnostic
+  // details" button below instead of duplicating those fields into a second form. Tag
+  // (NEW/EO/RETURNEE) is deliberately left out — it's set automatically, never by hand.
   function openEditStudentModal(id){
     const s = studentById(id);
     if(!s) return;
     const nameSplit = (s.firstName && s.lastName) ? {first:s.firstName,last:s.lastName} : splitNameGuess(s.name);
+    const sched = scheduleFor(s.id);
+    const slot1 = sched && sched.slots && sched.slots[0] ? sched.slots[0] : null;
+    const slot2 = sched && sched.slots && sched.slots[1] ? sched.slots[1] : null;
     openModal(`
       <div class="modal-head"><h3>Edit ${esc(displayName(s))}</h3><button class="iconbtn" data-action="close-modal">✕</button></div>
       <form data-form="edit-student" data-id="${s.id}">
@@ -1683,14 +1697,34 @@
               </select>
             </label>
           </div>
-          <label class="field">Worksheet mode
-            <select name="mode">
-              <option value="" ${!s.mode?"selected":""}>—</option>
-              <option value="KC" ${s.mode==="KC"?"selected":""}>KC</option>
-              <option value="Paper" ${s.mode==="Paper"?"selected":""}>Paper</option>
-            </select>
-          </label>
+          <div class="field-row">
+            <label class="field">Worksheet mode
+              <select name="mode">
+                <option value="" ${!s.mode?"selected":""}>—</option>
+                <option value="KC" ${s.mode==="KC"?"selected":""}>KC</option>
+                <option value="Paper" ${s.mode==="Paper"?"selected":""}>Paper</option>
+              </select>
+            </label>
+            <label class="field">Status
+              <select name="status">
+                ${Object.keys(STATUS_LABEL).map(k=>`<option value="${esc(k)}" ${s.status===k?"selected":""}>${esc(STATUS_LABEL[k][0])}</option>`).join("")}
+              </select>
+            </label>
+          </div>
           <label class="field">Notes<textarea name="notes" rows="2">${esc(s.notes||"")}</textarea></label>
+          <div class="hint" style="margin-top:4px;">Regular schedule</div>
+          ${sched ? `
+            <div class="field-row">
+              <label class="field">Day 1<select name="day1">${daySelectOptions(slot1?slot1.day:"Tue")}</select></label>
+              <label class="field">Time<input type="time" name="time1" value="${esc(slot1?slot1.time:"16:00")}"></label>
+            </div>
+            <div class="field-row">
+              <label class="field">Day 2<select name="day2">${daySelectOptions(slot2?slot2.day:"Thu")}</select></label>
+              <label class="field">Time<input type="time" name="time2" value="${esc(slot2?slot2.time:"16:00")}"></label>
+            </div>
+            <label class="field">Start date<input type="date" name="startDate" value="${esc(sched.startDate||todayISO())}"></label>
+            <div class="hint">Updates every linked schedule row for this student (Math and Reading move together).</div>
+          ` : `<div class="hint">No regular schedule set yet — use "New regular schedule" once they're ready for one.</div>`}
         </div>
         <div class="modal-foot">
           <button type="button" class="btn ghost" data-action="close-modal">Cancel</button>
@@ -1707,6 +1741,7 @@
     const lastName = fd.get("lastName").toString().trim();
     const name = `${firstName} ${lastName}`.trim();
     if(!id || !firstName || !lastName) return;
+    const sched = scheduleFor(id);
     await guardWrite(async ()=>{
       await db.collection("students").doc(id).update({
         name, firstName, lastName,
@@ -1715,8 +1750,26 @@
         ageGrade: fd.get("ageGrade").toString().trim(),
         subject: fd.get("subject").toString(),
         mode: fd.get("mode").toString(),
+        status: fd.get("status").toString(),
         notes: fd.get("notes").toString().trim()
       });
+      // Every schedules row sharing this studentId (the plain one plus each subject-linked
+      // one) was created together with the same slots/startDate — keep them together on
+      // an edit too, rather than letting Math and Reading drift out of sync.
+      if(sched && fd.get("day1")){
+        const day1 = fd.get("day1"), time1 = fd.get("time1");
+        const day2 = fd.get("day2"), time2 = fd.get("time2");
+        const startDate = fd.get("startDate");
+        const linked = STATE.schedules.filter(x => x.studentId === id && x.status === "active");
+        for(const row of linked){
+          const mode = row.slots && row.slots[0] && row.slots[0].mode ? row.slots[0].mode : undefined;
+          const slots = mode
+            ? [{ day: day1, time: time1, mode }, { day: day2, time: time2, mode }]
+            : [{ day: day1, time: time1 }, { day: day2, time: time2 }];
+          await db.collection("schedules").doc(row.id).update({ slots, startDate });
+        }
+      }
+      logHistory("edit_student", `Edited ${name}`, "student", id);
       toast("Student updated.");
     });
   }
@@ -1760,7 +1813,7 @@
     if(!firstName || !lastName) return;
     if(findExistingStudentId(name)){ toast("A student with that name is already on the roster."); return; }
     await guardWrite(async ()=>{
-      await db.collection("students").add({
+      const newStudent = await db.collection("students").add({
         name, firstName, lastName,
         parentName: fd.get("parentName").toString().trim(),
         parentPhone: fd.get("parentPhone").toString().trim(),
@@ -1768,6 +1821,7 @@
         status: "active", followUpStatus: "", followUpNotes: "",
         createdAt: new Date().toISOString()
       });
+      logHistory("add_student", `Added ${name} to the roster directly`, "student", newStudent ? newStudent.id : null);
       toast("Student added to roster.");
     });
   }
@@ -2150,6 +2204,23 @@
     }
   }
 
+  // Site-wide edit history (Activity page, admin/superadmin only) — every page logs its own
+  // significant writes into the same edit_history table. Fire-and-forget on purpose: a slow
+  // or failed history insert should never hold up (or fail) the actual save it's describing.
+  function logHistory(action, summary, entityType, entityId, details){
+    if(!sbClient || !currentUser) return;
+    sbClient.from("edit_history").insert({
+      actor_email: currentUser.email || null,
+      actor_role: currentRole || null,
+      page: "index",
+      action,
+      summary,
+      entity_type: entityType || null,
+      entity_id: entityId != null ? String(entityId) : null,
+      details: details || null
+    }).then(({ error }) => { if(error) console.warn("Couldn't log history:", error); });
+  }
+
   function findExistingStudentId(name){
     const hit = STATE.students.find(s => s.name.trim().toLowerCase() === name.trim().toLowerCase());
     return hit ? hit.id : null;
@@ -2186,11 +2257,12 @@
         if(subject && !studentById(studentId).subject) patch.subject = subject;
         await db.collection("students").doc(studentId).update(patch);
       }
-      await db.collection("diagnostics").add({
+      const diag = await db.collection("diagnostics").add({
         studentId, studentName, parentName, contact, ageGrade, date, time, examiner, subject, inquiry,
         status: "scheduled", outcome: "pending", notes,
         followUpStatus: "", followUpNotes: "", createdAt: now
       });
+      logHistory("book_diagnostic", `Booked a diagnostic for ${studentName} — ${date} ${time} with ${examiner}`, "diagnostic", diag ? diag.id : null);
       toast("Diagnostic booked.");
     });
   }
@@ -2226,6 +2298,7 @@
       if(d.studentId && studentById(d.studentId)){
         await db.collection("students").doc(d.studentId).update({ name: studentName, firstName, lastName, parentName, parentPhone: contact, ageGrade });
       }
+      logHistory("edit_diagnostic", `Edited ${studentName}'s diagnostic booking`, "diagnostic", id);
       toast("Booking updated.");
     });
   }
@@ -2244,10 +2317,11 @@
     if(sessionNumber > 2){ toast("Both trainings are already scheduled."); return; }
 
     await guardWrite(async ()=>{
-      await db.collection("trainings").add({
+      const training = await db.collection("trainings").add({
         studentId, studentName: s.name, sessionNumber, date, time,
         trainer, status: "scheduled", createdAt: new Date().toISOString()
       });
+      logHistory("book_training", `Booked training session ${sessionNumber} for ${s.name} — ${date} ${time} with ${trainer}`, "training", training ? training.id : null);
       toast(`Training session ${sessionNumber} scheduled.`);
     });
   }
@@ -2313,6 +2387,8 @@
           slots: linkedSlots, startDate, status: "active", createdAt: new Date().toISOString()
         });
       }
+      const subjectsOn = [mathOn && "Math", readingOn && "Reading"].filter(Boolean).join(" + ");
+      logHistory("set_regular_schedule", `Set ${s.name}'s regular schedule${subjectsOn ? " — " + subjectsOn + " (" + enrollmentType.toUpperCase() + ")" : ""}`, "student", studentId);
       toast(mathOn || readingOn ? "Regular schedule set — now on their teacher's roster." : "Regular schedule set.");
     });
   }
@@ -2328,6 +2404,7 @@
       };
       if(outcome === "enrolled" && subject) patch.subject = subject;
       await db.collection("students").doc(d.studentId).update(patch);
+      logHistory("mark_outcome", `Marked ${d.studentName || "a student"}'s diagnostic outcome: ${outcome}${subject ? " — " + subject : ""}`, "diagnostic", id);
       toast(outcome === "enrolled" ? `Marked enrolled${subject ? " — "+subject : ""}.` : "Marked not enrolled.");
     });
   }
@@ -2370,6 +2447,7 @@
     const label = `Delete ${(snap.studentSnap && snap.studentSnap.name) || "student"}`;
     await guardWrite(async ()=>{
       await performDeleteStudentEverywhere(ids);
+      logHistory("delete_student", label, "student", studentId);
       toast("Removed everywhere — diagnostic, trainings, and schedule.");
       pushUndo(label,
         async ()=>{ await performRestoreStudentEverywhere(snap); toast(`Undid: ${label}`); },
@@ -2387,12 +2465,15 @@
       if(completedCount >= 2){
         await db.collection("students").doc(t.studentId).update({ status: "monitor_schedule" });
       }
+      logHistory("training_complete", `Marked training session ${t.sessionNumber} complete for ${t.studentName}`, "training", id);
       toast("Training marked complete.");
     });
   }
   async function markReadyForSchedule(studentId){
     await guardWrite(async ()=>{
       await db.collection("students").doc(studentId).update({ status: "ready_for_schedule" });
+      const readyStudent = studentById(studentId);
+      logHistory("mark_ready_for_schedule", `Marked ${readyStudent ? readyStudent.name : "a student"} ready for a regular schedule`, "student", studentId);
       toast("Marked ready for regular schedule.");
     });
   }
@@ -2405,7 +2486,12 @@
     }, 650);
   }
   async function setFollowupStatus(id, status){
-    await guardWrite(async ()=>{ await db.collection("students").doc(id).update({ followUpStatus: status }); toast("Follow-up updated."); });
+    await guardWrite(async ()=>{
+      await db.collection("students").doc(id).update({ followUpStatus: status });
+      const fuStudent = studentById(id);
+      logHistory("set_followup_status", `Set ${fuStudent ? fuStudent.name : "a student"}'s follow-up status to ${status || "(none)"}`, "student", id);
+      toast("Follow-up updated.");
+    });
   }
 
 
