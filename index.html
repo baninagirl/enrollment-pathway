@@ -1664,7 +1664,6 @@
       </div>
       <div class="modal-foot">
         <button class="btn danger" data-action="delete-student" data-id="${s.id}">Delete student</button>
-        ${d ? `<button class="btn ghost" data-action="edit-diagnostic" data-id="${d.id}">Edit diagnostic details</button>` : ""}
         <button class="btn primary" data-action="open-edit-student" data-id="${s.id}">Edit details</button>
       </div>
     `);
@@ -1686,6 +1685,10 @@
     if(!s) return;
     const nameSplit = (s.firstName && s.lastName) ? {first:s.firstName,last:s.lastName} : splitNameGuess(s.name);
     const sched = scheduleFor(s.id);
+    // This student's diagnostic booking (if any) is edited right here too, in the same
+    // modal, instead of a separate "Edit diagnostic details" button/modal — one place for
+    // everything about this student, rather than two overlapping edit flows.
+    const d = activeDiagnosticFor(s.id);
     const slot1 = sched && sched.slots && sched.slots[0] ? sched.slots[0] : null;
     const slot2 = sched && sched.slots && sched.slots[1] ? sched.slots[1] : null;
     // NEW/EO/RETURNEE is normally set automatically (see enrollmentTagFor above) — this is
@@ -1718,6 +1721,33 @@
               </select>
             </label>
           </div>
+          ${d ? `
+            <div class="hint" style="margin-top:4px;">Diagnostic test</div>
+            <div class="field-row">
+              <label class="field">Date<input type="date" name="dxDate" required value="${d.date||todayISO()}"></label>
+              <label class="field">Time<input type="time" name="dxTime" required value="${d.time||"10:00"}"></label>
+            </div>
+            <div class="field-row">
+              <label class="field">Inquiry source
+                <select name="inquiry">
+                  <option value="">Choose…</option>
+                  ${INQUIRY_OPTIONS.map(o=>`<option value="${esc(o)}" ${d.inquiry===o?"selected":""}>${esc(o)}</option>`).join("")}
+                </select>
+              </label>
+              <label class="field">DT teacher
+                <select name="examiner" required>
+                  <option value="">Choose…</option>
+                  ${STATE.settings.examiners.map(o=>`<option value="${esc(o)}" ${d.examiner===o?"selected":""}>${esc(o)}</option>`).join("")}
+                </select>
+              </label>
+            </div>
+            <div class="field-row">
+              <label class="field">DT test<input type="text" name="dtTest" value="${esc(d.dtTest||"")}"></label>
+              <label class="field">Score<input type="text" name="score" value="${esc(d.score||"")}"></label>
+            </div>
+            <label class="field">Start point<input type="text" name="startPoint" value="${esc(d.startPoint||"")}" placeholder="e.g. Math 3A"></label>
+            <label class="field">Diagnostic remarks<textarea name="dxNotes" rows="2" placeholder="e.g. cant be reached, try call, referred by…">${esc(d.notes||"")}</textarea></label>
+          ` : ""}
           <div class="field-row">
             <label class="field">Worksheet mode
               <select name="mode">
@@ -1787,6 +1817,7 @@
     if(!id || !firstName || !lastName) return;
     const sched = scheduleFor(id);
     const s = studentById(id);
+    const d = activeDiagnosticFor(id);
     await guardWrite(async ()=>{
       await db.collection("students").doc(id).update({
         name, firstName, lastName,
@@ -1798,6 +1829,27 @@
         status: fd.get("status").toString(),
         notes: fd.get("notes").toString().trim()
       });
+      // This student's diagnostic booking is edited from the same form (see the "Diagnostic
+      // test" section in openEditStudentModal above) rather than a separate modal — the
+      // fields are only present when `d` exists, so this only runs then.
+      if(d){
+        await db.collection("diagnostics").doc(d.id).update({
+          studentName: name,
+          parentName: fd.get("parentName").toString().trim(),
+          ageGrade: fd.get("ageGrade").toString().trim(),
+          contact: fd.get("parentPhone").toString().trim(),
+          date: fd.get("dxDate"),
+          time: fd.get("dxTime"),
+          subject: fd.get("subject").toString(),
+          inquiry: fd.get("inquiry").toString(),
+          examiner: fd.get("examiner"),
+          notes: fd.get("dxNotes").toString().trim(),
+          dtTest: fd.get("dtTest").toString().trim(),
+          score: fd.get("score").toString().trim(),
+          startPoint: fd.get("startPoint").toString().trim()
+        });
+        logHistory("edit_diagnostic", `Edited ${name}'s diagnostic booking`, "diagnostic", d.id);
+      }
       // Every schedules row sharing this studentId (the plain one plus each subject-linked
       // one) was created together with the same slots/startDate — keep them together on
       // an edit too, rather than letting Math and Reading drift out of sync.
