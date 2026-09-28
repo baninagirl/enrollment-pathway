@@ -1306,6 +1306,7 @@
       <div class="acts">
         ${t.status==="scheduled" ? `<button class="btn sm" data-action="mark-training-complete" data-id="${t.id}">Mark complete</button>` : `<span class="pill good">Completed</span>`}
         ${!compact && t.status==="scheduled" ? `<button class="btn sm ghost" data-action="cancel-training" data-id="${t.id}">Cancel</button>` : ""}
+        ${!compact ? `<button class="btn sm ghost" data-action="edit-training" data-id="${t.id}">Edit</button>` : ""}
         <button class="btn sm danger" title="Delete this student everywhere" data-action="delete-training" data-id="${t.id}">${iconTrash()}</button>
       </div>
     </div>`;
@@ -1322,6 +1323,7 @@
       <div class="acts">
         <button class="btn sm" data-action="mark-training-complete" data-id="${t.id}">Attended after all</button>
         <button class="btn sm ghost" data-action="cancel-training" data-id="${t.id}">Cancel &amp; reschedule</button>
+        <button class="btn sm ghost" data-action="edit-training" data-id="${t.id}">Edit</button>
         <button class="btn sm danger" title="Delete this student everywhere" data-action="delete-training" data-id="${t.id}">${iconTrash()}</button>
       </div>
     </div>`;
@@ -2211,6 +2213,34 @@
     `);
   }
 
+  function openEditTrainingModal(id){
+    const t = STATE.trainings.find(x=>x.id===id);
+    if(!t) return;
+    const s = studentById(t.studentId);
+    openModal(`
+      <div class="modal-head"><h3>Edit training session</h3><button class="iconbtn" data-action="close-modal">✕</button></div>
+      <form data-form="edit-training" data-id="${t.id}">
+        <div class="modal-body">
+          <div class="hint">${esc(displayName(s) || t.studentName)} — session ${t.sessionNumber} of 2</div>
+          <div class="field-row">
+            <label class="field">Date<input type="date" name="date" required value="${t.date||todayISO()}"></label>
+            <label class="field">Time<input type="time" name="time" required value="${t.time||"10:00"}"></label>
+          </div>
+          <label class="field">Trainer
+            <select name="trainer" required>
+              <option value="">Choose…</option>
+              ${STATE.settings.trainers.map(o=>`<option value="${esc(o)}" ${t.trainer===o?"selected":""}>${esc(o)}</option>`).join("")}
+            </select>
+          </label>
+        </div>
+        <div class="modal-foot">
+          <button type="button" class="btn ghost" data-action="close-modal">Cancel</button>
+          <button type="submit" class="btn primary">Save changes</button>
+        </div>
+      </form>
+    `);
+  }
+
   const WEEK_ORDER = [1,2,3,4,5,6,0]; // Mon..Sun
   function daySelectOptions(selected){
     return WEEK_ORDER.map(i => `<option value="${DOW[i]}" ${selected===DOW[i]?"selected":""}>${DOW_FULL[i]}</option>`).join("");
@@ -2478,6 +2508,22 @@
     });
   }
 
+  async function submitEditTraining(form){
+    const id = form.dataset.id;
+    const t = STATE.trainings.find(x=>x.id===id);
+    if(!id || !t) return;
+    const fd = new FormData(form);
+    const date = fd.get("date");
+    const time = fd.get("time");
+    const trainer = fd.get("trainer");
+    if(!date || !time || !trainer) return;
+    await guardWrite(async ()=>{
+      await db.collection("trainings").doc(id).update({ date, time, trainer });
+      logHistory("edit_training", `Edited ${t.studentName || "a student"}'s training session ${t.sessionNumber} — now ${date} ${time} with ${trainer}`, "training", id);
+      toast("Training session updated.");
+    });
+  }
+
   async function submitNewSchedule(form){
     const fd = new FormData(form);
     const studentId = fd.get("studentId");
@@ -2698,6 +2744,7 @@
     else if(a === "mark-outcome"){ markOutcome(el.dataset.id, el.dataset.outcome, el.dataset.subject); }
     else if(a === "cancel-diagnostic"){ cancelDiagnostic(el.dataset.id); }
     else if(a === "edit-diagnostic"){ openEditDiagnosticModal(el.dataset.id); }
+    else if(a === "edit-training"){ openEditTrainingModal(el.dataset.id); }
     else if(a === "cancel-training"){ cancelTraining(el.dataset.id); }
     else if(a === "mark-training-complete"){ markTrainingComplete(el.dataset.id); }
     else if(a === "mark-ready-for-schedule"){ markReadyForSchedule(el.dataset.id); }
@@ -2778,6 +2825,7 @@
     "new-diagnostic": submitNewDiagnostic,
     "edit-diagnostic": submitEditDiagnostic,
     "new-training": submitNewTraining,
+    "edit-training": submitEditTraining,
     "new-student": submitNewStudent,
     "edit-student": submitEditStudent,
     "new-schedule": submitNewSchedule
