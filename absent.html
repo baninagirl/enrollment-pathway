@@ -100,8 +100,6 @@
   .stat .l{ font-size:12px; color:var(--ink-muted); font-weight:600; }
   .stat.warn .n{ color:var(--warn); }
   .stat.bad .n{ color:var(--bad); }
-  .stats-sub{ display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-bottom:18px; }
-  .stats-sub .stat .n{ font-size:18px; }
 
   .cal-toolbar{ display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; flex-wrap:wrap; gap:10px; }
   .cal-nav{ display:flex; align-items:center; gap:8px; }
@@ -186,7 +184,6 @@
     .navbtn{ text-align:center; justify-content:center; }
     .main{ padding:16px 14px calc(70px + env(safe-area-inset-bottom)); }
     .stats{ grid-template-columns:repeat(2,1fr); }
-    .stats-sub{ grid-template-columns:repeat(1,1fr); }
     .stable th, .stable td{ padding:9px 8px; font-size:12.5px; }
     .modal-backdrop{ padding:0; align-items:flex-end; }
     .modal{ max-width:none; border-radius:16px 16px 0 0; max-height:92vh; }
@@ -245,7 +242,6 @@
     </div>
 
     <div class="stats" id="statsRow"></div>
-    <div class="stats-sub" id="statsSubRow"></div>
 
     <div class="search-row">
       <div class="seg view-mode-toggle">
@@ -394,7 +390,7 @@
             : `<div class="banner">The Absent page isn't available for your account role.</div>`)
         : "";
     }
-    $$(".page-head, .cal-toolbar, .stats, .stats-sub, .search-row, .card").forEach(el => { el.style.display = blocked ? "none" : ""; });
+    $$(".page-head, .cal-toolbar, .stats, .search-row, .card").forEach(el => { el.style.display = blocked ? "none" : ""; });
   }
 
   async function loadRole(){
@@ -546,17 +542,10 @@
     $("#statsRow").innerHTML = [1,2,3,4].map(n => `
       <div class="stat ${n>=3?'bad':'warn'}"><div class="n">${counts[n]}</div><div class="l">${n} month${n===1?"":"s"} absent</div></div>
     `).join("");
-
-    // Reporting tags for head office — counted for whichever month is selected above.
-    const taggedThisMonth = enrollments.filter(e => e.enrollment_type_set_at && monthKeyOfSomeDate(e.enrollment_type_set_at) === selectedMonth);
-    const newCount = taggedThisMonth.filter(e => e.enrollment_type === "new").length;
-    const eoCount = taggedThisMonth.filter(e => e.enrollment_type === "eo").length;
-    const resumeCount = taggedThisMonth.filter(e => e.enrollment_type === "resume").length;
-    $("#statsSubRow").innerHTML = `
-      <div class="stat"><div class="n">${newCount}</div><div class="l">NEW this cycle</div></div>
-      <div class="stat"><div class="n">${eoCount}</div><div class="l">EO this cycle</div></div>
-      <div class="stat"><div class="n">${resumeCount}</div><div class="l">RESUME this cycle</div></div>
-    `;
+    // NEW / EO / RESUME reporting tags aren't shown here — they belong under Pipeline's
+    // New students / DT results reporting instead, since each enrollment is only reported
+    // once. The enrollment_type tagging itself (set on enrollment and by Resume, below)
+    // stays as-is; this page just doesn't surface a count for it.
   }
 
   function renderList(){
