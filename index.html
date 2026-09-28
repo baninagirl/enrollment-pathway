@@ -1669,6 +1669,12 @@
   // point, DT test, DT date, Score, Time) are edited through the existing "Edit diagnostic
   // details" button below instead of duplicating those fields into a second form. Tag
   // (NEW/EO/RETURNEE) is deliberately left out — it's set automatically, never by hand.
+  const TAG_OPTIONS = [
+    { value:"", label:"— (no tag)" },
+    { value:"new", label:"NEW" },
+    { value:"eo", label:"EO" },
+    { value:"resume", label:"RETURNEE" }
+  ];
   function openEditStudentModal(id){
     const s = studentById(id);
     if(!s) return;
@@ -1676,6 +1682,11 @@
     const sched = scheduleFor(s.id);
     const slot1 = sched && sched.slots && sched.slots[0] ? sched.slots[0] : null;
     const slot2 = sched && sched.slots && sched.slots[1] ? sched.slots[1] : null;
+    // NEW/EO/RETURNEE is normally set automatically (see enrollmentTagFor above) — this is
+    // just an override for when it was mistagged, one dropdown per subject enrollment this
+    // student actually has (a student can carry both a Math and a Reading enrollment, each
+    // with their own tag).
+    const studentEnrollments = STATE.enrollments.filter(e => e.studentId === s.id);
     openModal(`
       <div class="modal-head"><h3>Edit ${esc(displayName(s))}</h3><button class="iconbtn" data-action="close-modal">✕</button></div>
       <form data-form="edit-student" data-id="${s.id}">
@@ -1712,6 +1723,19 @@
             </label>
           </div>
           <label class="field">Notes<textarea name="notes" rows="2">${esc(s.notes||"")}</textarea></label>
+          ${studentEnrollments.length ? `
+            <div class="hint" style="margin-top:4px;">Reporting tag</div>
+            <div class="field-row">
+              ${studentEnrollments.map(enr => `
+                <label class="field">${esc(enr.subject || "Subject")}
+                  <select name="tag_${esc(enr.id)}">
+                    ${TAG_OPTIONS.map(o => `<option value="${o.value}" ${(enr.enrollmentType||"")===o.value?"selected":""}>${esc(o.label)}</option>`).join("")}
+                  </select>
+                </label>
+              `).join("")}
+            </div>
+            <div class="hint">Set automatically day to day — only override this if a row got mistagged.</div>
+          ` : ""}
           <div class="hint" style="margin-top:4px;">Regular schedule</div>
           ${sched ? `
             <div class="field-row">
@@ -1768,6 +1792,23 @@
             : [{ day: day1, time: time1 }, { day: day2, time: time2 }];
           await db.collection("schedules").doc(row.id).update({ slots, startDate });
         }
+      }
+      // Reporting tag overrides — only touch an enrollment whose dropdown actually changed,
+      // so enrollmentTypeSetAt only moves for rows someone actually corrected.
+      const tagChanges = [];
+      for(const enr of STATE.enrollments.filter(e => e.studentId === id)){
+        const field = fd.get(`tag_${enr.id}`);
+        if(field === null) continue; // this enrollment's dropdown wasn't in the form
+        const newTag = field.toString();
+        if(newTag === (enr.enrollmentType || "")) continue;
+        await db.collection("subject_enrollments").doc(enr.id).update({
+          enrollmentType: newTag || null,
+          enrollmentTypeSetAt: new Date().toISOString()
+        });
+        tagChanges.push(`${enr.subject || "enrollment"}: ${TAG_OPTIONS.find(o=>o.value===newTag).label}`);
+      }
+      if(tagChanges.length){
+        logHistory("override_enrollment_tag", `Set ${name}'s reporting tag — ${tagChanges.join(", ")}`, "student", id);
       }
       logHistory("edit_student", `Edited ${name}`, "student", id);
       toast("Student updated.");
