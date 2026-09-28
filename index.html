@@ -114,7 +114,10 @@
   .cal-cell:active{ filter:brightness(.95); }
   .stable tr.clickrow:active td{ background:var(--surface-2); }
 
-  .stats{ display:grid; grid-template-columns:repeat(8,1fr); gap:10px; margin-bottom:20px; }
+  /* Was fixed to 8 columns back when the row always held 8 tiles — now that it's trimmed to
+     just the tiles someone actually needs to act on, auto-fit keeps them a sensible width
+     (rather than 3 narrow tiles hugging the left edge with empty grid track past them). */
+  .stats{ display:grid; grid-template-columns:repeat(auto-fit, minmax(200px, 1fr)); gap:10px; margin-bottom:20px; }
   .stat{
     background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:13px 14px;
     display:flex; flex-direction:column; gap:6px; cursor:pointer;
@@ -315,7 +318,7 @@
     .main{ padding:16px 14px calc(84px + env(safe-area-inset-bottom)); }
     .page-head{ gap:10px; }
     .page-head h1{ font-size:19px; }
-    .stats{ grid-template-columns:repeat(2,1fr); gap:8px; }
+    .stats{ grid-template-columns:repeat(auto-fit, minmax(130px, 1fr)); gap:8px; }
     .stat{ padding:11px 12px; }
     .field-row{ grid-template-columns:1fr; }
     .roster-grid{ grid-template-columns:repeat(2,1fr); }
@@ -637,7 +640,14 @@
     studentMonth: (()=>{ return cycleMonthFor(new Date()); })(),
     studentMonthMode: "month", // "month" = this month's roster only, "all" = every month (historical)
     studentsView: "list", // "list" = New Students, "report" = New Students Report
-    enrollmentShowAll: false // false = empty sections collapse to a thin line; true = every section shows full, even with nothing in it
+    enrollmentShowAll: false, // false = empty sections collapse to a thin line; true = every section shows full, even with nothing in it
+    // Which Enrollment sections are collapsed to a thin summary row right now. Starts with
+    // the "calm" stages folded away (nothing overdue to act on there today) so the page opens
+    // on just what actually needs attention — "Needs an outcome", "Missed a training", and
+    // "Not enrolled — follow up" — instead of every stage's full card stacked one after another.
+    // A section moves in/out of this set as the person clicks it open or shut; it resets to
+    // these defaults on reload, it isn't saved anywhere.
+    enrollmentCollapsed: new Set(["training", "monitor", "ready", "upcoming"])
   };
 
   const SUBJECT_OPTIONS = ["Reading", "Math", "Both"];
@@ -1005,16 +1015,16 @@
       <div class="n tnum">${n}</div><div class="l">${label}</div>
     </button>`;
   }
+  // Trimmed to just the three stages that actually need someone to do something today — the
+  // same three sections that stay open by default in Enrollment (see STATE.enrollmentCollapsed
+  // above). The rest (diagnostics this week, awaiting training, on monitor schedule, ready for
+  // schedule, active on schedule) are still visible as that section's own count once you're on
+  // the tab — repeating them up here too was just the same numbers shown twice.
   function renderStats(){
     const s = $("#statsRow");
     s.innerHTML = [
-      statTile("s1", diagnosticsThisWeek().length, "Diagnostics this week", "", "calendar"),
       statTile("s2", needsOutcome().length, "Need an outcome tagged", needsOutcome().length?"warn":"", "enrollment"),
-      statTile("s3", awaitingTraining().length, "Enrolled, awaiting training", "", "enrollment"),
-      statTile("s4", onMonitorSchedule().length, "On monitor schedule", "", "enrollment"),
       statTile("s5", needsFollowUp().length, "Need follow-up", needsFollowUp().length?"bad":"", "enrollment"),
-      statTile("s6", readyForSchedule().length, "Ready for regular schedule", readyForSchedule().length?"warn":"", "enrollment"),
-      statTile("s7", activeScheduleStudents().length, "Active on regular schedule", "good", "roster"),
       statTile("s8", missedTrainings().length, "Missed training, needs follow-up", missedTrainings().length?"bad":"", "enrollment")
     ].join("");
   }
@@ -1318,16 +1328,31 @@
   }
 
   // A section with nothing in it collapses to a single thin row instead of a full empty-state
-  // card, so an all-caught-up day doesn't read as a wall of "nothing here" boxes. The "show
-  // everything" toggle (STATE.enrollmentShowAll) forces every section back to its full card.
-  function enrollmentSection(title, count, bodyHtml, emptyText){
-    if(count > 0 || STATE.enrollmentShowAll){
+  // card, so an all-caught-up day doesn't read as a wall of "nothing here" boxes. Separately,
+  // a section that DOES have people in it but isn't one of today's urgent stages (see
+  // STATE.enrollmentCollapsed above) also starts folded to that same thin row — just clickable,
+  // showing its real count, since there's something behind it worth opening. The "show
+  // everything" toggle (STATE.enrollmentShowAll) overrides both and forces every section open.
+  function enrollmentSection(key, title, count, bodyHtml, emptyText){
+    const collapsed = !STATE.enrollmentShowAll && count > 0 && STATE.enrollmentCollapsed.has(key);
+    if((count > 0 && !collapsed) || STATE.enrollmentShowAll){
       return `<div class="section card">
-        <div class="card-head"><h3>${title}</h3><span class="count">${count}</span></div>
+        <div class="card-head">
+          <h3>${title}</h3>
+          <div style="display:flex; align-items:center; gap:10px;">
+            <span class="count">${count}</span>
+            ${count > 0 ? `<button type="button" class="btn ghost sm" data-action="toggle-section-collapse" data-key="${key}">Collapse</button>` : ""}
+          </div>
+        </div>
         <div class="card-body row-list">
           ${count ? bodyHtml : `<div class="empty">${emptyText}</div>`}
         </div>
       </div>`;
+    }
+    if(count > 0){
+      return `<button type="button" class="section-mini" style="width:100%; text-align:left; cursor:pointer; border:none;" data-action="toggle-section-collapse" data-key="${key}">
+        <span>${title}</span><span class="mini-count">${count}</span>
+      </button>`;
     }
     return `<div class="section-mini"><span>${title}</span><span class="mini-count">0</span></div>`;
   }
@@ -1379,13 +1404,13 @@
     </div>`).join("");
 
     el.innerHTML = `
-      ${enrollmentSection("Needs an outcome", outcome.length, outcomeBody, "Nothing overdue. Diagnostics show up here once their date has passed and no outcome is tagged.")}
-      ${enrollmentSection("Missed a training — needs follow-up", missed.length, missedBody, "No missed sessions. This fills in when a scheduled training's date passes without being marked complete.")}
-      ${enrollmentSection("Enrolled — schedule their 2 trainings", training.length, trainingBody, "No one's waiting on trainings right now.")}
-      ${enrollmentSection("On monitor schedule", monitor.length, monitorBody, "No one's on monitor schedule right now. Students land here automatically once both trainings are complete.")}
-      ${enrollmentSection("Trained — set their regular schedule", ready.length, readyBody, "No one's ready for a regular schedule yet.")}
-      ${enrollmentSection("Not enrolled — follow up", followUp.length, followUpBody, "No open follow-ups.")}
-      ${enrollmentSection("Upcoming diagnostics", upcoming.length, upcomingBody, "Nothing booked ahead yet.")}
+      ${enrollmentSection("outcome", "Needs an outcome", outcome.length, outcomeBody, "Nothing overdue. Diagnostics show up here once their date has passed and no outcome is tagged.")}
+      ${enrollmentSection("missed", "Missed a training — needs follow-up", missed.length, missedBody, "No missed sessions. This fills in when a scheduled training's date passes without being marked complete.")}
+      ${enrollmentSection("training", "Enrolled — schedule their 2 trainings", training.length, trainingBody, "No one's waiting on trainings right now.")}
+      ${enrollmentSection("monitor", "On monitor schedule", monitor.length, monitorBody, "No one's on monitor schedule right now. Students land here automatically once both trainings are complete.")}
+      ${enrollmentSection("ready", "Trained — set their regular schedule", ready.length, readyBody, "No one's ready for a regular schedule yet.")}
+      ${enrollmentSection("followUp", "Not enrolled — follow up", followUp.length, followUpBody, "No open follow-ups.")}
+      ${enrollmentSection("upcoming", "Upcoming diagnostics", upcoming.length, upcomingBody, "Nothing booked ahead yet.")}
     `;
   }
 
@@ -2655,6 +2680,12 @@
 
     if(a === "switch-tab"){ STATE.activeTab = el.dataset.tab; renderAll(); }
     else if(a === "toggle-enrollment-view"){ STATE.enrollmentShowAll = !STATE.enrollmentShowAll; renderView(); }
+    else if(a === "toggle-section-collapse"){
+      const key = el.dataset.key;
+      if(STATE.enrollmentCollapsed.has(key)) STATE.enrollmentCollapsed.delete(key);
+      else STATE.enrollmentCollapsed.add(key);
+      renderView();
+    }
     else if(a === "goto-settings"){ STATE.activeTab = "settings"; closeModal(); renderAll(); }
     else if(a === "close-modal"){ closeModal(); }
     else if(a === "open-new-chooser"){ openNewChooser(); }
