@@ -242,7 +242,7 @@
       <a class="navbtn active" href="roster.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3L2 8l10 5 10-5-10-5z"/><path d="M6 10.5V15c0 1.5 2.5 3 6 3s6-1.5 6-3v-4.5"/></svg>Student roster</a>
       <a class="navbtn" href="calendar.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>Calendar</a>
       <a class="navbtn" href="payments.html" id="navPaymentsLink" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20M6 15h4"/></svg>Payments</a>
-      <a class="navbtn" href="absent.html" id="navAbsentLink" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.5-7 8-7s8 3 8 7"/><path d="M2 2l20 20"/></svg>Absent</a>
+      <a class="navbtn" href="absent.html" id="navAbsentLink" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.5-7 8-7s8 3 8 7"/><path d="M2 2l20 20"/></svg>Retention</a>
       <a class="navbtn" href="admin.html" id="navAdminLink" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v6c0 5-3.5 8-7 9-3.5-1-7-4-7-9V6l7-3z"/></svg>Admin</a>
     </div>
     <div class="rail-divider"></div>
@@ -366,7 +366,7 @@
         <div class="table-scroll">
           <table class="stable">
             <thead><tr>
-              <th>#</th><th>Student</th><th>Grade</th><th>Subject</th><th>Payment</th><th>Mode</th><th>LWC</th><th>NWU</th><th>No. of days</th><th>No. of months</th><th>Test date</th><th>Test level</th><th>Test time</th><th>Test score</th><th>Test group</th>
+              <th>#</th><th>Student</th><th>Subject</th><th>Mode</th><th>LWC</th><th>NWU</th><th>No. of days</th><th>No. of months</th><th>Test date</th><th>Test level</th><th>Test time</th><th>Test score</th><th>Test group</th><th>Grade</th><th>Payment</th>
             </tr></thead>
             <tbody id="repBody"></tbody>
           </table>
@@ -703,8 +703,9 @@
     const status = paymentStatusFor(studentId, ym);
     if(status === "paid") return `<span class="pill payment-paid">Paid</span>`;
     if(status === "unpaid"){
-      // Same escalation Payments' Unpaid tab shows — still just a flag, staff still has to
-      // click Mark absent themselves. See markAbsent() below.
+      // Same escalation Payments' Unpaid tab shows — still just a flag. Marking someone
+      // actually absent is a Payments-only action now (see payments.html); Roster/Report
+      // just surface the tag.
       return isPastTenthOf(ym)
         ? `<span class="pill payment-overdue" title="Still unpaid past the 10th of ${esc(fmtMonthLabelYm(ym))} — worth a decision.">Overdue</span>`
         : `<span class="pill payment-unpaid">Unpaid</span>`;
@@ -717,40 +718,10 @@
   }
   // Tuition for coverage month ym is due the 25th of the month before it — the 10th of ym
   // itself is when a still-unpaid family becomes worth a real decision, not just a flag.
-  // Matches payments.html's isPastTenthOf() exactly; see markAbsent() below for what this
-  // does and doesn't trigger on its own (nothing — it's a flag, never automatic).
+  // Matches payments.html's isPastTenthOf() exactly — this is a flag only, never automatic.
   function isPastTenthOf(ym){
     const [y,m] = ym.split("-").map(Number);
     return new Date() >= new Date(y, m-1, 10);
-  }
-
-  // Marking absent is a deliberate, manual click here too — same rule as Payments' own
-  // Mark absent (see payments.html): the PAID/UNPAID tag above is fully automatic, driven
-  // only by payment verification, but going from UNPAID/Overdue to actually absent always
-  // needs a person to decide, since some families really are just paying very late. Flips
-  // every one of this student's active enrollments to inactive and opens their tracking
-  // record on the Absent page, exactly like Payments' version does.
-  async function markAbsent(studentId){
-    const s = students.find(x => x.id === studentId);
-    if(!s) return;
-    const activeEnrollmentIds = enrollments.filter(e => e.student_id === studentId && (e.status||"active") === "active").map(e => e.id);
-    if(!activeEnrollmentIds.length) return;
-    const ok = confirm(`Mark ${displayName(studentId)} absent?\n\nThis sets their enrollment to inactive — they'll drop off the active roster and next cycle's billing. It also starts tracking them on the Absent page, for follow-up. Only do this once you're sure they're not continuing.`);
-    if(!ok) return;
-    const { error } = await sbClient.from("subject_enrollments").update({ status:"inactive", updated_at: new Date().toISOString() }).in("id", activeEnrollmentIds);
-    if(error){ alert("Couldn't mark absent: " + error.message); return; }
-    const ym = monthDefault();
-    const prevYm = shiftMonth(ym, -1);
-    const lastPaidMonth = verifiedPaidFor(studentId, prevYm) >= tuitionDueFor(s) ? prevYm : shiftMonth(ym, -1);
-    const { error: absErr } = await sbClient.from("absence_records").insert({
-      student_id: studentId,
-      last_paid_month: lastPaidMonth,
-      subject_enrollment_ids: activeEnrollmentIds,
-      marked_absent_by: currentUser ? currentUser.email : null
-    });
-    if(absErr) console.warn("Marked inactive, but couldn't create the absence record:", absErr);
-    await loadEnrollments();
-    renderBoth();
   }
 
   // "Quijano, Nina" when we have a real first/last split; otherwise fall back to
@@ -1129,9 +1100,7 @@
       <tr class="${editable?"clickrow":""}" ${editable?`data-action="edit-report" data-id="${r.id}"`:""}>
         <td class="rownum">${idx+1}</td>
         <td>${esc(displayName(r.student_id, r.student_name))}</td>
-        <td>${esc(gradeFor(r.student_id) || "—")}</td>
         <td><span class="pill ${r.subject==='Math'?'subj-math':'subj-reading'}">${esc(r.subject||"")}</span></td>
-        <td>${editable ? `<div class="row-actions">${fmtPaymentPill(r.student_id)}<button class="btn sm danger" data-action="mark-absent" data-student="${esc(r.student_id)}">Mark absent</button></div>` : `<span class="lvl empty-lvl" title="An archived cycle is a snapshot — payment status only makes sense for the live roster.">not tracked</span>`}</td>
         <td>${fmtMode(r.mode)}</td>
         <td>${fmtPlain(r.lwc)}</td>
         <td>${fmtPlain(r.nwu)}</td>
@@ -1142,6 +1111,8 @@
         <td>${fmtPlain(r.test_time)}</td>
         <td>${fmtPlain(r.test_score)}</td>
         <td>${fmtPlain(r.test_group)}</td>
+        <td>${esc(gradeFor(r.student_id) || "—")}</td>
+        <td>${editable ? fmtPaymentPill(r.student_id) : `<span class="lvl empty-lvl" title="An archived cycle is a snapshot — payment status only makes sense for the live roster.">not tracked</span>`}</td>
       </tr>
     `).join("");
   }
@@ -1285,7 +1256,7 @@
           <td>${e.archived ? `<span class="lvl empty-lvl" title="Schedules aren't part of a monthly close-out — only the roster's own numbers are.">not tracked</span>` : fmtSchedule(e)}</td>
           <td>${fmtMode(e.mode)}</td>
           <td><span class="pill ${(e.status||'active')==='inactive'?'status-inactive':'status-active'}">${(e.status||"active")==="inactive"?"Inactive":"Active"}</span></td>
-          <td>${e.archived || (e.status||"active")==="inactive" ? `<span class="lvl empty-lvl">—</span>` : `<div class="row-actions">${fmtPaymentPill(e.student_id)}<button class="btn sm danger" data-action="mark-absent" data-student="${esc(e.student_id)}">Mark absent</button></div>`}</td>
+          <td>${e.archived || (e.status||"active")==="inactive" ? `<span class="lvl empty-lvl">—</span>` : fmtPaymentPill(e.student_id)}</td>
           <td>${e.archived ? `<span class="lvl empty-lvl" title="A monthly close-out snapshot doesn't capture the original enrollment date.">not tracked</span>` : fmtEnrolledDate(e.created_at)}</td>
         </tr>
       `).join("");
@@ -1588,9 +1559,10 @@
         mode: fd.get("mode") || null,
         // Goal level/page and Award/Actual aren't collected on this form (hidden for now,
         // same as the Edit modal) — left out here too rather than inserted as null.
-        // For head-office reporting on the Absent page: a brand-new student's very first
-        // enrollment is tagged NEW; an existing student adding another subject is tagged EO.
-        // (RESUME is set separately, by the Absent page's Resume action.)
+        // For head-office reporting (shown as NEW/EO/RETURNEE on Pipeline's DT Results):
+        // a brand-new student's very first enrollment is tagged NEW; an existing student
+        // adding another subject is tagged EO. (RESUME — shown as RETURNEE — is set
+        // separately, by the Resume action in Payments' Absent tab / Retention.)
         enrollment_type: isNewStudent ? "new" : "eo",
         enrollment_type_set_at: new Date().toISOString()
       };
@@ -1746,7 +1718,6 @@
       const en = enrollments.find(x => x.id === id);
       if(en) openModal(en);
     }
-    else if(action === "mark-absent"){ await markAbsent(btn.dataset.student); }
     else if(action === "close-modal"){ closeModal(); }
     else if(action === "run-undo"){ runUndo(); }
     else if(action === "run-redo"){ runRedo(); }

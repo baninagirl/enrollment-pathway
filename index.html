@@ -374,7 +374,7 @@
       <a class="navbtn" href="roster.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3L2 8l10 5 10-5-10-5z"/><path d="M6 10.5V15c0 1.5 2.5 3 6 3s6-1.5 6-3v-4.5"/></svg>Student roster</a>
       <a class="navbtn" href="calendar.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>Calendar</a>
       <a class="navbtn" href="payments.html" id="navPaymentsLink" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20M6 15h4"/></svg>Payments</a>
-      <a class="navbtn" href="absent.html" id="navAbsentLink" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.5-7 8-7s8 3 8 7"/><path d="M2 2l20 20"/></svg>Absent</a>
+      <a class="navbtn" href="absent.html" id="navAbsentLink" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.5-7 8-7s8 3 8 7"/><path d="M2 2l20 20"/></svg>Retention</a>
       <a class="navbtn" href="admin.html" id="navAdminLink" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v6c0 5-3.5 8-7 9-3.5-1-7-4-7-9V6l7-3z"/></svg>Admin</a>
     </div>
     <div class="rail-divider"></div>
@@ -621,9 +621,9 @@
 
   /* ---------------- State ---------------- */
   const STATE = {
-    students: [], diagnostics: [], trainings: [], schedules: [],
+    students: [], diagnostics: [], trainings: [], schedules: [], enrollments: [],
     settings: { examiners: [], trainers: [] },
-    loaded: { students:false, diagnostics:false, trainings:false, schedules:false, settings:false },
+    loaded: { students:false, diagnostics:false, trainings:false, schedules:false, settings:false, enrollments:false },
     activeTab: "calendar",
     calMonth: (()=>{ const d=new Date(); return new Date(d.getFullYear(), d.getMonth(), 1); })(),
     calWeekStart: (()=>{ const d=new Date(); d.setHours(0,0,0,0); d.setDate(d.getDate()-d.getDay()); return d; })(),
@@ -782,6 +782,10 @@
     subscribe(db.collection("diagnostics"), rows => { STATE.diagnostics = rows; STATE.loaded.diagnostics = true; onData(); });
     subscribe(db.collection("trainings"), rows => { STATE.trainings = rows; STATE.loaded.trainings = true; onData(); });
     subscribe(db.collection("schedules"), rows => { STATE.schedules = rows; STATE.loaded.schedules = true; onData(); });
+    // Read-only here — just so the New students / DT Results tables can show each
+    // enrollment's NEW / EO / RETURNEE reporting tag (set on Student Roster and here in
+    // submitNewSchedule() below, and by the Resume action in Payments' Absent tab / Retention).
+    subscribe(db.collection("subject_enrollments"), rows => { STATE.enrollments = rows; STATE.loaded.enrollments = true; onData(); });
 
     db.doc("settings/staff").onSnapshot(snap => {
       const d = snap.exists ? snap.data() : {};
@@ -1459,6 +1463,24 @@
     if(!subject) return "";
     return `<span class="pill subj">${esc(subject)}</span>`;
   }
+  // The NEW / EO / RETURNEE reporting tag for one student's subject enrollment — set once, at
+  // the moment it applies (here in submitNewSchedule() below, on Student Roster's own Add-to-
+  // roster form, and by the Resume action in Payments' Absent tab / Retention), never edited
+  // by hand. The underlying value stored is still "resume" (see enrollmentTagFor below) — only
+  // the displayed label reads RETURNEE. Nothing shows
+  // until the student actually has a subject_enrollments row for that subject — a diagnostic
+  // that hasn't led to a regular schedule yet has no tag, which is expected, not a bug.
+  function enrollmentTagFor(studentId, subject){
+    const match = STATE.enrollments.find(e => e.studentId === studentId && e.subject === subject);
+    return match ? match.enrollmentType : null;
+  }
+  function fmtEnrollmentTagPill(studentId, subject){
+    const tag = subject ? enrollmentTagFor(studentId, subject) : null;
+    if(tag === "new") return `<span class="pill good">NEW</span>`;
+    if(tag === "eo") return `<span class="pill subj">EO</span>`;
+    if(tag === "resume") return `<span class="pill warn">RETURNEE</span>`;
+    return `<span class="pill muted">—</span>`;
+  }
 
   // Effective subject for a student: their own field if set, otherwise falls back to whatever
   // was picked on their diagnostic booking (covers students created before this field existed).
@@ -1530,7 +1552,7 @@
     const emptyMsg = q ? "No students match that search." : STATE.studentMonthMode==="month" ? `No enrolled students on the ${esc(monthLabel)} roster yet. Try <b>All time</b> — a student shows up here once their diagnostic is marked <b>Enrolled</b>.` : "No enrolled students yet. A student shows up here once their diagnostic is marked <b>Enrolled</b>.";
 
     const listTable = `<table class="stable">
-          <thead><tr><th>#</th><th>Student</th><th>Grade</th><th>Subject</th><th>Schedule</th><th>Mode</th><th>Status</th></tr></thead>
+          <thead><tr><th>#</th><th>Student</th><th>Grade</th><th>Subject</th><th>Tag</th><th>Schedule</th><th>Mode</th><th>Status</th></tr></thead>
           <tbody>
             ${rows.map((row, i) => {
               const s = row.s;
@@ -1540,6 +1562,7 @@
                 <td>${esc(displayName(s))}</td>
                 <td>${esc(s.ageGrade||"—")}</td>
                 <td>${row.subj ? fmtSubjectPill(row.subj) : "—"}</td>
+                <td>${fmtEnrollmentTagPill(s.id, row.subj)}</td>
                 <td>${pipelineScheduleLabel(s.id)}</td>
                 <td>${fmtModePill(s.mode)}</td>
                 <td><span class="pill ${st[1]}">${st[0]}</span></td>
@@ -1549,7 +1572,7 @@
         </table>`;
 
     const reportTable = `<table class="stable">
-          <thead><tr><th>#</th><th>Student</th><th>Grade</th><th>Subject</th><th>Start point</th><th>DT test</th><th>DT date</th><th>Score</th><th>Time</th></tr></thead>
+          <thead><tr><th>#</th><th>Student</th><th>Grade</th><th>Subject</th><th>Tag</th><th>Start point</th><th>DT test</th><th>DT date</th><th>Score</th><th>Time</th></tr></thead>
           <tbody>
             ${rows.map((row, i) => {
               const s = row.s;
@@ -1559,6 +1582,7 @@
                 <td>${esc(displayName(s))}</td>
                 <td>${esc(s.ageGrade||"—")}</td>
                 <td>${row.subj ? fmtSubjectPill(row.subj) : "—"}</td>
+                <td>${fmtEnrollmentTagPill(s.id, row.subj)}</td>
                 <td>${esc((d && d.startPoint) || "—")}</td>
                 <td>${esc((d && d.dtTest) || "—")}</td>
                 <td class="tnum">${d ? fmtDateShort(d.date) : "—"}</td>
@@ -2246,6 +2270,14 @@
     // schedule row below — Pipeline doesn't ask In Center vs Remote here, so this is just a
     // starting point the teacher can flip per row from Student Roster if a slot's remote.
     const linkedSlots = [{ day: day1, time: time1, mode: "IC" }, { day: day2, time: time2, mode: "IC" }];
+    // NEW vs EO for reporting: checked once, up front, against whatever subject_enrollments
+    // already exist for this student — not whether their student record is new. A student can
+    // already exist here (came through Pipeline) but still be getting their very first subject
+    // enrollment right now, and a student enrolling in both Math and Reading in the same sitting
+    // should be counted once as NEW, not NEW+EO.
+    const hadPriorEnrollment = STATE.enrollments.some(e => e.studentId === studentId);
+    const enrollmentType = hadPriorEnrollment ? "eo" : "new";
+    const enrollmentTypeSetAt = new Date().toISOString();
     await guardWrite(async ()=>{
       await db.collection("schedules").add({
         studentId, studentName: s.name, slots, startDate, status: "active", createdAt: new Date().toISOString()
@@ -2261,7 +2293,7 @@
           teacher: fd.get("mathTeacher") || "",
           currentLevel: fd.get("mathCurLevel") || "", currentPage: fd.get("mathCurPage") || "",
           goalLevel: fd.get("mathGoalLevel") || "", goalPage: fd.get("mathGoalPage") || "",
-          mode
+          mode, enrollmentType, enrollmentTypeSetAt
         });
         await db.collection("schedules").add({
           studentId, studentName: s.name, subjectEnrollmentId: enr.id,
@@ -2274,7 +2306,7 @@
           teacher: fd.get("readingTeacher") || "",
           currentLevel: fd.get("readingCurLevel") || "", currentPage: fd.get("readingCurPage") || "",
           goalLevel: fd.get("readingGoalLevel") || "", goalPage: fd.get("readingGoalPage") || "",
-          mode
+          mode, enrollmentType, enrollmentTypeSetAt
         });
         await db.collection("schedules").add({
           studentId, studentName: s.name, subjectEnrollmentId: enr.id,

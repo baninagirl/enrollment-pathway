@@ -241,7 +241,7 @@
       <a class="navbtn" href="roster.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3L2 8l10 5 10-5-10-5z"/><path d="M6 10.5V15c0 1.5 2.5 3 6 3s6-1.5 6-3v-4.5"/></svg>Student roster</a>
       <a class="navbtn" href="calendar.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>Calendar</a>
       <a class="navbtn active" href="payments.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20M6 15h4"/></svg>Payments</a>
-      <a class="navbtn" href="absent.html" id="navAbsentLink" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.5-7 8-7s8 3 8 7"/><path d="M2 2l20 20"/></svg>Absent</a>
+      <a class="navbtn" href="absent.html" id="navAbsentLink" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.5-7 8-7s8 3 8 7"/><path d="M2 2l20 20"/></svg>Retention</a>
       <a class="navbtn" href="admin.html" id="navAdminLink" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v6c0 5-3.5 8-7 9-3.5-1-7-4-7-9V6l7-3z"/></svg>Admin</a>
     </div>
     <div class="rail-divider"></div>
@@ -281,8 +281,10 @@
       <div class="seg payments-view-toggle">
         <button data-action="payments-view" data-view="month">Payments</button>
         <button data-action="payments-view" data-view="unpaid">Unpaid</button>
+        <button data-action="payments-view" data-view="absent" id="absentTabBtn" hidden>Absent</button>
       </div>
       <input type="text" id="searchInput" placeholder="Search student…" style="max-width:200px;">
+      <select id="teacherFilter"><option value="all">All teachers</option></select>
       <select id="statusFilter">
         <option value="all">All statuses</option>
         <option value="unpaid">Unpaid</option>
@@ -331,6 +333,24 @@
         </div>
       </div>
     </div>
+
+    <div id="view-absent" hidden>
+      <div class="card">
+        <div class="card-head">
+          <h3>Absent</h3>
+          <span class="muted" id="absentCount" style="font-size:12.5px;"></span>
+        </div>
+        <p class="hint" style="padding:10px 16px 0;">Everyone currently marked absent — their enrollment is inactive and they're off this cycle's billing. Resume reactivates it and tags them RETURNEE for reporting. For the longer view (months-absent buckets, notes, all-time history), see <a href="absent.html">Retention</a>.</p>
+        <div class="table-scroll">
+          <table class="stable">
+            <thead><tr>
+              <th>Student</th><th>Grade</th><th>Last paid</th><th>Absent since</th><th>Months</th><th></th>
+            </tr></thead>
+            <tbody id="absentBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
   </main>
 </div>
 
@@ -353,12 +373,13 @@
   function esc(s){ return String(s==null?"":s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
   function peso(n){ const v = Number(n)||0; return "₱" + v.toLocaleString("en-PH", { minimumFractionDigits: v % 1 ? 2 : 0, maximumFractionDigits: 2 }); }
 
-  let sbClient = null, currentUser = null, currentRole = null;
-  let students = [], enrollments = [], billingGroups = [], receipts = [];
+  let sbClient = null, currentUser = null, currentRole = null, currentTeacherName = null;
+  let students = [], enrollments = [], billingGroups = [], receipts = [], trainers = [], absences = [];
   let selectedMonth = monthDefault(); // "YYYY-MM"
   let groupView = false;
-  let pageView = "month"; // "month" | "stopped"
-  const filters = { search: "", status: "all" };
+  let pageView = "month"; // "month" | "unpaid" | "absent"
+  const filters = { search: "", status: "all", teacher: "all" };
+  function isBillingAdmin(){ return currentRole === "admin" || currentRole === "superadmin"; }
 
   // Tuition is due in advance — the SOA for a coverage month goes out on the 25th of the
   // month before it (see periodLabel/dueDateLabel below). So once the 25th hits, what's
@@ -414,9 +435,36 @@
     const [y,m] = ym.split("-").map(Number);
     return new Date() >= new Date(y, m-1, 10);
   }
+  function monthKeyOfToday(){
+    const d = new Date();
+    return d.getFullYear() + "-" + String(d.getMonth()+1).padStart(2,"0");
+  }
+  // How many full cycles behind "today" a student's last paid month is — same bucket math
+  // the Retention page (absent.html) uses, shown here too so the Absent tab's "months gone"
+  // reads the same way in both places.
+  function monthDiff(fromYm, toYm){
+    if(!fromYm) return null;
+    const [fy,fm] = fromYm.split("-").map(Number);
+    const [ty,tm] = toYm.split("-").map(Number);
+    return (ty - fy) * 12 + (tm - fm);
+  }
   function renderMonthNav(){
     $("#paymentsMonthLabel").textContent = fmtMonthLabel(selectedMonth);
     $("#paymentsMonthRange").textContent = monthRangeLabel(selectedMonth);
+  }
+
+  function populateTeacherFilter(){
+    const sel = $("#teacherFilter");
+    if(!sel) return;
+    if(currentRole === "teacher"){
+      sel.innerHTML = `<option value="${esc(currentTeacherName||"")}">${esc(currentTeacherName||"You")}</option>`;
+      sel.disabled = true;
+      sel.value = currentTeacherName || "";
+      return;
+    }
+    sel.disabled = false;
+    sel.innerHTML = `<option value="all">All teachers</option>` + trainers.map(t=>`<option value="${esc(t)}">${esc(t)}</option>`).join("");
+    sel.value = filters.teacher;
   }
 
   let toastTimer = null;
@@ -514,12 +562,13 @@
   }
 
   async function loadRole(){
-    if(!sbClient || !currentUser){ currentRole = null; return; }
+    if(!sbClient || !currentUser){ currentRole = null; currentTeacherName = null; return; }
     try{
-      const { data, error } = await sbClient.from("profiles").select("role").eq("id", currentUser.id).maybeSingle();
+      const { data, error } = await sbClient.from("profiles").select("role, teacher_name").eq("id", currentUser.id).maybeSingle();
       if(error) throw error;
       currentRole = data ? data.role : "pending";
-    }catch(e){ console.warn("couldn't load role", e); currentRole = "pending"; }
+      currentTeacherName = data ? (data.teacher_name || null) : null;
+    }catch(e){ console.warn("couldn't load role", e); currentRole = "pending"; currentTeacherName = null; }
   }
 
   async function boot(){
@@ -549,7 +598,9 @@
     if(started) return;
     started = true;
     if(!isAuthorized()) return;
-    await Promise.all([loadStudents(), loadEnrollments(), loadBillingGroups(), loadReceipts()]);
+    await Promise.all([loadStudents(), loadSettings(), loadEnrollments(), loadBillingGroups(), loadReceipts(), loadAbsences()]);
+    populateTeacherFilter();
+    if(currentRole === "teacher" && currentTeacherName){ filters.teacher = currentTeacherName; }
     render();
 
     sbClient.channel("realtime:payment_receipts")
@@ -560,6 +611,12 @@
       .subscribe();
     sbClient.channel("realtime:payments-students")
       .on("postgres_changes", { event:"*", schema:"public", table:"students" }, async ()=>{ await loadStudents(); render(); })
+      .subscribe();
+    sbClient.channel("realtime:payments-enrollments")
+      .on("postgres_changes", { event:"*", schema:"public", table:"subject_enrollments" }, async ()=>{ await loadEnrollments(); render(); })
+      .subscribe();
+    sbClient.channel("realtime:payments-absences")
+      .on("postgres_changes", { event:"*", schema:"public", table:"absence_records" }, async ()=>{ await loadAbsences(); render(); })
       .subscribe();
   }
 
@@ -577,7 +634,7 @@
     students = (data || []).sort(byLastName);
   }
   async function loadEnrollments(){
-    const { data, error } = await sbClient.from("subject_enrollments").select("id,student_id,status,subject");
+    const { data, error } = await sbClient.from("subject_enrollments").select("id,student_id,status,subject,teacher");
     if(error){ console.warn(error); enrollments = []; return; }
     enrollments = data || [];
   }
@@ -591,6 +648,18 @@
     if(error){ console.warn(error); receipts = []; return; }
     receipts = data || [];
   }
+  // Canonical teacher list — same settings row Roster/Report use for their teacher filters,
+  // so this one lists the same names even for a teacher with nothing currently billable.
+  async function loadSettings(){
+    const { data } = await sbClient.from("settings").select("value").eq("id","staff").maybeSingle();
+    const v = data ? data.value : {};
+    trainers = Array.isArray(v.trainers) ? v.trainers : [];
+  }
+  async function loadAbsences(){
+    const { data, error } = await sbClient.from("absence_records").select("*").order("marked_absent_at", { ascending:false });
+    if(error){ console.warn(error); absences = []; return; }
+    absences = data || [];
+  }
 
   function displayName(s){
     if(s.last_name && s.first_name) return `${s.last_name}, ${s.first_name}`;
@@ -598,9 +667,14 @@
   }
   // Payments only applies to students who are actually on the roster (at least one active
   // subject enrollment) — a Pipeline lead who hasn't enrolled yet has no tuition to track.
+  // The teacher filter narrows this further, to whoever's currently teaching the student —
+  // it's what every stat, table, and view (Payments/Unpaid/Absent) is built on top of, so
+  // picking a teacher up top filters everything at once.
   function billableStudents(){
     const activeIds = new Set(enrollments.filter(e => e.status === "active").map(e => e.student_id));
-    return students.filter(s => activeIds.has(s.id));
+    let list = students.filter(s => activeIds.has(s.id));
+    if(filters.teacher !== "all") list = list.filter(s => activeTeachersFor(s.id).includes(filters.teacher));
+    return list;
   }
   function groupNameFor(id){
     if(!id) return null;
@@ -612,6 +686,16 @@
   // so they still get one row here, just with tuition scaled by how many subjects they're in.
   function activeSubjectsFor(studentId){
     return [...new Set(enrollments.filter(e => e.student_id === studentId && e.status === "active").map(e => e.subject))];
+  }
+  // Teacher(s) currently teaching a student — drives the teacher filter for the
+  // billable/Payments/Unpaid views (only their active enrollments count).
+  function activeTeachersFor(studentId){
+    return [...new Set(enrollments.filter(e => e.student_id === studentId && e.status === "active").map(e => e.teacher).filter(Boolean))];
+  }
+  // Same, but across ALL of a student's enrollments regardless of status — used on the
+  // Absent tab, where the enrollment that matters is the one that just went inactive.
+  function teachersFor(studentId){
+    return [...new Set(enrollments.filter(e => e.student_id === studentId).map(e => e.teacher).filter(Boolean))];
   }
   function subjectBadgesFor(studentId){
     const subjects = activeSubjectsFor(studentId);
@@ -668,17 +752,18 @@
   // enrollments to inactive is exactly what removes them from here, from Roster's active
   // view, and from next cycle's billing all at once.
   async function markAbsent(studentId){
+    if(!isBillingAdmin()) return; // belt-and-suspenders — the button itself is admin/superadmin only
     const s = students.find(x => x.id === studentId);
     if(!s) return;
     const activeEnrollmentIds = enrollments.filter(e => e.student_id === studentId && e.status === "active").map(e => e.id);
     if(!activeEnrollmentIds.length) return;
-    const ok = confirm(`Mark ${displayName(s)} absent?\n\nThis sets their enrollment to inactive — they'll drop off the active roster and next cycle's billing. It also starts tracking them on the Absent page, for follow-up. Only do this once you're sure they're not continuing.`);
+    const ok = confirm(`Mark ${displayName(s)} absent?\n\nThis sets their enrollment to inactive — they'll drop off the active roster and next cycle's billing. It also adds them to the Absent tab here (and Retention) for follow-up. Only do this once you're sure they're not continuing.`);
     if(!ok) return;
     const { error } = await sbClient.from("subject_enrollments").update({ status:"inactive", updated_at: new Date().toISOString() }).in("id", activeEnrollmentIds);
     if(error){ alert("Couldn't mark absent: " + error.message); return; }
     // Snapshot which cycle they were last fully paid through, and exactly which enrollments
-    // this episode covers, so the Absent page can bucket them by months-since-paid and
-    // Resume can flip back precisely these enrollments later — see phase20.
+    // this episode covers, so the Absent tab (and Retention) can bucket them by
+    // months-since-paid and Resume can flip back precisely these enrollments later — see phase20.
     const candidate = unpaidCandidates(selectedMonth).find(x => x.student.id === studentId);
     const { error: absErr } = await sbClient.from("absence_records").insert({
       student_id: studentId,
@@ -687,7 +772,7 @@
       marked_absent_by: currentUser ? currentUser.email : null
     });
     if(absErr) console.warn("Marked inactive, but couldn't create the absence record:", absErr);
-    await loadEnrollments();
+    await Promise.all([loadEnrollments(), loadAbsences()]);
     render();
   }
 
@@ -971,6 +1056,7 @@
     renderTable();
     renderReview();
     renderUnpaidTable();
+    renderAbsentTable();
     renderUndoBar();
   }
 
@@ -979,9 +1065,16 @@
   // status filter and "View by billing group" only mean anything on the Payments table,
   // so they're hidden (not just disabled) while Unpaid is showing.
   function renderPageView(){
+    const absentTabBtn = $("#absentTabBtn");
+    if(absentTabBtn) absentTabBtn.hidden = !isBillingAdmin();
+    // The Absent tab (and its Mark absent/Resume editing) is admin/superadmin only — if a
+    // teacher session somehow lands on it (a stale click before the role loaded, say), bounce
+    // back to Payments rather than leaving them on a view with nothing they're allowed to do.
+    if(pageView === "absent" && !isBillingAdmin()) pageView = "month";
     $$('[data-action="payments-view"]').forEach(b => b.classList.toggle("active", b.dataset.view === pageView));
     $("#view-month").hidden = pageView !== "month";
     $("#view-unpaid").hidden = pageView !== "unpaid";
+    $("#view-absent").hidden = pageView !== "absent";
     const statusFilterEl = $("#statusFilter"), groupToggleEl = $("#groupViewToggle");
     if(statusFilterEl) statusFilterEl.hidden = pageView !== "month";
     if(groupToggleEl) groupToggleEl.hidden = pageView !== "month";
@@ -1002,8 +1095,10 @@
     // Once we're past the 10th of the coverage month, "needs follow-up" becomes "needs a
     // decision" — still just a flag for a person to act on, never automatic (see markAbsent()).
     const pastTenth = isPastTenthOf(ym);
+    // Total amount due is an admin/superadmin number — a teacher gets everything else on
+    // this row (who's unpaid, what needs review, who's overdue) but not the center-wide total.
     $("#statsRow").innerHTML = `
-      <div class="stat"><div class="n">${peso(outstanding)}</div><div class="l">Outstanding this month</div></div>
+      ${currentRole !== "teacher" ? `<div class="stat"><div class="n">${peso(outstanding)}</div><div class="l">Outstanding this month</div></div>` : ""}
       <div class="stat ${unpaidThisMonth ? "bad" : ""}"><div class="n">${unpaidThisMonth}</div><div class="l">Unpaid this month</div></div>
       <div class="stat ${pendingReview ? "warn" : ""}"><div class="n">${pendingReview}</div><div class="l">Receipts to review</div></div>
       <div class="stat ${unpaidFollowUp ? (pastTenth ? "bad" : "warn") : ""}"><div class="n">${unpaidFollowUp}</div><div class="l">${unpaidFollowUp && pastTenth ? "Overdue — needs a decision" : "Unpaid — needs follow-up"}</div></div>
@@ -1087,7 +1182,7 @@
       <td class="money">${peso(r.paid)}</td>
       <td class="money">${peso(r.balance)}</td>
       <td>${statusPill(r.status)}</td>
-      <td><div class="row-actions"><button class="iconbtn" data-action="open-payment-history" data-student="${esc(s.id)}" title="Payment history — undo a payment">🕘</button><button class="btn sm" data-action="open-log-payment" data-student="${esc(s.id)}">Log payment</button></div></td>
+      <td><div class="row-actions"><button class="iconbtn" data-action="open-payment-history" data-student="${esc(s.id)}" title="Payment history — undo a payment">🕘</button><button class="btn sm" data-action="open-log-payment" data-student="${esc(s.id)}">Log payment</button>${isBillingAdmin() ? `<button class="btn sm danger" data-action="mark-absent" data-student="${esc(s.id)}">Mark absent</button>` : ""}</div></td>
     </tr>`;
   }
 
@@ -1122,9 +1217,95 @@
         <td class="muted">${esc(x.dueSince)}</td>
         <td class="muted">${esc(fmtMonthLabel(x.lastPaidMonth))}</td>
         <td class="money">${peso(x.due)}</td>
-        <td><div class="row-actions"><button class="iconbtn" data-action="open-payment-history" data-student="${esc(s.id)}" title="Payment history">🕘</button><button class="btn sm" data-action="open-log-payment" data-student="${esc(s.id)}">Log payment</button><button class="btn sm danger" data-action="mark-absent" data-student="${esc(s.id)}">Mark absent</button></div></td>
+        <td><div class="row-actions"><button class="iconbtn" data-action="open-payment-history" data-student="${esc(s.id)}" title="Payment history">🕘</button><button class="btn sm" data-action="open-log-payment" data-student="${esc(s.id)}">Log payment</button>${isBillingAdmin() ? `<button class="btn sm danger" data-action="mark-absent" data-student="${esc(s.id)}">Mark absent</button>` : ""}</div></td>
       </tr>`;
     }).join("");
+  }
+
+  // A student may carry more than one open absence_records row only in edge cases (Resume
+  // normally closes one out before a new Mark absent could start another) — guard by always
+  // taking the most recently opened one per student, same rule the Retention page uses.
+  function openAbsences(){
+    const byStudent = new Map();
+    absences.filter(a => !a.resumed_at).forEach(a => {
+      const existing = byStudent.get(a.student_id);
+      if(!existing || new Date(a.marked_absent_at) > new Date(existing.marked_absent_at)) byStudent.set(a.student_id, a);
+    });
+    return [...byStudent.values()];
+  }
+  function subjectBadgesForIds(ids){
+    const subjects = [...new Set((ids||[]).map(id => { const e = enrollments.find(x => x.id === id); return e ? e.subject : null; }).filter(Boolean))];
+    return subjects.map(subj => {
+      const cls = subj === "Reading" ? "subj-reading" : "subj-math";
+      const letter = subj === "Reading" ? "R" : "M";
+      return `<span class="pill ${cls} name-subj-pill" title="${esc(subj)}">${letter}</span>`;
+    }).join("");
+  }
+
+  // Admin/superadmin only (renderPageView keeps a teacher from ever landing on this tab) —
+  // this is the day-to-day "who's absent right now" list; the bucketed months-absent view,
+  // notes, and all-time history stay on the Retention page (absent.html).
+  function renderAbsentTable(){
+    if(pageView !== "absent") return;
+    let rows = openAbsences();
+    if(filters.teacher !== "all") rows = rows.filter(a => teachersFor(a.student_id).includes(filters.teacher));
+    if(filters.search.trim()){
+      const q = filters.search.trim().toLowerCase();
+      rows = rows.filter(a => { const s = students.find(x => x.id === a.student_id); return s && displayName(s).toLowerCase().includes(q); });
+    }
+    rows.sort((a,b) => new Date(b.marked_absent_at) - new Date(a.marked_absent_at));
+    $("#absentCount").textContent = rows.length ? `${rows.length} student${rows.length===1?"":"s"}` : "";
+    const body = $("#absentBody");
+    if(!rows.length){
+      body.innerHTML = `<tr><td colspan="6"><div class="empty">Nobody's currently marked absent.</div></td></tr>`;
+      return;
+    }
+    body.innerHTML = rows.map(a => {
+      const s = students.find(x => x.id === a.student_id);
+      const monthsGone = monthDiff(a.last_paid_month, monthKeyOfToday());
+      return `<tr>
+        <td>${esc(s ? displayName(s) : "—")}${subjectBadgesForIds(a.subject_enrollment_ids)}</td>
+        <td class="muted">${esc(s ? (s.age_grade || "—") : "—")}</td>
+        <td class="muted">${esc(fmtMonthLabel(a.last_paid_month))}</td>
+        <td class="muted">${new Date(a.marked_absent_at).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"})}</td>
+        <td class="muted">${monthsGone == null ? "—" : `${monthsGone} month${monthsGone===1?"":"s"}`}</td>
+        <td><button class="btn sm" data-action="resume-absence" data-id="${esc(a.id)}">Resume</button></td>
+      </tr>`;
+    }).join("");
+  }
+
+  // Mirrors the Retention page's own Resume action exactly (same confirm copy, same 4-month
+  // policy window, same RETURNEE tag) — Payments just gives admin/superadmin a faster path
+  // to it without leaving the billing screen.
+  async function resumeAbsence(absenceId){
+    if(!isBillingAdmin()) return; // belt-and-suspenders — the Absent tab itself is admin/superadmin only
+    const a = absences.find(x => x.id === absenceId);
+    if(!a) return;
+    const s = students.find(x => x.id === a.student_id);
+    const monthsGone = monthDiff(a.last_paid_month, monthKeyOfToday());
+    const withinPolicy = monthsGone !== null && monthsGone <= 4;
+    const ok = confirm(
+      `Mark ${displayName(s)} as resumed?\n\n` +
+      (withinPolicy
+        ? "They're within the 4-month window — progress continues, no new assessment, registration is free."
+        : "It's been more than 4 months, so the usual return policy (continued progress, free registration) no longer applies.") +
+      `\n\nThis reactivates their enrollment${a.subject_enrollment_ids && a.subject_enrollment_ids.length > 1 ? "s" : ""} and tags them RETURNEE for reporting.`
+    );
+    if(!ok) return;
+    const nowIso = new Date().toISOString();
+    const ids = a.subject_enrollment_ids || [];
+    if(ids.length){
+      const { error: e1 } = await sbClient.from("subject_enrollments")
+        .update({ status:"active", enrollment_type:"resume", enrollment_type_set_at: nowIso, updated_at: nowIso })
+        .in("id", ids);
+      if(e1){ alert("Couldn't resume: " + e1.message); return; }
+    }
+    const { error: e2 } = await sbClient.from("absence_records")
+      .update({ resumed_at: nowIso, resumed_by: currentUser ? currentUser.email : null })
+      .eq("id", absenceId);
+    if(e2){ alert("Reactivated the enrollment, but couldn't close out the absence record: " + e2.message); }
+    await Promise.all([loadEnrollments(), loadAbsences()]);
+    render();
   }
 
   function renderReview(){
@@ -1489,6 +1670,7 @@
   document.addEventListener("change", (e)=>{
     if(e.target.id === "searchInput"){ filters.search = e.target.value; render(); }
     if(e.target.id === "statusFilter"){ filters.status = e.target.value; render(); }
+    if(e.target.id === "teacherFilter"){ filters.teacher = e.target.value; render(); }
   });
   document.addEventListener("input", (e)=>{
     if(e.target.id === "searchInput"){ filters.search = e.target.value; render(); }
@@ -1515,6 +1697,7 @@
     }
     else if(action === "open-log-payment"){ openLogPaymentModal(btn.dataset.student || null); }
     else if(action === "mark-absent"){ await markAbsent(btn.dataset.student); }
+    else if(action === "resume-absence"){ await resumeAbsence(btn.dataset.id); }
     else if(action === "open-payment-history"){ openPaymentHistoryModal(btn.dataset.student); }
     else if(action === "edit-tuition"){ e.preventDefault(); openTuitionModal(btn.dataset.id); }
     else if(action === "download-tuition"){
