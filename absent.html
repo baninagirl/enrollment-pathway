@@ -1,0 +1,736 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Kumon Hub — Absent</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700&family=Inter:wght@400;500;600;700;800&display=swap">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  :root{
+    --bg:#F5F6FA; --surface:#FFFFFF; --surface-2:#FBFBFE; --border:#E1E4EB;
+    --ink:#1B1F27; --ink-muted:#636C7C; --ink-faint:#9AA1AF;
+    --accent:#3454D1; --accent-ink:#FFFFFF; --accent-soft:#E9EDFC; --accent-soft-ink:#2A41A8;
+    --good:#1E8E5A; --good-soft:#E4F5EC; --warn:#C2831F; --warn-soft:#FBF0E1; --bad:#C23B2B; --bad-soft:#FBE8E5;
+    --shadow: 0 1px 2px rgba(16,20,30,.04), 0 2px 8px rgba(16,20,30,.06), 0 20px 40px -20px rgba(16,20,30,.25);
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#14161C; --surface:#1C1F27; --surface-2:#20232C; --border:#2C303B;
+      --ink:#EDEFF4; --ink-muted:#9BA3B2; --ink-faint:#6B7280;
+      --accent:#6C86F0; --accent-ink:#0E1220; --accent-soft:#232A47; --accent-soft-ink:#B7C3FA;
+      --good:#4FC48A; --good-soft:#173226; --warn:#E0A23F; --warn-soft:#332711; --bad:#F0796A; --bad-soft:#3A1F1C;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#14161C; --surface:#1C1F27; --surface-2:#20232C; --border:#2C303B;
+    --ink:#EDEFF4; --ink-muted:#9BA3B2; --ink-faint:#6B7280;
+    --accent:#6C86F0; --accent-ink:#0E1220; --accent-soft:#232A47; --accent-soft-ink:#B7C3FA;
+    --good:#4FC48A; --good-soft:#173226; --warn:#E0A23F; --warn-soft:#332711; --bad:#F0796A; --bad-soft:#3A1F1C;
+    color-scheme: dark;
+  }
+
+  *{box-sizing:border-box;}
+  body{
+    background:var(--bg); color:var(--ink); margin:0;
+    font-family:"Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  h1,h2,h3,.brand{ font-family:"Sora", system-ui, sans-serif; }
+  h1,h2,h3{ text-wrap:balance; margin:0; }
+  button{ font-family:inherit; }
+  a{ color:var(--accent); }
+
+  .app{ display:grid; grid-template-columns: 216px 1fr; min-height:100vh; min-height:100dvh; }
+  .rail{
+    background:var(--surface); border-right:1px solid var(--border);
+    padding:20px 12px; display:flex; flex-direction:column; gap:4px;
+    position:sticky; top:0; align-self:start; height:100vh; height:100dvh;
+  }
+  .brand{ font-weight:700; font-size:16px; padding:6px 10px 18px; display:flex; align-items:center; gap:8px; color:var(--ink); }
+  .brand .dot{ width:9px;height:9px;border-radius:50%;background:var(--accent); flex:none; }
+  .navbtn{
+    display:flex; align-items:center; gap:10px; padding:9px 10px; border-radius:9px;
+    border:none; background:transparent; color:var(--ink-muted); font-size:14px; font-weight:600;
+    cursor:pointer; text-align:left; width:100%; text-decoration:none;
+    transition: background-color .15s ease, color .15s ease, box-shadow .15s ease;
+  }
+  .navbtn:focus-visible{ outline:none; box-shadow: 0 0 0 3px var(--accent-soft); }
+  .navbtn:hover{ background:var(--surface-2); color:var(--ink); }
+  .navbtn svg{ width:17px; height:17px; flex:none; }
+  .navbtn.active{ background:var(--accent-soft); color:var(--accent-soft-ink); box-shadow: inset 3px 0 0 var(--accent); }
+  .rail-pages{ display:flex; flex-direction:column; gap:4px; margin-bottom:8px; }
+  .rail-divider{ height:1px; background:var(--border); margin:4px 10px 10px; }
+  .rail-account{ padding:0 10px 10px; }
+  .account-row{ display:flex; align-items:center; justify-content:space-between; gap:8px; padding:8px 8px; border-top:1px solid var(--border); font-size:12px; color:var(--ink-muted); }
+  .account-email{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .rail-foot{ margin-top:auto; padding:10px; font-size:12px; color:var(--ink-faint); line-height:1.5; }
+
+  .main{ padding:26px 30px 60px; max-width:1100px; width:100%; min-width:0; }
+  .page-head{ display:flex; align-items:flex-end; justify-content:space-between; gap:16px; margin-bottom:18px; flex-wrap:wrap; }
+  .page-head h1{ font-size:22px; font-weight:700; }
+  .page-sub{ color:var(--ink-muted); font-size:13.5px; margin-top:4px; }
+
+  .btn{
+    display:inline-flex; align-items:center; gap:7px; padding:9px 14px; border-radius:9px;
+    font-size:13.5px; font-weight:600; border:1px solid var(--border); background:var(--surface);
+    color:var(--ink); cursor:pointer; white-space:nowrap;
+    transition: background-color .15s ease, border-color .15s ease, color .15s ease, box-shadow .15s ease, transform .08s ease;
+  }
+  .btn:hover{ background:var(--surface-2); }
+  .btn:active{ transform:scale(.96); }
+  .btn:focus-visible{ outline:none; box-shadow: 0 0 0 3px var(--accent-soft); }
+  .btn.primary{ background:var(--accent); color:var(--accent-ink); border-color:var(--accent); box-shadow: 0 1px 2px rgba(0,0,0,.08); }
+  .btn.good{ color:var(--good); border-color:var(--good-soft); }
+  .btn.good:hover{ background:var(--good-soft); }
+  .btn.ghost{ border-color:transparent; background:transparent; }
+  .btn.sm{ padding:6px 10px; font-size:12.5px; border-radius:7px; }
+  .btn:disabled{ opacity:.5; cursor:not-allowed; }
+
+  .card{ background:var(--surface); border:1px solid var(--border); border-radius:14px; margin-bottom:18px; }
+  .card-head{ display:flex; align-items:center; justify-content:space-between; padding:14px 16px; border-bottom:1px solid var(--border); gap:10px; flex-wrap:wrap; }
+  .card-head h3{ font-size:14.5px; font-weight:700; }
+  .empty{ padding:30px 16px; text-align:center; color:var(--ink-muted); font-size:13.5px; }
+
+  .stats{ display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin-bottom:12px; }
+  .stat{ background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:13px 14px; display:flex; flex-direction:column; gap:6px; }
+  .stat .n{ font-size:22px; font-weight:700; font-family:"Sora",sans-serif; }
+  .stat .l{ font-size:12px; color:var(--ink-muted); font-weight:600; }
+  .stat.warn .n{ color:var(--warn); }
+  .stat.bad .n{ color:var(--bad); }
+  .stats-sub{ display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-bottom:18px; }
+  .stats-sub .stat .n{ font-size:18px; }
+
+  .cal-toolbar{ display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; flex-wrap:wrap; gap:10px; }
+  .cal-nav{ display:flex; align-items:center; gap:8px; }
+  .cal-nav h2{ font-size:16px; font-weight:700; min-width:160px; text-align:center; }
+  .month-head{ display:flex; flex-direction:column; align-items:center; }
+  .month-head h2{ margin:0; }
+  .month-range{ font-size:11px; color:var(--ink-muted); margin-top:1px; }
+  @media (max-width: 640px){ .cal-nav h2{ font-size:14px; min-width:0; flex:1; } }
+
+  .seg{ display:inline-flex; background:var(--surface-2); border:1px solid var(--border); border-radius:9px; padding:2px; }
+  .seg button{ border:none; background:transparent; padding:6px 11px; border-radius:7px; font-size:12.5px; font-weight:600; color:var(--ink-muted); cursor:pointer; }
+  .seg button:active{ transform:scale(.94); }
+  .seg button.active{ background:var(--surface); color:var(--ink); box-shadow:var(--shadow); }
+
+  .search-row{ display:flex; gap:8px; margin-bottom:14px; flex-wrap:wrap; align-items:center; }
+  .search-row input, .search-row select{ font-size:13.5px; width:auto; flex:0 0 auto; }
+  .search-row select{ min-width:132px; }
+  .table-scroll{ overflow-x:auto; }
+  .stable{ min-width:100%; width:auto; border-collapse:collapse; }
+  .stable th{ text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--ink-muted); padding:8px 16px; border-bottom:1px solid var(--border); white-space:nowrap; }
+  .stable td{ padding:10px 16px; border-bottom:1px solid var(--border); font-size:13px; vertical-align:middle; white-space:nowrap; }
+  .stable .empty{ white-space:normal; }
+  .stable tr:last-child td{ border-bottom:none; }
+  .stable tbody tr td{ transition: background-color .12s ease; }
+  .stable tbody tr:hover td{ background:var(--surface-2); }
+  .muted{ color:var(--ink-muted); }
+  .hint{ font-size:12px; color:var(--ink-muted); font-weight:500; }
+  .faint{ color:var(--ink-faint); }
+  .pill{ display:inline-flex; align-items:center; gap:5px; padding:3px 9px; border-radius:99px; font-size:11.5px; font-weight:700; white-space:nowrap; transition: background-color .15s ease, color .15s ease; }
+  .pill.subj-math{ background:var(--accent-soft); color:var(--accent-soft-ink); }
+  .pill.subj-reading{ background:var(--bad-soft); color:var(--bad); }
+  .pill.m1, .pill.m2{ background:var(--warn-soft); color:var(--warn); }
+  .pill.m3, .pill.m4{ background:var(--bad-soft); color:var(--bad); }
+  .pill.resumed{ background:var(--good-soft); color:var(--good); }
+  .pill.beyond{ background:var(--surface-2); color:var(--ink-faint); }
+  .name-subj-pill{ margin-left:6px; vertical-align:middle; padding:2px 7px; }
+  .row-actions{ display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end; }
+
+  select, input[type=text], input[type=search], textarea{
+    font-family:inherit; font-size:13.5px; padding:8px 10px; border-radius:8px; border:1px solid var(--border);
+    background:var(--surface); color:var(--ink); width:100%;
+  }
+  select, input, textarea{ transition: border-color .15s ease, box-shadow .15s ease; }
+  select:focus, input:focus, textarea:focus{ outline:none; border-color:var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+  label.field{ display:flex; flex-direction:column; gap:5px; font-size:12.5px; font-weight:600; color:var(--ink-muted); }
+
+  .modal-backdrop{ position:fixed; inset:0; background:rgba(10,12,18,.5); display:flex; align-items:flex-start; justify-content:center; padding:5vh 16px; overflow-y:auto; z-index:50; }
+  .modal{ background:var(--surface); border-radius:16px; width:100%; max-width:460px; box-shadow:var(--shadow); }
+  .modal-head{ display:flex; align-items:center; justify-content:space-between; padding:16px 18px; border-bottom:1px solid var(--border); }
+  .modal-head h3{ font-size:15.5px; font-weight:700; }
+  .modal-body{ padding:16px 18px; display:flex; flex-direction:column; gap:12px; max-height:66vh; overflow-y:auto; }
+  .modal-foot{ display:flex; justify-content:flex-end; gap:8px; padding:14px 18px; border-top:1px solid var(--border); }
+  .iconbtn{ border:none; background:transparent; cursor:pointer; color:var(--ink-muted); padding:4px; border-radius:6px; transition: background-color .15s ease, color .15s ease, transform .08s ease; }
+  .iconbtn:hover{ background:var(--surface-2); color:var(--ink); }
+  .iconbtn:active{ transform:scale(.9); }
+
+  .note-item{ border:1px solid var(--border); border-radius:10px; padding:10px 12px; background:var(--surface-2); }
+  .note-item .note-meta{ font-size:11px; color:var(--ink-muted); margin-bottom:4px; }
+  .note-item .note-text{ font-size:13px; white-space:pre-wrap; }
+  .note-form{ display:flex; flex-direction:column; gap:8px; }
+
+  .banner{ background:var(--warn-soft); color:var(--warn); border-radius:11px; padding:11px 14px; font-size:13px; font-weight:600; margin-bottom:16px; }
+  .banner.info{ background:var(--accent-soft); color:var(--accent-soft-ink); }
+
+  .toast{ position:fixed; left:50%; bottom:22px; transform:translateX(-50%); background:var(--ink); color:var(--bg); font-size:13px; font-weight:600; padding:10px 16px; border-radius:10px; z-index:95; box-shadow:var(--shadow); }
+
+  .login-screen{ position:fixed; inset:0; display:flex; align-items:center; justify-content:center; background:var(--bg); z-index:100; padding:20px; }
+  .login-card{ width:100%; max-width:360px; background:var(--surface); border:1px solid var(--border); border-radius:16px; padding:28px 26px; box-shadow:var(--shadow); display:flex; flex-direction:column; gap:14px; }
+  .login-brand{ font-family:"Sora", system-ui, sans-serif; font-weight:700; font-size:18px; display:flex; align-items:center; gap:8px; color:var(--ink); }
+  .login-brand .dot{ width:9px; height:9px; border-radius:50%; background:var(--accent); flex:none; }
+  .login-sub{ font-size:13px; color:var(--ink-muted); margin:-6px 0 4px; }
+  .login-error{ background:var(--bad-soft); color:var(--bad); border-radius:9px; padding:9px 12px; font-size:12.5px; font-weight:600; }
+
+  [hidden]{ display:none !important; }
+
+  @media (max-width: 860px){
+    .app{ grid-template-columns:1fr; }
+    .rail{ position:fixed; bottom:0; left:0; right:0; top:auto; height:auto; flex-direction:row; padding:8px; border-right:none; border-top:1px solid var(--border); z-index:40; }
+    .brand, .rail-foot, .rail-account{ display:none; }
+    .rail-pages{ flex-direction:row; flex:1; margin-bottom:0; }
+    .rail-divider{ display:none; }
+    .navbtn{ text-align:center; justify-content:center; }
+    .main{ padding:16px 14px calc(70px + env(safe-area-inset-bottom)); }
+    .stats{ grid-template-columns:repeat(2,1fr); }
+    .stats-sub{ grid-template-columns:repeat(1,1fr); }
+    .stable th, .stable td{ padding:9px 8px; font-size:12.5px; }
+    .modal-backdrop{ padding:0; align-items:flex-end; }
+    .modal{ max-width:none; border-radius:16px 16px 0 0; max-height:92vh; }
+  }
+</style>
+</head>
+<body>
+
+<div class="login-screen" id="loginScreen">
+  <form class="login-card" id="loginForm">
+    <div class="login-brand"><span class="dot"></span>Kumon Hub</div>
+    <div class="login-sub">Sign in with your team account.</div>
+    <div class="login-error" id="loginError" hidden></div>
+    <label class="field">Email<input type="email" name="email" required autocomplete="username" autofocus></label>
+    <label class="field">Password<input type="password" name="password" required autocomplete="current-password"></label>
+    <button class="btn primary" type="submit" style="justify-content:center;">Log in</button>
+  </form>
+</div>
+
+<div class="app" id="appRoot" hidden>
+  <nav class="rail">
+    <div class="brand"><span class="dot"></span>Kumon Hub</div>
+    <div class="rail-pages">
+      <a class="navbtn" href="index.html" id="navPipelineLink" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16l-6.5 8.5V19l-3 1.5v-8L4 4z"/></svg>Pipeline</a>
+      <a class="navbtn" href="roster.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3L2 8l10 5 10-5-10-5z"/><path d="M6 10.5V15c0 1.5 2.5 3 6 3s6-1.5 6-3v-4.5"/></svg>Student roster</a>
+      <a class="navbtn" href="calendar.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>Calendar</a>
+      <a class="navbtn" href="payments.html" id="navPaymentsLink" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20M6 15h4"/></svg>Payments</a>
+      <a class="navbtn active" href="absent.html" id="navAbsentLink" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.5-7 8-7s8 3 8 7"/><path d="M2 2l20 20" stroke="currentColor"/></svg>Absent</a>
+      <a class="navbtn" href="admin.html" id="navAdminLink" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v6c0 5-3.5 8-7 9-3.5-1-7-4-7-9V6l7-3z"/></svg>Admin</a>
+    </div>
+    <div class="rail-divider"></div>
+    <div class="rail-account" id="railAccount"></div>
+    <div class="rail-foot">Who's stopped, how long, and who's come back.</div>
+  </nav>
+
+  <main class="main">
+    <div id="pendingGate" hidden></div>
+
+    <div class="page-head" id="pageHead">
+      <div>
+        <h1>Absent students</h1>
+        <div class="page-sub">Marked absent from Payments' Unpaid tab — tracked here for follow-up, notes, and Resume.</div>
+      </div>
+    </div>
+
+    <div class="cal-toolbar" id="calToolbar">
+      <div class="cal-nav">
+        <button class="btn ghost sm" data-action="month-prev">‹</button>
+        <div class="month-head">
+          <h2 id="absentMonthLabel"></h2>
+          <div class="month-range" id="absentMonthRange"></div>
+        </div>
+        <button class="btn ghost sm" data-action="month-next">›</button>
+        <button class="btn sm" data-action="month-today">This month</button>
+      </div>
+    </div>
+
+    <div class="stats" id="statsRow"></div>
+    <div class="stats-sub" id="statsSubRow"></div>
+
+    <div class="search-row">
+      <div class="seg view-mode-toggle">
+        <button data-action="absent-view" data-view="tracking">Tracking (1–4 mo)</button>
+        <button data-action="absent-view" data-view="all">All time</button>
+      </div>
+      <input type="text" id="searchInput" placeholder="Search student…" style="max-width:200px;">
+      <select id="teacherFilter"><option value="all">Center-wide (all teachers)</option></select>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <h3 id="listTitle">Tracking</h3>
+        <span class="muted" id="listCount" style="font-size:12.5px;"></span>
+      </div>
+      <p class="hint" id="listHint" style="padding:10px 16px 0;"></p>
+      <div class="table-scroll">
+        <table class="stable">
+          <thead id="listHead"></thead>
+          <tbody id="listBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+</div>
+
+<div class="modal-backdrop" id="modalBackdrop" hidden>
+  <div class="modal" id="modal"></div>
+</div>
+
+<div class="toast" id="toast" hidden></div>
+
+<script>
+(function(){
+  "use strict";
+
+  const SUPABASE_URL = "https://bcnmsryahczapnxbpkve.supabase.co";
+  const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJjbm1zcnlhaGN6YXBueGJwa3ZlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTAyMDQ4NzksImV4cCI6MjEwNTc4MDg3OX0.VgCX3CR7YCJxR9-vwD8HlYcCx0MxlY7atgD_0h3F3to";
+
+  const $ = (sel, el) => (el||document).querySelector(sel);
+  const $$ = (sel, el) => Array.from((el||document).querySelectorAll(sel));
+  function esc(s){ return String(s==null?"":s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+
+  let sbClient = null, currentUser = null, currentRole = null, currentTeacherName = null;
+  let students = [], enrollments = [], absences = [];
+  const notesCache = new Map(); // absence_id -> [{id, note, author_email, created_at}]
+
+  // Same calendar-month billing convention Payments uses (not Student Roster's 21st–20th
+  // cycle) — "months absent" is measured in cycles of unpaid tuition, so it has to line up
+  // with covers_month, not the curriculum tracking month.
+  function monthDefault(){
+    const d = new Date();
+    let y = d.getFullYear(), m = d.getMonth();
+    if(d.getDate() >= 25){ m += 1; if(m > 11){ m = 0; y += 1; } }
+    return y + "-" + String(m+1).padStart(2,"0");
+  }
+  function fmtMonthLabel(ym){
+    const [y,m] = ym.split("-").map(Number);
+    return new Date(y, m-1, 1).toLocaleDateString("en-US", { month:"long", year:"numeric" });
+  }
+  function monthRangeLabel(ym){
+    const [y,m] = ym.split("-").map(Number);
+    const start = new Date(y, m-1, 1);
+    const end = new Date(y, m, 0);
+    return `${start.toLocaleDateString("en-US",{month:"short",day:"numeric"})} – ${end.toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"})}`;
+  }
+  function shiftMonth(ym, delta){
+    const [y,m] = ym.split("-").map(Number);
+    const d = new Date(y, m-1+delta, 1);
+    return d.getFullYear() + "-" + String(d.getMonth()+1).padStart(2,"0");
+  }
+  function monthKeyOfToday(){
+    const d = new Date();
+    return d.getFullYear() + "-" + String(d.getMonth()+1).padStart(2,"0");
+  }
+  // How many full cycles behind `toYm` a student's last paid cycle (`fromYm`) is — the
+  // number that decides which of the 1/2/3/4-month buckets a row falls into. Computed
+  // against whichever month you're viewing, per how this page is meant to work: browsing
+  // back to a past month reports the buckets as they stood that month, not today.
+  function monthDiff(fromYm, toYm){
+    if(!fromYm) return null;
+    const [fy,fm] = fromYm.split("-").map(Number);
+    const [ty,tm] = toYm.split("-").map(Number);
+    return (ty - fy) * 12 + (tm - fm);
+  }
+
+  let selectedMonth = monthDefault();
+  let viewMode = "tracking"; // "tracking" | "all"
+  let teacherFilterVal = "all";
+  const filters = { search: "" };
+  let openNotesAbsenceId = null;
+  let noteDraft = "";
+
+  function isTeacherScoped(){ return currentRole === "teacher" || currentRole === "trainer_teacher"; }
+  function isAuthorized(){ return currentRole === "admin" || currentRole === "superadmin" || currentRole === "teacher" || currentRole === "trainer_teacher"; }
+
+  function displayName(s){
+    if(!s) return "";
+    if(s.last_name && s.first_name) return `${s.last_name}, ${s.first_name}`;
+    return s.name || "";
+  }
+  function gradeFor(studentId){
+    const s = students.find(x => x.id === studentId);
+    return s ? (s.age_grade || "") : "";
+  }
+  function subjectBadgesFor(studentId){
+    const subjects = [...new Set(enrollments.filter(e => e.student_id === studentId).map(e => e.subject))];
+    return subjects.map(subj => {
+      const cls = subj === "Reading" ? "subj-reading" : "subj-math";
+      const letter = subj === "Reading" ? "R" : "M";
+      return `<span class="pill ${cls} name-subj-pill" title="${esc(subj)}">${letter}</span>`;
+    }).join("");
+  }
+  function teachersFor(studentId){
+    return [...new Set(enrollments.filter(e => e.student_id === studentId).map(e => e.teacher).filter(Boolean))];
+  }
+
+  function showLogin(errMsg){
+    $("#loginScreen").hidden = false;
+    $("#appRoot").hidden = true;
+    const err = $("#loginError");
+    if(errMsg){ err.textContent = errMsg; err.hidden = false; } else { err.hidden = true; }
+  }
+  function showApp(){ $("#loginScreen").hidden = true; $("#appRoot").hidden = false; }
+  function renderAccount(){
+    const el = $("#railAccount");
+    if(el) el.innerHTML = currentUser ? `<div class="account-row"><span class="account-email">${esc(currentUser.email)}</span><button class="btn sm ghost" data-action="logout">Log out</button></div>` : "";
+    const adminLink = $("#navAdminLink");
+    if(adminLink) adminLink.hidden = currentRole !== "superadmin";
+    const pipelineLink = $("#navPipelineLink");
+    if(pipelineLink) pipelineLink.hidden = currentRole === "teacher" || currentRole === "pending";
+    const paymentsLink = $("#navPaymentsLink");
+    if(paymentsLink) paymentsLink.hidden = !(currentRole === "admin" || currentRole === "superadmin" || currentRole === "teacher");
+    const absentLink = $("#navAbsentLink");
+    if(absentLink) absentLink.hidden = !isAuthorized();
+    applyRoleGate();
+  }
+  function applyRoleGate(){
+    const blocked = !isAuthorized();
+    const gate = $("#pendingGate");
+    if(gate){
+      gate.hidden = !blocked;
+      gate.innerHTML = blocked
+        ? (currentRole === "pending"
+            ? `<div class="banner">Your account is waiting for approval. Ask a superadmin to set your role in <a href="admin.html">Admin</a> — until then there's nothing here for you to see.</div>`
+            : `<div class="banner">The Absent page isn't available for your account role.</div>`)
+        : "";
+    }
+    $$(".page-head, .cal-toolbar, .stats, .stats-sub, .search-row, .card").forEach(el => { el.style.display = blocked ? "none" : ""; });
+  }
+
+  async function loadRole(){
+    if(!sbClient || !currentUser){ currentRole = null; currentTeacherName = null; return; }
+    try{
+      const { data, error } = await sbClient.from("profiles").select("role,teacher_name").eq("id", currentUser.id).maybeSingle();
+      if(error) throw error;
+      currentRole = data ? data.role : "pending";
+      currentTeacherName = data ? data.teacher_name : null;
+    }catch(e){ console.warn("couldn't load role", e); currentRole = "pending"; currentTeacherName = null; }
+  }
+
+  async function boot(){
+    if(!window.supabase){ showLogin("Couldn't load Supabase."); return; }
+    try{ sbClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY); }
+    catch(e){ showLogin("Couldn't connect to Supabase."); return; }
+
+    renderMonthNav();
+
+    const { data:{ session } } = await sbClient.auth.getSession();
+    if(session){ currentUser = session.user; showApp(); await loadRole(); renderAccount(); startApp(); }
+    else{ showLogin(); }
+
+    sbClient.auth.onAuthStateChange(async (event, session)=>{
+      if(session){
+        currentUser = session.user;
+        showApp(); await loadRole(); renderAccount(); startApp();
+      }else{
+        currentUser = null; currentRole = null;
+        showLogin();
+      }
+    });
+  }
+
+  let started = false;
+  async function startApp(){
+    if(started) return;
+    started = true;
+    if(!isAuthorized()) return;
+    if(isTeacherScoped()) teacherFilterVal = currentTeacherName || "all";
+    await Promise.all([loadStudents(), loadEnrollments(), loadAbsences()]);
+    populateTeacherFilter();
+    render();
+
+    sbClient.channel("realtime:absence-records")
+      .on("postgres_changes", { event:"*", schema:"public", table:"absence_records" }, async ()=>{ await loadAbsences(); render(); })
+      .subscribe();
+    sbClient.channel("realtime:absent-enrollments")
+      .on("postgres_changes", { event:"*", schema:"public", table:"subject_enrollments" }, async ()=>{ await loadEnrollments(); render(); })
+      .subscribe();
+  }
+
+  async function loadStudents(){
+    const { data, error } = await sbClient.from("students").select("id,name,first_name,last_name,age_grade,status");
+    if(error){ console.warn(error); students = []; return; }
+    students = data || [];
+  }
+  async function loadEnrollments(){
+    const { data, error } = await sbClient.from("subject_enrollments").select("id,student_id,status,subject,teacher,enrollment_type,enrollment_type_set_at");
+    if(error){ console.warn(error); enrollments = []; return; }
+    enrollments = data || [];
+  }
+  async function loadAbsences(){
+    const { data, error } = await sbClient.from("absence_records").select("*").order("marked_absent_at", { ascending:false });
+    if(error){ console.warn(error); absences = []; return; }
+    absences = data || [];
+  }
+
+  function populateTeacherFilter(){
+    const sel = $("#teacherFilter");
+    if(!sel) return;
+    if(isTeacherScoped()){
+      sel.innerHTML = `<option value="${esc(currentTeacherName||"")}">${esc(currentTeacherName||"You")}</option>`;
+      sel.disabled = true;
+      sel.value = currentTeacherName || "";
+      return;
+    }
+    sel.disabled = false;
+    const teacherNames = [...new Set(enrollments.map(e => e.teacher).filter(Boolean))].sort();
+    sel.innerHTML = `<option value="all">Center-wide (all teachers)</option>` + teacherNames.map(t => `<option value="${esc(t)}">${esc(t)}</option>`).join("");
+    sel.value = teacherFilterVal;
+  }
+
+  function renderMonthNav(){
+    $("#absentMonthLabel").textContent = fmtMonthLabel(selectedMonth);
+    $("#absentMonthRange").textContent = monthRangeLabel(selectedMonth);
+  }
+
+  // A student may carry more than one open absence_records row only in edge cases (shouldn't
+  // normally happen since Resume closes one out before a new Mark absent could start another) —
+  // guard by always taking the most recently opened one per student.
+  function openAbsences(){
+    const byStudent = new Map();
+    absences.filter(a => !a.resumed_at).forEach(a => {
+      const existing = byStudent.get(a.student_id);
+      if(!existing || new Date(a.marked_absent_at) > new Date(existing.marked_absent_at)) byStudent.set(a.student_id, a);
+    });
+    return [...byStudent.values()];
+  }
+
+  function teacherMatches(studentId){
+    if(teacherFilterVal === "all") return true;
+    return teachersFor(studentId).includes(teacherFilterVal);
+  }
+  function searchMatches(studentId){
+    if(!filters.search.trim()) return true;
+    const s = students.find(x => x.id === studentId);
+    return displayName(s).toLowerCase().includes(filters.search.trim().toLowerCase());
+  }
+
+  function trackingRows(){
+    return openAbsences()
+      .map(a => ({ absence: a, months: monthDiff(a.last_paid_month, selectedMonth) }))
+      .filter(x => x.months !== null && x.months >= 1 && x.months <= 4)
+      .filter(x => teacherMatches(x.absence.student_id) && searchMatches(x.absence.student_id))
+      .sort((a,b) => b.months - a.months);
+  }
+  function allTimeRows(){
+    return absences
+      .filter(a => teacherMatches(a.student_id) && searchMatches(a.student_id))
+      .map(a => ({ absence: a, months: monthDiff(a.last_paid_month, a.resumed_at ? monthKeyOfSomeDate(a.resumed_at) : monthKeyOfToday()) }))
+      .sort((a,b) => new Date(b.absence.marked_absent_at) - new Date(a.absence.marked_absent_at));
+  }
+  function monthKeyOfSomeDate(iso){
+    const d = new Date(iso);
+    return d.getFullYear() + "-" + String(d.getMonth()+1).padStart(2,"0");
+  }
+
+  function bucketPillHtml(months){
+    if(months == null) return `<span class="pill beyond">—</span>`;
+    if(months >= 1 && months <= 4) return `<span class="pill m${months}">${months} month${months===1?"":"s"}</span>`;
+    if(months > 4) return `<span class="pill beyond">${months} months (past window)</span>`;
+    return `<span class="pill beyond">—</span>`;
+  }
+
+  function render(){
+    if(!isAuthorized()) return;
+    renderMonthNav();
+    $$('[data-action="absent-view"]').forEach(b => b.classList.toggle("active", b.dataset.view === viewMode));
+    $("#calToolbar").style.display = viewMode === "tracking" ? "" : "none";
+    renderStats();
+    renderList();
+  }
+
+  function renderStats(){
+    const tracking = openAbsences().map(a => ({ absence:a, months: monthDiff(a.last_paid_month, selectedMonth) }));
+    const counts = { 1:0, 2:0, 3:0, 4:0 };
+    tracking.forEach(x => { if(x.months >= 1 && x.months <= 4) counts[x.months]++; });
+    $("#statsRow").innerHTML = [1,2,3,4].map(n => `
+      <div class="stat ${n>=3?'bad':'warn'}"><div class="n">${counts[n]}</div><div class="l">${n} month${n===1?"":"s"} absent</div></div>
+    `).join("");
+
+    // Reporting tags for head office — counted for whichever month is selected above.
+    const taggedThisMonth = enrollments.filter(e => e.enrollment_type_set_at && monthKeyOfSomeDate(e.enrollment_type_set_at) === selectedMonth);
+    const newCount = taggedThisMonth.filter(e => e.enrollment_type === "new").length;
+    const eoCount = taggedThisMonth.filter(e => e.enrollment_type === "eo").length;
+    const resumeCount = taggedThisMonth.filter(e => e.enrollment_type === "resume").length;
+    $("#statsSubRow").innerHTML = `
+      <div class="stat"><div class="n">${newCount}</div><div class="l">NEW this cycle</div></div>
+      <div class="stat"><div class="n">${eoCount}</div><div class="l">EO this cycle</div></div>
+      <div class="stat"><div class="n">${resumeCount}</div><div class="l">RESUME this cycle</div></div>
+    `;
+  }
+
+  function renderList(){
+    const isTracking = viewMode === "tracking";
+    $("#listTitle").textContent = isTracking ? `Tracking — as of ${fmtMonthLabel(selectedMonth)}` : "All time";
+    $("#listHint").textContent = isTracking
+      ? "Students within the 4-month return window — come back in this window and their progress continues, with no new assessment or registration fee."
+      : "Every student ever marked absent, resumed or not. Browsing here ignores the month picker above.";
+    $("#listHead").innerHTML = isTracking
+      ? `<tr><th>Student</th><th>Grade</th><th>Teacher</th><th>Last paid</th><th>Months absent</th><th>Notes</th><th></th></tr>`
+      : `<tr><th>Student</th><th>Grade</th><th>Teacher</th><th>Marked absent</th><th>Last paid</th><th>Status</th><th>Notes</th><th></th></tr>`;
+
+    const rows = isTracking ? trackingRows() : allTimeRows();
+    $("#listCount").textContent = rows.length ? `${rows.length} student${rows.length===1?"":"s"}` : "";
+    const body = $("#listBody");
+    if(!rows.length){
+      body.innerHTML = `<tr><td colspan="8"><div class="empty">${isTracking ? "Nobody's in the 1–4 month window right now." : "No one's ever been marked absent yet."}</div></td></tr>`;
+      return;
+    }
+    body.innerHTML = rows.map(x => {
+      const a = x.absence;
+      const s = students.find(st => st.id === a.student_id);
+      const noteCount = notesCache.has(a.id) ? notesCache.get(a.id).length : (a.note_count || null);
+      const teacherList = teachersFor(a.student_id).join(", ") || "—";
+      const notesBtn = `<button class="iconbtn" data-action="open-notes" data-absence="${esc(a.id)}" title="Notes">🗒${noteCount ? ` ${noteCount}` : ""}</button>`;
+      const resumeBtn = !a.resumed_at ? `<button class="btn sm good" data-action="resume-absence" data-absence="${esc(a.id)}">Resume</button>` : "";
+      if(isTracking){
+        return `<tr>
+          <td>${esc(displayName(s))}${subjectBadgesFor(a.student_id)}</td>
+          <td class="muted">${esc(gradeFor(a.student_id) || "—")}</td>
+          <td class="muted">${esc(teacherList)}</td>
+          <td class="muted">${esc(fmtMonthLabel(a.last_paid_month))}</td>
+          <td>${bucketPillHtml(x.months)}</td>
+          <td>${notesBtn}</td>
+          <td><div class="row-actions">${resumeBtn}</div></td>
+        </tr>`;
+      }
+      const statusHtml = a.resumed_at
+        ? `<span class="pill resumed">Resumed ${esc(new Date(a.resumed_at).toLocaleDateString(undefined,{month:"short",day:"numeric",year:"numeric"}))}</span>`
+        : bucketPillHtml(x.months);
+      return `<tr>
+        <td>${esc(displayName(s))}${subjectBadgesFor(a.student_id)}</td>
+        <td class="muted">${esc(gradeFor(a.student_id) || "—")}</td>
+        <td class="muted">${esc(teacherList)}</td>
+        <td class="muted">${esc(new Date(a.marked_absent_at).toLocaleDateString(undefined,{month:"short",day:"numeric",year:"numeric"}))}</td>
+        <td class="muted">${esc(fmtMonthLabel(a.last_paid_month))}</td>
+        <td>${statusHtml}</td>
+        <td>${notesBtn}</td>
+        <td><div class="row-actions">${resumeBtn}</div></td>
+      </tr>`;
+    }).join("");
+  }
+
+  // ---------------- Resume ----------------
+  async function resumeAbsence(absenceId){
+    const a = absences.find(x => x.id === absenceId);
+    if(!a) return;
+    const s = students.find(x => x.id === a.student_id);
+    const monthsGone = monthDiff(a.last_paid_month, monthKeyOfToday());
+    const withinPolicy = monthsGone !== null && monthsGone <= 4;
+    const ok = confirm(
+      `Mark ${displayName(s)} as resumed?\n\n` +
+      (withinPolicy
+        ? "They're within the 4-month window — progress continues, no new assessment, registration is free."
+        : "It's been more than 4 months, so the usual return policy (continued progress, free registration) no longer applies.") +
+      `\n\nThis reactivates their enrollment${a.subject_enrollment_ids && a.subject_enrollment_ids.length > 1 ? "s" : ""} and tags them RESUME for reporting.`
+    );
+    if(!ok) return;
+    const nowIso = new Date().toISOString();
+    const ids = a.subject_enrollment_ids || [];
+    if(ids.length){
+      const { error: e1 } = await sbClient.from("subject_enrollments")
+        .update({ status:"active", enrollment_type:"resume", enrollment_type_set_at: nowIso, updated_at: nowIso })
+        .in("id", ids);
+      if(e1){ alert("Couldn't resume: " + e1.message); return; }
+    }
+    const { error: e2 } = await sbClient.from("absence_records")
+      .update({ resumed_at: nowIso, resumed_by: currentUser ? currentUser.email : null })
+      .eq("id", absenceId);
+    if(e2){ alert("Reactivated the enrollment, but couldn't close out the absence record: " + e2.message); }
+    await Promise.all([loadEnrollments(), loadAbsences()]);
+    render();
+  }
+
+  // ---------------- Notes modal ----------------
+  async function openNotesModal(absenceId){
+    openNotesAbsenceId = absenceId;
+    noteDraft = "";
+    renderNotesModal(true);
+    $("#modalBackdrop").hidden = false;
+    const { data, error } = await sbClient.from("absence_notes").select("*").eq("absence_id", absenceId).order("created_at");
+    if(error){ console.warn(error); notesCache.set(absenceId, []); }
+    else notesCache.set(absenceId, data || []);
+    renderNotesModal(false);
+  }
+  function renderNotesModal(loading){
+    const a = absences.find(x => x.id === openNotesAbsenceId);
+    if(!a) return;
+    const s = students.find(x => x.id === a.student_id);
+    const notes = notesCache.get(openNotesAbsenceId) || [];
+    $("#modal").innerHTML = `
+      <div class="modal-head"><h3>${esc(displayName(s))} — notes</h3><button class="iconbtn" data-action="close-modal">✕</button></div>
+      <div class="modal-body">
+        ${loading ? `<div class="hint">Loading…</div>` : (notes.length ? notes.map(n => `
+          <div class="note-item">
+            <div class="note-meta">${esc(new Date(n.created_at).toLocaleDateString(undefined,{month:"short",day:"numeric",year:"numeric"}))}${n.author_email ? " · " + esc(n.author_email) : ""}</div>
+            <div class="note-text">${esc(n.note)}</div>
+          </div>
+        `).join("") : `<div class="hint">No notes yet — why they stopped, what's been tried to bring them back.</div>`)}
+        <form class="note-form" id="addNoteForm">
+          <label class="field">Add a note<textarea name="note" rows="3" placeholder="e.g. Texted mom Sept 5, no reply yet"></textarea></label>
+          <button type="submit" class="btn primary sm" style="align-self:flex-end;">Add note</button>
+        </form>
+      </div>
+      <div class="modal-foot"><button type="button" class="btn ghost" data-action="close-modal">Close</button></div>
+    `;
+  }
+  async function submitNote(form){
+    const fd = new FormData(form);
+    const text = (fd.get("note")||"").toString().trim();
+    if(!text) return;
+    const { error } = await sbClient.from("absence_notes").insert({
+      absence_id: openNotesAbsenceId, note: text, author_email: currentUser ? currentUser.email : null
+    });
+    if(error){ alert("Couldn't save note: " + error.message); return; }
+    const { data } = await sbClient.from("absence_notes").select("*").eq("absence_id", openNotesAbsenceId).order("created_at");
+    notesCache.set(openNotesAbsenceId, data || []);
+    renderNotesModal(false);
+    renderList(); // refresh note counts in the table
+  }
+  function closeModal(){
+    $("#modalBackdrop").hidden = true;
+    $("#modal").innerHTML = "";
+    openNotesAbsenceId = null;
+  }
+
+  document.addEventListener("submit", (e)=>{
+    if(e.target.id === "loginForm"){
+      e.preventDefault();
+      const fd = new FormData(e.target);
+      sbClient.auth.signInWithPassword({ email: fd.get("email"), password: fd.get("password") })
+        .then(({ error }) => { if(error) showLogin(error.message); });
+      return;
+    }
+    if(e.target.id === "addNoteForm"){
+      e.preventDefault();
+      submitNote(e.target);
+    }
+  });
+
+  document.addEventListener("input", (e)=>{
+    if(e.target.id === "searchInput"){ filters.search = e.target.value; renderList(); }
+  });
+
+  document.addEventListener("change", (e)=>{
+    if(e.target.id === "teacherFilter"){ teacherFilterVal = e.target.value; render(); }
+  });
+
+  document.addEventListener("click", async (e)=>{
+    const btn = e.target.closest("[data-action]");
+    if(!btn) return;
+    const action = btn.dataset.action;
+    if(action === "logout"){ await sbClient.auth.signOut(); }
+    else if(action === "close-modal"){ closeModal(); }
+    else if(action === "month-prev"){ selectedMonth = shiftMonth(selectedMonth, -1); render(); }
+    else if(action === "month-next"){ selectedMonth = shiftMonth(selectedMonth, 1); render(); }
+    else if(action === "month-today"){ selectedMonth = monthDefault(); render(); }
+    else if(action === "absent-view"){ viewMode = btn.dataset.view; render(); }
+    else if(action === "open-notes"){ openNotesModal(btn.dataset.absence); }
+    else if(action === "resume-absence"){ await resumeAbsence(btn.dataset.absence); }
+  });
+
+  boot();
+})();
+</script>
+</body>
+</html>

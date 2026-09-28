@@ -238,6 +238,7 @@
       <a class="navbtn active" href="roster.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3L2 8l10 5 10-5-10-5z"/><path d="M6 10.5V15c0 1.5 2.5 3 6 3s6-1.5 6-3v-4.5"/></svg>Student roster</a>
       <a class="navbtn" href="calendar.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>Calendar</a>
       <a class="navbtn" href="payments.html" id="navPaymentsLink" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20M6 15h4"/></svg>Payments</a>
+      <a class="navbtn" href="absent.html" id="navAbsentLink" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.5-7 8-7s8 3 8 7"/><path d="M2 2l20 20"/></svg>Absent</a>
       <a class="navbtn" href="admin.html" id="navAdminLink" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v6c0 5-3.5 8-7 9-3.5-1-7-4-7-9V6l7-3z"/></svg>Admin</a>
     </div>
     <div class="rail-divider"></div>
@@ -542,6 +543,8 @@
     if(pipelineLink) pipelineLink.hidden = currentRole === "teacher" || currentRole === "pending";
     const paymentsLink = $("#navPaymentsLink");
     if(paymentsLink) paymentsLink.hidden = !(currentRole === "admin" || currentRole === "superadmin" || currentRole === "teacher");
+    const absentLink = $("#navAbsentLink");
+    if(absentLink) absentLink.hidden = !(currentRole === "admin" || currentRole === "superadmin" || currentRole === "teacher" || currentRole === "trainer_teacher");
     // The "+ Add to roster" button (roster view) and the close-out button (report view) are
     // both rendered by renderPageHeadActions() instead, since which one shows depends on the
     // active view as well as the role.
@@ -1424,6 +1427,10 @@
       const subject = fd.get("subject");
 
       let studentId = findExistingStudentId(name);
+      // Captured before studentId gets filled in below — this is what tells NEW apart from EO
+      // for head-office reporting: a brand-new student's first enrollment vs. an existing
+      // student adding another subject.
+      const isNewStudent = !studentId;
       if(studentId){
         const already = enrollments.find(en => en.student_id === studentId && en.subject === subject);
         if(already){ alert(`${name} already has a ${subject} enrollment — edit that row instead.`); return; }
@@ -1452,9 +1459,14 @@
         teacher: isTeacherScoped() ? currentTeacherName : (fd.get("teacher") || null),
         current_level: fd.get("current_level") || null,
         current_page: fd.get("current_page") || null,
-        mode: fd.get("mode") || null
+        mode: fd.get("mode") || null,
         // Goal level/page and Award/Actual aren't collected on this form (hidden for now,
         // same as the Edit modal) — left out here too rather than inserted as null.
+        // For head-office reporting on the Absent page: a brand-new student's very first
+        // enrollment is tagged NEW; an existing student adding another subject is tagged EO.
+        // (RESUME is set separately, by the Absent page's Resume action.)
+        enrollment_type: isNewStudent ? "new" : "eo",
+        enrollment_type_set_at: new Date().toISOString()
       };
       const { data: newEnrollment, error: enrollError } = await sbClient.from("subject_enrollments").insert(enrollPayload).select().single();
       if(enrollError){ alert("Couldn't save: " + enrollError.message); return; }

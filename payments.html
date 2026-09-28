@@ -240,6 +240,7 @@
       <a class="navbtn" href="roster.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3L2 8l10 5 10-5-10-5z"/><path d="M6 10.5V15c0 1.5 2.5 3 6 3s6-1.5 6-3v-4.5"/></svg>Student roster</a>
       <a class="navbtn" href="calendar.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>Calendar</a>
       <a class="navbtn active" href="payments.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20M6 15h4"/></svg>Payments</a>
+      <a class="navbtn" href="absent.html" id="navAbsentLink" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.5-7 8-7s8 3 8 7"/><path d="M2 2l20 20"/></svg>Absent</a>
       <a class="navbtn" href="admin.html" id="navAdminLink" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v6c0 5-3.5 8-7 9-3.5-1-7-4-7-9V6l7-3z"/></svg>Admin</a>
     </div>
     <div class="rail-divider"></div>
@@ -278,7 +279,7 @@
     <div class="search-row">
       <div class="seg payments-view-toggle">
         <button data-action="payments-view" data-view="month">Payments</button>
-        <button data-action="payments-view" data-view="stopped">Stopped</button>
+        <button data-action="payments-view" data-view="unpaid">Unpaid</button>
       </div>
       <input type="text" id="searchInput" placeholder="Search student…" style="max-width:200px;">
       <select id="statusFilter">
@@ -312,19 +313,19 @@
       </div>
     </div>
 
-    <div id="view-stopped" hidden>
+    <div id="view-unpaid" hidden>
       <div class="card">
         <div class="card-head">
-          <h3 id="stoppedTitle">Stopped</h3>
-          <span class="muted" id="stoppedCount" style="font-size:12.5px;"></span>
+          <h3 id="unpaidTitle">Unpaid</h3>
+          <span class="muted" id="unpaidCount" style="font-size:12.5px;"></span>
         </div>
-        <p class="hint" style="padding:10px 16px 0;">Was fully paid last cycle, hasn't logged any payment yet for the month you're viewing above, and is still marked active on the roster. This list shrinks on its own as payments come in — early in a new cycle, most families just haven't paid yet.</p>
+        <p class="hint" style="padding:10px 16px 0;">Was fully paid last cycle, hasn't logged any payment yet for the month you're viewing above, and is still marked active on the roster. Tuition's due the 25th of the month before — some families just pay late and that's fine, wait for them. Only use "Mark absent" once you actually know they're not continuing (they told the teacher, or it's been long enough that you're confident) — nothing here gets marked absent on its own.</p>
         <div class="table-scroll">
           <table class="stable">
             <thead><tr>
-              <th>Student</th><th>Grade</th><th>Group</th><th>Last paid</th><th>Tuition due</th><th></th>
+              <th>Student</th><th>Grade</th><th>Group</th><th>Due since</th><th>Last paid</th><th>Tuition due</th><th></th>
             </tr></thead>
-            <tbody id="stoppedBody"></tbody>
+            <tbody id="unpaidBody"></tbody>
           </table>
         </div>
       </div>
@@ -479,6 +480,8 @@
     if(adminLink) adminLink.hidden = currentRole !== "superadmin";
     const pipelineLink = $("#navPipelineLink");
     if(pipelineLink) pipelineLink.hidden = currentRole === "teacher" || currentRole === "pending";
+    const absentLink = $("#navAbsentLink");
+    if(absentLink) absentLink.hidden = !(currentRole === "admin" || currentRole === "superadmin" || currentRole === "teacher" || currentRole === "trainer_teacher");
     applyRoleGate();
   }
 
@@ -629,18 +632,54 @@
     return { student: s, due, paid, balance, status };
   }
 
-  // "Stopped" — still marked active on the roster, was fully paid last cycle, but has
+  // "Unpaid" — still marked active on the roster, was fully paid last cycle, but has
   // logged NOTHING (not even a partial payment) for the cycle currently being viewed.
   // Computed live off the same receipts/enrollments Payments already loads, so it needs
   // no new table and a student drops off the moment a payment comes in for that month.
   // Requiring last cycle to have been fully paid (not just started) keeps a brand-new
-  // enrollee's very first bill from ever looking like a "stop".
-  function stoppedCandidates(ym){
+  // enrollee's very first bill from ever looking like an unpaid case.
+  //
+  // This is deliberately just a follow-up list, not a verdict — being unpaid here never
+  // flips anyone to "absent" on its own, however long it's been. Some families pay very
+  // late and are still continuing; only a person who actually knows the family isn't
+  // coming back should use "Mark absent" (see markAbsent() below).
+  function unpaidCandidates(ym){
     const prevYm = shiftMonth(ym, -1);
     return billableStudents()
       .map(s => ({ student: s, prevRow: rowFor(s, prevYm), row: rowFor(s, ym) }))
       .filter(x => x.prevRow.status === "paid" && x.row.paid === 0)
-      .map(x => ({ student: x.student, lastPaidMonth: prevYm, due: x.row.due }));
+      .map(x => ({ student: x.student, lastPaidMonth: prevYm, dueSince: dueDateLabel(ym), due: x.row.due }));
+  }
+
+  // Marking absent is a deliberate, human call (a family telling the teacher they're
+  // done, or staff deciding enough time has passed) — never automatic. It reuses the
+  // enrollment's existing active/inactive status rather than a new field: "absent" and
+  // "inactive" mean the same thing everywhere else in the app (off the active roster,
+  // out of billing), so flipping every one of this student's currently-active subject
+  // enrollments to inactive is exactly what removes them from here, from Roster's active
+  // view, and from next cycle's billing all at once.
+  async function markAbsent(studentId){
+    const s = students.find(x => x.id === studentId);
+    if(!s) return;
+    const activeEnrollmentIds = enrollments.filter(e => e.student_id === studentId && e.status === "active").map(e => e.id);
+    if(!activeEnrollmentIds.length) return;
+    const ok = confirm(`Mark ${displayName(s)} absent?\n\nThis sets their enrollment to inactive — they'll drop off the active roster and next cycle's billing. It also starts tracking them on the Absent page, for follow-up. Only do this once you're sure they're not continuing.`);
+    if(!ok) return;
+    const { error } = await sbClient.from("subject_enrollments").update({ status:"inactive", updated_at: new Date().toISOString() }).in("id", activeEnrollmentIds);
+    if(error){ alert("Couldn't mark absent: " + error.message); return; }
+    // Snapshot which cycle they were last fully paid through, and exactly which enrollments
+    // this episode covers, so the Absent page can bucket them by months-since-paid and
+    // Resume can flip back precisely these enrollments later — see phase20.
+    const candidate = unpaidCandidates(selectedMonth).find(x => x.student.id === studentId);
+    const { error: absErr } = await sbClient.from("absence_records").insert({
+      student_id: studentId,
+      last_paid_month: candidate ? candidate.lastPaidMonth : shiftMonth(selectedMonth, -1),
+      subject_enrollment_ids: activeEnrollmentIds,
+      marked_absent_by: currentUser ? currentUser.email : null
+    });
+    if(absErr) console.warn("Marked inactive, but couldn't create the absence record:", absErr);
+    await loadEnrollments();
+    render();
   }
 
   // ---------------- Tuition image download ----------------
@@ -922,18 +961,18 @@
     renderPageView();
     renderTable();
     renderReview();
-    renderStoppedTable();
+    renderUnpaidTable();
     renderUndoBar();
   }
 
-  // Switches between the Payments and Stopped views — same pattern as Student Roster's
+  // Switches between the Payments and Unpaid views — same pattern as Student Roster's
   // own view toggle: flips the seg's active state, shows/hides the right container. The
   // status filter and "View by billing group" only mean anything on the Payments table,
-  // so they're hidden (not just disabled) while Stopped is showing.
+  // so they're hidden (not just disabled) while Unpaid is showing.
   function renderPageView(){
     $$('[data-action="payments-view"]').forEach(b => b.classList.toggle("active", b.dataset.view === pageView));
     $("#view-month").hidden = pageView !== "month";
-    $("#view-stopped").hidden = pageView !== "stopped";
+    $("#view-unpaid").hidden = pageView !== "unpaid";
     const statusFilterEl = $("#statusFilter"), groupToggleEl = $("#groupViewToggle");
     if(statusFilterEl) statusFilterEl.hidden = pageView !== "month";
     if(groupToggleEl) groupToggleEl.hidden = pageView !== "month";
@@ -945,14 +984,17 @@
     const totalDue = rows.reduce((n,r)=>n+r.due, 0);
     const totalPaid = rows.reduce((n,r)=>n+r.paid, 0);
     const outstanding = Math.max(0, totalDue - totalPaid);
-    const unpaid = rows.filter(r => r.status === "unpaid").length;
+    const unpaidThisMonth = rows.filter(r => r.status === "unpaid").length;
     const pendingReview = receipts.filter(r => r.status === "pending" || r.status === "flagged").length;
-    const stopped = stoppedCandidates(ym).length;
+    // Narrower than "Unpaid this month" above — that's everyone with a zero balance so far
+    // this month, brand-new students included. This is just the ones worth following up
+    // on: people who WERE paying regularly and have gone quiet.
+    const unpaidFollowUp = unpaidCandidates(ym).length;
     $("#statsRow").innerHTML = `
       <div class="stat"><div class="n">${peso(outstanding)}</div><div class="l">Outstanding this month</div></div>
-      <div class="stat ${unpaid ? "bad" : ""}"><div class="n">${unpaid}</div><div class="l">Unpaid this month</div></div>
+      <div class="stat ${unpaidThisMonth ? "bad" : ""}"><div class="n">${unpaidThisMonth}</div><div class="l">Unpaid this month</div></div>
       <div class="stat ${pendingReview ? "warn" : ""}"><div class="n">${pendingReview}</div><div class="l">Receipts to review</div></div>
-      <div class="stat ${stopped ? "bad" : ""}"><div class="n">${stopped}</div><div class="l">Stopped</div></div>
+      <div class="stat ${unpaidFollowUp ? "bad" : ""}"><div class="n">${unpaidFollowUp}</div><div class="l">Unpaid — needs follow-up</div></div>
       <div class="stat"><div class="n">${billingGroups.length}</div><div class="l">Billing groups</div></div>
     `;
   }
@@ -1037,8 +1079,8 @@
     </tr>`;
   }
 
-  function filteredStoppedRows(){
-    let rows = stoppedCandidates(selectedMonth);
+  function filteredUnpaidRows(){
+    let rows = unpaidCandidates(selectedMonth);
     if(filters.search.trim()){
       const q = filters.search.trim().toLowerCase();
       rows = rows.filter(x => displayName(x.student).toLowerCase().includes(q));
@@ -1046,14 +1088,14 @@
     return rows;
   }
 
-  function renderStoppedTable(){
-    if(pageView !== "stopped") return;
-    const rows = filteredStoppedRows();
-    $("#stoppedTitle").textContent = `Stopped — as of ${fmtMonthLabel(selectedMonth)}`;
-    $("#stoppedCount").textContent = rows.length ? `${rows.length} student${rows.length===1?"":"s"}` : "";
-    const body = $("#stoppedBody");
+  function renderUnpaidTable(){
+    if(pageView !== "unpaid") return;
+    const rows = filteredUnpaidRows();
+    $("#unpaidTitle").textContent = `Unpaid — as of ${fmtMonthLabel(selectedMonth)}`;
+    $("#unpaidCount").textContent = rows.length ? `${rows.length} student${rows.length===1?"":"s"}` : "";
+    const body = $("#unpaidBody");
     if(!rows.length){
-      body.innerHTML = `<tr><td colspan="6"><div class="empty">Nobody matches — everyone who was paid last cycle has either paid this one too, or isn't showing as active anymore.</div></td></tr>`;
+      body.innerHTML = `<tr><td colspan="7"><div class="empty">Nobody matches — everyone who was paid last cycle has either paid this one too, or isn't showing as active anymore.</div></td></tr>`;
       return;
     }
     body.innerHTML = rows.map(x => {
@@ -1062,9 +1104,10 @@
         <td>${esc(displayName(s))}${subjectBadgesFor(s.id)}</td>
         <td class="muted">${esc(s.age_grade || "—")}</td>
         <td class="muted">${esc(groupNameFor(s.billing_group_id) || "—")}</td>
+        <td class="muted">${esc(x.dueSince)}</td>
         <td class="muted">${esc(fmtMonthLabel(x.lastPaidMonth))}</td>
         <td class="money">${peso(x.due)}</td>
-        <td><div class="row-actions"><button class="iconbtn" data-action="open-payment-history" data-student="${esc(s.id)}" title="Payment history">🕘</button><button class="btn sm" data-action="open-log-payment" data-student="${esc(s.id)}">Log payment</button></div></td>
+        <td><div class="row-actions"><button class="iconbtn" data-action="open-payment-history" data-student="${esc(s.id)}" title="Payment history">🕘</button><button class="btn sm" data-action="open-log-payment" data-student="${esc(s.id)}">Log payment</button><button class="btn sm danger" data-action="mark-absent" data-student="${esc(s.id)}">Mark absent</button></div></td>
       </tr>`;
     }).join("");
   }
@@ -1456,6 +1499,7 @@
       render();
     }
     else if(action === "open-log-payment"){ openLogPaymentModal(btn.dataset.student || null); }
+    else if(action === "mark-absent"){ await markAbsent(btn.dataset.student); }
     else if(action === "open-payment-history"){ openPaymentHistoryModal(btn.dataset.student); }
     else if(action === "edit-tuition"){ e.preventDefault(); openTuitionModal(btn.dataset.id); }
     else if(action === "download-tuition"){
