@@ -100,6 +100,12 @@
   .stat .l{ font-size:12px; color:var(--ink-muted); font-weight:600; }
   .stat.warn .n{ color:var(--warn); }
   .stat.bad .n{ color:var(--bad); }
+  button.stat{ cursor:pointer; text-align:left; font:inherit; transition: border-color .15s ease, box-shadow .15s ease, background-color .15s ease; }
+  button.stat:hover{ border-color:var(--accent); }
+  button.stat.selected{ border-color:var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); background:var(--accent-soft); }
+  button.stat.selected .l{ color:var(--accent-soft-ink); }
+  .filter-note{ display:flex; align-items:center; gap:8px; font-size:12.5px; color:var(--ink-muted); margin:-6px 0 12px; }
+  .filter-note button{ border:none; background:transparent; color:var(--accent); font-weight:600; cursor:pointer; padding:0; font-size:12.5px; }
 
   .cal-toolbar{ display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; flex-wrap:wrap; gap:10px; }
   .cal-nav{ display:flex; align-items:center; gap:8px; }
@@ -242,6 +248,7 @@
     </div>
 
     <div class="stats" id="statsRow"></div>
+    <div class="filter-note" id="filterNote" hidden></div>
 
     <div class="search-row">
       <div class="seg view-mode-toggle">
@@ -331,6 +338,7 @@
   let selectedMonth = monthDefault();
   let viewMode = "tracking"; // "tracking" | "all"
   let teacherFilterVal = "all";
+  let bucketFilter = null; // null (all buckets) | 1 | 2 | 3 | 4 — click a stat tile to filter to it
   const filters = { search: "" };
   let openNotesAbsenceId = null;
   let noteDraft = "";
@@ -505,6 +513,7 @@
     return openAbsences()
       .map(a => ({ absence: a, months: monthDiff(a.last_paid_month, selectedMonth) }))
       .filter(x => x.months !== null && x.months >= 1 && x.months <= 4)
+      .filter(x => bucketFilter === null || x.months === bucketFilter)
       .filter(x => teacherMatches(x.absence.student_id) && searchMatches(x.absence.student_id))
       .sort((a,b) => b.months - a.months);
   }
@@ -512,6 +521,7 @@
     return absences
       .filter(a => teacherMatches(a.student_id) && searchMatches(a.student_id))
       .map(a => ({ absence: a, months: monthDiff(a.last_paid_month, a.resumed_at ? monthKeyOfSomeDate(a.resumed_at) : monthKeyOfToday()) }))
+      .filter(x => bucketFilter === null || x.months === bucketFilter)
       .sort((a,b) => new Date(b.absence.marked_absent_at) - new Date(a.absence.marked_absent_at));
   }
   function monthKeyOfSomeDate(iso){
@@ -539,13 +549,24 @@
     const tracking = openAbsences().map(a => ({ absence:a, months: monthDiff(a.last_paid_month, selectedMonth) }));
     const counts = { 1:0, 2:0, 3:0, 4:0 };
     tracking.forEach(x => { if(x.months >= 1 && x.months <= 4) counts[x.months]++; });
+    // Each tile doubles as a filter — click "2 months absent" to narrow the list below to
+    // just that bucket, click it again (or "Clear filter") to go back to seeing all four.
     $("#statsRow").innerHTML = [1,2,3,4].map(n => `
-      <div class="stat ${n>=3?'bad':'warn'}"><div class="n">${counts[n]}</div><div class="l">${n} month${n===1?"":"s"} absent</div></div>
+      <button type="button" class="stat ${n>=3?'bad':'warn'}${bucketFilter===n?' selected':''}" data-action="filter-bucket" data-bucket="${n}">
+        <div class="n">${counts[n]}</div><div class="l">${n} month${n===1?"":"s"} absent</div>
+      </button>
     `).join("");
     // NEW / EO / RESUME reporting tags aren't shown here — they belong under Pipeline's
     // New students / DT results reporting instead, since each enrollment is only reported
     // once. The enrollment_type tagging itself (set on enrollment and by Resume, below)
     // stays as-is; this page just doesn't surface a count for it.
+
+    const note = $("#filterNote");
+    if(bucketFilter === null){ note.hidden = true; }
+    else{
+      note.hidden = false;
+      note.innerHTML = `Showing only ${bucketFilter} month${bucketFilter===1?"":"s"} absent — <button type="button" data-action="clear-bucket-filter">Clear filter</button>`;
+    }
   }
 
   function renderList(){
@@ -562,7 +583,10 @@
     $("#listCount").textContent = rows.length ? `${rows.length} student${rows.length===1?"":"s"}` : "";
     const body = $("#listBody");
     if(!rows.length){
-      body.innerHTML = `<tr><td colspan="8"><div class="empty">${isTracking ? "Nobody's in the 1–4 month window right now." : "No one's ever been marked absent yet."}</div></td></tr>`;
+      const emptyMsg = bucketFilter !== null
+        ? `Nobody's at exactly ${bucketFilter} month${bucketFilter===1?"":"s"} absent right now.`
+        : (isTracking ? "Nobody's in the 1–4 month window right now." : "No one's ever been marked absent yet.");
+      body.innerHTML = `<tr><td colspan="8"><div class="empty">${emptyMsg}</div></td></tr>`;
       return;
     }
     body.innerHTML = rows.map(x => {
@@ -714,6 +738,12 @@
     else if(action === "month-next"){ selectedMonth = shiftMonth(selectedMonth, 1); render(); }
     else if(action === "month-today"){ selectedMonth = monthDefault(); render(); }
     else if(action === "absent-view"){ viewMode = btn.dataset.view; render(); }
+    else if(action === "filter-bucket"){
+      const n = Number(btn.dataset.bucket);
+      bucketFilter = (bucketFilter === n) ? null : n; // clicking the active tile again clears it
+      render();
+    }
+    else if(action === "clear-bucket-filter"){ bucketFilter = null; render(); }
     else if(action === "open-notes"){ openNotesModal(btn.dataset.absence); }
     else if(action === "resume-absence"){ await resumeAbsence(btn.dataset.absence); }
   });
