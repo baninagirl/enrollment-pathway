@@ -1468,16 +1468,22 @@
     if(!subject) return "";
     return `<span class="pill subj">${esc(subject)}</span>`;
   }
-  // The NEW / EO / RETURNEE reporting tag for one student's subject enrollment — set once, at
-  // the moment it applies (here in submitNewSchedule() below, on Student Roster's own Add-to-
-  // roster form, and by the Resume action in Payments' Absent tab / Retention), never edited
-  // by hand. The underlying value stored is still "resume" (see enrollmentTagFor below) — only
-  // the displayed label reads RETURNEE. Nothing shows
-  // until the student actually has a subject_enrollments row for that subject — a diagnostic
-  // that hasn't led to a regular schedule yet has no tag, which is expected, not a bug.
+  // The NEW / EO / RETURNEE reporting tag. Set automatically the moment it applies — NEW/EO the
+  // instant a diagnostic is marked Enrolled (markOutcome below), RESUME by the Resume action in
+  // Payments' Absent tab / Retention — but overridable by hand from the New Students Edit modal.
+  // The underlying value stored is still "resume" — only the displayed label reads RETURNEE.
+  // Lives in two places depending on how far along the student is: before a regular schedule
+  // splits them into per-subject subject_enrollments rows, it's just the one tag on the student
+  // record (students.enrollment_type); once that split happens, each subject_enrollments row
+  // carries its own (seeded from the student's tag at the moment the schedule was set, then
+  // independently editable). This function checks the per-subject row first and falls back to
+  // the student-level tag, so the tag is visible and editable from the moment someone's marked
+  // Enrolled — not just once a regular schedule exists.
   function enrollmentTagFor(studentId, subject){
     const match = STATE.enrollments.find(e => e.studentId === studentId && e.subject === subject);
-    return match ? match.enrollmentType : null;
+    if(match) return match.enrollmentType;
+    const s = studentById(studentId);
+    return s ? (s.enrollmentType || null) : null;
   }
   function fmtEnrollmentTagPill(studentId, subject){
     const tag = subject ? enrollmentTagFor(studentId, subject) : null;
@@ -1685,8 +1691,12 @@
     // NEW/EO/RETURNEE is normally set automatically (see enrollmentTagFor above) — this is
     // just an override for when it was mistagged, one dropdown per subject enrollment this
     // student actually has (a student can carry both a Math and a Reading enrollment, each
-    // with their own tag).
+    // with their own tag). The tag is decided as soon as a diagnostic is marked Enrolled
+    // (markOutcome sets it on the student record itself), so a student who hasn't gotten a
+    // regular schedule yet — and so has no subject_enrollments rows — still gets one
+    // student-level dropdown here as long as they're past "diagnostic scheduled"/"not enrolled".
     const studentEnrollments = STATE.enrollments.filter(e => e.studentId === s.id);
+    const showStudentLevelTag = !studentEnrollments.length && s.status !== "diagnostic_scheduled" && s.status !== "not_enrolled";
     openModal(`
       <div class="modal-head"><h3>Edit ${esc(displayName(s))}</h3><button class="iconbtn" data-action="close-modal">✕</button></div>
       <form data-form="edit-student" data-id="${s.id}">
@@ -1735,6 +1745,16 @@
               `).join("")}
             </div>
             <div class="hint">Set automatically day to day — only override this if a row got mistagged.</div>
+          ` : showStudentLevelTag ? `
+            <div class="hint" style="margin-top:4px;">Reporting tag</div>
+            <div class="field-row">
+              <label class="field">Tag
+                <select name="tag_student">
+                  ${TAG_OPTIONS.map(o => `<option value="${o.value}" ${(s.enrollmentType||"")===o.value?"selected":""}>${esc(o.label)}</option>`).join("")}
+                </select>
+              </label>
+            </div>
+            <div class="hint">Set automatically when marked Enrolled — only override this if it got mistagged.</div>
           ` : ""}
           <div class="hint" style="margin-top:4px;">Regular schedule</div>
           ${sched ? `
@@ -1766,6 +1786,7 @@
     const name = `${firstName} ${lastName}`.trim();
     if(!id || !firstName || !lastName) return;
     const sched = scheduleFor(id);
+    const s = studentById(id);
     await guardWrite(async ()=>{
       await db.collection("students").doc(id).update({
         name, firstName, lastName,
@@ -1806,6 +1827,20 @@
           enrollmentTypeSetAt: new Date().toISOString()
         });
         tagChanges.push(`${enr.subject || "enrollment"}: ${TAG_OPTIONS.find(o=>o.value===newTag).label}`);
+      }
+      // Same override, but for a student who's been marked Enrolled and doesn't have any
+      // subject_enrollments rows yet — the tag lives on the student record itself until a
+      // regular schedule creates those rows (submitNewSchedule then seeds from this value).
+      const studentTagField = fd.get("tag_student");
+      if(studentTagField !== null){
+        const newStudentTag = studentTagField.toString();
+        if(newStudentTag !== (s ? s.enrollmentType || "" : "")){
+          await db.collection("students").doc(id).update({
+            enrollmentType: newStudentTag || null,
+            enrollmentTypeSetAt: new Date().toISOString()
+          });
+          tagChanges.push(`Tag: ${TAG_OPTIONS.find(o=>o.value===newStudentTag).label}`);
+        }
       }
       if(tagChanges.length){
         logHistory("override_enrollment_tag", `Set ${name}'s reporting tag — ${tagChanges.join(", ")}`, "student", id);
@@ -2385,13 +2420,11 @@
     // schedule row below — Pipeline doesn't ask In Center vs Remote here, so this is just a
     // starting point the teacher can flip per row from Student Roster if a slot's remote.
     const linkedSlots = [{ day: day1, time: time1, mode: "IC" }, { day: day2, time: time2, mode: "IC" }];
-    // NEW vs EO for reporting: checked once, up front, against whatever subject_enrollments
-    // already exist for this student — not whether their student record is new. A student can
-    // already exist here (came through Pipeline) but still be getting their very first subject
-    // enrollment right now, and a student enrolling in both Math and Reading in the same sitting
-    // should be counted once as NEW, not NEW+EO.
-    const hadPriorEnrollment = STATE.enrollments.some(e => e.studentId === studentId);
-    const enrollmentType = hadPriorEnrollment ? "eo" : "new";
+    // NEW vs EO for reporting was already decided when this student was marked Enrolled
+    // (markOutcome, above) — and may have been hand-corrected since from the Edit modal — so
+    // it's carried forward here rather than recomputed. The recomputation is kept only as a
+    // fallback for an older student record that somehow never got a student-level tag.
+    const enrollmentType = s.enrollmentType || (STATE.enrollments.some(e => e.studentId === studentId) ? "eo" : "new");
     const enrollmentTypeSetAt = new Date().toISOString();
     await guardWrite(async ()=>{
       await db.collection("schedules").add({
@@ -2444,6 +2477,14 @@
         followUpStatus: outcome === "not_enrolled" ? "needs_follow_up" : ""
       };
       if(outcome === "enrolled" && subject) patch.subject = subject;
+      // NEW vs EO decided right here, the moment enrollment actually happens — not whether
+      // the student record already existed, but whether they already have any subject
+      // enrollment on file (an existing Pipeline lead getting their first-ever subject still
+      // counts as NEW; someone coming back for a second subject counts as EO).
+      if(outcome === "enrolled"){
+        patch.enrollmentType = STATE.enrollments.some(e => e.studentId === d.studentId) ? "eo" : "new";
+        patch.enrollmentTypeSetAt = new Date().toISOString();
+      }
       await db.collection("students").doc(d.studentId).update(patch);
       logHistory("mark_outcome", `Marked ${d.studentName || "a student"}'s diagnostic outcome: ${outcome}${subject ? " — " + subject : ""}`, "diagnostic", id);
       toast(outcome === "enrolled" ? `Marked enrolled${subject ? " — "+subject : ""}.` : "Marked not enrolled.");
