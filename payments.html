@@ -138,6 +138,7 @@
   .pill.paid{ background:var(--good-soft); color:var(--good); }
   .pill.partial{ background:var(--warn-soft); color:var(--warn); }
   .pill.unpaid{ background:var(--bad-soft); color:var(--bad); }
+  .pill.overdue{ background:var(--bad); color:#fff; }
   .pill.pending{ background:var(--accent-soft); color:var(--accent-soft-ink); }
   .pill.flagged{ background:var(--warn-soft); color:var(--warn); }
   .pill.verified{ background:var(--good-soft); color:var(--good); }
@@ -404,6 +405,14 @@
     const prev = shiftMonth(ym, -1);
     const [y,m] = prev.split("-").map(Number);
     return new Date(y, m-1, 25).toLocaleDateString("en-US", { month:"long", day:"numeric", year:"numeric" });
+  }
+  // Tuition for coverage month ym is due the 25th of the month before it (dueDateLabel above)
+  // — the 10th of ym itself is roughly two weeks past that, which is when a still-unpaid
+  // family goes from "just hasn't paid yet" to "worth a real decision". This only flags —
+  // it never marks anyone absent on its own; see markAbsent(), which stays a manual click.
+  function isPastTenthOf(ym){
+    const [y,m] = ym.split("-").map(Number);
+    return new Date() >= new Date(y, m-1, 10);
   }
   function renderMonthNav(){
     $("#paymentsMonthLabel").textContent = fmtMonthLabel(selectedMonth);
@@ -990,11 +999,14 @@
     // this month, brand-new students included. This is just the ones worth following up
     // on: people who WERE paying regularly and have gone quiet.
     const unpaidFollowUp = unpaidCandidates(ym).length;
+    // Once we're past the 10th of the coverage month, "needs follow-up" becomes "needs a
+    // decision" — still just a flag for a person to act on, never automatic (see markAbsent()).
+    const pastTenth = isPastTenthOf(ym);
     $("#statsRow").innerHTML = `
       <div class="stat"><div class="n">${peso(outstanding)}</div><div class="l">Outstanding this month</div></div>
       <div class="stat ${unpaidThisMonth ? "bad" : ""}"><div class="n">${unpaidThisMonth}</div><div class="l">Unpaid this month</div></div>
       <div class="stat ${pendingReview ? "warn" : ""}"><div class="n">${pendingReview}</div><div class="l">Receipts to review</div></div>
-      <div class="stat ${unpaidFollowUp ? "bad" : ""}"><div class="n">${unpaidFollowUp}</div><div class="l">Unpaid — needs follow-up</div></div>
+      <div class="stat ${unpaidFollowUp ? (pastTenth ? "bad" : "warn") : ""}"><div class="n">${unpaidFollowUp}</div><div class="l">${unpaidFollowUp && pastTenth ? "Overdue — needs a decision" : "Unpaid — needs follow-up"}</div></div>
       <div class="stat"><div class="n">${billingGroups.length}</div><div class="l">Billing groups</div></div>
     `;
   }
@@ -1091,6 +1103,7 @@
   function renderUnpaidTable(){
     if(pageView !== "unpaid") return;
     const rows = filteredUnpaidRows();
+    const overdue = isPastTenthOf(selectedMonth);
     $("#unpaidTitle").textContent = `Unpaid — as of ${fmtMonthLabel(selectedMonth)}`;
     $("#unpaidCount").textContent = rows.length ? `${rows.length} student${rows.length===1?"":"s"}` : "";
     const body = $("#unpaidBody");
@@ -1100,8 +1113,10 @@
     }
     body.innerHTML = rows.map(x => {
       const s = x.student;
+      // Still just a flag, not a verdict — being overdue never marks anyone absent by itself.
+      // It just tells staff this one's worth a look; Mark absent (below) is still their call.
       return `<tr>
-        <td>${esc(displayName(s))}${subjectBadgesFor(s.id)}</td>
+        <td>${esc(displayName(s))}${subjectBadgesFor(s.id)}${overdue ? ` <span class="pill overdue" title="Still unpaid past the 10th of ${esc(fmtMonthLabel(selectedMonth))} — worth a decision.">Overdue</span>` : ""}</td>
         <td class="muted">${esc(s.age_grade || "—")}</td>
         <td class="muted">${esc(groupNameFor(s.billing_group_id) || "—")}</td>
         <td class="muted">${esc(x.dueSince)}</td>

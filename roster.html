@@ -118,6 +118,9 @@
   .pill.subj-reading{ background:var(--bad-soft); color:var(--bad); }
   .pill.status-active{ background:var(--good-soft); color:var(--good); }
   .pill.status-inactive{ background:var(--surface-2); color:var(--ink-faint); }
+  .pill.payment-paid{ background:var(--good-soft); color:var(--good); }
+  .pill.payment-unpaid{ background:var(--bad-soft); color:var(--bad); }
+  .pill.payment-overdue{ background:var(--bad); color:#fff; }
   .lvl{ font-variant-numeric:tabular-nums; font-weight:600; }
   .lvl.empty-lvl{ color:var(--ink-faint); font-weight:500; }
   .pill.mode-kc{ background:var(--accent-soft); color:var(--accent-soft-ink); }
@@ -161,6 +164,7 @@
   .modal-head h3{ font-size:15.5px; font-weight:700; }
   .modal-body{ padding:16px 18px; display:flex; flex-direction:column; gap:12px; max-height:66vh; overflow-y:auto; }
   .modal-foot{ display:flex; justify-content:space-between; gap:8px; padding:14px 18px; border-top:1px solid var(--border); }
+  .row-actions{ display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
   .iconbtn{ border:none; background:transparent; cursor:pointer; color:var(--ink-muted); padding:4px; border-radius:6px; transition: background-color .15s ease, color .15s ease, transform .08s ease; }
   .iconbtn:hover{ background:var(--surface-2); color:var(--ink); }
   .iconbtn:active{ transform:scale(.9); }
@@ -308,7 +312,7 @@
           <table class="stable">
             <thead><tr>
               <th class="selectcol" id="selectHeaderCell">#</th>
-              <th>Student</th><th>Grade</th><th>Subject</th><th>Teacher</th><th>Current level</th><th>Schedule</th><th>Mode</th><th>Status</th><th>Date enrolled</th>
+              <th>Student</th><th>Grade</th><th>Subject</th><th>Teacher</th><th>Current level</th><th>Schedule</th><th>Mode</th><th>Status</th><th>Payment</th><th>Date enrolled</th>
             </tr></thead>
             <tbody id="rosterBody"></tbody>
           </table>
@@ -362,7 +366,7 @@
         <div class="table-scroll">
           <table class="stable">
             <thead><tr>
-              <th>#</th><th>Student</th><th>Grade</th><th>Subject</th><th>Mode</th><th>LWC</th><th>NWU</th><th>No. of days</th><th>No. of months</th><th>Test date</th><th>Test level</th><th>Test time</th><th>Test score</th><th>Test group</th>
+              <th>#</th><th>Student</th><th>Grade</th><th>Subject</th><th>Payment</th><th>Mode</th><th>LWC</th><th>NWU</th><th>No. of days</th><th>No. of months</th><th>Test date</th><th>Test level</th><th>Test time</th><th>Test score</th><th>Test group</th>
             </tr></thead>
             <tbody id="repBody"></tbody>
           </table>
@@ -493,6 +497,9 @@
 
   let sbClient = null, currentUser = null, currentRole = null, currentTeacherName = null;
   let students = [], trainers = [], enrollments = [], schedules = [];
+  // Billing data, read-only here — Payments owns editing tuition/receipts/groups. Just
+  // enough to compute the PAID/UNPAID tag shown on Roster and Report (paymentStatusFor).
+  let billingGroups = [], receipts = [];
   let filters = { search:"", subject:"all", teacher:"all", mode:"all", grade:"all", status:"active" };
   let editingId = null;
   let selectedIds = new Set();
@@ -598,7 +605,7 @@
     if(started) return;
     started = true;
     viewMonth = cycleMonthFor(new Date());
-    await Promise.all([loadStudents(), loadSettings(), loadEnrollments(), loadSchedules(), loadHistory()]);
+    await Promise.all([loadStudents(), loadSettings(), loadEnrollments(), loadSchedules(), loadHistory(), loadBillingGroups(), loadReceipts()]);
     populateTeacherFilter();
     populateReportTeacherFilter();
     populateGradeFilter();
@@ -615,6 +622,12 @@
     sbClient.channel("realtime:enrollment-history")
       .on("postgres_changes", { event:"*", schema:"public", table:"enrollment_monthly_history" }, async ()=>{ await loadHistory(); if(viewMode==="report") renderReport(); })
       .subscribe();
+    // So the PAID tag flips the moment a receipt gets verified in Payments, without anyone
+    // needing to reload Roster — "payment verification automatically renews the tag" only
+    // actually feels automatic if it shows up live like this.
+    sbClient.channel("realtime:roster-payment-receipts")
+      .on("postgres_changes", { event:"*", schema:"public", table:"payment_receipts" }, async ()=>{ await loadReceipts(); renderBoth(); })
+      .subscribe();
   }
 
   // Keeps whichever view is on screen showing fresh data after a mutation, and quietly
@@ -626,9 +639,118 @@
   }
 
   async function loadStudents(){
-    const { data, error } = await sbClient.from("students").select("id,name,age_grade,first_name,last_name").order("name");
+    // status/monthly_tuition/billing_group_id are for the Payment tag (paymentStatusFor,
+    // below) — Roster otherwise never touched billing fields before.
+    const { data, error } = await sbClient.from("students").select("id,name,age_grade,first_name,last_name,status,monthly_tuition,billing_group_id").order("name");
     if(error){ console.warn(error); students = []; return; }
     students = data || [];
+  }
+  async function loadBillingGroups(){
+    const { data, error } = await sbClient.from("billing_groups").select("id,name");
+    if(error){ console.warn(error); billingGroups = []; return; }
+    billingGroups = data || [];
+  }
+  async function loadReceipts(){
+    const { data, error } = await sbClient.from("payment_receipts").select("id,student_id,status,covers_month,amount");
+    if(error){ console.warn(error); receipts = []; return; }
+    receipts = data || [];
+  }
+
+  // ---------------- Payment tag (mirrors Payments' own billing math) ----------------
+  // Roster and Report show a simple two-state PAID/UNPAID tag for whichever calendar
+  // billing month is "current" right now — separate from whatever curriculum cycle the
+  // page itself happens to be browsing (Roster's own month nav is the 21st–20th tracking
+  // cycle; billing runs on plain calendar months, same as Payments). This intentionally
+  // duplicates a few of Payments' functions rather than sharing code (no shared build step
+  // in this project) — keep these in sync with payments.html if the billing rules change.
+  function monthDefault(){
+    const d = new Date();
+    let y = d.getFullYear(), m = d.getMonth();
+    if(d.getDate() >= 25){ m += 1; if(m > 11){ m = 0; y += 1; } }
+    return y + "-" + String(m+1).padStart(2,"0");
+  }
+  function shiftMonth(ym, delta){
+    const [y,m] = ym.split("-").map(Number);
+    const d = new Date(y, m-1+delta, 1);
+    return d.getFullYear() + "-" + String(d.getMonth()+1).padStart(2,"0");
+  }
+  function monthToDate(ym){ return ym + "-01"; }
+  function activeSubjectsFor(studentId){
+    return [...new Set(enrollments.filter(e => e.student_id === studentId && (e.status||"active") === "active").map(e => e.subject))];
+  }
+  function verifiedPaidFor(studentId, ym){
+    const monthDate = monthToDate(ym);
+    return receipts
+      .filter(r => r.student_id === studentId && r.status === "verified" && r.covers_month === monthDate)
+      .reduce((sum, r) => sum + Number(r.amount||0), 0);
+  }
+  function tuitionDueFor(s){
+    const subjCount = activeSubjectsFor(s.id).length || 1;
+    return Number(s.monthly_tuition||0) * subjCount;
+  }
+  // Collapsed to just PAID/UNPAID (Payments' own richer paid/partial/unpaid stays there) —
+  // a partial payment still counts as UNPAID here, matching how the request for this tag
+  // was framed: paid in full, or not.
+  function paymentStatusFor(studentId, ym){
+    const s = students.find(x => x.id === studentId);
+    if(!s) return null;
+    const due = tuitionDueFor(s);
+    const paid = verifiedPaidFor(studentId, ym || monthDefault());
+    return paid >= due ? "paid" : "unpaid";
+  }
+  function fmtPaymentPill(studentId){
+    const ym = monthDefault();
+    const status = paymentStatusFor(studentId, ym);
+    if(status === "paid") return `<span class="pill payment-paid">Paid</span>`;
+    if(status === "unpaid"){
+      // Same escalation Payments' Unpaid tab shows — still just a flag, staff still has to
+      // click Mark absent themselves. See markAbsent() below.
+      return isPastTenthOf(ym)
+        ? `<span class="pill payment-overdue" title="Still unpaid past the 10th of ${esc(fmtMonthLabelYm(ym))} — worth a decision.">Overdue</span>`
+        : `<span class="pill payment-unpaid">Unpaid</span>`;
+    }
+    return `<span class="lvl empty-lvl">—</span>`;
+  }
+  function fmtMonthLabelYm(ym){
+    const [y,m] = ym.split("-").map(Number);
+    return new Date(y, m-1, 1).toLocaleDateString("en-US", { month:"long", year:"numeric" });
+  }
+  // Tuition for coverage month ym is due the 25th of the month before it — the 10th of ym
+  // itself is when a still-unpaid family becomes worth a real decision, not just a flag.
+  // Matches payments.html's isPastTenthOf() exactly; see markAbsent() below for what this
+  // does and doesn't trigger on its own (nothing — it's a flag, never automatic).
+  function isPastTenthOf(ym){
+    const [y,m] = ym.split("-").map(Number);
+    return new Date() >= new Date(y, m-1, 10);
+  }
+
+  // Marking absent is a deliberate, manual click here too — same rule as Payments' own
+  // Mark absent (see payments.html): the PAID/UNPAID tag above is fully automatic, driven
+  // only by payment verification, but going from UNPAID/Overdue to actually absent always
+  // needs a person to decide, since some families really are just paying very late. Flips
+  // every one of this student's active enrollments to inactive and opens their tracking
+  // record on the Absent page, exactly like Payments' version does.
+  async function markAbsent(studentId){
+    const s = students.find(x => x.id === studentId);
+    if(!s) return;
+    const activeEnrollmentIds = enrollments.filter(e => e.student_id === studentId && (e.status||"active") === "active").map(e => e.id);
+    if(!activeEnrollmentIds.length) return;
+    const ok = confirm(`Mark ${displayName(studentId)} absent?\n\nThis sets their enrollment to inactive — they'll drop off the active roster and next cycle's billing. It also starts tracking them on the Absent page, for follow-up. Only do this once you're sure they're not continuing.`);
+    if(!ok) return;
+    const { error } = await sbClient.from("subject_enrollments").update({ status:"inactive", updated_at: new Date().toISOString() }).in("id", activeEnrollmentIds);
+    if(error){ alert("Couldn't mark absent: " + error.message); return; }
+    const ym = monthDefault();
+    const prevYm = shiftMonth(ym, -1);
+    const lastPaidMonth = verifiedPaidFor(studentId, prevYm) >= tuitionDueFor(s) ? prevYm : shiftMonth(ym, -1);
+    const { error: absErr } = await sbClient.from("absence_records").insert({
+      student_id: studentId,
+      last_paid_month: lastPaidMonth,
+      subject_enrollment_ids: activeEnrollmentIds,
+      marked_absent_by: currentUser ? currentUser.email : null
+    });
+    if(absErr) console.warn("Marked inactive, but couldn't create the absence record:", absErr);
+    await loadEnrollments();
+    renderBoth();
   }
 
   // "Quijano, Nina" when we have a real first/last split; otherwise fall back to
@@ -999,7 +1121,7 @@
 
     const body = $("#repBody");
     if(!rows.length){
-      body.innerHTML = `<tr><td colspan="14"><div class="empty">${isCurrentCycle() ? "No active enrollments match this view." : `Nothing closed out for ${esc(monthLabel(viewMonth))} yet.`}</div></td></tr>`;
+      body.innerHTML = `<tr><td colspan="15"><div class="empty">${isCurrentCycle() ? "No active enrollments match this view." : `Nothing closed out for ${esc(monthLabel(viewMonth))} yet.`}</div></td></tr>`;
       return;
     }
     const editable = isCurrentCycle();
@@ -1009,6 +1131,7 @@
         <td>${esc(displayName(r.student_id, r.student_name))}</td>
         <td>${esc(gradeFor(r.student_id) || "—")}</td>
         <td><span class="pill ${r.subject==='Math'?'subj-math':'subj-reading'}">${esc(r.subject||"")}</span></td>
+        <td>${editable ? `<div class="row-actions">${fmtPaymentPill(r.student_id)}<button class="btn sm danger" data-action="mark-absent" data-student="${esc(r.student_id)}">Mark absent</button></div>` : `<span class="lvl empty-lvl" title="An archived cycle is a snapshot — payment status only makes sense for the live roster.">not tracked</span>`}</td>
         <td>${fmtMode(r.mode)}</td>
         <td>${fmtPlain(r.lwc)}</td>
         <td>${fmtPlain(r.nwu)}</td>
@@ -1147,7 +1270,7 @@
       const emptyMsg = !editable ? `Nothing closed out for ${esc(monthLabel(viewMonth))} yet.`
         : enrollments.length===0 ? "No enrollments yet — add your first one."
         : "Nothing matches your filters.";
-      body.innerHTML = `<tr><td colspan="10"><div class="empty">${emptyMsg}</div></td></tr>`;
+      body.innerHTML = `<tr><td colspan="11"><div class="empty">${emptyMsg}</div></td></tr>`;
     }else{
       body.innerHTML = rows.map((e, idx) => `
         <tr class="${editable?'clickrow':''}" ${editable?`data-action="edit" data-id="${e.id}"`:""}>
@@ -1162,6 +1285,7 @@
           <td>${e.archived ? `<span class="lvl empty-lvl" title="Schedules aren't part of a monthly close-out — only the roster's own numbers are.">not tracked</span>` : fmtSchedule(e)}</td>
           <td>${fmtMode(e.mode)}</td>
           <td><span class="pill ${(e.status||'active')==='inactive'?'status-inactive':'status-active'}">${(e.status||"active")==="inactive"?"Inactive":"Active"}</span></td>
+          <td>${e.archived || (e.status||"active")==="inactive" ? `<span class="lvl empty-lvl">—</span>` : `<div class="row-actions">${fmtPaymentPill(e.student_id)}<button class="btn sm danger" data-action="mark-absent" data-student="${esc(e.student_id)}">Mark absent</button></div>`}</td>
           <td>${e.archived ? `<span class="lvl empty-lvl" title="A monthly close-out snapshot doesn't capture the original enrollment date.">not tracked</span>` : fmtEnrolledDate(e.created_at)}</td>
         </tr>
       `).join("");
@@ -1427,10 +1551,6 @@
       const subject = fd.get("subject");
 
       let studentId = findExistingStudentId(name);
-      // Captured before studentId gets filled in below — this is what tells NEW apart from EO
-      // for head-office reporting: a brand-new student's first enrollment vs. an existing
-      // student adding another subject.
-      const isNewStudent = !studentId;
       if(studentId){
         const already = enrollments.find(en => en.student_id === studentId && en.subject === subject);
         if(already){ alert(`${name} already has a ${subject} enrollment — edit that row instead.`); return; }
@@ -1451,6 +1571,12 @@
         if(error){ alert("Couldn't add student: " + error.message); return; }
         studentId = data.id;
       }
+
+      // NEW vs EO for reporting: whether this student already has ANY subject_enrollments row,
+      // not whether their student record already existed — a student can already be in the
+      // students table (came through Pipeline) but still be getting their first-ever subject
+      // enrollment right now, which should count as NEW, not EO.
+      const isNewStudent = !enrollments.some(en => en.student_id === studentId);
 
       const enrollPayload = {
         student_id: studentId,
@@ -1620,6 +1746,7 @@
       const en = enrollments.find(x => x.id === id);
       if(en) openModal(en);
     }
+    else if(action === "mark-absent"){ await markAbsent(btn.dataset.student); }
     else if(action === "close-modal"){ closeModal(); }
     else if(action === "run-undo"){ runUndo(); }
     else if(action === "run-redo"){ runRedo(); }
