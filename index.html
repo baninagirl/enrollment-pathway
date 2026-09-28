@@ -543,6 +543,7 @@
   function fmtTime(t){
     if(!t) return "";
     let [h,m] = t.split(":").map(Number);
+    if(Number.isNaN(h) || Number.isNaN(m)) return t; // not a plain HH:MM value — show it as typed rather than "NaN:NaN"
     const ap = h >= 12 ? "PM" : "AM";
     h = h % 12; if(h===0) h = 12;
     return `${h}:${pad2(m)} ${ap}`;
@@ -550,6 +551,7 @@
   function fmtTimeCompact(t){
     if(!t) return "";
     let [h,m] = t.split(":").map(Number);
+    if(Number.isNaN(h) || Number.isNaN(m)) return t;
     const ap = h >= 12 ? "p" : "a";
     h = h % 12; if(h===0) h = 12;
     return m===0 ? `${h}${ap}` : `${h}:${pad2(m)}${ap}`;
@@ -1562,6 +1564,16 @@
 
   function renderStudents(){
     const el = $("#view-students");
+    // positionStatsRow() physically moves the real #statsRow node inside here (right after
+    // the toolbar) whenever this tab is active. If it's still parented in here from a
+    // previous render, rebuilding el.innerHTML below would destroy that real node along with
+    // everything else — so move it back out to its normal spot first, and let
+    // positionStatsRow() (called at the end of this function) re-seat it once the new
+    // toolbar exists.
+    const priorStatsEl = $("#statsRow");
+    if(priorStatsEl && priorStatsEl.parentElement === el){
+      $("#statsRowAnchor").insertAdjacentElement("afterend", priorStatsEl);
+    }
     const q = STATE.studentSearch.trim().toLowerCase();
     const monthKey = monthKeyOf(STATE.studentMonth);
     const monthLabel = STATE.studentMonth.toLocaleDateString(undefined,{ month:"long", year:"numeric" });
@@ -1624,7 +1636,7 @@
                 <td>${esc((d && d.dtTest) || "—")}</td>
                 <td class="tnum">${d ? fmtDateShort(d.date) : "—"}</td>
                 <td>${esc((d && d.score) || "—")}</td>
-                <td class="tnum">${d ? fmtTime(d.time) : "—"}</td>
+                <td class="tnum">${esc((d && d.dtTime) || "—")}</td>
               </tr>`;
             }).join("")}
           </tbody>
@@ -1662,6 +1674,10 @@
     `;
     const input = $("#studentSearchInput", el);
     input.addEventListener("input", ()=>{ STATE.studentSearch = input.value; renderStudents(); input.focus(); input.setSelectionRange(input.value.length, input.value.length); });
+    // Every caller of renderStudents() needs the stats row re-seated next to the freshly
+    // rebuilt toolbar above — not just the full renderAll() -> renderView() path, since the
+    // view-toggle and search handlers call renderStudents() directly.
+    positionStatsRow();
   }
 
   function openStudentModal(id){
@@ -1749,10 +1765,7 @@
           </div>
           ${d ? `
             <div class="hint" style="margin-top:4px;">Diagnostic test</div>
-            <div class="field-row">
-              <label class="field">Date<input type="date" name="dxDate" required value="${d.date||todayISO()}"></label>
-              <label class="field">Time<input type="time" name="dxTime" required value="${d.time||"10:00"}"></label>
-            </div>
+            <label class="field">Date<input type="date" name="dxDate" required value="${d.date||todayISO()}"></label>
             <div class="field-row">
               <label class="field">Inquiry source
                 <select name="inquiry">
@@ -1771,7 +1784,16 @@
               <label class="field">DT test<input type="text" name="dtTest" value="${esc(d.dtTest||"")}"></label>
               <label class="field">Score<input type="text" name="score" value="${esc(d.score||"")}"></label>
             </div>
-            <label class="field">Start point<input type="text" name="startPoint" value="${esc(d.startPoint||"")}" placeholder="e.g. Math 3A"></label>
+            <div class="field-row">
+              <!-- "Time" here is Kumon's standard-completion-time notation (e.g. "13/15"), not
+                   a clock time — a separate result recorded once the test is graded. The
+                   diagnostic's actual scheduled clock time (for the calendar) lives on its own
+                   "time" field, unrelated to this one and edited from the diagnostic queue's own
+                   Edit button instead. -->
+              <label class="field">Time<input type="text" name="dtTime" value="${esc(d.dtTime||"")}" placeholder="e.g. 13/15"></label>
+              <label class="field">Start point<input type="text" name="startPoint" value="${esc(d.startPoint||"")}" placeholder="e.g. Math 3A"></label>
+            </div>
+            <div class="hint">"Time" is the standard completion time result (e.g. 13/15), not the appointment clock time.</div>
             <label class="field">Diagnostic remarks<textarea name="dxNotes" rows="2" placeholder="e.g. cant be reached, try call, referred by…">${esc(d.notes||"")}</textarea></label>
           ` : ""}
           <div class="field-row">
@@ -1865,13 +1887,13 @@
           ageGrade: fd.get("ageGrade").toString().trim(),
           contact: fd.get("parentPhone").toString().trim(),
           date: fd.get("dxDate"),
-          time: fd.get("dxTime"),
           subject: fd.get("subject").toString(),
           inquiry: fd.get("inquiry").toString(),
           examiner: fd.get("examiner"),
           notes: fd.get("dxNotes").toString().trim(),
           dtTest: fd.get("dtTest").toString().trim(),
           score: fd.get("score").toString().trim(),
+          dtTime: fd.get("dtTime").toString().trim(),
           startPoint: fd.get("startPoint").toString().trim()
         });
         logHistory("edit_diagnostic", `Edited ${name}'s diagnostic booking`, "diagnostic", d.id);
@@ -2166,7 +2188,13 @@
             <label class="field">DT test<input type="text" name="dtTest" value="${esc(d.dtTest||"")}"></label>
             <label class="field">Score<input type="text" name="score" value="${esc(d.score||"")}"></label>
           </div>
-          <label class="field">Start point<input type="text" name="startPoint" value="${esc(d.startPoint||"")}" placeholder="e.g. Math 3A"></label>
+          <div class="field-row">
+            <!-- Standard-completion-time result (e.g. "13/15"), not the appointment's clock
+                 time above — same distinction as the Edit-student modal's Diagnostic test
+                 section. -->
+            <label class="field">Time<input type="text" name="dtTime" value="${esc(d.dtTime||"")}" placeholder="e.g. 13/15"></label>
+            <label class="field">Start point<input type="text" name="startPoint" value="${esc(d.startPoint||"")}" placeholder="e.g. Math 3A"></label>
+          </div>
         </div>
         <div class="modal-foot">
           <button type="button" class="btn ghost" data-action="close-modal">Cancel</button>
@@ -2468,13 +2496,14 @@
     const notes = fd.get("notes").toString().trim();
     const dtTest = fd.get("dtTest").toString().trim();
     const score = fd.get("score").toString().trim();
+    const dtTime = fd.get("dtTime").toString().trim();
     const startPoint = fd.get("startPoint").toString().trim();
     if(!firstName || !lastName || !date || !time || !examiner) return;
 
     await guardWrite(async ()=>{
       await db.collection("diagnostics").doc(id).update({
         studentName, parentName, ageGrade, contact, date, time, subject, inquiry, examiner, notes,
-        dtTest, score, startPoint
+        dtTest, score, dtTime, startPoint
       });
       // Keep the linked student record's own details in step with what was just corrected here.
       if(d.studentId && studentById(d.studentId)){
