@@ -12,7 +12,7 @@
     --ink:#1B1F27; --ink-muted:#636C7C; --ink-faint:#9AA1AF;
     --accent:#3454D1; --accent-ink:#FFFFFF; --accent-soft:#E9EDFC; --accent-soft-ink:#2A41A8;
     --good:#1E8E5A; --good-soft:#E4F5EC; --warn:#C2831F; --warn-soft:#FBF0E1; --bad:#C23B2B; --bad-soft:#FBE8E5;
-    --diag:#3454D1; --diag-soft:#E9EDFC; --train:#C4670E; --train-soft:#FBEBDA; --sched:#12897A; --sched-soft:#E1F3F0;
+    --diag:#3454D1; --diag-soft:#E9EDFC; --train:#C4670E; --train-soft:#FBEBDA; --sched:#12897A; --sched-soft:#E1F3F0; --mon:#7A3FC4; --mon-soft:#F0E8FB;
     --shadow: 0 1px 2px rgba(16,20,30,.04), 0 2px 8px rgba(16,20,30,.06), 0 20px 40px -20px rgba(16,20,30,.25);
     color-scheme: light;
   }
@@ -22,7 +22,7 @@
       --ink:#EDEFF4; --ink-muted:#9BA3B2; --ink-faint:#6B7280;
       --accent:#6C86F0; --accent-ink:#0E1220; --accent-soft:#232A47; --accent-soft-ink:#B7C3FA;
       --good:#4FC48A; --good-soft:#173226; --warn:#E0A23F; --warn-soft:#332711; --bad:#F0796A; --bad-soft:#3A1F1C;
-      --diag:#6C86F0; --diag-soft:#232A47; --train:#E3924C; --train-soft:#3A2A15; --sched:#4FC0B0; --sched-soft:#132E2A;
+      --diag:#6C86F0; --diag-soft:#232A47; --train:#E3924C; --train-soft:#3A2A15; --sched:#4FC0B0; --sched-soft:#132E2A; --mon:#B28CF0; --mon-soft:#2A2040;
       color-scheme: dark;
     }
   }
@@ -31,7 +31,7 @@
     --ink:#EDEFF4; --ink-muted:#9BA3B2; --ink-faint:#6B7280;
     --accent:#6C86F0; --accent-ink:#0E1220; --accent-soft:#232A47; --accent-soft-ink:#B7C3FA;
     --good:#4FC48A; --good-soft:#173226; --warn:#E0A23F; --warn-soft:#332711; --bad:#F0796A; --bad-soft:#3A1F1C;
-    --diag:#6C86F0; --diag-soft:#232A47; --train:#E3924C; --train-soft:#3A2A15; --sched:#4FC0B0; --sched-soft:#132E2A;
+    --diag:#6C86F0; --diag-soft:#232A47; --train:#E3924C; --train-soft:#3A2A15; --sched:#4FC0B0; --sched-soft:#132E2A; --mon:#B28CF0; --mon-soft:#2A2040;
     color-scheme: dark;
   }
 
@@ -147,6 +147,7 @@
   .pill.diag{ background:var(--diag-soft); color:var(--diag); }
   .pill.train{ background:var(--train-soft); color:var(--train); }
   .pill.sched{ background:var(--sched-soft); color:var(--sched); }
+  .pill.monitor{ background:var(--mon-soft); color:var(--mon); }
   .pill.good{ background:var(--good-soft); color:var(--good); }
   .pill.warn{ background:var(--warn-soft); color:var(--warn); }
   .pill.bad{ background:var(--bad-soft); color:var(--bad); }
@@ -160,6 +161,7 @@
   .dot.diag, .dot.diagnostic{ background:var(--diag); }
   .dot.train, .dot.training{ background:var(--train); }
   .dot.sched, .dot.schedule{ background:var(--sched); }
+  .dot.monitor{ background:var(--mon); }
 
   /* Segmented control */
   .seg{ display:inline-flex; background:var(--surface-2); border:1px solid var(--border); border-radius:9px; padding:2px; }
@@ -204,6 +206,7 @@
   .cal-chip.diagnostic{ background:var(--diag-soft); color:var(--diag); }
   .cal-chip.training{ background:var(--train-soft); color:var(--train); }
   .cal-chip.schedule{ background:var(--sched-soft); color:var(--sched); }
+  .cal-chip.monitor{ background:var(--mon-soft); color:var(--mon); }
   .cal-more{ font-size:10.5px; color:var(--ink-muted); font-weight:700; padding-left:2px; }
 
   .cal-week{ display:grid; grid-template-columns:repeat(7,minmax(0,1fr)); gap:10px; }
@@ -1070,8 +1073,12 @@
     // Same Pipeline-only rule as activeScheduleStudents() — a schedule belonging to a
     // Student Roster student (origin: 'roster') never plots dots on Pipeline's own
     // Calendar, same as it's excluded from the "Active on regular schedule" tile.
+    // A student currently on monitor shows as a Monitor schedule instead (see monitorScheduleInstances),
+    // so they aren't also plotted here as a regular student.
+    const onMonitor = new Set(STATE.enrollments.filter(isMonitorEnrollment).map(e => e.studentId));
     STATE.schedules.filter(s => {
       if(s.status !== "active" || !Array.isArray(s.slots)) return false;
+      if(onMonitor.has(s.studentId)) return false;
       const student = studentById(s.studentId);
       return !student || student.origin !== "roster";
     }).forEach(s => {
@@ -1092,6 +1099,40 @@
     return out;
   }
 
+  // Monitor students' schedules (phase25), shown on the calendar next to DT and trainings. Each monitor
+  // enrollment's own schedule row is plotted under its monitoring trainer (Miss Queenie / Miss Frixie), so
+  // picking her in the staff filter shows her monitor sessions too. A student monitored for both subjects at
+  // the same time gets one chip, not two. Unlike the regular schedule, Student Roster's own students count
+  // here (that's where the imported monitor students live), and only slots with a clock time can be placed.
+  function monitorScheduleInstances(rangeStartISO, rangeEndISO){
+    const end = parseISODate(rangeEndISO);
+    const merged = new Map();
+    STATE.enrollments.filter(isMonitorEnrollment).forEach(enr => {
+      STATE.schedules.filter(s => s.status === "active" && s.subjectEnrollmentId === enr.id && Array.isArray(s.slots)).forEach(s => {
+        s.slots.forEach(slot => {
+          const dowIndex = DOW.indexOf(slot.day);
+          if(dowIndex < 0 || !slot.time) return;
+          let d = parseISODate(rangeStartISO);
+          while(d.getDay() !== dowIndex) d = addDays(d, 1);
+          while(d <= end){
+            const iso = isoDate(d);
+            if(iso >= (s.startDate || iso)){
+              const key = `${enr.studentId}|${enr.teacher}|${iso}|${slot.time}`;
+              const hit = merged.get(key) || { type:"monitor", date:iso, time:slot.time, staff:enr.teacher || null, studentId:enr.studentId, studentName:enr.studentName, subjects:[], id:s.id };
+              if(enr.subject && !hit.subjects.includes(enr.subject)) hit.subjects.push(enr.subject);
+              merged.set(key, hit);
+            }
+            d = addDays(d, 7);
+          }
+        });
+      });
+    });
+    return [...merged.values()].map(m => ({
+      ...m,
+      label: `${displayName(studentById(m.studentId)) || m.studentName}${m.subjects.length ? " · " + m.subjects.map(x => x === "Math" ? "M" : x === "Reading" ? "R" : x).join("+") : ""}`
+    }));
+  }
+
   function gatherEvents(rangeStartISO, rangeEndISO){
     // Each diagnostic and training already carries its own examiner/trainer, so filtering by a
     // specific person just matches that field. The regular weekly schedule isn't assigned to any
@@ -1109,6 +1150,9 @@
     }
     if(STATE.calFilter === "all" || STATE.calFilter === "schedule"){
       events = events.concat(scheduleInstances(rangeStartISO, rangeEndISO).map(e => ({ ...e, staff: null })));
+    }
+    if(STATE.calFilter === "all" || STATE.calFilter === "monitor"){
+      events = events.concat(monitorScheduleInstances(rangeStartISO, rangeEndISO));
     }
     if(STATE.calStaff !== "all") events = events.filter(e => e.staff === STATE.calStaff);
     events.sort((a,b)=> (a.date+a.time).localeCompare(b.date+b.time));
@@ -1135,6 +1179,7 @@
             <button class="${STATE.calFilter==='diagnostic'?'active':''}" data-action="cal-filter" data-filter="diagnostic">Diagnostics</button>
             <button class="${STATE.calFilter==='training'?'active':''}" data-action="cal-filter" data-filter="training">Trainings</button>
             <button class="${STATE.calFilter==='schedule'?'active':''}" data-action="cal-filter" data-filter="schedule">Regular</button>
+            <button class="${STATE.calFilter==='monitor'?'active':''}" data-action="cal-filter" data-filter="monitor">Monitor</button>
           </div>
           <select data-action="cal-staff">
             <option value="all">All staff</option>
@@ -1147,6 +1192,7 @@
         <span class="item"><span class="dot diagnostic"></span>Diagnostic test</span>
         <span class="item"><span class="dot training"></span>Student training</span>
         <span class="item"><span class="dot schedule"></span>Regular schedule</span>
+        <span class="item"><span class="dot monitor"></span>Monitor schedule</span>
       </div>
     `;
   }
@@ -1184,6 +1230,7 @@
           ${events.length===0 ? `<div class="empty">Nothing booked this day.</div>` : events.map(e => {
             if(e.type==="diagnostic") return diagnosticRow(refFor("diagnostic", e.id), true);
             if(e.type==="training") return trainingRow(refFor("training", e.id), true);
+            if(e.type==="monitor") return monitorInstanceRow(e);
             return scheduleInstanceRow(e);
           }).join("")}
         </div>
@@ -1254,6 +1301,16 @@
     el.innerHTML = calToolbarHTML(label) + `<div class="cal-week">${cols}</div>`;
   }
 
+  function monitorInstanceRow(inst){
+    return `<div class="rowi">
+      <div class="who">
+        <span class="pill monitor" style="align-self:flex-start;">Monitor schedule</span>
+        <b>${esc(inst.label)}</b>
+        ${inst.staff ? `<span>Monitoring with ${esc(inst.staff)}</span>` : ""}
+      </div>
+      <div class="when tnum">${fmtTime(inst.time)}</div>
+    </div>`;
+  }
   function scheduleInstanceRow(inst){
     return `<div class="rowi">
       <div class="who">
@@ -1281,12 +1338,15 @@
       // Regular schedule slots aren't tied to one trainer, so they only show under "All staff".
       if(STATE.calStaff === "all") scheduleInstances(iso, iso).forEach(s => dayEvents.push({type:"schedule", time:s.time, ref:s}));
     }
+    if(STATE.calFilter === "all" || STATE.calFilter === "monitor"){
+      monitorScheduleInstances(iso, iso).filter(m => staffOk(m.staff)).forEach(m => dayEvents.push({type:"monitor", time:m.time, ref:m}));
+    }
     dayEvents.sort((a,b)=> (a.time||"").localeCompare(b.time||""));
 
     openModal(`
       <div class="modal-head"><h3>${fmtDateLong(iso)}</h3><button class="iconbtn" data-action="close-modal">✕</button></div>
       <div class="modal-body">
-        ${dayEvents.length===0 ? `<div class="empty">Nothing booked this day.</div>` : dayEvents.map(e => e.type==="diagnostic" ? diagnosticRow(e.ref, true) : e.type==="training" ? trainingRow(e.ref, true) : scheduleInstanceRow(e.ref)).join("")}
+        ${dayEvents.length===0 ? `<div class="empty">Nothing booked this day.</div>` : dayEvents.map(e => e.type==="diagnostic" ? diagnosticRow(e.ref, true) : e.type==="training" ? trainingRow(e.ref, true) : e.type==="monitor" ? monitorInstanceRow(e.ref) : scheduleInstanceRow(e.ref)).join("")}
       </div>
       <div class="modal-foot">
         <button class="btn primary" data-action="open-new-diagnostic" data-date="${iso}">${iconPlus()} New diagnostic</button>
@@ -1479,6 +1539,9 @@
           <button class="${status==='contacted'?'active':''}" data-action="followup-status" data-id="${s.id}" data-status="contacted">Contacted</button>
           <button class="${status==='closed'?'active':''}" data-action="followup-status" data-id="${s.id}" data-status="closed">Closed</button>
         </div>
+        ${d ? `<div style="display:flex; gap:6px; flex-wrap:wrap; align-items:center;">
+          <span class="hint" style="margin-right:2px;">Changed their mind?</span>${enrollButtons(d)}
+        </div>` : ""}
       </div>
     </div>`;
   }
