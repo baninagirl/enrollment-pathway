@@ -1110,7 +1110,15 @@
     const totalDue = rows.reduce((n,r)=>n+r.due, 0);
     const totalPaid = rows.reduce((n,r)=>n+r.paid, 0);
     const outstanding = Math.max(0, totalDue - totalPaid);
-    const unpaidThisMonth = rows.filter(r => r.status === "unpaid").length;
+    // Counted per subject, not per student: a Math + Reading student who hasn't paid is two unpaid
+    // subjects. (Payment itself is still one tuition per student, so both subjects are unpaid together.)
+    // With a teacher filter on, only that teacher's subjects count, so Miss Queenie's number is
+    // her own Math/Reading enrollments and not her students' subjects with someone else.
+    const unpaidIds = new Set(rows.filter(r => r.status === "unpaid").map(r => r.student.id));
+    const unpaidThisMonth = enrollments.filter(e =>
+      e.status === "active" && unpaidIds.has(e.student_id) &&
+      (filters.teacher === "all" || e.teacher === filters.teacher)
+    ).length;
     const pendingReview = receipts.filter(r => r.status === "pending" || r.status === "flagged").length;
     // Narrower than "Unpaid this month" above — that's everyone with a zero balance so far
     // this month, brand-new students included. This is just the ones worth following up
@@ -1123,7 +1131,7 @@
     // this row (who's unpaid, what needs review, who's overdue) but not the center-wide total.
     $("#statsRow").innerHTML = `
       ${currentRole !== "teacher" ? `<div class="stat"><div class="n">${peso(outstanding)}</div><div class="l">Outstanding this month</div></div>` : ""}
-      <div class="stat ${unpaidThisMonth ? "bad" : ""}"><div class="n">${unpaidThisMonth}</div><div class="l">Unpaid this month</div></div>
+      <div class="stat ${unpaidThisMonth ? "bad" : ""}"><div class="n">${unpaidThisMonth}</div><div class="l">Unpaid this month (by subject)</div></div>
       <div class="stat ${pendingReview ? "warn" : ""}"><div class="n">${pendingReview}</div><div class="l">Receipts to review</div></div>
       <div class="stat ${unpaidFollowUp ? (pastTenth ? "bad" : "warn") : ""}"><div class="n">${unpaidFollowUp}</div><div class="l">${unpaidFollowUp && pastTenth ? "Overdue — needs a decision" : "Unpaid — needs follow-up"}</div></div>
       <div class="stat"><div class="n">${billingGroups.length}</div><div class="l">Billing groups</div></div>
