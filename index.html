@@ -190,22 +190,23 @@
   .month-range{ font-size:11px; color:var(--ink-muted); margin-top:1px; }
   .cal-filters{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
   .cal-filters select{ width:auto; flex:0 0 auto; min-width:132px; }
-  .cal-grid{ display:grid; grid-template-columns:repeat(7,1fr); gap:1px; background:var(--border); border:1px solid var(--border); border-radius:12px; overflow:hidden; }
+  .cal-grid{ display:grid; grid-template-columns:repeat(7,minmax(0,1fr)); gap:1px; background:var(--border); border:1px solid var(--border); border-radius:12px; overflow:hidden; }
   .cal-dow{ background:var(--surface-2); padding:8px 10px; font-size:11px; font-weight:700; color:var(--ink-muted); text-transform:uppercase; letter-spacing:.04em; }
-  .cal-cell{ background:var(--surface); min-height:104px; padding:7px; display:flex; flex-direction:column; gap:4px; cursor:pointer; }
+  .cal-cell{ min-width:0; background:var(--surface); min-height:104px; padding:7px; display:flex; flex-direction:column; gap:4px; cursor:pointer; }
   .cal-cell:hover{ background:var(--surface-2); }
   .cal-cell.out{ background:var(--bg); }
   .cal-cell.out .cal-date{ color:var(--ink-faint); }
   .cal-cell.today .cal-date{ background:var(--accent); color:var(--accent-ink); }
   .cal-date{ font-size:12px; font-weight:700; width:20px; height:20px; display:flex; align-items:center; justify-content:center; border-radius:50%; }
   .cal-chip{ font-size:11px; padding:2px 6px; border-radius:6px; display:flex; align-items:center; gap:4px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:600; }
+  .cal-chip .lbl{ min-width:0; overflow:hidden; text-overflow:ellipsis; }
   .cal-chip .tm{ opacity:.75; font-variant-numeric:tabular-nums; flex:none; }
   .cal-chip.diagnostic{ background:var(--diag-soft); color:var(--diag); }
   .cal-chip.training{ background:var(--train-soft); color:var(--train); }
   .cal-chip.schedule{ background:var(--sched-soft); color:var(--sched); }
   .cal-more{ font-size:10.5px; color:var(--ink-muted); font-weight:700; padding-left:2px; }
 
-  .cal-week{ display:grid; grid-template-columns:repeat(7,1fr); gap:10px; }
+  .cal-week{ display:grid; grid-template-columns:repeat(7,minmax(0,1fr)); gap:10px; }
   .week-day{ background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:10px; min-height:180px; cursor:pointer; display:flex; flex-direction:column; gap:6px; }
   .week-day:hover{ border-color:var(--accent); }
   .week-day.today{ border-color:var(--accent); box-shadow:0 0 0 1px var(--accent); }
@@ -214,6 +215,7 @@
   .week-day .wd-num{ font-size:14px; font-weight:700; }
   .week-day.today .wd-num{ color:var(--accent); }
   .week-day .cal-chip{ white-space:normal; padding:5px 7px; }
+  .week-day .cal-chip .lbl{ overflow:visible; white-space:normal; overflow-wrap:anywhere; }
   .cal-legend{ display:flex; gap:16px; flex-wrap:wrap; margin:2px 0 14px; }
   .cal-legend .item{ display:flex; align-items:center; gap:6px; font-size:12px; font-weight:600; color:var(--ink-muted); }
 
@@ -228,7 +230,7 @@
   .rowi .acts{ display:flex; gap:6px; margin-left:auto; flex-wrap:wrap; }
 
   /* Roster */
-  .roster-grid{ display:grid; grid-template-columns:repeat(7,1fr); gap:10px; }
+  .roster-grid{ display:grid; grid-template-columns:repeat(7,minmax(0,1fr)); gap:10px; }
   .roster-day{ background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:10px; min-height:120px; }
   .roster-day h4{ font-size:12.5px; font-weight:700; margin-bottom:8px; padding-bottom:8px; border-bottom:1px solid var(--border); }
   .roster-slot{ font-size:12px; padding:6px 8px; border-radius:8px; background:var(--sched-soft); color:var(--sched); margin-bottom:6px; font-weight:600; display:flex; flex-direction:column; gap:1px; }
@@ -1218,7 +1220,7 @@
       grid.insertAdjacentHTML("beforeend", `
         <div class="cal-cell ${inMonth?"":"out"} ${iso===today?"today":""}" data-action="open-day" data-date="${iso}">
           <div class="cal-date">${d.getDate()}</div>
-          ${shown.map(e => `<div class="cal-chip ${e.type}"><span class="dot ${e.type}"></span><span class="tm">${fmtTimeCompact(e.time)}</span>${esc(e.label)}</div>`).join("")}
+          ${shown.map(e => `<div class="cal-chip ${e.type}"><span class="dot ${e.type}"></span><span class="tm">${fmtTimeCompact(e.time)}</span><span class="lbl" title="${esc(e.label)}">${esc(e.label)}</span></div>`).join("")}
           ${more>0 ? `<div class="cal-more">+${more} more</div>` : ""}
         </div>
       `);
@@ -1245,7 +1247,7 @@
       const dayEvents = byDate[iso] || [];
       return `<div class="week-day ${iso===today?"today":""}" data-action="open-day" data-date="${iso}">
         <div class="wd-head"><span class="wd-name">${DOW[i]}</span><span class="wd-num">${d.getDate()}</span></div>
-        ${dayEvents.length ? dayEvents.map(e => `<div class="cal-chip ${e.type}"><span class="dot ${e.type}"></span><span class="tm">${fmtTime(e.time)}</span>${esc(e.label)}</div>`).join("") : `<div class="hint">—</div>`}
+        ${dayEvents.length ? dayEvents.map(e => `<div class="cal-chip ${e.type}"><span class="dot ${e.type}"></span><span class="tm">${fmtTime(e.time)}</span><span class="lbl">${esc(e.label)}</span></div>`).join("") : `<div class="hint">—</div>`}
       </div>`;
     }).join("");
 
