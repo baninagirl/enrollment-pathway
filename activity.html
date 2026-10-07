@@ -272,7 +272,7 @@
     const pipelineLink = $("#navPipelineLink");
     if(pipelineLink) pipelineLink.hidden = currentRole === "teacher" || currentRole === "pending";
     const paymentsLink = $("#navPaymentsLink");
-    if(paymentsLink) paymentsLink.hidden = !(currentRole === "admin" || currentRole === "superadmin" || currentRole === "teacher");
+    if(paymentsLink) paymentsLink.hidden = !(currentRole === "admin" || currentRole === "superadmin" || currentRole === "teacher" || currentRole === "trainer_teacher");
     const absentLink = $("#navAbsentLink");
     if(absentLink) absentLink.hidden = !(currentRole === "admin" || currentRole === "superadmin" || currentRole === "teacher" || currentRole === "trainer_teacher");
     const adminLink = $("#navAdminLink");

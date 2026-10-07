@@ -425,6 +425,7 @@
   let groupView = false;
   let pageView = "month"; // "month" | "unpaid" | "absent"
   const filters = { search: "", status: "all", teacher: "all" };
+  function isTeacherScoped(){ return currentRole === "teacher" || currentRole === "trainer_teacher"; }
   function isBillingAdmin(){ return currentRole === "admin" || currentRole === "superadmin"; }
 
   // Site-wide edit history (Activity page, admin/superadmin only) — every page logs its own
@@ -519,7 +520,7 @@
   function populateTeacherFilter(){
     const sel = $("#teacherFilter");
     if(!sel) return;
-    if(currentRole === "teacher"){
+    if(isTeacherScoped()){
       sel.innerHTML = `<option value="${esc(currentTeacherName||"")}">${esc(currentTeacherName||"You")}</option>`;
       sel.disabled = true;
       sel.value = currentTeacherName || "";
@@ -609,11 +610,11 @@
     applyRoleGate();
   }
 
-  // Payments is admin/superadmin/teacher — same rule the database itself enforces (see
+  // Payments is admin/superadmin/teacher/trainer_teacher — same rule the database itself enforces (see
   // phase16-payments.sql + phase17-teacher-payments-access.sql). A pending account gets
   // the same friendly gate Student roster shows a pending account, rather than a page
   // that just loads nothing.
-  function isAuthorized(){ return currentRole === "admin" || currentRole === "superadmin" || currentRole === "teacher"; }
+  function isAuthorized(){ return currentRole === "admin" || currentRole === "superadmin" || currentRole === "teacher" || currentRole === "trainer_teacher"; }
   function applyRoleGate(){
     const blocked = !isAuthorized();
     const gate = $("#pendingGate");
@@ -667,7 +668,7 @@
     if(!isAuthorized()) return;
     await Promise.all([loadStudents(), loadSettings(), loadEnrollments(), loadBillingGroups(), loadReceipts(), loadAbsences()]);
     populateTeacherFilter();
-    if(currentRole === "teacher" && currentTeacherName){ filters.teacher = currentTeacherName; }
+    if(isTeacherScoped() && currentTeacherName){ filters.teacher = currentTeacherName; }
     render();
 
     sbClient.channel("realtime:payment_receipts")
@@ -1174,7 +1175,7 @@
     // Total amount due is an admin/superadmin number — a teacher gets everything else on
     // this row (who's unpaid, what needs review, who's overdue) but not the center-wide total.
     $("#statsRow").innerHTML = `
-      ${currentRole !== "teacher" ? `<div class="stat"><div class="n">${peso(outstanding)}</div><div class="l">Outstanding this month</div></div>` : ""}
+      ${!isTeacherScoped() ? `<div class="stat"><div class="n">${peso(outstanding)}</div><div class="l">Outstanding this month</div></div>` : ""}
       <div class="stat ${unpaidThisMonth ? "bad" : ""}"><div class="n">${unpaidThisMonth}</div><div class="l">Unpaid this month (by subject)</div></div>
       <div class="stat ${pendingReview ? "warn" : ""}"><div class="n">${pendingReview}</div><div class="l">Receipts to review</div></div>
       <div class="stat ${unpaidFollowUp ? (pastTenth ? "bad" : "warn") : ""}"><div class="n">${unpaidFollowUp}</div><div class="l">${unpaidFollowUp && pastTenth ? "Overdue — needs a decision" : "Unpaid — needs follow-up"}</div></div>

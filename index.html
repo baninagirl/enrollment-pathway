@@ -788,7 +788,7 @@
     const adminLink = $("#navAdminLink");
     if(adminLink) adminLink.hidden = currentRole !== "superadmin";
     const paymentsLink = $("#navPaymentsLink");
-    if(paymentsLink) paymentsLink.hidden = !(currentRole === "admin" || currentRole === "superadmin" || currentRole === "teacher");
+    if(paymentsLink) paymentsLink.hidden = !(currentRole === "admin" || currentRole === "superadmin" || currentRole === "teacher" || currentRole === "trainer_teacher");
     const absentLink = $("#navAbsentLink");
     if(absentLink) absentLink.hidden = !(currentRole === "admin" || currentRole === "superadmin" || currentRole === "teacher" || currentRole === "trainer_teacher");
     const activityLink = $("#navActivityLink");
