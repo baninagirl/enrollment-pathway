@@ -1733,7 +1733,8 @@
     if(priorStatsEl && priorStatsEl.parentElement === el){
       $("#statsRowAnchor").insertAdjacentElement("afterend", priorStatsEl);
     }
-    const q = STATE.studentSearch.trim().toLowerCase();
+    const normSearch = t => String(t||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/[,.]/g," ");
+    const qTokens = normSearch(STATE.studentSearch).split(/\s+/).filter(Boolean);
     const monthKey = monthKeyOf(STATE.studentMonth);
     const monthLabel = STATE.studentMonth.toLocaleDateString(undefined,{ month:"long", year:"numeric" });
     const monthRange = cycleRangeLabel(STATE.studentMonth);
@@ -1743,7 +1744,9 @@
       // roster — a booked-but-not-yet-tested student, or one marked not enrolled, isn't
       // on the roster yet (they're still tracked from the Enrollment tab).
       .filter(s => s.status !== "diagnostic_scheduled" && s.status !== "not_enrolled")
-      .filter(s => !q || s.name.toLowerCase().includes(q) || (s.parentName||"").toLowerCase().includes(q))
+      // Every word typed must appear in the student's or parent's name, in any order and with
+      // or without commas/accents, so "santos ava", "Santos, Ava" and "ava s" all find Ava Santos.
+      .filter(s => !qTokens.length || (() => { const hay = normSearch(s.name + " " + (s.firstName||"") + " " + (s.lastName||"") + " " + (s.parentName||"")); return qTokens.every(t => hay.includes(t)); })())
       .filter(s => STATE.studentMonthMode === "all" || studentCohortMonthKey(s) === monthKey)
       .sort((a,b)=> (b.createdAt||"").localeCompare(a.createdAt||""));
 
@@ -1758,7 +1761,7 @@
     });
 
     const isReport = STATE.studentsView === "report";
-    const emptyMsg = q ? "No students match that search." : STATE.studentMonthMode==="month" ? `No enrolled students on the ${esc(monthLabel)} roster yet. Try <b>All time</b> — a student shows up here once their diagnostic is marked <b>Enrolled</b>.` : "No enrolled students yet. A student shows up here once their diagnostic is marked <b>Enrolled</b>.";
+    const emptyMsg = qTokens.length ? "No students match that search." : STATE.studentMonthMode==="month" ? `No enrolled students on the ${esc(monthLabel)} roster yet. Try <b>All time</b> — a student shows up here once their diagnostic is marked <b>Enrolled</b>.` : "No enrolled students yet. A student shows up here once their diagnostic is marked <b>Enrolled</b>.";
 
     const listTable = `<table class="stable">
           <thead><tr><th>#</th><th>Student</th><th>Grade</th><th>Subject</th><th>Tag</th><th>Schedule</th><th>Mode</th><th>Status</th></tr></thead>
@@ -1834,7 +1837,16 @@
       </div>
     `;
     const input = $("#studentSearchInput", el);
-    input.addEventListener("input", ()=>{ STATE.studentSearch = input.value; renderStudents(); input.focus(); input.setSelectionRange(input.value.length, input.value.length); });
+    // renderStudents() rebuilds this whole toolbar, which destroys the input being typed in —
+    // so after each re-render, focus the NEW input (not the old, detached one) and put the
+    // cursor back at the end. Skipped mid-IME-composition so accented/CJK typing isn't broken.
+    input.addEventListener("input", (ev)=>{
+      if(ev.isComposing) return;
+      STATE.studentSearch = input.value;
+      renderStudents();
+      const fresh = $("#studentSearchInput");
+      if(fresh){ fresh.focus(); const n = fresh.value.length; fresh.setSelectionRange(n, n); }
+    });
     // Every caller of renderStudents() needs the stats row re-seated next to the freshly
     // rebuilt toolbar above — not just the full renderAll() -> renderView() path, since the
     // view-toggle and search handlers call renderStudents() directly.
