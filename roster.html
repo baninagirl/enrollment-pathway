@@ -880,6 +880,45 @@
     const { error } = await sbClient.from("subject_enrollments").delete().in("id", ids);
     if(error) throw error;
   }
+  /* Deleting a student's last enrollment here leaves their student record behind in Pipeline's New
+     students list. So after an enrollment delete, anyone left with no enrollments at all is offered up
+     for removal too (the admin is asked — a student with real diagnostic/training history is a call
+     for a person to make). The student's diagnostics, trainings and own schedule rows go with them,
+     so those are snapshotted for undo. */
+  function orphanedStudentIds(deletedIds){
+    const gone = new Set(deletedIds);
+    const sids = [...new Set(deletedIds.map(id => { const r = enrollments.find(e => e.id === id); return r ? r.student_id : null; }).filter(Boolean))];
+    return sids.filter(sid => !enrollments.some(e => e.student_id === sid && !e.archived && !gone.has(e.id)));
+  }
+  async function askAlsoDeleteStudents(deletedIds){
+    const sids = orphanedStudentIds(deletedIds);
+    if(!sids.length) return [];
+    const names = sids.map(sid => { const r = enrollments.find(e => e.student_id === sid); return displayName(sid, r ? r.student_name : ""); });
+    const list = names.length <= 3 ? names.join(", ") : `${names.slice(0,3).join(", ")} and ${names.length-3} more`;
+    const ok = confirm(`${list} ${names.length===1?"has":"have"} no other enrollments left.\n\nAlso remove ${names.length===1?"them":"them all"} from Pipeline's New students list? That deletes their diagnostic and training records too.\n\nOK = remove everywhere   Cancel = keep in Pipeline\n(You can undo this from the Undo button.)`);
+    return ok ? sids : [];
+  }
+  async function snapshotStudentCascade(studentId){
+    const [stu, diag, trn, sch] = await Promise.all([
+      sbClient.from("students").select("*").eq("id", studentId).maybeSingle(),
+      sbClient.from("diagnostics").select("*").eq("student_id", studentId),
+      sbClient.from("trainings").select("*").eq("student_id", studentId),
+      sbClient.from("schedules").select("*").eq("student_id", studentId).is("subject_enrollment_id", null)
+    ]);
+    return { student: stu.data || null, diagnostics: diag.data || [], trainings: trn.data || [], schedules: sch.data || [] };
+  }
+  async function performDeleteStudents(sids){
+    if(!sids.length) return;
+    const { error } = await sbClient.from("students").delete().in("id", sids);
+    if(error) throw error;
+  }
+  async function restoreStudentCascade(snap){
+    if(!snap.student) return;
+    let r = await sbClient.from("students").insert(snap.student); if(r.error) throw r.error;
+    if(snap.diagnostics.length){ r = await sbClient.from("diagnostics").insert(snap.diagnostics); if(r.error) throw r.error; }
+    if(snap.trainings.length){ r = await sbClient.from("trainings").insert(snap.trainings); if(r.error) throw r.error; }
+    if(snap.schedules.length){ r = await sbClient.from("schedules").insert(snap.schedules); if(r.error) throw r.error; }
+  }
 
   // Reads the repeated sched_day/sched_time/sched_mode fields back off the form, in the
   // order the rows are in — FormData.getAll() preserves document order for repeated
@@ -985,7 +1024,16 @@
   // cycle if the trainer moves them to a teacher early. Gone once the cycle rolls over.
   function newTagHtml(e){
     if(e.archived || !e.monitor_cycle || e.monitor_cycle !== cycleKeyOf(new Date())) return "";
-    return `<span class="pill new-tag" title="Started on the roster this cycle via monitor schedule">NEW · ${esc(monitorCycleLabel(e.monitor_cycle))}</span>`;
+    return `<span class="pill new-tag" title="New on the roster this month">NEW · ${esc(monitorCycleLabel(e.monitor_cycle))}</span>`;
+  }
+  // The NEW tag is just a cycle marker (monitor_cycle = "YYYY-MM"): it shows on a row for the rest of
+  // that cycle and disappears when the next one starts. Monitor students get it automatically;
+  // for everyone else it's set by hand here, from the Add / Edit forms or in bulk.
+  function newTagSelectHtml(current, name){
+    const nowKey = cycleKeyOf(new Date());
+    const opts = [`<option value="">Not marked NEW</option>`, `<option value="${nowKey}" ${current===nowKey?"selected":""}>NEW · ${esc(monitorCycleLabel(nowKey))}</option>`];
+    if(current && current !== nowKey) opts.push(`<option value="${esc(current)}" selected>NEW · ${esc(monitorCycleLabel(current))} (past)</option>`);
+    return `<select name="${name||"new_cycle"}">${opts.join("")}</select>`;
   }
   function monitorRowsInScope(){
     const locked = isTeacherScoped() ? currentTeacherName : null;
@@ -1488,6 +1536,7 @@
             </select>
           </label>
           <label class="field">Teacher<select name="teacher" ${isTeacherScoped()?"disabled":""}>${teacherOptions(enrollment.teacher)}</select></label>
+          ${enrollment.is_monitor && !enrollment.archived ? "" : `<label class="field">NEW tag${newTagSelectHtml(enrollment.monitor_cycle || "")}<span class="hint" style="font-size:11.5px; margin-top:4px; display:block;">Shows a NEW label next to their name for the rest of the month. It clears itself when the next month starts.</span></label>`}
           <div class="field-row">
             <label class="field">Current level<select name="current_level" id="curLevelSelect">${levelOptions(subject, enrollment.current_level)}</select></label>
             <label class="field">Current page<input type="text" name="current_page" value="${esc(enrollment.current_page||"")}" placeholder="e.g. 130"></label>
@@ -1535,6 +1584,7 @@
             <label class="field">Current level<select name="current_level" id="curLevelSelect">${levelOptions(subject, null)}</select></label>
             <label class="field">Current page<input type="text" name="current_page" placeholder="e.g. 130"></label>
           </div>
+          <label class="field" style="flex-direction:row; align-items:center; gap:8px;"><input type="checkbox" name="mark_new" value="1" checked style="width:auto;"> Mark as NEW for ${esc(monitorCycleLabel(cycleKeyOf(new Date())))}</label>
           ${scheduleSectionHtml(null, null)}
           <p class="hint" style="font-size:12px; color:var(--ink-muted); margin:8px 0 0;">For a student who still needs a diagnostic test, add them from Pipeline instead — this is for a student already enrolled and taking classes.</p>
         </div>
@@ -1574,6 +1624,11 @@
             <option value="__nochange__" selected>No change</option>
             <option value="active">Active</option>
             <option value="inactive">Inactive</option>
+          </select></label>
+          <label class="field">NEW tag<select name="new_cycle">
+            <option value="__nochange__" selected>No change</option>
+            <option value="${cycleKeyOf(new Date())}">Mark NEW · ${esc(monitorCycleLabel(cycleKeyOf(new Date())))}</option>
+            <option value="__clear__">Remove NEW</option>
           </select></label>
           <div class="field-row">
             <label class="field">Current level<input type="text" name="current_level" placeholder="No change"></label>
@@ -1681,6 +1736,8 @@
           current_level: fd.get("current_level") || null,
           current_page: fd.get("current_page") || null,
           mode: fd.get("mode") || null,
+          // NEW tag: only present on the form for non-monitor rows (monitor rows are tagged automatically).
+          ...(fd.get("new_cycle") !== null ? { monitor_cycle: (fd.get("new_cycle") || null) } : {}),
           // LWC/NWU/No. of days/No. of months/Achievement test are edited on the
           // Reporting page now, not here. Goal level/page and Award/Actual are hidden
           // from this form too (for now) — all deliberately left out of this patch so
@@ -1752,7 +1809,9 @@
         // adding another subject is tagged EO. (RESUME — shown as RETURNEE — is set
         // separately, by the Resume action in Payments' Absent tab / Retention.)
         enrollment_type: isNewStudent ? "new" : "eo",
-        enrollment_type_set_at: new Date().toISOString()
+        enrollment_type_set_at: new Date().toISOString(),
+        // The visible NEW label for this month (separate from the reporting tag above).
+        monitor_cycle: fd.get("mark_new") ? cycleKeyOf(new Date()) : null
       };
       const { data: newEnrollment, error: enrollError } = await sbClient.from("subject_enrollments").insert(enrollPayload).select().single();
       if(enrollError){ alert("Couldn't save: " + enrollError.message); return; }
@@ -1806,10 +1865,15 @@
         if(v) patch[key] = v;
       });
 
-      if(Object.keys(patch).length === 0){ alert("Nothing was changed — pick at least one field to update, or Cancel."); return; }
+      // NEW tag only applies to non-monitor rows (monitor rows are tagged automatically, and clearing
+      // their cycle would make the monitor flag permanent), so it's applied as its own update below.
+      const newChoice = (fd.get("new_cycle") || "__nochange__").toString();
+      const touchNew = newChoice !== "__nochange__";
+      if(Object.keys(patch).length === 0 && !touchNew){ alert("Nothing was changed — pick at least one field to update, or Cancel."); return; }
       patch.updated_at = new Date().toISOString();
 
       const ids = [...selectedIds];
+      const newIds = touchNew ? ids.filter(id => { const r = enrollments.find(e => e.id === id); return r && !r.is_monitor; }) : [];
       // Snapshot each row's OWN prior values for just the fields this patch touches —
       // rows can differ from each other, so undo has to restore each one individually
       // rather than reversing the patch as if every row started the same.
@@ -1818,11 +1882,17 @@
         const row = enrollments.find(e => e.id === id);
         const prior = { id };
         patchKeys.forEach(k => { prior[k] = row ? row[k] : null; });
+        if(newIds.includes(id)) prior.monitor_cycle = row ? row.monitor_cycle : null;
         return prior;
       });
 
       const { error } = await sbClient.from("subject_enrollments").update(patch).in("id", ids);
       if(error){ alert("Couldn't apply changes: " + error.message); return; }
+      if(newIds.length){
+        const { error: nErr } = await sbClient.from("subject_enrollments").update({ monitor_cycle: newChoice === "__clear__" ? null : newChoice }).in("id", newIds);
+        if(nErr){ alert("Other changes saved, but the NEW tag couldn't be applied: " + nErr.message); }
+        else patchKeys.push("new tag");
+      }
       closeModal();
       selectedIds.clear();
       await loadEnrollments(); renderBoth();
@@ -1918,16 +1988,18 @@
       const id = btn.dataset.id;
       if(!confirm("Delete this enrollment? You can undo this from the Undo button afterward.")) return;
       const snap = await snapshotEnrollmentCascade(id);
-      try{ await performDeleteEnrollments([id]); }
+      const alsoStudents = await askAlsoDeleteStudents([id]);
+      const studentSnaps = await Promise.all(alsoStudents.map(snapshotStudentCascade));
+      try{ await performDeleteEnrollments([id]); await performDeleteStudents(alsoStudents); }
       catch(error){ alert("Couldn't delete: " + error.message); return; }
       closeModal();
-      await Promise.all([loadEnrollments(), loadSchedules()]); renderBoth();
+      await Promise.all([loadStudents(), loadEnrollments(), loadSchedules()]); renderBoth();
 
-      const label = `Delete ${(snap.enrollmentRow && snap.enrollmentRow.student_name) || "enrollment"}`;
+      const label = `Delete ${(snap.enrollmentRow && snap.enrollmentRow.student_name) || "enrollment"}${alsoStudents.length ? " and student record" : ""}`;
       logHistory("delete_enrollment", label, "subject_enrollment", id);
       pushUndo(label,
-        async ()=>{ await restoreEnrollmentCascade(snap); await Promise.all([loadEnrollments(), loadSchedules()]); renderBoth(); },
-        async ()=>{ await performDeleteEnrollments([id]); await Promise.all([loadEnrollments(), loadSchedules()]); renderBoth(); }
+        async ()=>{ for(const ss of studentSnaps) await restoreStudentCascade(ss); await restoreEnrollmentCascade(snap); await Promise.all([loadStudents(), loadEnrollments(), loadSchedules()]); renderBoth(); },
+        async ()=>{ await performDeleteEnrollments([id]); await performDeleteStudents(alsoStudents); await Promise.all([loadStudents(), loadEnrollments(), loadSchedules()]); renderBoth(); }
       );
     }
     else if(action === "toggle-select"){
@@ -1948,19 +2020,22 @@
       if(!confirm(`Delete ${n} enrollment${n===1?"":"s"}? You can undo this from the Undo button afterward.`)) return;
       const ids = [...selectedIds];
       const snaps = await Promise.all(ids.map(id => snapshotEnrollmentCascade(id)));
-      try{ await performDeleteEnrollments(ids); }
+      const alsoStudents = await askAlsoDeleteStudents(ids);
+      const studentSnaps = await Promise.all(alsoStudents.map(snapshotStudentCascade));
+      try{ await performDeleteEnrollments(ids); await performDeleteStudents(alsoStudents); }
       catch(error){ alert("Couldn't delete: " + error.message); return; }
       selectedIds.clear();
-      await Promise.all([loadEnrollments(), loadSchedules()]); renderBoth();
+      await Promise.all([loadStudents(), loadEnrollments(), loadSchedules()]); renderBoth();
 
-      const label = `Delete ${ids.length} enrollment${ids.length===1?"":"s"}`;
+      const label = `Delete ${ids.length} enrollment${ids.length===1?"":"s"}${alsoStudents.length ? ` and ${alsoStudents.length} student record${alsoStudents.length===1?"":"s"}` : ""}`;
       logHistory("bulk_delete_enrollments", label, "subject_enrollment", ids.join(","));
       pushUndo(label,
         async ()=>{
+          for(const ss of studentSnaps) await restoreStudentCascade(ss);
           for(const snap of snaps) await restoreEnrollmentCascade(snap);
-          await Promise.all([loadEnrollments(), loadSchedules()]); renderBoth();
+          await Promise.all([loadStudents(), loadEnrollments(), loadSchedules()]); renderBoth();
         },
-        async ()=>{ await performDeleteEnrollments(ids); await Promise.all([loadEnrollments(), loadSchedules()]); renderBoth(); }
+        async ()=>{ await performDeleteEnrollments(ids); await performDeleteStudents(alsoStudents); await Promise.all([loadStudents(), loadEnrollments(), loadSchedules()]); renderBoth(); }
       );
     }
     else if(action === "add-schedule-row"){

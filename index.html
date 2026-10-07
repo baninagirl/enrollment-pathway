@@ -1920,7 +1920,8 @@
           <div data-teach="Math" ${show.Math?"":"hidden"}>${mk("Math")}</div>
           <div data-teach="Reading" ${show.Reading?"":"hidden"}>${mk("Reading")}</div>
         </div>
-        <div class="hint">Picking a teacher puts the student on that teacher's roster. Add their days and times later with <b>New regular schedule</b>.</div>
+        <label class="field" style="flex-direction:row; align-items:center; gap:8px; margin-top:6px;"><input type="checkbox" name="markNew" value="1" checked style="width:auto;"> Mark as NEW for ${esc(monitorCycleLabel(currentCycleKey()))} <span class="hint" style="margin:0;">(when this adds them to a roster)</span></label>
+        <div class="hint">Picking a teacher puts the student on that teacher's roster. Add their days and times later with <b>New regular schedule</b>. You can change the NEW tag any time from the teacher's roster.</div>
       </div>`;
   }
   async function applyTeacherPicks(studentId, name, subject, fd, enrollmentType){
@@ -1938,6 +1939,7 @@
       }else{
         const row = { studentId, studentName: name, subject: subj, teacher: pick };
         if(enrollmentType){ row.enrollmentType = enrollmentType; row.enrollmentTypeSetAt = new Date().toISOString(); }
+        if(fd.get("markNew")) row.monitorCycle = currentCycleKey();
         await db.collection("subject_enrollments").add(row);
         changes.push(`${subj}: ${pick}`);
       }
