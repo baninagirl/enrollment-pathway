@@ -1895,6 +1895,56 @@
     { value:"eo", label:"EO" },
     { value:"resume", label:"RETURNEE" }
   ];
+  // Class teacher picker for Add / Edit student. One dropdown per subject the student takes
+  // (swapped by the Subject dropdown, see wireDtSubjectSwap). Picking a teacher creates (or updates)
+  // that subject's enrollment, which is what puts the student on that teacher's roster. Names come
+  // from Settings > Trainers and are saved exactly as listed, since a teacher's own login only
+  // sees rows whose teacher matches their profile name.
+  function teacherPickBlock(subject, studentId){
+    const mk = (subj) => {
+      const ex = studentId ? STATE.enrollments.find(e => e.studentId === studentId && e.subject === subj && !e.archived) : null;
+      const cur = ex ? (ex.teacher || "") : "";
+      const opts = STATE.settings.trainers.slice();
+      if(cur && !opts.includes(cur)) opts.push(cur);
+      return `<label class="field">${subj} teacher
+        <select name="teacher${subj}">
+          <option value="">${ex ? "— none —" : "Choose…"}</option>
+          ${opts.map(o=>`<option value="${esc(o)}" ${cur===o?"selected":""}>${esc(o)}</option>`).join("")}
+        </select>
+      </label>`;
+    };
+    const show = { Math: subject==="Math"||subject==="Both", Reading: subject==="Reading"||subject==="Both" };
+    return `
+      <div data-teach-wrap ${show.Math||show.Reading?"":"hidden"}>
+        <div class="field-row">
+          <div data-teach="Math" ${show.Math?"":"hidden"}>${mk("Math")}</div>
+          <div data-teach="Reading" ${show.Reading?"":"hidden"}>${mk("Reading")}</div>
+        </div>
+        <div class="hint">Picking a teacher puts the student on that teacher's roster. Add their days and times later with <b>New regular schedule</b>.</div>
+      </div>`;
+  }
+  async function applyTeacherPicks(studentId, name, subject, fd, enrollmentType){
+    const changes = [];
+    for(const subj of ["Math","Reading"]){
+      if(!(subject === "Both" || subject === subj)) continue;
+      const pick = (fd.get("teacher"+subj) || "").toString();
+      if(!pick) continue;
+      const ex = STATE.enrollments.find(e => e.studentId === studentId && e.subject === subj && !e.archived);
+      if(ex){
+        if((ex.teacher||"") !== pick){
+          await db.collection("subject_enrollments").doc(ex.id).update({ teacher: pick });
+          changes.push(`${subj}: ${pick}`);
+        }
+      }else{
+        const row = { studentId, studentName: name, subject: subj, teacher: pick };
+        if(enrollmentType){ row.enrollmentType = enrollmentType; row.enrollmentTypeSetAt = new Date().toISOString(); }
+        await db.collection("subject_enrollments").add(row);
+        changes.push(`${subj}: ${pick}`);
+      }
+    }
+    if(changes.length) logHistory("assign_teacher", `Set ${name}'s teacher — ${changes.join(", ")}`, "student", studentId);
+    return changes.length;
+  }
   // DT results for a student who has no diagnostic booking on file (e.g. added straight to the
   // roster from the old spreadsheet). Same fields as the booking-based form, but both layouts are
   // rendered and the Subject dropdown swaps between them — "Both" means one result set per subject.
@@ -1951,10 +2001,18 @@
     const apply = () => {
       const both = sel.value === "Both";
       const one = f.querySelector("[data-dt-single]"), two = f.querySelector("[data-dt-both]");
-      if(!one || !two) return;
-      one.hidden = both; two.hidden = !both;
-      one.querySelectorAll("input").forEach(i => i.disabled = both);
-      two.querySelectorAll("input").forEach(i => i.disabled = !both);
+      if(one && two){
+        one.hidden = both; two.hidden = !both;
+        one.querySelectorAll("input").forEach(i => i.disabled = both);
+        two.querySelectorAll("input").forEach(i => i.disabled = !both);
+      }
+      const wrap = f.querySelector("[data-teach-wrap]");
+      if(wrap){
+        const v = sel.value;
+        const m = wrap.querySelector('[data-teach="Math"]'), r = wrap.querySelector('[data-teach="Reading"]');
+        m.hidden = !(v==="Math"||v==="Both"); r.hidden = !(v==="Reading"||v==="Both");
+        wrap.hidden = m.hidden && r.hidden;
+      }
     };
     sel.addEventListener("change", apply);
   }
@@ -2025,6 +2083,7 @@
               </select>
             </label>
           </div>
+          ${teacherPickBlock(s.subject, s.id)}
           ${d ? `
             <div class="hint" style="margin-top:4px;">Diagnostic test</div>
             <label class="field">Date<input type="date" name="dxDate" required value="${d.date||todayISO()}"></label>
@@ -2169,6 +2228,7 @@
       // This student's diagnostic booking is edited from the same form (see the "Diagnostic
       // test" section in openEditStudentModal above) rather than a separate modal — the
       // fields are only present when `d` exists, so this only runs then.
+      await applyTeacherPicks(id, name, fd.get("subject").toString(), fd, (s && s.enrollmentType) || (fd.get("tag_student") ? fd.get("tag_student").toString() : ""));
       if(!d){
         const dt = readDtResults(fd);
         if(dt){
@@ -2295,6 +2355,7 @@
               </select>
             </label>
           </div>
+          ${teacherPickBlock("", null)}
           ${dtResultsBlockNoBooking("")}
           <p class="hint">For a student already going through a diagnostic booking, use <b>New diagnostic booking</b> instead — this is for adding someone straight onto the roster (e.g. an existing student from your old spreadsheet).</p>
         </div>
@@ -2324,6 +2385,7 @@
         status: "active", followUpStatus: "", followUpNotes: "",
         createdAt: new Date().toISOString()
       });
+      if(newStudent) await applyTeacherPicks(newStudent.id, name, fd.get("subject").toString(), fd, "");
       const dt = readDtResults(fd);
       if(dt && newStudent){
         await createRecordedDiagnostic(newStudent.id, {
