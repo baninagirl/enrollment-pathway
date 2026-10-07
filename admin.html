@@ -339,9 +339,11 @@
   }
 
   function teacherNameCell(p){
-    if(p.role !== "teacher" && p.role !== "trainer_teacher") return "";
+    // Every account can have a name. For teacher roles it's the name rosters match on; for anyone else
+    // it's just their name (it is not added to the Trainers list and changes nothing about their access).
+    const isTeach = p.role === "teacher" || p.role === "trainer_teacher";
     return `<input type="text" class="teacher-name-select" data-action="change-teacher-name" data-id="${p.id}"
-      list="trainerNamesListInline" autocomplete="off" value="${esc(p.teacher_name||"")}" placeholder="Type a name…" style="max-width:160px;">`;
+      ${isTeach ? `list="trainerNamesListInline"` : ""} autocomplete="off" value="${esc(p.teacher_name||"")}" placeholder="${isTeach ? "Type a name…" : "Add a name…"}" style="max-width:160px;">`;
   }
 
   async function renderAdmin(){
@@ -360,12 +362,12 @@
     const sharedTrainerList = $("#trainerNamesListInline");
     if(sharedTrainerList) sharedTrainerList.innerHTML = trainers.map(t=>`<option value="${esc(t)}">`).join("");
     body.innerHTML = `
-      <div class="banner info">"+ New login" creates their account right here. They'll get a confirmation email — once they click it, they can log in with the password you set. For a teacher, just type their name — new names are added to your Trainers list automatically.</div>
+      <div class="banner info">"+ New login" creates their account right here. They'll get a confirmation email — once they click it, they can log in with the password you set. Everyone can have a name. For a teacher, just type their name — new teacher names are added to your Trainers list automatically.</div>
       <div class="card">
         <div class="card-head"><h3>Team accounts</h3><span class="hint">${profiles.length}</span></div>
         <div class="table-scroll">
           <table class="stable">
-            <thead><tr><th>Email</th><th>Role</th><th>Teacher name</th><th></th></tr></thead>
+            <thead><tr><th>Email</th><th>Role</th><th>Name</th><th></th></tr></thead>
             <tbody>
               ${profiles.map(p => `
                 <tr>
@@ -417,12 +419,12 @@
               <option value="superadmin">Superadmin</option>
             </select>
           </label>
-          <div id="newLoginTeacherField" hidden style="display:flex; flex-direction:column; gap:12px;">
-            <label class="field">Teacher name
+          <div id="newLoginTeacherField" style="display:flex; flex-direction:column; gap:12px;">
+            <label class="field">Name
               <input type="text" name="teacher_name" list="trainerNamesList" autocomplete="off" placeholder="Type their name — pick an existing one, or add new">
               <datalist id="trainerNamesList">${trainers.map(t=>`<option value="${esc(t)}">`).join("")}</datalist>
             </label>
-            <div class="hint" id="newLoginTeacherHint">Not on the list yet? Just type their name — it'll be added to Trainers (Pipeline → Settings) automatically.</div>
+            <div class="hint" id="newLoginTeacherHint">Optional. Just their name for the team list — it isn't added to Trainers and doesn't change their access.</div>
           </div>
           <div id="newLoginError" class="login-error" hidden></div>
         </div>
@@ -469,7 +471,7 @@
         // New signups default to "pending" (no access) until someone sets a real role —
         // always patch it here, even to "admin", so a login made through this form is
         // never left stuck pending.
-        const patch = { role, teacher_name: (role === "teacher" || role === "trainer_teacher") ? teacherName : null };
+        const patch = { role, teacher_name: teacherName || null };
         // The trigger that creates their profile row runs the instant signUp() is called
         // (before they've even confirmed their email), so this update is safe right away.
         await sbClient.from("profiles").update(patch).eq("id", newId);
@@ -494,7 +496,12 @@
   document.addEventListener("change", async (e)=>{
     if(e.target.dataset && e.target.dataset.action === "new-login-role"){
       const box = $("#newLoginTeacherField");
-      if(box) box.hidden = !(e.target.value === "teacher" || e.target.value === "trainer_teacher");
+      const isTeach = e.target.value === "teacher" || e.target.value === "trainer_teacher";
+      const hint = $("#newLoginTeacherHint");
+      if(hint) hint.textContent = isTeach
+        ? "Not on the list yet? Just type their name — it'll be added to Trainers (Pipeline → Settings) automatically."
+        : "Optional. Just their name for the team list — it isn't added to Trainers and doesn't change their access.";
+      if(box) box.hidden = false;
     }
     if(e.target.dataset && e.target.dataset.action === "change-role"){
       const id = e.target.dataset.id;
@@ -520,7 +527,7 @@
       if(error){ alert("Couldn't save that: " + error.message); return; }
       const renamedProfile = profiles.find(p => p.id === id);
       logHistory("change_teacher_name", `Set ${renamedProfile ? renamedProfile.email : "a login"}'s teacher name to ${teacher_name || "(none)"}`, "profile", id);
-      if(teacher_name) await ensureTrainer(teacher_name);
+      if(teacher_name && renamedProfile && (renamedProfile.role === "teacher" || renamedProfile.role === "trainer_teacher")) await ensureTrainer(teacher_name);
       [profiles, trainers] = await Promise.all([loadProfiles(), loadTrainers()]);
       const sharedTrainerList = $("#trainerNamesListInline");
       if(sharedTrainerList) sharedTrainerList.innerHTML = trainers.map(t=>`<option value="${esc(t)}">`).join("");
