@@ -339,7 +339,41 @@
     .iconbtn svg{ width:17px; height:17px; }
     .stable th, .stable td{ padding:9px 8px; font-size:12.5px; white-space:nowrap; }
   }
+
+  /* ===== Shared across pages: collapsible sidebar + fit-to-screen ===== */
+  :root{ --rail-w:216px; --z:1; }
+  html.rail-collapsed{ --rail-w:68px; }
+  .rail-toggle{ display:none; }
+  .rail-pipeline{ display:flex; flex-direction:column; gap:4px; margin-bottom:8px; }
+  @media (min-width:1600px){ :root{ --z:1.1; } }
+  @media (min-width:1900px){ :root{ --z:1.2; } }
+  @media (min-width:2300px){ :root{ --z:1.4; } }
+  @media (min-width:2800px){ :root{ --z:1.7; } }
+  @media (min-width:3400px){ :root{ --z:2; } }
+  @media (min-width:861px){
+    /* Big screens: the page fills the window and everything scales up together (steps above), instead of
+       sitting in a narrow column with tiny text and empty space on the right. */
+    body{ zoom:var(--z); }
+    .app{ grid-template-columns:var(--rail-w) minmax(0,1fr); min-height:calc(100dvh / var(--z)); transition:grid-template-columns .18s ease; }
+    .rail{ height:calc(100dvh / var(--z)); overflow-y:auto; overflow-x:hidden; }
+    .main{ max-width:none; }
+    .rail-pipeline-mobile{ display:none !important; }
+    .rail-toggle{ display:inline-flex; position:absolute; top:20px; right:10px; width:28px; height:28px; align-items:center; justify-content:center; border:1px solid var(--border); background:var(--surface); color:var(--ink-muted); border-radius:8px; cursor:pointer; padding:0; }
+    .rail-toggle:hover{ background:var(--surface-2); color:var(--ink); }
+    .rail-toggle svg{ width:15px; height:15px; transition:transform .18s ease; }
+    html.rail-collapsed .rail-toggle svg{ transform:rotate(180deg); }
+    html.rail-collapsed .rail{ padding:20px 8px; }
+    html.rail-collapsed .rail-toggle{ position:static; align-self:center; margin-bottom:12px; }
+    html.rail-collapsed .brand{ display:none; }
+    html.rail-collapsed .navbtn{ font-size:0; justify-content:center; padding:10px 0; position:relative; gap:0; }
+    html.rail-collapsed .navbtn svg{ width:19px; height:19px; }
+    html.rail-collapsed .navbtn .badge{ position:absolute; top:3px; right:8px; font-size:10px; margin:0; padding:0 4px; min-width:15px; line-height:15px; }
+    html.rail-collapsed .rail-section-label, html.rail-collapsed .rail-account, html.rail-collapsed .rail-foot{ display:none; }
+    html.rail-collapsed .rail-divider{ margin:6px 8px; }
+  }
+  @media (max-width:860px){ .rail-pipeline{ display:none !important; } }
 </style>
+<script>try{if(localStorage.getItem("kumonRailCollapsed")==="1")document.documentElement.classList.add("rail-collapsed")}catch(e){}</script>
 </head>
 <body>
 
@@ -376,6 +410,7 @@
 
 <div class="app" id="appRoot" hidden>
   <nav class="rail">
+    <button type="button" class="rail-toggle" id="railToggle" aria-label="Collapse sidebar" title="Collapse sidebar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg></button>
     <div class="brand"><span class="dot"></span>Kumon Hub</div>
     <div class="rail-pages">
       <a class="navbtn" href="roster.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3L2 8l10 5 10-5-10-5z"/><path d="M6 10.5V15c0 1.5 2.5 3 6 3s6-1.5 6-3v-4.5"/></svg>Student roster</a>
@@ -636,7 +671,7 @@
     students: [], diagnostics: [], trainings: [], schedules: [], enrollments: [],
     settings: { examiners: [], trainers: [] },
     loaded: { students:false, diagnostics:false, trainings:false, schedules:false, settings:false, enrollments:false },
-    activeTab: "calendar",
+    activeTab: (()=>{ const h = (location.hash || "").slice(1); return ["calendar","enrollment","roster","students","settings"].includes(h) ? h : "calendar"; })(),
     calMonth: (()=>{ const d=new Date(); return new Date(d.getFullYear(), d.getMonth(), 1); })(),
     calWeekStart: (()=>{ const d=new Date(); d.setHours(0,0,0,0); d.setDate(d.getDate()-d.getDay()); return d; })(),
     calDay: (()=>{ const d=new Date(); d.setHours(0,0,0,0); return d; })(),
@@ -3132,6 +3167,10 @@
     }
   });
 
+  window.addEventListener("hashchange", () => {
+    const h = (location.hash || "").slice(1);
+    if(["calendar","enrollment","roster","students","settings"].includes(h) && h !== STATE.activeTab){ STATE.activeTab = h; renderAll(); }
+  });
   const FORM_HANDLERS = {
     "new-diagnostic": submitNewDiagnostic,
     "edit-diagnostic": submitEditDiagnostic,
@@ -3218,5 +3257,33 @@
 })();
 </script>
 
+<script>
+(function(){
+  var KEY = "kumonRailCollapsed", root = document.documentElement;
+  function apply(c){
+    root.classList.toggle("rail-collapsed", c);
+    var b = document.getElementById("railToggle");
+    if(b){ var t = c ? "Expand sidebar" : "Collapse sidebar"; b.title = t; b.setAttribute("aria-label", t); b.setAttribute("aria-expanded", String(!c)); }
+  }
+  apply(root.classList.contains("rail-collapsed"));
+  var b = document.getElementById("railToggle");
+  if(b) b.addEventListener("click", function(){
+    var c = !root.classList.contains("rail-collapsed"); apply(c);
+    try{ localStorage.setItem(KEY, c ? "1" : "0"); }catch(e){}
+  });
+  // Collapsed rail is icons only, so every link gets a tooltip with its name.
+  document.querySelectorAll(".rail .navbtn").forEach(function(a){
+    if(a.title) return;
+    var t = (a.textContent || "").replace(/\s+/g, " ").trim().replace(/\s*\d+$/, "");
+    if(t) a.title = t;
+  });
+  // The Pipeline views group follows the same who-can-see-Pipeline flag as the single Pipeline link.
+  var link = document.getElementById("navPipelineLink"), grp = document.getElementById("navPipelineGroup");
+  if(link && grp){
+    var sync = function(){ grp.hidden = link.hidden; };
+    sync(); new MutationObserver(sync).observe(link, { attributes:true, attributeFilter:["hidden"] });
+  }
+})();
+</script>
 </body>
 </html>
