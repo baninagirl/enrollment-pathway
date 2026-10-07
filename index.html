@@ -1883,6 +1883,93 @@
     { value:"eo", label:"EO" },
     { value:"resume", label:"RETURNEE" }
   ];
+  // DT results for a student who has no diagnostic booking on file (e.g. added straight to the
+  // roster from the old spreadsheet). Same fields as the booking-based form, but both layouts are
+  // rendered and the Subject dropdown swaps between them — "Both" means one result set per subject.
+  function dtResultsBlockNoBooking(subject){
+    const both = subject === "Both";
+    return `
+      <div class="hint" style="margin-top:4px;">Diagnostic test results <span style="font-weight:400;">(optional)</span></div>
+      <div class="field-row">
+        <label class="field">DT date<input type="date" name="dxDate" value=""></label>
+        <label class="field">DT teacher
+          <select name="examiner">
+            <option value="">Choose…</option>
+            ${STATE.settings.examiners.map(o=>`<option value="${esc(o)}">${esc(o)}</option>`).join("")}
+          </select>
+        </label>
+      </div>
+      <div data-dt-single ${both?"hidden":""}>
+        <div class="field-row">
+          <label class="field">DT test<input type="text" name="dtTest" ${both?"disabled":""}></label>
+          <label class="field">Score<input type="text" name="score" ${both?"disabled":""}></label>
+        </div>
+        <div class="field-row">
+          <label class="field">Time<input type="text" name="dtTime" placeholder="e.g. 13/15" ${both?"disabled":""}></label>
+          <label class="field">Start point<input type="text" name="startPoint" placeholder="e.g. Math 3A" ${both?"disabled":""}></label>
+        </div>
+      </div>
+      <div data-dt-both ${both?"":"hidden"}>
+        <div class="hint" style="margin-top:4px;">Math results</div>
+        <div class="field-row">
+          <label class="field">DT test<input type="text" name="mathDtTest" ${both?"":"disabled"}></label>
+          <label class="field">Score<input type="text" name="mathScore" ${both?"":"disabled"}></label>
+        </div>
+        <div class="field-row">
+          <label class="field">Time<input type="text" name="mathDtTime" placeholder="e.g. 13/15" ${both?"":"disabled"}></label>
+          <label class="field">Start point<input type="text" name="mathStartPoint" placeholder="e.g. 3A" ${both?"":"disabled"}></label>
+        </div>
+        <div class="hint" style="margin-top:4px;">Reading results</div>
+        <div class="field-row">
+          <label class="field">DT test<input type="text" name="readingDtTest" ${both?"":"disabled"}></label>
+          <label class="field">Score<input type="text" name="readingScore" ${both?"":"disabled"}></label>
+        </div>
+        <div class="field-row">
+          <label class="field">Time<input type="text" name="readingDtTime" placeholder="e.g. 13/15" ${both?"":"disabled"}></label>
+          <label class="field">Start point<input type="text" name="readingStartPoint" placeholder="e.g. BI" ${both?"":"disabled"}></label>
+        </div>
+      </div>
+      <div class="hint">"Time" is the standard completion time result (e.g. 13/15), not an appointment time.</div>`;
+  }
+  // Swap the single / per-subject result fields when the Subject dropdown changes.
+  function wireDtSubjectSwap(){
+    const f = document.querySelector("#modal form");
+    const sel = f && f.querySelector('select[name="subject"]');
+    if(!sel) return;
+    const apply = () => {
+      const both = sel.value === "Both";
+      const one = f.querySelector("[data-dt-single]"), two = f.querySelector("[data-dt-both]");
+      if(!one || !two) return;
+      one.hidden = both; two.hidden = !both;
+      one.querySelectorAll("input").forEach(i => i.disabled = both);
+      two.querySelectorAll("input").forEach(i => i.disabled = !both);
+    };
+    sel.addEventListener("change", apply);
+  }
+  // Reads the no-booking DT fields. Returns null when nothing was typed, so no empty
+  // diagnostic gets created.
+  function readDtResults(fd){
+    const g = k => (fd.get(k) == null ? "" : fd.get(k).toString().trim());
+    const keys = ["dtTest","score","dtTime","startPoint","mathDtTest","mathScore","mathDtTime","mathStartPoint","readingDtTest","readingScore","readingDtTime","readingStartPoint"];
+    const out = {};
+    let any = false;
+    keys.forEach(k => { const v = g(k); if(v){ out[k] = v; any = true; } });
+    return any ? { fields: out, date: g("dxDate"), examiner: g("examiner") } : null;
+  }
+  // A DT that already happened, recorded after the fact. "completed" + "enrolled" keeps it out of
+  // the needs-outcome queue and off the calendar, but it still feeds the New students table
+  // and the roster's DT columns like any other diagnostic.
+  async function createRecordedDiagnostic(studentId, info, dt){
+    return db.collection("diagnostics").add({
+      studentId, studentName: info.name, parentName: info.parentName || "", contact: info.contact || "",
+      ageGrade: info.ageGrade || "", date: dt.date || todayISO(), time: "", examiner: dt.examiner || "",
+      subject: info.subject || "", inquiry: "",
+      status: "completed", outcome: "enrolled", notes: "",
+      followUpStatus: "", followUpNotes: "", createdAt: new Date().toISOString(),
+      ...dt.fields
+    });
+  }
+
   function openEditStudentModal(id){
     const s = studentById(id);
     if(!s) return;
@@ -1984,7 +2071,7 @@
               <div class="hint">"Time" is the standard completion time result (e.g. 13/15), not the appointment clock time.</div>
             `}
             <label class="field">Diagnostic remarks<textarea name="dxNotes" rows="2" placeholder="e.g. cant be reached, try call, referred by…">${esc(d.notes||"")}</textarea></label>
-          ` : ""}
+          ` : dtResultsBlockNoBooking(s.subject)}
           <div class="field-row">
             <label class="field">Worksheet mode
               <select name="mode">
@@ -2043,6 +2130,7 @@
         </div>
       </form>
     `);
+    wireDtSubjectSwap();
   }
 
   async function submitEditStudent(form){
@@ -2069,6 +2157,16 @@
       // This student's diagnostic booking is edited from the same form (see the "Diagnostic
       // test" section in openEditStudentModal above) rather than a separate modal — the
       // fields are only present when `d` exists, so this only runs then.
+      if(!d){
+        const dt = readDtResults(fd);
+        if(dt){
+          await createRecordedDiagnostic(id, {
+            name, parentName: fd.get("parentName").toString().trim(), contact: fd.get("parentPhone").toString().trim(),
+            ageGrade: fd.get("ageGrade").toString().trim(), subject: fd.get("subject").toString()
+          }, dt);
+          logHistory("add_dt_results", `Recorded ${name}'s DT results`, "student", id);
+        }
+      }
       if(d){
         // Which result fields were actually rendered (and so exist in this form) is decided by
         // the subject the modal was opened with, not whatever the Subject dropdown was just
@@ -2176,7 +2274,16 @@
             <label class="field">Parent / guardian<input type="text" name="parentName"></label>
             <label class="field">Grade${gradeSelect("ageGrade", "")}</label>
           </div>
-          <label class="field">Mobile number<input type="text" name="parentPhone"></label>
+          <div class="field-row">
+            <label class="field">Mobile number<input type="text" name="parentPhone"></label>
+            <label class="field">Subject
+              <select name="subject">
+                <option value="">Choose…</option>
+                ${SUBJECT_OPTIONS.map(o=>`<option value="${esc(o)}">${esc(o)}</option>`).join("")}
+              </select>
+            </label>
+          </div>
+          ${dtResultsBlockNoBooking("")}
           <p class="hint">For a student already going through a diagnostic booking, use <b>New diagnostic booking</b> instead — this is for adding someone straight onto the roster (e.g. an existing student from your old spreadsheet).</p>
         </div>
         <div class="modal-foot">
@@ -2185,6 +2292,7 @@
         </div>
       </form>
     `);
+    wireDtSubjectSwap();
   }
 
   async function submitNewStudent(form){
@@ -2200,9 +2308,17 @@
         parentName: fd.get("parentName").toString().trim(),
         parentPhone: fd.get("parentPhone").toString().trim(),
         parentEmail: "", ageGrade: fd.get("ageGrade").toString().trim(), notes: "",
+        subject: fd.get("subject").toString(),
         status: "active", followUpStatus: "", followUpNotes: "",
         createdAt: new Date().toISOString()
       });
+      const dt = readDtResults(fd);
+      if(dt && newStudent){
+        await createRecordedDiagnostic(newStudent.id, {
+          name, parentName: fd.get("parentName").toString().trim(), contact: fd.get("parentPhone").toString().trim(),
+          ageGrade: fd.get("ageGrade").toString().trim(), subject: fd.get("subject").toString()
+        }, dt);
+      }
       logHistory("add_student", `Added ${name} to the roster directly`, "student", newStudent ? newStudent.id : null);
       toast("Student added to roster.");
     });
