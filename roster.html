@@ -116,6 +116,9 @@
   .pill.subj-math{ background:var(--accent-soft); color:var(--accent-soft-ink); }
   /* --bad, not --warn — this page's --warn is now amber (see root notes), --bad kept the red this pill has always used. */
   .pill.subj-reading{ background:var(--bad-soft); color:var(--bad); }
+  .pill.new-tag{ background:var(--accent-soft); color:var(--accent-soft-ink); margin-left:6px; font-size:10.5px; letter-spacing:.02em; }
+  .monitor-count:not(:empty){ display:inline-block; min-width:18px; padding:0 6px; margin-left:4px; border-radius:99px; background:var(--accent-soft); color:var(--accent-soft-ink); font-size:11px; font-weight:700; text-align:center; }
+  .monitor-banner{ margin:0 0 12px; padding:12px 16px; border-radius:12px; background:var(--accent-soft); color:var(--accent-soft-ink); font-size:13px; line-height:1.45; }
   .pill.status-active{ background:var(--good-soft); color:var(--good); }
   .pill.status-inactive{ background:var(--surface-2); color:var(--ink-faint); }
   .pill.payment-paid{ background:var(--good-soft); color:var(--good); }
@@ -279,6 +282,7 @@
         <div class="seg roster-view-toggle">
           <button data-action="roster-view" data-view="roster">Student Roster</button>
           <button data-action="roster-view" data-view="report">Student Roster Report</button>
+          <button data-action="roster-view" data-view="monitor">Monitor Students <span class="monitor-count" data-monitor-count></span></button>
         </div>
         <input type="text" id="searchInput" placeholder="Search student…">
         <select id="subjectFilter">
@@ -300,9 +304,10 @@
         </select>
       </div>
 
+      <div class="monitor-banner" id="monitorBanner" hidden></div>
       <div class="card">
         <div class="card-head">
-          <h3>Enrollments</h3>
+          <h3 id="rosterCardTitle">Enrollments</h3>
           <div style="display:flex; align-items:center; gap:10px;">
             <span class="hint" id="enrollCount"></span>
             <button type="button" class="btn sm ghost" id="selectModeToggle" data-action="toggle-select-mode" title="Select multiple to bulk edit">Select</button>
@@ -313,6 +318,7 @@
           <table class="stable">
             <thead><tr>
               <th class="selectcol" id="selectHeaderCell">#</th>
+              <th id="monitorActionHead" hidden></th>
               <th>Student</th><th>Grade</th><th>Subject</th><th>Teacher</th><th>Current level</th><th>Schedule</th><th>Mode</th><th>Status</th><th>Payment</th><th>Date enrolled</th>
             </tr></thead>
             <tbody id="rosterBody"></tbody>
@@ -338,6 +344,7 @@
         <div class="seg roster-view-toggle">
           <button data-action="roster-view" data-view="roster">Student Roster</button>
           <button data-action="roster-view" data-view="report">Student Roster Report</button>
+          <button data-action="roster-view" data-view="monitor">Monitor Students <span class="monitor-count" data-monitor-count></span></button>
         </div>
         <input type="text" id="repSearchInput" placeholder="Search student…">
         <select id="repSubjectFilter">
@@ -511,7 +518,7 @@
   // Kept as its own filter object and its own editingReportId (rather than reusing `filters`/
   // `editingId` above) since the two views filter and edit completely different things and can
   // otherwise be toggled between independently without one resetting the other.
-  let viewMode = "roster"; // "roster" | "report"
+  let viewMode = "roster"; // "roster" | "report" | "monitor"
   let history = [];
   // Roster and Report browse the same cycle timeline off this one shared Date — the current
   // cycle reads live off `enrollments`, any earlier cycle reads the archived snapshot in
@@ -917,6 +924,29 @@
   }
   function cycleKeyOf(date){ const c = cycleMonthFor(date); return monthKeyOf(c); }
   function isCurrentCycle(){ return monthKeyOf(viewMonth) === cycleKeyOf(new Date()); }
+  // Monitor students (phase25): a student who's finished training and is being watched by a
+  // trainer (Queenie / Frix) before joining a teacher's regular roster. They're tagged NEW for the
+  // cycle they started monitoring in (monitor_cycle, a "YYYY-MM" key), and fold into the regular
+  // roster automatically once a later cycle begins — derived here, nothing has to be rewritten.
+  // Only live (current-cycle) rows can be monitors; archived snapshots never are.
+  function isMonitorRow(e){
+    return !!e.is_monitor && !e.archived && (!e.monitor_cycle || e.monitor_cycle >= cycleKeyOf(new Date()));
+  }
+  function monitorCycleLabel(key){
+    const m = /^(\d{4})-(\d{2})$/.exec(key||"");
+    if(!m) return "";
+    return new Date(+m[1], +m[2]-1, 1).toLocaleDateString(undefined,{ month:"long", year:"numeric" });
+  }
+  // "NEW · October 2026" — shown while they're still on monitor, and for the rest of that same
+  // cycle if the trainer moves them to a teacher early. Gone once the cycle rolls over.
+  function newTagHtml(e){
+    if(e.archived || !e.monitor_cycle || e.monitor_cycle !== cycleKeyOf(new Date())) return "";
+    return `<span class="pill new-tag" title="Started on the roster this cycle via monitor schedule">NEW · ${esc(monitorCycleLabel(e.monitor_cycle))}</span>`;
+  }
+  function monitorRowsInScope(){
+    const locked = isTeacherScoped() ? currentTeacherName : null;
+    return enrollments.filter(e => isMonitorRow(e) && (locked === null || e.teacher === locked));
+  }
   function monthLabel(date){ return date.toLocaleDateString(undefined,{ month:"long", year:"numeric" }); }
   function monthRangeLabel(date){
     const start = new Date(date.getFullYear(), date.getMonth()-1, 21);
@@ -965,7 +995,7 @@
         .filter(e => reportFilters.grade === "all" || gradeFor(e.student_id) === reportFilters.grade)
         .filter(e => !q || (e.student_name||"").toLowerCase().includes(q))
         .sort((a,b) => lastNameSortKey(a.student_id,a.student_name).localeCompare(lastNameSortKey(b.student_id,b.student_name)))
-        .map(e => ({ source:"live", id:e.id, student_id:e.student_id, student_name:e.student_name, subject:e.subject, teacher:e.teacher, mode:e.mode, status:e.status||"active",
+        .map(e => ({ source:"live", id:e.id, monitor_cycle:e.monitor_cycle, student_id:e.student_id, student_name:e.student_name, subject:e.subject, teacher:e.teacher, mode:e.mode, status:e.status||"active",
           lwc:e.lwc, nwu:e.nwu, no_of_days:e.no_of_days, no_of_months_current_level:e.no_of_months_current_level,
           test_date:e.test_date, test_level:e.test_level, test_time:e.test_time, test_score:e.test_score, test_group:e.test_group }));
     }
@@ -1121,7 +1151,7 @@
     body.innerHTML = rows.map((r, idx) => `
       <tr class="${editable?"clickrow":""}" ${editable?`data-action="edit-report" data-id="${r.id}"`:""}>
         <td class="rownum">${idx+1}</td>
-        <td>${esc(displayName(r.student_id, r.student_name))}</td>
+        <td>${esc(displayName(r.student_id, r.student_name))}${newTagHtml(r)}</td>
         <td><span class="pill ${r.subject==='Math'?'subj-math':'subj-reading'}">${esc(r.subject||"")}</span></td>
         <td>${fmtPlain(r.lwc)}</td>
         <td>${fmtPlain(r.nwu)}</td>
@@ -1188,10 +1218,14 @@
     // Students uses — toggle sitting inline with that view's own search/filters) rather than
     // living as one standalone element, so both copies need their active state set together.
     $$('[data-action="roster-view"]').forEach(b => b.classList.toggle("active", b.dataset.view === viewMode));
-    $("#view-roster").hidden = viewMode !== "roster";
+    $("#view-roster").hidden = viewMode === "report"; // Monitor Students reuses the roster table
     $("#view-report").hidden = viewMode !== "report";
     renderPageHeadActions();
     if(viewMode === "report") renderReport(); else render();
+  }
+  function updateMonitorCount(){
+    const n = monitorRowsInScope().length;
+    $$("[data-monitor-count]").forEach(el => { el.textContent = n ? String(n) : ""; });
   }
   /* ==================== /Student Roster Report ==================== */
 
@@ -1218,6 +1252,8 @@
     // no matter what the filter says.
     const lockedTeacher = isTeacherScoped() ? currentTeacherName : null;
     return rosterSourceRows().filter(e=>{
+      // Monitor students live in their own view; the regular roster leaves them out.
+      if(viewMode === "monitor" ? !isMonitorRow(e) : isMonitorRow(e)) return false;
       if(lockedTeacher !== null && e.teacher !== lockedTeacher) return false;
       if(filters.subject !== "all" && e.subject !== filters.subject) return false;
       if(lockedTeacher === null && filters.teacher !== "all" && e.teacher !== filters.teacher) return false;
@@ -1243,6 +1279,18 @@
       lastNameSortKey(a.student_id, a.student_name).localeCompare(lastNameSortKey(b.student_id, b.student_name))
     );
     $("#enrollCount").textContent = rows.length + (rows.length===1 ? " enrollment" : " enrollments");
+    const inMonitor = viewMode === "monitor";
+    $("#rosterCardTitle").textContent = inMonitor ? "Monitor students" : "Enrollments";
+    const banner = $("#monitorBanner");
+    if(banner){
+      banner.hidden = !inMonitor;
+      banner.innerHTML = inMonitor
+        ? `On monitor schedule. Each student is tagged <b>NEW</b> for the month they started, stays in the monthly reports like everyone else, and joins the regular roster automatically when the next month starts. Use <b>Move to regular roster</b> any time they're ready, and pick their teacher there.`
+        : "";
+    }
+    const actionHead = $("#monitorActionHead");
+    if(actionHead) actionHead.hidden = !(inMonitor && editable);
+    updateMonitorCount();
 
     // Editing, selecting and bulk actions only make sense against the live, current-cycle
     // roster — an archived cycle is a read-only snapshot of what it looked like back then.
@@ -1260,17 +1308,19 @@
 
     const body = $("#rosterBody");
     if(rows.length === 0){
-      const emptyMsg = !editable ? `Nothing closed out for ${esc(monthLabel(viewMonth))} yet.`
+      const emptyMsg = !editable ? (inMonitor ? "Monitor students are only tracked for the current month." : `Nothing closed out for ${esc(monthLabel(viewMonth))} yet.`)
+        : inMonitor ? "No one's on monitor schedule right now."
         : enrollments.length===0 ? "No enrollments yet — add your first one."
         : "Nothing matches your filters.";
-      body.innerHTML = `<tr><td colspan="11"><div class="empty">${emptyMsg}</div></td></tr>`;
+      body.innerHTML = `<tr><td colspan="12"><div class="empty">${emptyMsg}</div></td></tr>`;
     }else{
       body.innerHTML = rows.map((e, idx) => `
         <tr class="${editable?'clickrow':''}" ${editable?`data-action="edit" data-id="${e.id}"`:""}>
           <td class="selectcol">${(editable && selectMode)
             ? `<input type="checkbox" class="row-check" data-action="toggle-select" data-id="${e.id}" ${selectedIds.has(e.id)?"checked":""}>`
             : `<span class="rownum">${idx+1}</span>`}</td>
-          <td>${esc(displayName(e.student_id, e.student_name))}</td>
+          ${inMonitor && editable ? `<td><button type="button" class="btn sm primary" data-action="monitor-promote" data-id="${e.id}">Move to regular roster</button></td>` : ""}
+          <td>${esc(displayName(e.student_id, e.student_name))}${newTagHtml(e)}</td>
           <td>${esc(gradeFor(e.student_id) || "—")}</td>
           <td><span class="pill ${e.subject==='Math'?'subj-math':'subj-reading'}">${esc(e.subject)}</span></td>
           <td>${esc(e.teacher||"—")}</td>
@@ -1503,7 +1553,73 @@
     $("#modalBackdrop").hidden = false;
   }
 
+  // Move a monitor student onto the regular roster. All of the student's monitor enrollments (Math and
+  // Reading) move together, each with its own teacher pick (defaulting to whoever has them now).
+  // Goes through a database function rather than a plain update, because a trainer can only edit rows
+  // under her own name and handing a student to someone else would otherwise be refused.
+  function openMonitorPromoteModal(enrollmentId){
+    const e = enrollments.find(x => x.id === enrollmentId);
+    if(!e) return;
+    const group = monitorRowsInScope().filter(x => x.student_id === e.student_id);
+    if(!group.length) return;
+    const who = displayName(e.student_id, e.student_name);
+    const opts = cur => {
+      const list = trainers.includes(cur) || !cur ? trainers : [cur, ...trainers];
+      return list.map(t => `<option value="${esc(t)}" ${t===cur?"selected":""}>${esc(t)}</option>`).join("");
+    };
+    $("#modal").innerHTML = `
+      <div class="modal-head"><h3>Move ${esc(who)} to the regular roster</h3><button class="iconbtn" data-action="close-modal">✕</button></div>
+      <form id="monitorPromoteForm" data-ids="${group.map(g=>g.id).join(",")}">
+        <div class="modal-body">
+          <p class="hint" style="font-size:12.5px; margin:0 0 6px;">Their records, schedule and history all stay as they are. Pick who their teacher is from now on. Keep the current teacher to leave them where they are.</p>
+          ${group.map(g => `<label class="field">${esc(g.subject)} teacher
+            <select name="teacher_${g.id}">${opts(g.teacher||"")}</select>
+          </label>`).join("")}
+        </div>
+        <div class="modal-foot">
+          <div></div>
+          <div style="display:flex; gap:8px;">
+            <button type="button" class="btn ghost" data-action="close-modal">Cancel</button>
+            <button type="submit" class="btn primary">Move to regular roster</button>
+          </div>
+        </div>
+      </form>
+    `;
+    $("#modalBackdrop").hidden = false;
+  }
+
   document.addEventListener("submit", async (e)=>{
+    if(e.target.id === "monitorPromoteForm"){
+      e.preventDefault();
+      const form = e.target;
+      const fd = new FormData(form);
+      const ids = (form.dataset.ids||"").split(",").filter(Boolean);
+      const first = enrollments.find(x => x.id === ids[0]);
+      const studentId = first ? first.student_id : null;
+      const who = first ? displayName(first.student_id, first.student_name) : "student";
+      const moved = [];
+      for(const id of ids){
+        const teacher = (fd.get(`teacher_${id}`)||"").toString();
+        const { error } = await sbClient.rpc("promote_monitor_enrollment", { p_id:id, p_teacher:teacher });
+        if(error){ alert(`Couldn't move ${who}: ${error.message}`); break; }
+        const row = enrollments.find(x => x.id === id);
+        moved.push(`${row ? row.subject : "enrollment"} → ${teacher || (row && row.teacher) || "same teacher"}`);
+      }
+      if(moved.length){
+        logHistory("monitor_promote", `Moved ${who} off monitor onto the regular roster (${moved.join(", ")})`, "subject_enrollment", ids[0]);
+        // Keep Pipeline's own status in step once nothing of theirs is still on monitor. Best effort:
+        // Pipeline also heals this on its next load if the update is refused here.
+        const stu = students.find(x => x.id === studentId);
+        if(stu && stu.status === "monitor_schedule"){
+          const { error: sErr } = await sbClient.from("students").update({ status:"active" }).eq("id", studentId);
+          if(sErr) console.warn("couldn't update student status", sErr);
+        }
+      }
+      closeModal();
+      await Promise.all([loadStudents(), loadEnrollments()]);
+      renderBoth();
+      return;
+    }
     if(e.target.id === "loginForm"){
       e.preventDefault();
       const fd = new FormData(e.target);
@@ -1744,6 +1860,7 @@
       const id = btn.dataset.id;
       openReportModal(id);
     }
+    else if(action === "monitor-promote"){ e.stopPropagation(); openMonitorPromoteModal(btn.dataset.id); }
     else if(action === "open-new"){ if(isTeacherScoped()) return; openModal(null); }
     else if(action === "edit"){
       const id = btn.dataset.id;

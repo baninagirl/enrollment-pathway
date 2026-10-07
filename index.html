@@ -841,6 +841,18 @@
   function reconcileReadiness(){
     if(!db) return;
     STATE.students.forEach(s => {
+      // A monitor student whose enrollments have all left monitor (moved early, or the next cycle began)
+      // is a regular student now — nudge the student record's status to match.
+      if(s.status === "monitor_schedule" && !reconciling[s.id]){
+        const enr = STATE.enrollments.filter(e => e.studentId === s.id);
+        if(enr.length && !enr.some(isMonitorEnrollment)){
+          reconciling[s.id] = true;
+          db.collection("students").doc(s.id).update({ status: "active" })
+            .catch(e => console.warn("reconcile failed", e))
+            .finally(()=>{ delete reconciling[s.id]; });
+        }
+        return;
+      }
       if(s.status !== "enrolled_pending_training" || reconciling[s.id]) return;
       const completed = trainingsFor(s.id).filter(t => t.status === "completed").length;
       if(completed >= 2){
@@ -895,8 +907,26 @@
   function awaitingTraining(){
     return pipelineStudents().filter(s => s.status === "enrolled_pending_training").sort((a,b)=> lastNameSortKey(a).localeCompare(lastNameSortKey(b)));
   }
+  // Monitor schedule (phase25): once both trainings are done a student gets a real schedule and lands on
+  // their monitoring trainer's (Queenie's / Frix's) "Monitor Students" list on Student Roster, tagged NEW for
+  // the month they started. That monitor flag is a subject_enrollments column (isMonitor + monitorCycle). It
+  // lapses by itself once a later recording cycle begins, at which point they're just a regular student of
+  // that trainer. Until a trainer moves them sooner via "Move to regular roster".
+  function currentCycleKey(){ return monthKeyOf(cycleMonthFor(new Date())); }
+  function isMonitorEnrollment(e){ return !!e.isMonitor && (!e.monitorCycle || e.monitorCycle >= currentCycleKey()); }
+  function monitorEnrollmentsFor(studentId){ return STATE.enrollments.filter(e => e.studentId === studentId && isMonitorEnrollment(e)); }
+  function monitorCycleLabel(key){
+    const m = /^(\d{4})-(\d{2})$/.exec(key || "");
+    return m ? new Date(+m[1], +m[2]-1, 1).toLocaleDateString(undefined, { month:"long", year:"numeric" }) : "";
+  }
   function onMonitorSchedule(){
-    return pipelineStudents().filter(s => s.status === "monitor_schedule").sort((a,b)=> lastNameSortKey(a).localeCompare(lastNameSortKey(b)));
+    return pipelineStudents().filter(s => {
+      if(s.status !== "monitor_schedule") return false;
+      const enr = STATE.enrollments.filter(e => e.studentId === s.id);
+      // A student whose every enrollment has already left monitor (moved early, or the cycle rolled over)
+      // isn't on monitor any more even if their status hasn't been healed yet.
+      return !enr.length || enr.some(isMonitorEnrollment);
+    }).sort((a,b)=> lastNameSortKey(a).localeCompare(lastNameSortKey(b)));
   }
   function readyForSchedule(){
     return pipelineStudents().filter(s => s.status === "ready_for_schedule").sort((a,b)=> lastNameSortKey(a).localeCompare(lastNameSortKey(b)));
@@ -1391,11 +1421,28 @@
         </div>
       </div>`;
     }).join("");
-    const monitorBody = monitor.map(s => `<div class="rowi">
-      <div class="who"><b>${esc(displayName(s))}</b><span>${esc(s.parentName||"")}</span></div>
-      <div class="when">Both trainings completed</div>
-      <div class="acts"><button class="btn sm primary" data-action="mark-ready-for-schedule" data-id="${s.id}">Mark ready for regular schedule</button></div>
-    </div>`).join("");
+    const monitorBody = monitor.map(s => {
+      const enr = monitorEnrollmentsFor(s.id);
+      if(!enr.length){
+        return `<div class="rowi">
+          <div class="who"><b>${esc(displayName(s))}</b><span>${esc(s.parentName||"")}</span></div>
+          <div class="when">Both trainings completed · no monitor schedule yet</div>
+          <div class="acts">
+            <button class="btn sm primary" data-action="open-new-schedule" data-kind="monitor" data-student="${s.id}">Set monitor schedule</button>
+            <button class="btn sm ghost" data-action="mark-ready-for-schedule" data-id="${s.id}" title="Skip monitoring and go straight to setting a regular schedule">Skip monitoring</button>
+          </div>
+        </div>`;
+      }
+      const trainers = [...new Set(enr.map(e => e.teacher).filter(Boolean))].join(", ");
+      const sched = scheduleFor(s.id);
+      const when = sched && sched.slots ? sched.slots.map(sl => `${sl.day} ${fmtTime(sl.time)}`).join(", ") : "";
+      const cycle = monitorCycleLabel(enr[0].monitorCycle);
+      return `<div class="rowi">
+        <div class="who"><b>${esc(displayName(s))}</b><span>${esc(s.parentName||"")}</span></div>
+        <div class="when">Monitoring with ${esc(trainers || "—")}${when ? " · " + esc(when) : ""}${cycle ? " · NEW " + esc(cycle) : ""}</div>
+        <div class="acts"><button class="btn sm primary" data-action="open-monitor-promote" data-student="${s.id}">Move to regular roster</button></div>
+      </div>`;
+    }).join("");
     const readyBody = ready.map(s => `<div class="rowi">
       <div class="who"><b>${esc(displayName(s))}</b><span>${esc(s.parentName||"")}</span></div>
       <div class="when">Both trainings completed</div>
@@ -1528,6 +1575,18 @@
     const d = activeDiagnosticFor(s.id);
     return (d && d.subject) || "";
   }
+  // A diagnostic's DT test / Score / Start point / Time describe ONE test result. A student
+  // enrolled in "Both" subjects actually has two separate results — their own start point, DT
+  // test, score and time for Math, and again for Reading — even though both live on the same
+  // diagnostic row, so those live in dedicated math*/reading* fields once "Both" applies. The
+  // single generic fields stay correct (and are all that's ever filled in) for a Math-only or
+  // Reading-only diagnostic, where there's only ever one result to record.
+  function diagResultFor(d, subject, isBoth){
+    if(!d) return { startPoint:"", dtTest:"", score:"", dtTime:"" };
+    if(isBoth && subject === "Math") return { startPoint: d.mathStartPoint||"", dtTest: d.mathDtTest||"", score: d.mathScore||"", dtTime: d.mathDtTime||"" };
+    if(isBoth && subject === "Reading") return { startPoint: d.readingStartPoint||"", dtTest: d.readingDtTest||"", score: d.readingScore||"", dtTime: d.readingDtTime||"" };
+    return { startPoint: d.startPoint||"", dtTest: d.dtTest||"", score: d.score||"", dtTime: d.dtTime||"" };
+  }
   function monthKeyOf(date){ return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,"0")}`; }
   // Kumon's tracking month doesn't follow the calendar — a cycle runs the 21st through
   // the 20th of the next calendar month, and takes its name from whichever month holds
@@ -1593,8 +1652,9 @@
     const rows = [];
     base.forEach(s => {
       const subj = studentSubject(s);
-      const subjects = subj === "Both" ? ["Math","Reading"] : [subj || ""];
-      subjects.forEach(sub => rows.push({ s, subj: sub }));
+      const isBoth = subj === "Both";
+      const subjects = isBoth ? ["Math","Reading"] : [subj || ""];
+      subjects.forEach(sub => rows.push({ s, subj: sub, isBoth }));
     });
 
     const isReport = STATE.studentsView === "report";
@@ -1626,17 +1686,18 @@
             ${rows.map((row, i) => {
               const s = row.s;
               const d = activeDiagnosticFor(s.id);
+              const r = diagResultFor(d, row.subj, row.isBoth);
               return `<tr class="clickrow" data-action="open-student" data-id="${s.id}">
                 <td class="tnum">${i+1}</td>
                 <td>${esc(displayName(s))}</td>
                 <td>${esc(s.ageGrade||"—")}</td>
                 <td>${row.subj ? fmtSubjectPill(row.subj) : "—"}</td>
                 <td>${fmtEnrollmentTagPill(s.id, row.subj)}</td>
-                <td>${esc((d && d.startPoint) || "—")}</td>
-                <td>${esc((d && d.dtTest) || "—")}</td>
+                <td>${esc(r.startPoint || "—")}</td>
+                <td>${esc(r.dtTest || "—")}</td>
                 <td class="tnum">${d ? fmtDateShort(d.date) : "—"}</td>
-                <td>${esc((d && d.score) || "—")}</td>
-                <td class="tnum">${esc((d && d.dtTime) || "—")}</td>
+                <td>${esc(r.score || "—")}</td>
+                <td class="tnum">${esc(r.dtTime || "—")}</td>
               </tr>`;
             }).join("")}
           </tbody>
@@ -1731,6 +1792,8 @@
     // modal, instead of a separate "Edit diagnostic details" button/modal — one place for
     // everything about this student, rather than two overlapping edit flows.
     const d = activeDiagnosticFor(s.id);
+    // Drives which DT result fields render below — see diagResultFor() above.
+    const isBoth = studentSubject(s) === "Both";
     const slot1 = sched && sched.slots && sched.slots[0] ? sched.slots[0] : null;
     const slot2 = sched && sched.slots && sched.slots[1] ? sched.slots[1] : null;
     // NEW/EO/RETURNEE is normally set automatically (see enrollmentTagFor above) — this is
@@ -1780,20 +1843,46 @@
                 </select>
               </label>
             </div>
-            <div class="field-row">
-              <label class="field">DT test<input type="text" name="dtTest" value="${esc(d.dtTest||"")}"></label>
-              <label class="field">Score<input type="text" name="score" value="${esc(d.score||"")}"></label>
-            </div>
-            <div class="field-row">
-              <!-- "Time" here is Kumon's standard-completion-time notation (e.g. "13/15"), not
-                   a clock time — a separate result recorded once the test is graded. The
-                   diagnostic's actual scheduled clock time (for the calendar) lives on its own
-                   "time" field, unrelated to this one and edited from the diagnostic queue's own
-                   Edit button instead. -->
-              <label class="field">Time<input type="text" name="dtTime" value="${esc(d.dtTime||"")}" placeholder="e.g. 13/15"></label>
-              <label class="field">Start point<input type="text" name="startPoint" value="${esc(d.startPoint||"")}" placeholder="e.g. Math 3A"></label>
-            </div>
-            <div class="hint">"Time" is the standard completion time result (e.g. 13/15), not the appointment clock time.</div>
+            ${isBoth ? `
+              <!-- Enrolled in both subjects means two separate DT results, not one shared set —
+                   see diagResultFor() above. Each subject gets its own DT test/Score/Time/Start
+                   point, saved to mathDtTest/readingDtTest etc. instead of the single generic
+                   fields below (those stay reserved for a Math-only or Reading-only diagnostic). -->
+              <div class="hint" style="margin-top:4px;">Math results</div>
+              <div class="field-row">
+                <label class="field">DT test<input type="text" name="mathDtTest" value="${esc(d.mathDtTest||"")}"></label>
+                <label class="field">Score<input type="text" name="mathScore" value="${esc(d.mathScore||"")}"></label>
+              </div>
+              <div class="field-row">
+                <label class="field">Time<input type="text" name="mathDtTime" value="${esc(d.mathDtTime||"")}" placeholder="e.g. 13/15"></label>
+                <label class="field">Start point<input type="text" name="mathStartPoint" value="${esc(d.mathStartPoint||"")}" placeholder="e.g. 3A"></label>
+              </div>
+              <div class="hint" style="margin-top:4px;">Reading results</div>
+              <div class="field-row">
+                <label class="field">DT test<input type="text" name="readingDtTest" value="${esc(d.readingDtTest||"")}"></label>
+                <label class="field">Score<input type="text" name="readingScore" value="${esc(d.readingScore||"")}"></label>
+              </div>
+              <div class="field-row">
+                <label class="field">Time<input type="text" name="readingDtTime" value="${esc(d.readingDtTime||"")}" placeholder="e.g. 13/15"></label>
+                <label class="field">Start point<input type="text" name="readingStartPoint" value="${esc(d.readingStartPoint||"")}" placeholder="e.g. BI"></label>
+              </div>
+              <div class="hint">"Time" is each subject's standard completion time result (e.g. 13/15), not the appointment clock time.</div>
+            ` : `
+              <div class="field-row">
+                <label class="field">DT test<input type="text" name="dtTest" value="${esc(d.dtTest||"")}"></label>
+                <label class="field">Score<input type="text" name="score" value="${esc(d.score||"")}"></label>
+              </div>
+              <div class="field-row">
+                <!-- "Time" here is Kumon's standard-completion-time notation (e.g. "13/15"), not
+                     a clock time — a separate result recorded once the test is graded. The
+                     diagnostic's actual scheduled clock time (for the calendar) lives on its own
+                     "time" field, unrelated to this one and edited from the diagnostic queue's own
+                     Edit button instead. -->
+                <label class="field">Time<input type="text" name="dtTime" value="${esc(d.dtTime||"")}" placeholder="e.g. 13/15"></label>
+                <label class="field">Start point<input type="text" name="startPoint" value="${esc(d.startPoint||"")}" placeholder="e.g. Math 3A"></label>
+              </div>
+              <div class="hint">"Time" is the standard completion time result (e.g. 13/15), not the appointment clock time.</div>
+            `}
             <label class="field">Diagnostic remarks<textarea name="dxNotes" rows="2" placeholder="e.g. cant be reached, try call, referred by…">${esc(d.notes||"")}</textarea></label>
           ` : ""}
           <div class="field-row">
@@ -1881,7 +1970,12 @@
       // test" section in openEditStudentModal above) rather than a separate modal — the
       // fields are only present when `d` exists, so this only runs then.
       if(d){
-        await db.collection("diagnostics").doc(d.id).update({
+        // Which result fields were actually rendered (and so exist in this form) is decided by
+        // the subject the modal was opened with, not whatever the Subject dropdown was just
+        // changed to — see openEditStudentModal's isBoth. The new subject still gets saved below;
+        // it just doesn't retroactively invent form fields that were never on the page.
+        const wasBoth = studentSubject(s) === "Both";
+        const diagPatch = {
           studentName: name,
           parentName: fd.get("parentName").toString().trim(),
           ageGrade: fd.get("ageGrade").toString().trim(),
@@ -1890,12 +1984,24 @@
           subject: fd.get("subject").toString(),
           inquiry: fd.get("inquiry").toString(),
           examiner: fd.get("examiner"),
-          notes: fd.get("dxNotes").toString().trim(),
-          dtTest: fd.get("dtTest").toString().trim(),
-          score: fd.get("score").toString().trim(),
-          dtTime: fd.get("dtTime").toString().trim(),
-          startPoint: fd.get("startPoint").toString().trim()
-        });
+          notes: fd.get("dxNotes").toString().trim()
+        };
+        if(wasBoth){
+          diagPatch.mathDtTest = fd.get("mathDtTest").toString().trim();
+          diagPatch.mathScore = fd.get("mathScore").toString().trim();
+          diagPatch.mathDtTime = fd.get("mathDtTime").toString().trim();
+          diagPatch.mathStartPoint = fd.get("mathStartPoint").toString().trim();
+          diagPatch.readingDtTest = fd.get("readingDtTest").toString().trim();
+          diagPatch.readingScore = fd.get("readingScore").toString().trim();
+          diagPatch.readingDtTime = fd.get("readingDtTime").toString().trim();
+          diagPatch.readingStartPoint = fd.get("readingStartPoint").toString().trim();
+        }else{
+          diagPatch.dtTest = fd.get("dtTest").toString().trim();
+          diagPatch.score = fd.get("score").toString().trim();
+          diagPatch.dtTime = fd.get("dtTime").toString().trim();
+          diagPatch.startPoint = fd.get("startPoint").toString().trim();
+        }
+        await db.collection("diagnostics").doc(d.id).update(diagPatch);
         logHistory("edit_diagnostic", `Edited ${name}'s diagnostic booking`, "diagnostic", d.id);
       }
       // Every schedules row sharing this studentId (the plain one plus each subject-linked
@@ -2146,6 +2252,10 @@
   function openEditDiagnosticModal(id){
     const d = STATE.diagnostics.find(x=>x.id===id);
     if(!d) return;
+    // Drives which DT result fields render below — see diagResultFor() above. This modal has
+    // no student record to check yet (a diagnostic can still be pending), so it goes off the
+    // diagnostic's own Subject field, chosen right below.
+    const isBoth = d.subject === "Both";
     openModal(`
       <div class="modal-head"><h3>Edit diagnostic booking</h3><button class="iconbtn" data-action="close-modal">✕</button></div>
       <form data-form="edit-diagnostic" data-id="${d.id}">
@@ -2184,17 +2294,40 @@
             </select>
           </label>
           <label class="field">Remarks<textarea name="notes" rows="2" placeholder="e.g. cant be reached, try call, referred by…">${esc(d.notes||"")}</textarea></label>
-          <div class="field-row">
-            <label class="field">DT test<input type="text" name="dtTest" value="${esc(d.dtTest||"")}"></label>
-            <label class="field">Score<input type="text" name="score" value="${esc(d.score||"")}"></label>
-          </div>
-          <div class="field-row">
-            <!-- Standard-completion-time result (e.g. "13/15"), not the appointment's clock
-                 time above — same distinction as the Edit-student modal's Diagnostic test
-                 section. -->
-            <label class="field">Time<input type="text" name="dtTime" value="${esc(d.dtTime||"")}" placeholder="e.g. 13/15"></label>
-            <label class="field">Start point<input type="text" name="startPoint" value="${esc(d.startPoint||"")}" placeholder="e.g. Math 3A"></label>
-          </div>
+          ${isBoth ? `
+            <!-- Both subjects booked means two separate DT results — same split as the
+                 Edit-student modal's Diagnostic test section (see diagResultFor() above). -->
+            <div class="hint" style="margin-top:4px;">Math results</div>
+            <div class="field-row">
+              <label class="field">DT test<input type="text" name="mathDtTest" value="${esc(d.mathDtTest||"")}"></label>
+              <label class="field">Score<input type="text" name="mathScore" value="${esc(d.mathScore||"")}"></label>
+            </div>
+            <div class="field-row">
+              <label class="field">Time<input type="text" name="mathDtTime" value="${esc(d.mathDtTime||"")}" placeholder="e.g. 13/15"></label>
+              <label class="field">Start point<input type="text" name="mathStartPoint" value="${esc(d.mathStartPoint||"")}" placeholder="e.g. 3A"></label>
+            </div>
+            <div class="hint" style="margin-top:4px;">Reading results</div>
+            <div class="field-row">
+              <label class="field">DT test<input type="text" name="readingDtTest" value="${esc(d.readingDtTest||"")}"></label>
+              <label class="field">Score<input type="text" name="readingScore" value="${esc(d.readingScore||"")}"></label>
+            </div>
+            <div class="field-row">
+              <label class="field">Time<input type="text" name="readingDtTime" value="${esc(d.readingDtTime||"")}" placeholder="e.g. 13/15"></label>
+              <label class="field">Start point<input type="text" name="readingStartPoint" value="${esc(d.readingStartPoint||"")}" placeholder="e.g. BI"></label>
+            </div>
+          ` : `
+            <div class="field-row">
+              <label class="field">DT test<input type="text" name="dtTest" value="${esc(d.dtTest||"")}"></label>
+              <label class="field">Score<input type="text" name="score" value="${esc(d.score||"")}"></label>
+            </div>
+            <div class="field-row">
+              <!-- Standard-completion-time result (e.g. "13/15"), not the appointment's clock
+                   time above — same distinction as the Edit-student modal's Diagnostic test
+                   section. -->
+              <label class="field">Time<input type="text" name="dtTime" value="${esc(d.dtTime||"")}" placeholder="e.g. 13/15"></label>
+              <label class="field">Start point<input type="text" name="startPoint" value="${esc(d.startPoint||"")}" placeholder="e.g. Math 3A"></label>
+            </div>
+          `}
         </div>
         <div class="modal-foot">
           <button type="button" class="btn ghost" data-action="close-modal">Cancel</button>
@@ -2274,12 +2407,16 @@
     return WEEK_ORDER.map(i => `<option value="${DOW[i]}" ${selected===DOW[i]?"selected":""}>${DOW_FULL[i]}</option>`).join("");
   }
 
-  function openNewSchedule(presetStudentId){
-    const pool = readyForSchedule();
+  function openNewSchedule(presetStudentId, kind){
+    // kind "monitor": the student has just finished training. They get their real schedule now, under a
+    // monitoring trainer, and show on that trainer's Monitor Students list (see the helpers by
+    // onMonitorSchedule). Anything else is the original regular-schedule flow.
+    const monitorMode = kind === "monitor";
+    const pool = monitorMode ? onMonitorSchedule().filter(s => !monitorEnrollmentsFor(s.id).length) : readyForSchedule();
     if(!pool.length){
       openModal(`
-        <div class="modal-head"><h3>New regular schedule</h3><button class="iconbtn" data-action="close-modal">✕</button></div>
-        <div class="modal-body"><div class="empty">No students are ready yet. A student appears here once both trainings are marked complete.</div></div>
+        <div class="modal-head"><h3>${monitorMode ? "New monitor schedule" : "New regular schedule"}</h3><button class="iconbtn" data-action="close-modal">✕</button></div>
+        <div class="modal-body"><div class="empty">${monitorMode ? "No one needs a monitor schedule right now. A student appears here once both trainings are marked complete." : "No students are ready yet. A student appears here once both trainings are marked complete."}</div></div>
       `);
       return;
     }
@@ -2293,11 +2430,15 @@
     // that's already on file. Every one of these stays a normal, editable field.
     const presetMode = presetStudent ? presetStudent.mode : null;
     const presetDiag = presetStudentId ? activeDiagnosticFor(presetStudentId) : null;
-    const presetMathLevel = presetDiag ? guessLevelFromStartPoint(presetDiag.startPoint, "Math") : "";
-    const presetReadingLevel = presetDiag ? guessLevelFromStartPoint(presetDiag.startPoint, "Reading") : "";
+    // Prefer the dedicated per-subject start point (set once a "Both" diagnostic's results are
+    // entered — see diagResultFor() above); fall back to guessing off the single combined field
+    // for diagnostics recorded before that split existed.
+    const presetMathLevel = presetDiag ? guessLevelFromStartPoint(presetDiag.mathStartPoint || presetDiag.startPoint, "Math") : "";
+    const presetReadingLevel = presetDiag ? guessLevelFromStartPoint(presetDiag.readingStartPoint || presetDiag.startPoint, "Reading") : "";
     openModal(`
-      <div class="modal-head"><h3>New regular schedule</h3><button class="iconbtn" data-action="close-modal">✕</button></div>
+      <div class="modal-head"><h3>${monitorMode ? "New monitor schedule" : "New regular schedule"}</h3><button class="iconbtn" data-action="close-modal">✕</button></div>
       <form data-form="new-schedule">
+        <input type="hidden" name="kind" value="${monitorMode ? "monitor" : "regular"}">
         <div class="modal-body">
           <label class="field">Student
             <select name="studentId" required>
@@ -2328,13 +2469,14 @@
           </label>
 
           <div style="height:1px; background:var(--border); margin:14px 0;"></div>
-          <div class="hint" style="font-size:11px; text-transform:uppercase; letter-spacing:.04em; margin:0 0 8px;">Graduating — assign to a teacher's roster</div>
+          <div class="hint" style="font-size:11px; text-transform:uppercase; letter-spacing:.04em; margin:0 0 8px;">${monitorMode ? "On monitor — goes on their trainer's Monitor Students list" : "Graduating — assign to a teacher's roster"}</div>
+          ${monitorMode ? fieldSelectStaff("monitorTrainer", STATE.settings.trainers, "Monitoring trainer", true) : ""}
 
           <label class="field" style="flex-direction:row; align-items:center; gap:8px;">
             <input type="checkbox" name="mathOn" data-action="toggle-subject-block" data-target="mathScheduleBlock" ${mathChecked?"checked":""}> Math
           </label>
           <div id="mathScheduleBlock" ${mathChecked?"":"hidden"} style="margin:8px 0 4px;">
-            ${fieldSelectStaff("mathTeacher", STATE.settings.trainers, "Math teacher", false)}
+            ${monitorMode ? "" : fieldSelectStaff("mathTeacher", STATE.settings.trainers, "Math teacher", false)}
             <div class="field-row">
               <label class="field">Current level${levelSelect("mathCurLevel","Math",presetMathLevel)}</label>
               <label class="field">Current page<input type="text" name="mathCurPage" placeholder="e.g. 130"></label>
@@ -2349,7 +2491,7 @@
             <input type="checkbox" name="readingOn" data-action="toggle-subject-block" data-target="readingScheduleBlock" ${readingChecked?"checked":""}> Reading
           </label>
           <div id="readingScheduleBlock" ${readingChecked?"":"hidden"} style="margin:8px 0 4px;">
-            ${fieldSelectStaff("readingTeacher", STATE.settings.trainers, "Reading teacher", false)}
+            ${monitorMode ? "" : fieldSelectStaff("readingTeacher", STATE.settings.trainers, "Reading teacher", false)}
             <div class="field-row">
               <label class="field">Current level${levelSelect("readingCurLevel","Reading",presetReadingLevel)}</label>
               <label class="field">Current page<input type="text" name="readingCurPage" placeholder="e.g. 130"></label>
@@ -2359,11 +2501,11 @@
               <label class="field">Goal page<input type="text" name="readingGoalPage" placeholder="e.g. 180"></label>
             </div>
           </div>
-          <p class="hint" style="font-size:12px; margin:4px 0 0;">This is what puts them on the Student roster page, under their teacher.</p>
+          <p class="hint" style="font-size:12px; margin:4px 0 0;">${monitorMode ? "They'll show up under Monitor Students for this trainer, tagged NEW for this month. When they're ready, use Move to regular roster to pick their teacher. Otherwise they join the regular roster on their own when next month starts." : "This is what puts them on the Student roster page, under their teacher."}</p>
         </div>
         <div class="modal-foot">
           <button type="button" class="btn ghost" data-action="close-modal">Cancel</button>
-          <button type="submit" class="btn primary">Set schedule</button>
+          <button type="submit" class="btn primary">${monitorMode ? "Set monitor schedule" : "Set schedule"}</button>
         </div>
       </form>
     `);
@@ -2494,17 +2636,30 @@
     const inquiry = fd.get("inquiry").toString();
     const examiner = fd.get("examiner");
     const notes = fd.get("notes").toString().trim();
-    const dtTest = fd.get("dtTest").toString().trim();
-    const score = fd.get("score").toString().trim();
-    const dtTime = fd.get("dtTime").toString().trim();
-    const startPoint = fd.get("startPoint").toString().trim();
+    // Which result fields were actually rendered (and so exist in this form) is decided by the
+    // diagnostic's ORIGINAL subject — see openEditDiagnosticModal's isBoth — not whatever the
+    // Subject dropdown was just changed to. The new subject still gets saved below.
+    const wasBoth = d.subject === "Both";
+    const diagPatch = { studentName, parentName, ageGrade, contact, date, time, subject, inquiry, examiner, notes };
+    if(wasBoth){
+      diagPatch.mathDtTest = fd.get("mathDtTest").toString().trim();
+      diagPatch.mathScore = fd.get("mathScore").toString().trim();
+      diagPatch.mathDtTime = fd.get("mathDtTime").toString().trim();
+      diagPatch.mathStartPoint = fd.get("mathStartPoint").toString().trim();
+      diagPatch.readingDtTest = fd.get("readingDtTest").toString().trim();
+      diagPatch.readingScore = fd.get("readingScore").toString().trim();
+      diagPatch.readingDtTime = fd.get("readingDtTime").toString().trim();
+      diagPatch.readingStartPoint = fd.get("readingStartPoint").toString().trim();
+    }else{
+      diagPatch.dtTest = fd.get("dtTest").toString().trim();
+      diagPatch.score = fd.get("score").toString().trim();
+      diagPatch.dtTime = fd.get("dtTime").toString().trim();
+      diagPatch.startPoint = fd.get("startPoint").toString().trim();
+    }
     if(!firstName || !lastName || !date || !time || !examiner) return;
 
     await guardWrite(async ()=>{
-      await db.collection("diagnostics").doc(id).update({
-        studentName, parentName, ageGrade, contact, date, time, subject, inquiry, examiner, notes,
-        dtTest, score, dtTime, startPoint
-      });
+      await db.collection("diagnostics").doc(id).update(diagPatch);
       // Keep the linked student record's own details in step with what was just corrected here.
       if(d.studentId && studentById(d.studentId)){
         await db.collection("students").doc(d.studentId).update({ name: studentName, firstName, lastName, parentName, parentPhone: contact, ageGrade });
@@ -2553,6 +2708,53 @@
     });
   }
 
+  // Move a monitor student onto the regular roster: one teacher pick per subject enrollment (defaulting to
+  // the monitoring trainer, so "keep them with me" is one click). Uses the same database function Student
+  // Roster uses, since a trainer can't otherwise reassign a row away from her own name.
+  function openMonitorPromote(studentId){
+    const s = studentById(studentId);
+    const enr = monitorEnrollmentsFor(studentId);
+    if(!s || !enr.length) return;
+    const opts = cur => {
+      const list = STATE.settings.trainers.includes(cur) || !cur ? STATE.settings.trainers : [cur, ...STATE.settings.trainers];
+      return list.map(t => `<option value="${esc(t)}" ${t===cur?"selected":""}>${esc(t)}</option>`).join("");
+    };
+    openModal(`
+      <div class="modal-head"><h3>Move ${esc(displayName(s))} to the regular roster</h3><button class="iconbtn" data-action="close-modal">✕</button></div>
+      <form data-form="monitor-promote" data-student="${studentId}">
+        <div class="modal-body">
+          <div class="hint">Their schedule, records and history all carry over. Pick who teaches them from now on.</div>
+          ${enr.map(e => `<label class="field">${esc(e.subject)} teacher
+            <select name="teacher_${e.id}">${opts(e.teacher || "")}</select>
+          </label>`).join("")}
+        </div>
+        <div class="modal-foot">
+          <button type="button" class="btn ghost" data-action="close-modal">Cancel</button>
+          <button type="submit" class="btn primary">Move to regular roster</button>
+        </div>
+      </form>
+    `);
+  }
+  async function submitMonitorPromote(form){
+    const studentId = form.dataset.student;
+    const s = studentById(studentId);
+    const enr = monitorEnrollmentsFor(studentId);
+    if(!s || !enr.length) return;
+    const fd = new FormData(form);
+    await guardWrite(async ()=>{
+      const moved = [];
+      for(const e of enr){
+        const teacher = (fd.get(`teacher_${e.id}`) || "").toString();
+        const { error } = await sbClient.rpc("promote_monitor_enrollment", { p_id: e.id, p_teacher: teacher });
+        if(error) throw error;
+        moved.push(`${e.subject} → ${teacher || e.teacher || "same teacher"}`);
+      }
+      await db.collection("students").doc(studentId).update({ status: "active" });
+      logHistory("monitor_promote", `Moved ${s.name} off monitor onto the regular roster (${moved.join(", ")})`, "student", studentId);
+      toast("Moved to the regular roster.");
+    });
+  }
+
   async function submitNewSchedule(form){
     const fd = new FormData(form);
     const studentId = fd.get("studentId");
@@ -2565,6 +2767,14 @@
     if(!s) return;
     const mathOn = fd.get("mathOn") === "on";
     const readingOn = fd.get("readingOn") === "on";
+    const monitorMode = fd.get("kind") === "monitor";
+    const monitorTrainer = (fd.get("monitorTrainer") || "").toString();
+    if(monitorMode){
+      if(!monitorTrainer){ toast("Pick the monitoring trainer."); return; }
+      if(!mathOn && !readingOn){ toast("Pick Math, Reading, or both."); return; }
+    }
+    // Extra columns written on each enrollment when this is a monitor schedule (see phase25).
+    const monitorFields = monitorMode ? { isMonitor: true, monitorCycle: currentCycleKey() } : {};
     const mode = fd.get("mode") || "";
     const slots = [{ day: day1, time: time1 }, { day: day2, time: time2 }];
     // Same two days/times, but tagged IC (In Center) by default for the linked, per-subject
@@ -2581,7 +2791,8 @@
       await db.collection("schedules").add({
         studentId, studentName: s.name, slots, startDate, status: "active", createdAt: new Date().toISOString()
       });
-      await db.collection("students").doc(studentId).update({ status: "active", mode });
+      // A monitor student stays "On monitor schedule" in Pipeline until they're moved to the regular roster.
+      await db.collection("students").doc(studentId).update(monitorMode ? { mode } : { status: "active", mode });
       // Each subject enrollment gets its own linked schedule row (subjectEnrollmentId) —
       // that's what Student Roster's Schedule column actually reads (scheduleFor(enrollment.id),
       // see roster.html), so the days/times just picked above show up there immediately
@@ -2589,10 +2800,10 @@
       if(mathOn){
         const enr = await db.collection("subject_enrollments").add({
           studentId, studentName: s.name, subject: "Math",
-          teacher: fd.get("mathTeacher") || "",
+          teacher: monitorMode ? monitorTrainer : (fd.get("mathTeacher") || ""),
           currentLevel: fd.get("mathCurLevel") || "", currentPage: fd.get("mathCurPage") || "",
           goalLevel: fd.get("mathGoalLevel") || "", goalPage: fd.get("mathGoalPage") || "",
-          mode, enrollmentType, enrollmentTypeSetAt
+          mode, enrollmentType, enrollmentTypeSetAt, ...monitorFields
         });
         await db.collection("schedules").add({
           studentId, studentName: s.name, subjectEnrollmentId: enr.id,
@@ -2602,10 +2813,10 @@
       if(readingOn){
         const enr = await db.collection("subject_enrollments").add({
           studentId, studentName: s.name, subject: "Reading",
-          teacher: fd.get("readingTeacher") || "",
+          teacher: monitorMode ? monitorTrainer : (fd.get("readingTeacher") || ""),
           currentLevel: fd.get("readingCurLevel") || "", currentPage: fd.get("readingCurPage") || "",
           goalLevel: fd.get("readingGoalLevel") || "", goalPage: fd.get("readingGoalPage") || "",
-          mode, enrollmentType, enrollmentTypeSetAt
+          mode, enrollmentType, enrollmentTypeSetAt, ...monitorFields
         });
         await db.collection("schedules").add({
           studentId, studentName: s.name, subjectEnrollmentId: enr.id,
@@ -2613,8 +2824,13 @@
         });
       }
       const subjectsOn = [mathOn && "Math", readingOn && "Reading"].filter(Boolean).join(" + ");
-      logHistory("set_regular_schedule", `Set ${s.name}'s regular schedule${subjectsOn ? " — " + subjectsOn + " (" + enrollmentType.toUpperCase() + ")" : ""}`, "student", studentId);
-      toast(mathOn || readingOn ? "Regular schedule set — now on their teacher's roster." : "Regular schedule set.");
+      logHistory(monitorMode ? "set_monitor_schedule" : "set_regular_schedule",
+        monitorMode
+          ? `Set ${s.name}'s monitor schedule with ${monitorTrainer} — ${subjectsOn} (${enrollmentType.toUpperCase()})`
+          : `Set ${s.name}'s regular schedule${subjectsOn ? " — " + subjectsOn + " (" + enrollmentType.toUpperCase() + ")" : ""}`,
+        "student", studentId);
+      toast(monitorMode ? `Monitor schedule set — now on ${monitorTrainer}'s Monitor Students list.`
+        : mathOn || readingOn ? "Regular schedule set — now on their teacher's roster." : "Regular schedule set.");
     });
   }
 
@@ -2766,7 +2982,8 @@
     else if(a === "open-new-chooser"){ openNewChooser(); }
     else if(a === "open-new-diagnostic"){ openNewDiagnostic(el.dataset.date); }
     else if(a === "open-new-training"){ openNewTraining(el.dataset.student, el.dataset.date); }
-    else if(a === "open-new-schedule"){ openNewSchedule(el.dataset.student); }
+    else if(a === "open-new-schedule"){ openNewSchedule(el.dataset.student, el.dataset.kind); }
+    else if(a === "open-monitor-promote"){ openMonitorPromote(el.dataset.student); }
     else if(a === "open-day"){ openDayModal(el.dataset.date); }
     else if(a === "open-student"){ openStudentModal(el.dataset.id); }
     else if(a === "delete-student"){ openDeleteConfirm("student", el.dataset.id); }
@@ -2857,7 +3074,8 @@
     "edit-training": submitEditTraining,
     "new-student": submitNewStudent,
     "edit-student": submitEditStudent,
-    "new-schedule": submitNewSchedule
+    "new-schedule": submitNewSchedule,
+    "monitor-promote": submitMonitorPromote
   };
   document.addEventListener("submit", e => {
     const form = e.target;
