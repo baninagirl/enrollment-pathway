@@ -425,6 +425,7 @@
   let groupView = false;
   let pageView = "month"; // "month" | "unpaid" | "absent"
   const filters = { search: "", status: "all", teacher: "all" };
+  let canViewOutstanding = false;
   function isTeacherScoped(){ return currentRole === "teacher" || currentRole === "trainer_teacher"; }
   function isBillingAdmin(){ return currentRole === "admin" || currentRole === "superadmin"; }
 
@@ -637,6 +638,14 @@
       currentRole = data ? data.role : "pending";
       currentTeacherName = data ? (data.teacher_name || null) : null;
     }catch(e){ console.warn("couldn't load role", e); currentRole = "pending"; currentTeacherName = null; }
+    // The center-wide "Outstanding this month" peso total is limited to accounts a superadmin has
+    // flagged (profiles.can_view_outstanding, see phase28). Read separately so a missing column or a
+    // failed read can only ever HIDE the total, never break sign-in.
+    canViewOutstanding = false;
+    try{
+      const { data, error } = await sbClient.from("profiles").select("can_view_outstanding").eq("id", currentUser.id).maybeSingle();
+      if(!error && data) canViewOutstanding = data.can_view_outstanding === true;
+    }catch(e){ canViewOutstanding = false; }
   }
 
   async function boot(){
@@ -1173,9 +1182,10 @@
     // decision" — still just a flag for a person to act on, never automatic (see markAbsent()).
     const pastTenth = isPastTenthOf(ym);
     // Total amount due is an admin/superadmin number — a teacher gets everything else on
-    // this row (who's unpaid, what needs review, who's overdue) but not the center-wide total.
+    // this row (who's unpaid, what needs review, who's overdue) but not the center-wide peso total,
+    // which only accounts flagged can_view_outstanding get (even other admins/superadmins don't).
     $("#statsRow").innerHTML = `
-      ${!isTeacherScoped() ? `<div class="stat"><div class="n">${peso(outstanding)}</div><div class="l">Outstanding this month</div></div>` : ""}
+      ${canViewOutstanding ? `<div class="stat"><div class="n">${peso(outstanding)}</div><div class="l">Outstanding this month</div></div>` : ""}
       <div class="stat ${unpaidThisMonth ? "bad" : ""}"><div class="n">${unpaidThisMonth}</div><div class="l">Unpaid this month (by subject)</div></div>
       <div class="stat ${pendingReview ? "warn" : ""}"><div class="n">${pendingReview}</div><div class="l">Receipts to review</div></div>
       <div class="stat ${unpaidFollowUp ? (pastTenth ? "bad" : "warn") : ""}"><div class="n">${unpaidFollowUp}</div><div class="l">${unpaidFollowUp && pastTenth ? "Overdue — needs a decision" : "Unpaid — needs follow-up"}</div></div>
