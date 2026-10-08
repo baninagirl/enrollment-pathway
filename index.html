@@ -255,6 +255,11 @@
   /* Modal */
   .modal-backdrop{ position:fixed; inset:0; background:rgba(10,12,18,.5); display:flex; align-items:flex-start; justify-content:center; padding:5vh 16px; overflow-y:auto; z-index:50; }
   .modal{ background:var(--surface); border-radius:16px; width:100%; max-width:480px; box-shadow:var(--shadow); }
+  @keyframes rowFlash{ 0%{ background:var(--good-soft); box-shadow:0 0 0 2px var(--good-soft); } 100%{ background:transparent; box-shadow:0 0 0 2px transparent; } }
+  @keyframes pillPop{ 0%{ transform:scale(.6); opacity:0; } 60%{ transform:scale(1.12); opacity:1; } 100%{ transform:scale(1); } }
+  .rowi.flash{ animation:rowFlash 1.6s ease-out; border-radius:10px; }
+  .rowi.flash .pill.good{ animation:pillPop .45s ease-out; }
+  .btn.saving{ opacity:.65; pointer-events:none; }
   .modal.modal-wide{ max-width:min(980px,100%); }
   .slot-ctrls{ display:flex; flex-wrap:wrap; gap:10px 14px; align-items:flex-end; }
   .slot-ctrls label{ display:flex; flex-direction:column; gap:3px; font-size:11.5px; color:var(--ink-muted); }
@@ -1051,6 +1056,7 @@
     renderStats();
     renderView();
     renderStudentDatalist();
+    refreshDayModal(null); // keep an open day popup in step with live changes
   }
 
   function renderNav(){
@@ -1439,6 +1445,23 @@
         <button class="btn" data-action="open-new-training" data-date="${iso}">${iconPlus()} New training</button>
       </div>
     `);
+    dayModalIso = iso;
+  }
+  // Redraw the open day popup with fresh data, keeping its scroll position, and optionally flash one row
+  // (the one that was just changed) so the result is obvious instead of silent.
+  function refreshDayModal(flashTrainingId){
+    if(!dayModalIso || $("#modalBackdrop").hidden) return;
+    const iso = dayModalIso;
+    const body = document.querySelector("#modal .modal-body");
+    const top = body ? body.scrollTop : 0;
+    openDayModal(iso);
+    const nb = document.querySelector("#modal .modal-body");
+    if(nb) nb.scrollTop = top;
+    if(flashTrainingId){
+      const btn = document.querySelector(`#modal [data-id="${flashTrainingId}"]`);
+      const row = btn && btn.closest(".rowi");
+      if(row){ row.classList.add("flash"); setTimeout(()=>row.classList.remove("flash"), 1800); }
+    }
   }
 
 
@@ -2821,12 +2844,15 @@
   }
 
   /* ---------------- Modal plumbing ---------------- */
+  let dayModalIso = null; // set by openDayModal so it can refresh itself in place after an action
   function openModal(html){
+    dayModalIso = null;
     $("#modal").classList.remove("modal-wide");
     $("#modal").innerHTML = html;
     $("#modalBackdrop").hidden = false;
   }
   function closeModal(){
+    dayModalIso = null;
     $("#modalBackdrop").hidden = true;
     $("#modal").classList.remove("modal-wide");
     $("#modal").innerHTML = "";
@@ -3618,16 +3644,30 @@
   async function markTrainingComplete(id){
     const t = STATE.trainings.find(x=>x.id===id);
     if(!t) return;
+    trainingBtnSaving(id, "mark-training-complete");
+    let saved = false;
     await guardWrite(async ()=>{
       await db.collection("trainings").doc(id).update({ status: "completed" });
+      t.status = "completed"; // show it straight away; the live sync confirms it
       const others = trainingsFor(t.studentId).filter(x=>x.id!==id);
       const completedCount = others.filter(x=>x.status==="completed").length + 1;
       if(completedCount >= 2){
         await db.collection("students").doc(t.studentId).update({ status: "monitor_schedule" });
+        const stu = studentById(t.studentId); if(stu) stu.status = "monitor_schedule";
       }
       logHistory("training_complete", `Marked training session ${t.sessionNumber} complete for ${t.studentName}`, "training", id);
-      toast("Training marked complete.");
+      toast(`✓ ${t.studentName || "Training"} — session ${t.sessionNumber} marked complete.`);
+      saved = true;
     });
+    if(saved){ renderAll(); refreshDayModal(id); }
+    else trainingBtnSaving(id, "mark-training-complete", true);
+  }
+  // While a Mark complete / Mark not completed write is in flight, grey out its button and say "Saving…".
+  function trainingBtnSaving(id, action, undo){
+    const b = document.querySelector(`[data-action="${action}"][data-id="${id}"]`);
+    if(!b) return;
+    if(undo){ b.classList.remove("saving"); if(b.dataset.label) b.textContent = b.dataset.label; return; }
+    b.dataset.label = b.textContent; b.classList.add("saving"); b.textContent = "Saving…";
   }
   // Undo a "Mark complete" done by mistake: the session goes back to scheduled. If that completion was what
   // moved the student onto "On monitor schedule" and they haven't been given a monitor/regular schedule yet,
@@ -3635,17 +3675,24 @@
   async function markTrainingIncomplete(id){
     const t = STATE.trainings.find(x=>x.id===id);
     if(!t) return;
+    trainingBtnSaving(id, "mark-training-incomplete");
+    let saved = false;
     await guardWrite(async ()=>{
       await db.collection("trainings").doc(id).update({ status: "scheduled" });
+      t.status = "scheduled";
       const stu = studentById(t.studentId);
       const completedLeft = trainingsFor(t.studentId).filter(x => x.id !== id && x.status === "completed").length;
       const hasEnrollments = STATE.enrollments.some(e => e.studentId === t.studentId);
       if(stu && stu.status === "monitor_schedule" && completedLeft < 2 && !hasEnrollments){
         await db.collection("students").doc(t.studentId).update({ status: "enrolled_pending_training" });
+        stu.status = "enrolled_pending_training";
       }
       logHistory("training_uncomplete", `Marked training session ${t.sessionNumber} not completed for ${t.studentName}`, "training", id);
-      toast("Training put back to scheduled.");
+      toast(`${t.studentName || "Training"} — session ${t.sessionNumber} put back to scheduled.`);
+      saved = true;
     });
+    if(saved){ renderAll(); refreshDayModal(id); }
+    else trainingBtnSaving(id, "mark-training-incomplete", true);
   }
   async function markReadyForSchedule(studentId){
     await guardWrite(async ()=>{
