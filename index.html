@@ -1226,11 +1226,22 @@
     if(STATE.calFilter === "all" || STATE.calFilter === "monitor"){
       events = events.concat(monitorScheduleInstances(rangeStartISO, rangeEndISO));
     }
-    if(STATE.calStaff !== "all") events = events.filter(e => e.staff === STATE.calStaff);
+    if(STATE.calStaff !== "all") events = events.filter(e => sameStaff(e.staff, STATE.calStaff));
     events.sort((a,b)=> (a.date+a.time).localeCompare(b.date+b.time));
     return events;
   }
 
+  // One list of people for the calendar's staff filter. Someone who is both a DT teacher and a trainer
+  // (same name, or the same name with a different title) appears once, and picking them shows both roles.
+  const sameStaff = (a, b) => !!a && !!b && slotKey(a) === slotKey(b);
+  function calStaffList(){
+    const seen = new Set(), out = [];
+    [...STATE.settings.examiners, ...STATE.settings.trainers].forEach(n => {
+      const k = slotKey(n);
+      if(k && !seen.has(k)){ seen.add(k); out.push(n); }
+    });
+    return out.sort((a,b) => slotKey(a).localeCompare(slotKey(b)));
+  }
   function calToolbarHTML(navLabel){
     return `
       <div class="cal-toolbar">
@@ -1259,8 +1270,7 @@
           </div>
           <select data-action="cal-staff">
             <option value="all">All staff</option>
-            ${STATE.settings.examiners.map(x=>`<option value="${esc(x)}" ${STATE.calStaff===x?"selected":""}>${esc(x)}</option>`).join("")}
-            ${STATE.settings.trainers.map(x=>`<option value="${esc(x)}" ${STATE.calStaff===x?"selected":""}>${esc(x)} (trainer)</option>`).join("")}
+            ${calStaffList().map(x=>`<option value="${esc(x)}" ${sameStaff(STATE.calStaff,x)?"selected":""}>${esc(x)}</option>`).join("")}
           </select>
         </div>
       </div>
@@ -1402,7 +1412,7 @@
     // Match the same scoping as the calendar grid: the type chip (All/Diagnostics/Trainings/Regular)
     // narrows which kinds show, and within that, everything shows under "All staff" while a specific
     // person's view only shows their own diagnostics / trainings / regular schedule.
-    const staffOk = staff => STATE.calStaff === "all" || staff === STATE.calStaff;
+    const staffOk = staff => STATE.calStaff === "all" || sameStaff(staff, STATE.calStaff);
     const dayEvents = [];
     if(STATE.calFilter === "all" || STATE.calFilter === "diagnostic"){
       STATE.diagnostics.filter(d=>d.date===iso && d.status!=="cancelled" && staffOk(d.examiner)).forEach(d => dayEvents.push({type:"diagnostic", time:d.time, ref:d}));
@@ -2589,6 +2599,10 @@
             </label>
           </div>
           ${teacherPickBlock("", null)}
+          <label class="field" style="flex-direction:row; align-items:flex-start; gap:8px;">
+            <input type="checkbox" name="needsTraining" value="1" style="width:auto; margin-top:3px;">
+            <span>Starting with student training (no diagnostic)<br><span class="hint">Puts them under <b>Awaiting training</b> as NEW, so you can book their trainings from the calendar. Leave unticked to just add them to the roster.</span></span>
+          </label>
           ${dtResultsBlockNoBooking("")}
           <p class="hint">For a student already going through a diagnostic booking, use <b>New diagnostic booking</b> instead — this is for adding someone straight onto the roster (e.g. an existing student from your old spreadsheet).</p>
         </div>
@@ -2744,6 +2758,7 @@
     const name = `${firstName} ${lastName}`.trim();
     if(!firstName || !lastName) return;
     if(findExistingStudentId(name)){ toast("A student with that name is already on the roster."); return; }
+    const needsTraining = fd.get("needsTraining") === "1";
     await guardWrite(async ()=>{
       const newStudent = await db.collection("students").add({
         name, firstName, lastName,
@@ -2751,7 +2766,8 @@
         parentPhone: fd.get("parentPhone").toString().trim(),
         parentEmail: "", ageGrade: fd.get("ageGrade").toString().trim(), notes: "",
         subject: fd.get("subject").toString(),
-        status: "active", followUpStatus: "", followUpNotes: "",
+        status: needsTraining ? "enrolled_pending_training" : "active", followUpStatus: "", followUpNotes: "",
+        ...(needsTraining ? { enrollmentType: "new", enrollmentTypeSetAt: new Date().toISOString() } : {}),
         createdAt: new Date().toISOString()
       });
       if(newStudent) await applyTeacherPicks(newStudent.id, name, fd.get("subject").toString(), fd, "");
@@ -2762,8 +2778,8 @@
           ageGrade: fd.get("ageGrade").toString().trim(), subject: fd.get("subject").toString()
         }, dt);
       }
-      logHistory("add_student", `Added ${name} to the roster directly`, "student", newStudent ? newStudent.id : null);
-      toast("Student added to roster.");
+      logHistory("add_student", `Added ${name} to the roster directly${needsTraining ? " (awaiting training, no diagnostic)" : ""}`, "student", newStudent ? newStudent.id : null);
+      toast(needsTraining ? "Student added — awaiting training." : "Student added to roster.");
     });
   }
 
