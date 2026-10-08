@@ -1439,23 +1439,37 @@
   // when they already have a training booked, OR when they have a regular/monitor class with their
   // own students at that time (from each enrollment's teacher + its linked schedule row).
   // Hours and slot length are editable and remembered in this browser.
+  // DT slots are about open TIMES, not people: a DT is 1 hour, they start at 10:30 AM, and none may
+  // run through the 12:00-1:30 PM break. Training slots are about people (who's free).
   const SLOT_PREFS_KEY = "kumonSlotPrefs";
-  const SLOT_DEFAULTS = { start:"09:00", end:"18:00", len:60, days:[1,2,3,4,5,6] };
+  const SLOT_DEFAULTS_BY_KIND = {
+    dt: { start:"10:30", end:"18:00", len:60, days:[1,2,3,4,5,6], breakFrom:"12:00", breakTo:"13:30" },
+    st: { start:"09:00", end:"18:00", len:60, days:[1,2,3,4,5,6], breakFrom:"", breakTo:"" }
+  };
   const slotTool = { kind:"dt", weekStart:null, prefs:null };
-  function loadSlotPrefs(){
+  function loadSlotPrefs(kind){
+    const def = SLOT_DEFAULTS_BY_KIND[kind] || SLOT_DEFAULTS_BY_KIND.st;
     let p = {};
-    try{ p = JSON.parse(localStorage.getItem(SLOT_PREFS_KEY) || "{}") || {}; }catch(e){ p = {}; }
-    return { ...SLOT_DEFAULTS, ...p, days: Array.isArray(p.days) && p.days.length ? p.days : SLOT_DEFAULTS.days };
+    try{ p = JSON.parse(localStorage.getItem(SLOT_PREFS_KEY + "_" + kind) || "{}") || {}; }catch(e){ p = {}; }
+    return { ...def, ...p, days: Array.isArray(p.days) && p.days.length ? p.days : def.days };
   }
-  function saveSlotPrefs(){ try{ localStorage.setItem(SLOT_PREFS_KEY, JSON.stringify(slotTool.prefs)); }catch(e){} }
+  function saveSlotPrefs(){ try{ localStorage.setItem(SLOT_PREFS_KEY + "_" + slotTool.kind, JSON.stringify(slotTool.prefs)); }catch(e){} }
   const slotKey = s => String(s||"").trim().toLowerCase();
   const toMin = t => { const m = /^(\d{1,2}):(\d{2})/.exec(t||""); return m ? (+m[1])*60 + (+m[2]) : null; };
   const fromMin = n => String(Math.floor(n/60)).padStart(2,"0") + ":" + String(n%60).padStart(2,"0");
+  // Back-to-back slots from the start time. A slot that would run into the break isn't offered;
+  // the next one starts right when the break ends (e.g. 10:30, then 1:30, 2:30 ...).
   function slotStarts(p){
     const a = toMin(p.start), b = toMin(p.end), len = Number(p.len) || 60;
+    const bf = toMin(p.breakFrom), bt = toMin(p.breakTo);
+    const hasBreak = bf != null && bt != null && bt > bf;
     const out = [];
     if(a == null || b == null) return out;
-    for(let m = a; m + len <= b; m += len) out.push(m);
+    let m = a;
+    while(m + len <= b){
+      if(hasBreak && m < bt && m + len > bf){ m = bt; continue; }
+      out.push(m); m += len;
+    }
     return out;
   }
   // Busy start-times (minutes) for each person on a given date.
@@ -1477,7 +1491,8 @@
   }
   function slotComputeWeek(){
     const p = slotTool.prefs, len = Number(p.len) || 60;
-    const people = slotTool.kind === "dt" ? STATE.settings.examiners : STATE.settings.trainers;
+    const isDt = slotTool.kind === "dt";
+    const people = isDt ? ["Open"] : STATE.settings.trainers;
     const starts = slotStarts(p);
     const todayIso = todayISO();
     const nowMin = new Date().getHours()*60 + new Date().getMinutes();
@@ -1485,9 +1500,13 @@
       const d = addDays(slotTool.weekStart, dow);
       const iso = isoDate(d);
       const busy = busyMapFor(slotTool.kind, iso);
+      const allBusy = isDt ? Object.values(busy).flat() : [];
       const cells = starts.map(m => {
         const past = iso < todayIso || (iso === todayIso && m <= nowMin);
-        const free = past ? [] : people.filter(who => !(busy[slotKey(who)] || []).some(b => b < m + len && b + len > m));
+        // DT: open when no scheduled diagnostic (any DT teacher) overlaps this hour.
+        const free = past ? []
+          : isDt ? (allBusy.some(b => b < m + len && b + len > m) ? [] : ["Open"])
+          : people.filter(who => !(busy[slotKey(who)] || []).some(b => b < m + len && b + len > m));
         return { m, past, free };
       });
       return { dow, d, iso, cells };
@@ -1504,11 +1523,13 @@
     const { starts, days, people } = slotComputeWeek();
     const totalFree = days.reduce((n,d)=> n + d.cells.filter(c => c.free.length).length, 0);
     const head = `<tr><th></th>${days.map(d => `<th>${DOW[d.dow]}<div class="hint" style="font-weight:400;">${d.d.toLocaleDateString(undefined,{month:"short",day:"numeric"})}</div></th>`).join("")}</tr>`;
-    const body = starts.map((m, i) => `<tr><td>${fmtTime(fromMin(m))}</td>${days.map(d => {
+    const lenMin = Number(p.len) || 60;
+    const body = starts.map((m, i) => `<tr><td>${fmtTime(fromMin(m))}${isDt ? `<div class="hint" style="font-weight:400;">to ${fmtTime(fromMin(m + lenMin))}</div>` : ""}</td>${days.map(d => {
       const c = d.cells[i];
       if(c.past) return `<td class="past"><span class="slot-none">—</span></td>`;
-      if(!c.free.length) return `<td><span class="slot-none">${isDt ? "Full" : "No one free"}</span></td>`;
-      return `<td>${c.free.map(who => `<button type="button" class="slot-chip" data-action="slot-book" data-date="${d.iso}" data-time="${fromMin(m)}" data-who="${esc(who)}" title="${isDt ? "Book a diagnostic" : "Schedule a training"} with ${esc(who)}">${esc(who)}</button>`).join("")}</td>`;
+      if(!c.free.length) return `<td><span class="slot-none">${isDt ? "Booked" : "No one free"}</span></td>`;
+      if(isDt) return `<td><button type="button" class="slot-chip" data-action="slot-book" data-date="${d.iso}" data-time="${fromMin(m)}" data-who="" title="Book a diagnostic at this time">Open</button></td>`;
+      return `<td>${c.free.map(who => `<button type="button" class="slot-chip" data-action="slot-book" data-date="${d.iso}" data-time="${fromMin(m)}" data-who="${esc(who)}" title="Schedule a training with ${esc(who)}">${esc(who)}</button>`).join("")}</td>`;
     }).join("")}</tr>`).join("");
     $("#modal").classList.add("modal-wide");
     $("#modal").innerHTML = `
@@ -1526,10 +1547,12 @@
           <label>Slot length
             <select data-action="slot-pref" data-key="len">${[30,45,60,90,120].map(n => `<option value="${n}" ${Number(p.len)===n?"selected":""}>${n} min</option>`).join("")}</select>
           </label>
+          ${isDt ? `<label>No DTs from<input type="time" data-action="slot-pref" data-key="breakFrom" value="${esc(p.breakFrom||"")}"></label>
+          <label>until<input type="time" data-action="slot-pref" data-key="breakTo" value="${esc(p.breakTo||"")}"></label>` : ""}
           <div class="slot-days">${[1,2,3,4,5,6,0].map(dw => `<label><input type="checkbox" data-action="slot-day" data-dow="${dw}" ${p.days.includes(dw)?"checked":""}>${DOW[dw]}</label>`).join("")}</div>
         </div>
         <div class="hint">${isDt
-          ? "Based only on diagnostic bookings. Trainings and regular schedules are ignored. Each name is a DT teacher who is free then; tap one to book."
+          ? "Open hours with no diagnostic booked, whoever is doing it. Trainings and regular schedules are ignored. A DT is one hour, nothing runs through the break. Tap Open to book it."
           : "A trainer is free when they have no student training booked and no regular or monitor class with their own students at that time. Tap a name to schedule a training."}
           ${people.length ? "" : ` <b>No ${isDt ? "DT teachers" : "trainers"} are set up yet — add them in Settings.</b>`}</div>
         ${starts.length && days.length
@@ -1545,7 +1568,7 @@
   }
   function openSlotTool(kind){
     slotTool.kind = kind === "st" ? "st" : "dt";
-    slotTool.prefs = loadSlotPrefs();
+    slotTool.prefs = loadSlotPrefs(slotTool.kind);
     const base = STATE.calView === "week" && STATE.calWeekStart ? new Date(STATE.calWeekStart) : (() => { const d = new Date(); d.setHours(0,0,0,0); d.setDate(d.getDate()-d.getDay()); return d; })();
     base.setHours(0,0,0,0);
     slotTool.weekStart = base;
@@ -1557,7 +1580,8 @@
     const { days } = slotComputeWeek();
     const lines = [`${isDt ? "Open DT slots" : "Available training slots"} — ${slotWeekLabel()}`];
     days.forEach(d => {
-      const items = d.cells.filter(c => c.free.length).map(c => isDt ? fmtTime(fromMin(c.m)) : `${fmtTime(fromMin(c.m))} (${c.free.join(", ")})`);
+      const dtLen = Number(slotTool.prefs.len) || 60;
+      const items = d.cells.filter(c => c.free.length).map(c => isDt ? `${fmtTime(fromMin(c.m))}–${fmtTime(fromMin(c.m + dtLen))}` : `${fmtTime(fromMin(c.m))} (${c.free.join(", ")})`);
       lines.push(`${d.d.toLocaleDateString(undefined,{weekday:"short",month:"short",day:"numeric"})}: ${items.length ? items.join(", ") : "no slots"}`);
     });
     return lines.join("\n");
