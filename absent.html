@@ -414,19 +414,43 @@
   // Same 4-month return policy applies regardless (see resumeAbsence) — this is just the
   // billing side of it.
   function catchUpMonthFor(a){ return shiftMonth(a.last_paid_month, 1); }
+  // Grade 7 and above is charged a flat ₱2,350 per subject; everyone else uses their own
+  // per-subject rate (students.monthly_tuition, ₱2,200 by default). Grades look like
+  // "P7", "7", "G7", "Grade 7"; PK1-PK3 and K are always below grade 7.
+  const HIGH_GRADE_RATE = 2350;
+  function isGrade7Up(g){
+    const t = String(g||"").trim().toUpperCase();
+    if(!t || /^K/.test(t) || /^PK/.test(t)) return false;
+    const m = t.match(/(\d+)/);
+    return !!m && Number(m[1]) >= 7;
+  }
+  function tuitionRateFor(s){
+    if(!s) return 0;
+    return isGrade7Up(s.age_grade) ? HIGH_GRADE_RATE : Number(s.monthly_tuition||0);
+  }
   // Tuition due is based on exactly how many subjects were active when this episode
   // started (subject_enrollment_ids, snapshotted by Mark absent) — not activeSubjectsFor,
   // since those enrollments are inactive now.
   function tuitionDueForAbsence(a){
     const s = students.find(x => x.id === a.student_id);
     const subjCount = (a.subject_enrollment_ids || []).length || 1;
-    return Number((s && s.monthly_tuition) || 0) * subjCount;
+    return tuitionRateFor(s) * subjCount;
   }
   function verifiedPaidForAbsence(a){
     const monthDate = monthToDate(catchUpMonthFor(a));
     return receipts
       .filter(r => r.student_id === a.student_id && r.status === "verified" && r.covers_month === monthDate)
       .reduce((sum, r) => sum + Number(r.amount||0), 0);
+  }
+
+  // Pre-filled amount for a catch-up payment: the remaining balance for their catch-up month,
+  // counting verified payments and ones already logged but not yet verified.
+  function catchUpSuggestion(a){
+    const monthDate = monthToDate(catchUpMonthFor(a));
+    const logged = receipts
+      .filter(r => r.student_id === a.student_id && (r.status === "verified" || r.status === "pending") && r.covers_month === monthDate)
+      .reduce((sum, r) => sum + Number(r.amount||0), 0);
+    return Math.max(0, tuitionDueForAbsence(a) - logged);
   }
 
   let selectedMonth = monthDefault();
@@ -760,7 +784,7 @@
       (withinPolicy
         ? "They're within the 4-month window — progress continues, no new assessment, registration is free."
         : "It's been more than 4 months, so the usual return policy (continued progress, free registration) no longer applies.") +
-      `\n\nThis reactivates their enrollment${a.subject_enrollment_ids && a.subject_enrollment_ids.length > 1 ? "s" : ""} and tags them RETURNEE for reporting.`
+      `\n\nThis reactivates their enrollment${a.subject_enrollment_ids && a.subject_enrollment_ids.length > 1 ? "s" : ""} and tags them RESUME for reporting.`
     );
     if(!ok) return;
     const nowIso = new Date().toISOString();
@@ -775,7 +799,7 @@
       .update({ resumed_at: nowIso, resumed_by: currentUser ? currentUser.email : null })
       .eq("id", absenceId);
     if(e2){ alert("Reactivated the enrollment, but couldn't close out the absence record: " + e2.message); }
-    logHistory("resume_absence", `Resumed ${displayName(s)} (tagged RETURNEE)`, "absence_record", absenceId);
+    logHistory("resume_absence", `Resumed ${displayName(s)} (tagged RESUME)`, "absence_record", absenceId);
     await Promise.all([loadEnrollments(), loadAbsences()]);
     render();
   }
@@ -817,7 +841,7 @@
         <div>
           <div class="hint">Absence</div>
           <div>Marked absent ${esc(new Date(a.marked_absent_at).toLocaleDateString(undefined,{month:"short",day:"numeric",year:"numeric"}))}${a.marked_absent_by ? " by " + esc(a.marked_absent_by) : ""} — last paid through ${esc(fmtMonthLabel(a.last_paid_month))}.</div>
-          ${a.resumed_at ? `<div>Resumed ${esc(new Date(a.resumed_at).toLocaleDateString(undefined,{month:"short",day:"numeric",year:"numeric"}))}${a.resumed_by ? " by " + esc(a.resumed_by) : ""}.</div>` : `<div>To catch up: ${peso(due)} due for ${esc(fmtMonthLabel(catchUpMonthFor(a)))} — ${peso(paid)} paid, ${peso(balance)} balance. A verified payment covering the balance brings them back automatically, tagged RETURNEE.</div>`}
+          ${a.resumed_at ? `<div>Resumed ${esc(new Date(a.resumed_at).toLocaleDateString(undefined,{month:"short",day:"numeric",year:"numeric"}))}${a.resumed_by ? " by " + esc(a.resumed_by) : ""}.</div>` : `<div>To catch up: ${peso(due)} due for ${esc(fmtMonthLabel(catchUpMonthFor(a)))} — ${peso(paid)} paid, ${peso(balance)} balance. A verified payment covering the balance brings them back automatically, tagged RESUME.</div>`}
         </div>
         <div>
           <div class="hint">Payment history</div>
@@ -871,9 +895,10 @@
       <form id="logPaymentForm" data-absence="${esc(a.id)}">
         <div class="modal-body">
           <div class="field-row">
-            <label class="field">Amount<input type="number" name="amount" min="0" step="0.01" required></label>
+            <label class="field">Amount<input type="number" name="amount" min="0" step="0.01" value="${esc(catchUpSuggestion(a) || "")}" required></label>
             <label class="field">Covers month<input type="month" name="coversMonth" value="${esc(catchUpMonthFor(a))}" required></label>
           </div>
+          <div class="hint" style="margin-top:-6px;">Catch-up balance: ${peso(catchUpSuggestion(a))} (${(a.subject_enrollment_ids||[]).length||1} subject${((a.subject_enrollment_ids||[]).length||1)===1?"":"s"} × ${peso(tuitionRateFor(students.find(x=>x.id===a.student_id)))}, less anything already paid or logged).</div>
           <div class="field-row">
             <label class="field">Reference number<input type="text" name="reference" placeholder="e.g. GC48213"></label>
             <label class="field">Logged by<input type="text" name="uploadedBy" value="${esc(currentUser ? currentUser.email : "")}"></label>

@@ -116,6 +116,9 @@
   .pill.subj-math{ background:var(--accent-soft); color:var(--accent-soft-ink); }
   /* --bad, not --warn — this page's --warn is now amber (see root notes), --bad kept the red this pill has always used. */
   .pill.subj-reading{ background:var(--bad-soft); color:var(--bad); }
+  .pill.tag-new{ background:var(--good-soft); color:var(--good); }
+  .pill.tag-eo{ background:var(--accent-soft); color:var(--accent-soft-ink); }
+  .pill.tag-resume, .pill.tag-new_returnee, .pill.tag-resume_transfer_in{ background:var(--warn-soft); color:var(--warn); }
   .pill.new-tag{ background:var(--accent-soft); color:var(--accent-soft-ink); margin-left:6px; font-size:10.5px; letter-spacing:.02em; }
   .monitor-count:not(:empty){ display:inline-block; min-width:18px; padding:0 6px; margin-left:4px; border-radius:99px; background:var(--accent-soft); color:var(--accent-soft-ink); font-size:11px; font-weight:700; text-align:center; }
   .monitor-banner{ margin:0 0 12px; padding:12px 16px; border-radius:12px; background:var(--accent-soft); color:var(--accent-soft-ink); font-size:13px; line-height:1.45; }
@@ -363,7 +366,7 @@
             <thead><tr>
               <th class="selectcol" id="selectHeaderCell">#</th>
               <th id="monitorActionHead" hidden></th>
-              <th>Student</th><th>Grade</th><th>Subject</th><th>Teacher</th><th>Current level</th><th>Schedule</th><th>Mode</th><th>Status</th><th>Payment</th><th>Date enrolled</th>
+              <th>Student</th><th>Grade</th><th>Subject</th><th>Tag</th><th>Teacher</th><th>Current level</th><th>Schedule</th><th>Mode</th><th>Status</th><th>Payment</th><th>Date enrolled</th>
             </tr></thead>
             <tbody id="rosterBody"></tbody>
           </table>
@@ -418,7 +421,7 @@
         <div class="table-scroll">
           <table class="stable">
             <thead><tr>
-              <th>#</th><th>Student</th><th>Subject</th><th>LWC</th><th>NWU</th><th>No. of days</th><th>No. of months</th><th>Test date</th><th>Test level</th><th>Test time</th><th>Test score</th><th>Test group</th><th>Grade</th><th>Payment</th><th>Mode</th>
+              <th>#</th><th>Student</th><th>Subject</th><th>Tag</th><th>LWC</th><th>NWU</th><th>No. of days</th><th>No. of months</th><th>Test date</th><th>Test level</th><th>Test time</th><th>Test score</th><th>Test group</th><th>Grade</th><th>Payment</th><th>Mode</th>
             </tr></thead>
             <tbody id="repBody"></tbody>
           </table>
@@ -756,9 +759,23 @@
       .filter(r => r.student_id === studentId && r.status === "verified" && r.covers_month === monthDate)
       .reduce((sum, r) => sum + Number(r.amount||0), 0);
   }
+  // Grade 7 and above is charged a flat ₱2,350 per subject; everyone else uses their own
+  // per-subject rate (students.monthly_tuition, ₱2,200 by default). Grades look like
+  // "P7", "7", "G7", "Grade 7"; PK1-PK3 and K are always below grade 7.
+  const HIGH_GRADE_RATE = 2350;
+  function isGrade7Up(g){
+    const t = String(g||"").trim().toUpperCase();
+    if(!t || /^K/.test(t) || /^PK/.test(t)) return false;
+    const m = t.match(/(\d+)/);
+    return !!m && Number(m[1]) >= 7;
+  }
+  function tuitionRateFor(s){
+    if(!s) return 0;
+    return isGrade7Up(s.age_grade) ? HIGH_GRADE_RATE : Number(s.monthly_tuition||0);
+  }
   function tuitionDueFor(s){
     const subjCount = activeSubjectsFor(s.id).length || 1;
-    return Number(s.monthly_tuition||0) * subjCount;
+    return tuitionRateFor(s) * subjCount;
   }
   // Collapsed to just PAID/UNPAID (Payments' own richer paid/partial/unpaid stays there) —
   // a partial payment still counts as UNPAID here, matching how the request for this tag
@@ -1035,6 +1052,18 @@
     if(current && current !== nowKey) opts.push(`<option value="${esc(current)}" selected>NEW · ${esc(monitorCycleLabel(current))} (past)</option>`);
     return `<select name="${name||"new_cycle"}">${opts.join("")}</select>`;
   }
+  // Head-office reporting tag (same list as the reporting sheet). Stored in enrollment_type.
+  var REPORT_TAGS = [
+    { value:"new", label:"NEW" }, { value:"eo", label:"EO" }, { value:"resume", label:"RESUME" },
+    { value:"new_returnee", label:"NEW / RETURNEE" }, { value:"resume_transfer_in", label:"RESUME TRANSFER-IN" }
+  ];
+  function reportTagPill(v){
+    const t = REPORT_TAGS.find(x => x.value === v);
+    return t ? `<span class="pill tag-${t.value}">${esc(t.label)}</span>` : `<span class="lvl empty-lvl">—</span>`;
+  }
+  function reportTagSelect(current, name, firstLabel){
+    return `<select name="${name||"enrollment_type"}"><option value="">${esc(firstLabel||"— (no tag)")}</option>${REPORT_TAGS.map(t=>`<option value="${t.value}" ${current===t.value?"selected":""}>${esc(t.label)}</option>`).join("")}</select>`;
+  }
   function monitorRowsInScope(){
     const locked = isTeacherScoped() ? currentTeacherName : null;
     return enrollments.filter(e => isMonitorRow(e) && (locked === null || e.teacher === locked));
@@ -1087,7 +1116,7 @@
         .filter(e => reportFilters.grade === "all" || gradeFor(e.student_id) === reportFilters.grade)
         .filter(e => !q || (e.student_name||"").toLowerCase().includes(q))
         .sort((a,b) => lastNameSortKey(a.student_id,a.student_name).localeCompare(lastNameSortKey(b.student_id,b.student_name)))
-        .map(e => ({ source:"live", id:e.id, monitor_cycle:e.monitor_cycle, student_id:e.student_id, student_name:e.student_name, subject:e.subject, teacher:e.teacher, mode:e.mode, status:e.status||"active",
+        .map(e => ({ source:"live", id:e.id, monitor_cycle:e.monitor_cycle, enrollment_type:e.enrollment_type, student_id:e.student_id, student_name:e.student_name, subject:e.subject, teacher:e.teacher, mode:e.mode, status:e.status||"active",
           lwc:e.lwc, nwu:e.nwu, no_of_days:e.no_of_days, no_of_months_current_level:e.no_of_months_current_level,
           test_date:e.test_date, test_level:e.test_level, test_time:e.test_time, test_score:e.test_score, test_group:e.test_group }));
     }
@@ -1236,7 +1265,7 @@
 
     const body = $("#repBody");
     if(!rows.length){
-      body.innerHTML = `<tr><td colspan="15"><div class="empty">${isCurrentCycle() ? "No active enrollments match this view." : `Nothing closed out for ${esc(monthLabel(viewMonth))} yet.`}</div></td></tr>`;
+      body.innerHTML = `<tr><td colspan="16"><div class="empty">${isCurrentCycle() ? "No active enrollments match this view." : `Nothing closed out for ${esc(monthLabel(viewMonth))} yet.`}</div></td></tr>`;
       return;
     }
     const editable = isCurrentCycle();
@@ -1245,6 +1274,7 @@
         <td class="rownum">${idx+1}</td>
         <td>${esc(displayName(r.student_id, r.student_name))}${newTagHtml(r)}</td>
         <td><span class="pill ${r.subject==='Math'?'subj-math':'subj-reading'}">${esc(r.subject||"")}</span></td>
+        <td>${r.archived ? `<span class="lvl empty-lvl" title="Archived snapshots don't keep the reporting tag.">—</span>` : reportTagPill(r.enrollment_type)}</td>
         <td>${fmtPlain(r.lwc)}</td>
         <td>${fmtPlain(r.nwu)}</td>
         <td>${fmtPlain(r.no_of_days)}</td>
@@ -1404,7 +1434,7 @@
         : inMonitor ? "No one's on monitor schedule right now."
         : enrollments.length===0 ? "No enrollments yet — add your first one."
         : "Nothing matches your filters.";
-      body.innerHTML = `<tr><td colspan="12"><div class="empty">${emptyMsg}</div></td></tr>`;
+      body.innerHTML = `<tr><td colspan="13"><div class="empty">${emptyMsg}</div></td></tr>`;
     }else{
       body.innerHTML = rows.map((e, idx) => `
         <tr class="${editable?'clickrow':''}" ${editable?`data-action="edit" data-id="${e.id}"`:""}>
@@ -1415,6 +1445,7 @@
           <td>${esc(displayName(e.student_id, e.student_name))}${newTagHtml(e)}</td>
           <td>${esc(gradeFor(e.student_id) || "—")}</td>
           <td><span class="pill ${e.subject==='Math'?'subj-math':'subj-reading'}">${esc(e.subject)}</span></td>
+          <td>${e.archived ? `<span class="lvl empty-lvl">—</span>` : reportTagPill(e.enrollment_type)}</td>
           <td>${esc(e.teacher||"—")}</td>
           <td>${fmtLevel(e.current_level, e.current_page)}</td>
           <td>${e.archived ? `<span class="lvl empty-lvl" title="Schedules aren't part of a monthly close-out — only the roster's own numbers are.">not tracked</span>` : fmtSchedule(e)}</td>
@@ -1536,7 +1567,8 @@
             </select>
           </label>
           <label class="field">Teacher<select name="teacher" ${isTeacherScoped()?"disabled":""}>${teacherOptions(enrollment.teacher)}</select></label>
-          ${enrollment.is_monitor && !enrollment.archived ? "" : `<label class="field">NEW tag${newTagSelectHtml(enrollment.monitor_cycle || "")}<span class="hint" style="font-size:11.5px; margin-top:4px; display:block;">Shows a NEW label next to their name for the rest of the month. It clears itself when the next month starts.</span></label>`}
+          <label class="field">Reporting tag${reportTagSelect(enrollment.enrollment_type || "", "enrollment_type")}</label>
+          ${enrollment.is_monitor && !enrollment.archived ? "" : `<label class="field">NEW label (this month)${newTagSelectHtml(enrollment.monitor_cycle || "")}<span class="hint" style="font-size:11.5px; margin-top:4px; display:block;">Shows a NEW label next to their name for the rest of the month. It clears itself when the next month starts.</span></label>`}
           <div class="field-row">
             <label class="field">Current level<select name="current_level" id="curLevelSelect">${levelOptions(subject, enrollment.current_level)}</select></label>
             <label class="field">Current page<input type="text" name="current_page" value="${esc(enrollment.current_page||"")}" placeholder="e.g. 130"></label>
@@ -1584,6 +1616,7 @@
             <label class="field">Current level<select name="current_level" id="curLevelSelect">${levelOptions(subject, null)}</select></label>
             <label class="field">Current page<input type="text" name="current_page" placeholder="e.g. 130"></label>
           </div>
+          <label class="field">Reporting tag${reportTagSelect("", "enrollment_type", "Automatic (NEW, or EO if they already have a subject)")}</label>
           <label class="field" style="flex-direction:row; align-items:center; gap:8px;"><input type="checkbox" name="mark_new" value="1" checked style="width:auto;"> Mark as NEW for ${esc(monitorCycleLabel(cycleKeyOf(new Date())))}</label>
           ${scheduleSectionHtml(null, null)}
           <p class="hint" style="font-size:12px; color:var(--ink-muted); margin:8px 0 0;">For a student who still needs a diagnostic test, add them from Pipeline instead — this is for a student already enrolled and taking classes.</p>
@@ -1625,7 +1658,12 @@
             <option value="active">Active</option>
             <option value="inactive">Inactive</option>
           </select></label>
-          <label class="field">NEW tag<select name="new_cycle">
+          <label class="field">Reporting tag<select name="enrollment_type">
+            <option value="__nochange__" selected>No change</option>
+            ${REPORT_TAGS.map(t=>`<option value="${t.value}">${esc(t.label)}</option>`).join("")}
+            <option value="__clear__">Remove tag</option>
+          </select></label>
+          <label class="field">NEW label (this month)<select name="new_cycle">
             <option value="__nochange__" selected>No change</option>
             <option value="${cycleKeyOf(new Date())}">Mark NEW · ${esc(monitorCycleLabel(cycleKeyOf(new Date())))}</option>
             <option value="__clear__">Remove NEW</option>
@@ -1738,6 +1776,9 @@
           mode: fd.get("mode") || null,
           // NEW tag: only present on the form for non-monitor rows (monitor rows are tagged automatically).
           ...(fd.get("new_cycle") !== null ? { monitor_cycle: (fd.get("new_cycle") || null) } : {}),
+          // Reporting tag — only written when it actually changed, so its set-at date only moves for real corrections.
+          ...((fd.get("enrollment_type") || null) !== ((editingEnrollment && editingEnrollment.enrollment_type) || null)
+              ? { enrollment_type: fd.get("enrollment_type") || null, enrollment_type_set_at: new Date().toISOString() } : {}),
           // LWC/NWU/No. of days/No. of months/Achievement test are edited on the
           // Reporting page now, not here. Goal level/page and Award/Actual are hidden
           // from this form too (for now) — all deliberately left out of this patch so
@@ -1808,7 +1849,7 @@
         // a brand-new student's very first enrollment is tagged NEW; an existing student
         // adding another subject is tagged EO. (RESUME — shown as RETURNEE — is set
         // separately, by the Resume action in Payments' Absent tab / Retention.)
-        enrollment_type: isNewStudent ? "new" : "eo",
+        enrollment_type: fd.get("enrollment_type") || (isNewStudent ? "new" : "eo"),
         enrollment_type_set_at: new Date().toISOString(),
         // The visible NEW label for this month (separate from the reporting tag above).
         monitor_cycle: fd.get("mark_new") ? cycleKeyOf(new Date()) : null
@@ -1821,7 +1862,7 @@
         await saveScheduleForEnrollment(newEnrollment.id, studentId, name, slots);
       }
 
-      logHistory("add_enrollment", `Added ${name} — ${subject} (${isNewStudent ? "NEW" : "EO"})`, "subject_enrollment", newEnrollment ? newEnrollment.id : null);
+      logHistory("add_enrollment", `Added ${name} — ${subject} (${(enrollPayload.enrollment_type || "").toUpperCase()})`, "subject_enrollment", newEnrollment ? newEnrollment.id : null);
       closeModal();
       await Promise.all([loadStudents(), loadEnrollments()]);
       renderBoth();
@@ -1860,6 +1901,8 @@
       if(!isTeacherScoped() && subject && subject !== "__nochange__") patch.subject = subject;
       const status = fd.get("status");
       if(status && status !== "__nochange__") patch.status = status;
+      const repTag = (fd.get("enrollment_type") || "__nochange__").toString();
+      if(repTag !== "__nochange__"){ patch.enrollment_type = repTag === "__clear__" ? null : repTag; patch.enrollment_type_set_at = new Date().toISOString(); }
       ["current_level","current_page","goal_level","goal_page"].forEach(key=>{
         const v = (fd.get(key)||"").toString().trim();
         if(v) patch[key] = v;

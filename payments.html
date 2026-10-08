@@ -386,7 +386,7 @@
           <h3>Absent</h3>
           <span class="muted" id="absentCount" style="font-size:12.5px;"></span>
         </div>
-        <p class="hint" style="padding:10px 16px 0;">Everyone currently marked absent — their enrollment is inactive and they're off this cycle's billing. Resume reactivates it and tags them RETURNEE for reporting. For the longer view (months-absent buckets, notes, all-time history), see <a href="absent.html">Retention</a>.</p>
+        <p class="hint" style="padding:10px 16px 0;">Everyone currently marked absent — their enrollment is inactive and they're off this cycle's billing. Resume reactivates it and tags them RESUME for reporting. For the longer view (months-absent buckets, notes, all-time history), see <a href="absent.html">Retention</a>.</p>
         <div class="table-scroll">
           <table class="stable">
             <thead><tr>
@@ -427,6 +427,9 @@
   const filters = { search: "", status: "all", teacher: "all" };
   let canViewOutstanding = false;
   function isTeacherScoped(){ return currentRole === "teacher" || currentRole === "trainer_teacher"; }
+  // Marking someone absent is open to teachers too — but only for their own students (the page is already scoped to them,
+  // and the database only lets them touch their own enrollments and absence records, see phase20).
+  function canMarkAbsent(){ return isBillingAdmin() || isTeacherScoped(); }
   function isBillingAdmin(){ return currentRole === "admin" || currentRole === "superadmin"; }
 
   // Site-wide edit history (Activity page, admin/superadmin only) — every page logs its own
@@ -788,11 +791,64 @@
       .filter(r => r.student_id === studentId && r.status === "verified" && r.covers_month === monthDate)
       .reduce((sum, r) => sum + Number(r.amount||0), 0);
   }
+  // Grade 7 and above is charged a flat ₱2,350 per subject; everyone else uses their own
+  // per-subject rate (students.monthly_tuition, ₱2,200 by default). Grades look like
+  // "P7", "7", "G7", "Grade 7"; PK1-PK3 and K are always below grade 7.
+  const HIGH_GRADE_RATE = 2350;
+  function isGrade7Up(g){
+    const t = String(g||"").trim().toUpperCase();
+    if(!t || /^K/.test(t) || /^PK/.test(t)) return false;
+    const m = t.match(/(\d+)/);
+    return !!m && Number(m[1]) >= 7;
+  }
+  function tuitionRateFor(s){
+    if(!s) return 0;
+    return isGrade7Up(s.age_grade) ? HIGH_GRADE_RATE : Number(s.monthly_tuition||0);
+  }
   // monthly_tuition on the student record is the per-subject rate (₱2,200 by default) —
   // what's actually due each month is that rate times how many subjects they're enrolled in.
   function tuitionDueFor(s){
     const subjCount = activeSubjectsFor(s.id).length || 1;
-    return Number(s.monthly_tuition||0) * subjCount;
+    return tuitionRateFor(s) * subjCount;
+  }
+  // Pending (not yet verified) payments already logged for that student + month, so the
+  // auto-filled amount in "Log a payment" doesn't suggest paying the same balance twice.
+  function pendingPaidFor(studentId, ym){
+    const monthDate = monthToDate(ym);
+    return receipts
+      .filter(r => r.student_id === studentId && r.status === "pending" && r.covers_month === monthDate)
+      .reduce((sum, r) => sum + Number(r.amount||0), 0);
+  }
+  // What to pre-fill when logging a payment: THIS student's own remaining tuition for the month
+  // (their rate x their active subjects, minus what's verified or already logged) — never the
+  // whole billing group's total, since each payment is recorded against one student.
+  function suggestedPaymentFor(studentId, ym){
+    const s = students.find(x => x.id === studentId);
+    if(!s) return null;
+    const due = tuitionDueFor(s);
+    const verified = verifiedPaidFor(studentId, ym);
+    const pending = pendingPaidFor(studentId, ym);
+    const amount = Math.max(0, due - verified - pending);
+    const n = activeSubjectsFor(studentId).length || 1;
+    return { amount, due, verified, pending, n, rate: tuitionRateFor(s) };
+  }
+  function paymentSuggestHint(studentId, ym){
+    const g = suggestedPaymentFor(studentId, ym);
+    if(!g) return "";
+    const parts = [`${g.n} subject${g.n===1?"":"s"} × ${peso(g.rate)} = ${peso(g.due)}`];
+    if(g.verified) parts.push(`${peso(g.verified)} paid`);
+    if(g.pending) parts.push(`${peso(g.pending)} logged, waiting to be verified`);
+    return parts.join(" · ") + (g.amount > 0 ? ` → ${peso(g.amount)} left` : " → nothing left to pay");
+  }
+  function refreshLogPaymentSuggestion(){
+    const form = $("#logPaymentForm");
+    if(!form) return;
+    const sid = form.elements.studentId.value, ym = form.elements.coversMonth.value;
+    if(!sid || !ym) return;
+    const g = suggestedPaymentFor(sid, ym);
+    if(g) form.elements.amount.value = g.amount > 0 ? g.amount : "";
+    const h = form.querySelector("#paySuggestHint");
+    if(h) h.textContent = paymentSuggestHint(sid, ym);
   }
   function rowFor(s, ym){
     const due = tuitionDueFor(s);
@@ -829,7 +885,7 @@
   // enrollments to inactive is exactly what removes them from here, from Roster's active
   // view, and from next cycle's billing all at once.
   async function markAbsent(studentId){
-    if(!isBillingAdmin()) return; // belt-and-suspenders — the button itself is admin/superadmin only
+    if(!canMarkAbsent()) return; // belt-and-suspenders — the button itself is hidden for other roles
     const s = students.find(x => x.id === studentId);
     if(!s) return;
     const activeEnrollmentIds = enrollments.filter(e => e.student_id === studentId && e.status === "active").map(e => e.id);
@@ -1269,7 +1325,7 @@
       <td class="money">${peso(r.paid)}</td>
       <td class="money">${peso(r.balance)}</td>
       <td>${statusPill(r.status)}</td>
-      <td><div class="row-actions"><button class="iconbtn" data-action="open-payment-history" data-student="${esc(s.id)}" title="Payment history — undo a payment">🕘</button><button class="btn sm" data-action="open-log-payment" data-student="${esc(s.id)}">Log payment</button>${isBillingAdmin() ? `<button class="btn sm danger" data-action="mark-absent" data-student="${esc(s.id)}">Mark absent</button>` : ""}</div></td>
+      <td><div class="row-actions"><button class="iconbtn" data-action="open-payment-history" data-student="${esc(s.id)}" title="Payment history — undo a payment">🕘</button><button class="btn sm" data-action="open-log-payment" data-student="${esc(s.id)}">Log payment</button>${canMarkAbsent() ? `<button class="btn sm danger" data-action="mark-absent" data-student="${esc(s.id)}">Mark absent</button>` : ""}</div></td>
     </tr>`;
   }
 
@@ -1304,7 +1360,7 @@
         <td class="muted">${esc(x.dueSince)}</td>
         <td class="muted">${esc(fmtMonthLabel(x.lastPaidMonth))}</td>
         <td class="money">${peso(x.due)}</td>
-        <td><div class="row-actions"><button class="iconbtn" data-action="open-payment-history" data-student="${esc(s.id)}" title="Payment history">🕘</button><button class="btn sm" data-action="open-log-payment" data-student="${esc(s.id)}">Log payment</button>${isBillingAdmin() ? `<button class="btn sm danger" data-action="mark-absent" data-student="${esc(s.id)}">Mark absent</button>` : ""}</div></td>
+        <td><div class="row-actions"><button class="iconbtn" data-action="open-payment-history" data-student="${esc(s.id)}" title="Payment history">🕘</button><button class="btn sm" data-action="open-log-payment" data-student="${esc(s.id)}">Log payment</button>${canMarkAbsent() ? `<button class="btn sm danger" data-action="mark-absent" data-student="${esc(s.id)}">Mark absent</button>` : ""}</div></td>
       </tr>`;
     }).join("");
   }
@@ -1376,7 +1432,7 @@
       (withinPolicy
         ? "They're within the 4-month window — progress continues, no new assessment, registration is free."
         : "It's been more than 4 months, so the usual return policy (continued progress, free registration) no longer applies.") +
-      `\n\nThis reactivates their enrollment${a.subject_enrollment_ids && a.subject_enrollment_ids.length > 1 ? "s" : ""} and tags them RETURNEE for reporting.`
+      `\n\nThis reactivates their enrollment${a.subject_enrollment_ids && a.subject_enrollment_ids.length > 1 ? "s" : ""} and tags them RESUME for reporting.`
     );
     if(!ok) return;
     const nowIso = new Date().toISOString();
@@ -1391,7 +1447,7 @@
       .update({ resumed_at: nowIso, resumed_by: currentUser ? currentUser.email : null })
       .eq("id", absenceId);
     if(e2){ alert("Reactivated the enrollment, but couldn't close out the absence record: " + e2.message); }
-    logHistory("resume_absence", `Resumed ${displayName(s)} (tagged RETURNEE)`, "absence_record", absenceId);
+    logHistory("resume_absence", `Resumed ${displayName(s)} (tagged RESUME)`, "absence_record", absenceId);
     await Promise.all([loadEnrollments(), loadAbsences()]);
     render();
   }
@@ -1447,6 +1503,7 @@
             <label class="field">Amount<input type="number" name="amount" min="0" step="0.01" required></label>
             <label class="field">Covers month<input type="month" name="coversMonth" value="${esc(selectedMonth)}" required></label>
           </div>
+          <div class="hint" id="paySuggestHint" style="margin-top:-6px;"></div>
           <div class="field-row">
             <label class="field">Reference number<input type="text" name="reference" placeholder="e.g. GC48213"></label>
             <label class="field">Logged by<input type="text" name="uploadedBy" value="${esc(currentUser ? currentUser.email : "")}"></label>
@@ -1461,6 +1518,7 @@
       </form>
     `;
     $("#modalBackdrop").hidden = false;
+    refreshLogPaymentSuggestion();
   }
 
   // Payment history / undo — every logged payment for one student, whatever its status
@@ -1545,8 +1603,8 @@
       <form id="tuitionForm" data-id="${esc(s.id)}">
         <div class="modal-body">
           <div class="muted" style="font-size:13.5px;">${esc(displayName(s))} — ${activeSubjectsFor(s.id).length} subject${activeSubjectsFor(s.id).length===1?"":"s"}</div>
-          <label class="field">Tuition per subject (₱)<input type="number" name="tuition" min="0" step="0.01" value="${esc(s.monthly_tuition)}" required></label>
-          <div class="hint">Charged per subject each month. This student's total: ₱${(Number(s.monthly_tuition||0) * (activeSubjectsFor(s.id).length||1)).toLocaleString("en-PH", {minimumFractionDigits:2, maximumFractionDigits:2})}</div>
+          <label class="field">Tuition per subject (₱)<input type="number" name="tuition" min="0" step="0.01" value="${esc(tuitionRateFor(s))}" ${isGrade7Up(s.age_grade) ? "readonly" : ""} required></label>
+          <div class="hint">${isGrade7Up(s.age_grade) ? "Grade 7 and above is a fixed ₱2,350 per subject. " : ""}Charged per subject each month. This student's total: ₱${(tuitionRateFor(s) * (activeSubjectsFor(s.id).length||1)).toLocaleString("en-PH", {minimumFractionDigits:2, maximumFractionDigits:2})}</div>
         </div>
         <div class="modal-foot">
           <button type="button" class="btn ghost" data-action="close-modal">Cancel</button>
@@ -1659,7 +1717,7 @@
   function tuitionDueForAbsence(a){
     const s = students.find(x => x.id === a.student_id);
     const subjCount = (a.subject_enrollment_ids || []).length || 1;
-    return Number((s && s.monthly_tuition) || 0) * subjCount;
+    return tuitionRateFor(s) * subjCount;
   }
   // Verifying a receipt is the one place a payment actually becomes "Paid" — if it's for a
   // currently-absent student and it covers their catch-up month in full, bring them back the
@@ -1692,7 +1750,7 @@
     await Promise.all([loadEnrollments(), loadAbsences()]);
     const s = students.find(x => x.id === r.student_id);
     const name = s ? displayName(s) : "Student";
-    logHistory("auto_resume", `${name} automatically resumed (tagged RETURNEE) — payment covers their return`, "absence_record", a.id);
+    logHistory("auto_resume", `${name} automatically resumed (tagged RESUME) — payment covers their return`, "absence_record", a.id);
     return name;
   }
 
@@ -1843,6 +1901,7 @@
     if(e.target.id === "searchInput"){ filters.search = e.target.value; render(); }
     if(e.target.id === "statusFilter"){ filters.status = e.target.value; render(); }
     if(e.target.id === "teacherFilter"){ filters.teacher = e.target.value; render(); }
+    if(e.target.closest && e.target.closest("#logPaymentForm") && (e.target.name === "studentId" || e.target.name === "coversMonth")) refreshLogPaymentSuggestion();
   });
   document.addEventListener("input", (e)=>{
     if(e.target.id === "searchInput"){ filters.search = e.target.value; render(); }

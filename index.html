@@ -1646,7 +1646,7 @@
   // The NEW / EO / RETURNEE reporting tag. Set automatically the moment it applies — NEW/EO the
   // instant a diagnostic is marked Enrolled (markOutcome below), RESUME by the Resume action in
   // Payments' Absent tab / Retention — but overridable by hand from the New Students Edit modal.
-  // The underlying value stored is still "resume" — only the displayed label reads RETURNEE.
+  // The underlying value stored is "resume" and reads RESUME, matching the reporting sheet.
   // Lives in two places depending on how far along the student is: before a regular schedule
   // splits them into per-subject subject_enrollments rows, it's just the one tag on the student
   // record (students.enrollment_type); once that split happens, each subject_enrollments row
@@ -1664,7 +1664,9 @@
     const tag = subject ? enrollmentTagFor(studentId, subject) : null;
     if(tag === "new") return `<span class="pill good">NEW</span>`;
     if(tag === "eo") return `<span class="pill subj">EO</span>`;
-    if(tag === "resume") return `<span class="pill warn">RETURNEE</span>`;
+    if(tag === "resume") return `<span class="pill warn">RESUME</span>`;
+    if(tag === "new_returnee") return `<span class="pill warn">NEW / RETURNEE</span>`;
+    if(tag === "resume_transfer_in") return `<span class="pill warn">RESUME TRANSFER-IN</span>`;
     return `<span class="pill muted">—</span>`;
   }
 
@@ -1894,7 +1896,9 @@
     { value:"", label:"— (no tag)" },
     { value:"new", label:"NEW" },
     { value:"eo", label:"EO" },
-    { value:"resume", label:"RETURNEE" }
+    { value:"resume", label:"RESUME" },
+    { value:"new_returnee", label:"NEW / RETURNEE" },
+    { value:"resume_transfer_in", label:"RESUME TRANSFER-IN" }
   ];
   // Class teacher picker for Add / Edit student. One dropdown per subject the student takes
   // (swapped by the Subject dropdown, see wireDtSubjectSwap). Picking a teacher creates (or updates)
