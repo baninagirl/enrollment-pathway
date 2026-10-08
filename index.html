@@ -255,6 +255,21 @@
   /* Modal */
   .modal-backdrop{ position:fixed; inset:0; background:rgba(10,12,18,.5); display:flex; align-items:flex-start; justify-content:center; padding:5vh 16px; overflow-y:auto; z-index:50; }
   .modal{ background:var(--surface); border-radius:16px; width:100%; max-width:480px; box-shadow:var(--shadow); }
+  .modal.modal-wide{ max-width:min(980px,100%); }
+  .slot-ctrls{ display:flex; flex-wrap:wrap; gap:10px 14px; align-items:flex-end; }
+  .slot-ctrls label{ display:flex; flex-direction:column; gap:3px; font-size:11.5px; color:var(--ink-muted); }
+  .slot-ctrls input[type=time], .slot-ctrls select{ padding:6px 8px; font-size:13px; }
+  .slot-days{ display:flex; gap:6px; flex-wrap:wrap; }
+  .slot-days label{ flex-direction:row; align-items:center; gap:4px; font-size:12.5px; color:var(--ink); }
+  .slot-grid{ width:100%; border-collapse:separate; border-spacing:0; font-size:12.5px; }
+  .slot-grid th, .slot-grid td{ border-bottom:1px solid var(--border); border-right:1px solid var(--border); padding:6px 6px; vertical-align:top; min-width:104px; }
+  .slot-grid th{ background:var(--surface); position:sticky; top:0; text-align:center; font-weight:600; z-index:1; }
+  .slot-grid th:first-child, .slot-grid td:first-child{ min-width:74px; position:sticky; left:0; background:var(--surface); font-weight:600; text-align:right; z-index:2; }
+  .slot-grid td.past{ background:rgba(0,0,0,.035); }
+  .slot-chip{ display:inline-block; margin:1px 2px 1px 0; padding:2px 8px; border-radius:999px; background:var(--good-soft); color:var(--good); font-weight:600; font-size:12px; border:0; cursor:pointer; font-family:inherit; }
+  .slot-chip:hover{ filter:brightness(.95); }
+  .slot-none{ color:var(--ink-muted); font-size:12px; }
+  .slot-btns{ display:flex; gap:8px; flex-wrap:wrap; }
   .modal-head{ display:flex; align-items:center; justify-content:space-between; padding:16px 18px; border-bottom:1px solid var(--border); }
   .modal-head h3{ font-size:15.5px; font-weight:700; }
   .modal-body{ padding:16px 18px; display:flex; flex-direction:column; gap:12px; max-height:66vh; overflow-y:auto; }
@@ -1216,6 +1231,10 @@
             <button class="${STATE.calFilter==='schedule'?'active':''}" data-action="cal-filter" data-filter="schedule">Regular</button>
             <button class="${STATE.calFilter==='monitor'?'active':''}" data-action="cal-filter" data-filter="monitor">Monitor</button>
           </div>
+          <div class="slot-btns">
+            <button class="btn sm" data-action="open-slot-tool" data-kind="dt" title="See open diagnostic-test slots for a week">Generate DT slots</button>
+            <button class="btn sm" data-action="open-slot-tool" data-kind="st" title="See which trainer is free for student training, by time slot">Available training slots</button>
+          </div>
           <select data-action="cal-staff">
             <option value="all">All staff</option>
             ${STATE.settings.examiners.map(x=>`<option value="${esc(x)}" ${STATE.calStaff===x?"selected":""}>${esc(x)}</option>`).join("")}
@@ -1388,6 +1407,146 @@
         <button class="btn" data-action="open-new-training" data-date="${iso}">${iconPlus()} New training</button>
       </div>
     `);
+  }
+
+
+  /* ---------------- Open-slot finder (Calendar buttons) ---------------- */
+  // "Generate DT slots": which DT teachers are free at each time, from diagnostic bookings ONLY
+  // (trainings and regular schedules are ignored on purpose).
+  // "Available training slots": which trainers are free for a student training. A trainer is busy
+  // when they already have a training booked, OR when they have a regular/monitor class with their
+  // own students at that time (from each enrollment's teacher + its linked schedule row).
+  // Hours and slot length are editable and remembered in this browser.
+  const SLOT_PREFS_KEY = "kumonSlotPrefs";
+  const SLOT_DEFAULTS = { start:"09:00", end:"18:00", len:60, days:[1,2,3,4,5,6] };
+  const slotTool = { kind:"dt", weekStart:null, prefs:null };
+  function loadSlotPrefs(){
+    let p = {};
+    try{ p = JSON.parse(localStorage.getItem(SLOT_PREFS_KEY) || "{}") || {}; }catch(e){ p = {}; }
+    return { ...SLOT_DEFAULTS, ...p, days: Array.isArray(p.days) && p.days.length ? p.days : SLOT_DEFAULTS.days };
+  }
+  function saveSlotPrefs(){ try{ localStorage.setItem(SLOT_PREFS_KEY, JSON.stringify(slotTool.prefs)); }catch(e){} }
+  const slotKey = s => String(s||"").trim().toLowerCase();
+  const toMin = t => { const m = /^(\d{1,2}):(\d{2})/.exec(t||""); return m ? (+m[1])*60 + (+m[2]) : null; };
+  const fromMin = n => String(Math.floor(n/60)).padStart(2,"0") + ":" + String(n%60).padStart(2,"0");
+  function slotStarts(p){
+    const a = toMin(p.start), b = toMin(p.end), len = Number(p.len) || 60;
+    const out = [];
+    if(a == null || b == null) return out;
+    for(let m = a; m + len <= b; m += len) out.push(m);
+    return out;
+  }
+  // Busy start-times (minutes) for each person on a given date.
+  function busyMapFor(kind, iso){
+    const busy = {}; // personKey -> [startMin,...]
+    const add = (who, time) => { const m = toMin(time); if(!who || m == null) return; (busy[slotKey(who)] = busy[slotKey(who)] || []).push(m); };
+    if(kind === "dt"){
+      STATE.diagnostics.filter(d => d.date === iso && d.status !== "cancelled").forEach(d => add(d.examiner, d.time));
+      return busy;
+    }
+    STATE.trainings.filter(x => x.date === iso && x.status !== "cancelled").forEach(x => add(x.trainer, x.time));
+    const dow = DOW[parseISODate(iso).getDay()];
+    STATE.enrollments.filter(e => e.status !== "inactive" && e.teacher).forEach(enr => {
+      STATE.schedules.filter(s => s.status === "active" && s.subjectEnrollmentId === enr.id && Array.isArray(s.slots) && iso >= (s.startDate || iso)).forEach(s => {
+        s.slots.forEach(slot => { if(slot && slot.day === dow) add(enr.teacher, slot.time); });
+      });
+    });
+    return busy;
+  }
+  function slotComputeWeek(){
+    const p = slotTool.prefs, len = Number(p.len) || 60;
+    const people = slotTool.kind === "dt" ? STATE.settings.examiners : STATE.settings.trainers;
+    const starts = slotStarts(p);
+    const todayIso = todayISO();
+    const nowMin = new Date().getHours()*60 + new Date().getMinutes();
+    const days = p.days.slice().sort((a,b)=> ((a+6)%7)-((b+6)%7)).map(dow => {
+      const d = addDays(slotTool.weekStart, dow);
+      const iso = isoDate(d);
+      const busy = busyMapFor(slotTool.kind, iso);
+      const cells = starts.map(m => {
+        const past = iso < todayIso || (iso === todayIso && m <= nowMin);
+        const free = past ? [] : people.filter(who => !(busy[slotKey(who)] || []).some(b => b < m + len && b + len > m));
+        return { m, past, free };
+      });
+      return { dow, d, iso, cells };
+    });
+    return { starts, days, people };
+  }
+  function slotWeekLabel(){
+    const s = slotTool.weekStart, e = addDays(s, 6);
+    return `${s.toLocaleDateString(undefined,{month:"short",day:"numeric"})} – ${e.toLocaleDateString(undefined,{month:"short",day:"numeric",year:"numeric"})}`;
+  }
+  function renderSlotTool(){
+    const isDt = slotTool.kind === "dt";
+    const p = slotTool.prefs;
+    const { starts, days, people } = slotComputeWeek();
+    const totalFree = days.reduce((n,d)=> n + d.cells.filter(c => c.free.length).length, 0);
+    const head = `<tr><th></th>${days.map(d => `<th>${DOW[d.dow]}<div class="hint" style="font-weight:400;">${d.d.toLocaleDateString(undefined,{month:"short",day:"numeric"})}</div></th>`).join("")}</tr>`;
+    const body = starts.map((m, i) => `<tr><td>${fmtTime(fromMin(m))}</td>${days.map(d => {
+      const c = d.cells[i];
+      if(c.past) return `<td class="past"><span class="slot-none">—</span></td>`;
+      if(!c.free.length) return `<td><span class="slot-none">${isDt ? "Full" : "No one free"}</span></td>`;
+      return `<td>${c.free.map(who => `<button type="button" class="slot-chip" data-action="slot-book" data-date="${d.iso}" data-time="${fromMin(m)}" data-who="${esc(who)}" title="${isDt ? "Book a diagnostic" : "Schedule a training"} with ${esc(who)}">${esc(who)}</button>`).join("")}</td>`;
+    }).join("")}</tr>`).join("");
+    $("#modal").classList.add("modal-wide");
+    $("#modal").innerHTML = `
+      <div class="modal-head"><h3>${isDt ? "Open DT slots" : "Available training slots"}</h3><button class="iconbtn" data-action="close-modal">✕</button></div>
+      <div class="modal-body" style="max-height:72vh;">
+        <div class="cal-nav" style="gap:8px;">
+          <button class="btn ghost sm" data-action="slot-week" data-dir="-1">‹</button>
+          <b>${esc(slotWeekLabel())}</b>
+          <button class="btn ghost sm" data-action="slot-week" data-dir="1">›</button>
+          <button class="btn sm" data-action="slot-week" data-dir="0">This week</button>
+        </div>
+        <div class="slot-ctrls">
+          <label>From<input type="time" data-action="slot-pref" data-key="start" value="${esc(p.start)}"></label>
+          <label>To<input type="time" data-action="slot-pref" data-key="end" value="${esc(p.end)}"></label>
+          <label>Slot length
+            <select data-action="slot-pref" data-key="len">${[30,45,60,90,120].map(n => `<option value="${n}" ${Number(p.len)===n?"selected":""}>${n} min</option>`).join("")}</select>
+          </label>
+          <div class="slot-days">${[1,2,3,4,5,6,0].map(dw => `<label><input type="checkbox" data-action="slot-day" data-dow="${dw}" ${p.days.includes(dw)?"checked":""}>${DOW[dw]}</label>`).join("")}</div>
+        </div>
+        <div class="hint">${isDt
+          ? "Based only on diagnostic bookings. Trainings and regular schedules are ignored. Each name is a DT teacher who is free then; tap one to book."
+          : "A trainer is free when they have no student training booked and no regular or monitor class with their own students at that time. Tap a name to schedule a training."}
+          ${people.length ? "" : ` <b>No ${isDt ? "DT teachers" : "trainers"} are set up yet — add them in Settings.</b>`}</div>
+        ${starts.length && days.length
+          ? `<div class="table-scroll" style="max-height:48vh; overflow:auto;"><table class="slot-grid"><thead>${head}</thead><tbody>${body}</tbody></table></div>`
+          : `<div class="empty">Pick at least one day and a time range.</div>`}
+      </div>
+      <div class="modal-foot">
+        <span class="hint" style="margin-right:auto; align-self:center;">${totalFree} open slot${totalFree===1?"":"s"} this week</span>
+        <button class="btn" data-action="slot-copy">Copy as text</button>
+        <button class="btn primary" data-action="close-modal">Done</button>
+      </div>
+    `;
+  }
+  function openSlotTool(kind){
+    slotTool.kind = kind === "st" ? "st" : "dt";
+    slotTool.prefs = loadSlotPrefs();
+    const base = STATE.calView === "week" && STATE.calWeekStart ? new Date(STATE.calWeekStart) : (() => { const d = new Date(); d.setHours(0,0,0,0); d.setDate(d.getDate()-d.getDay()); return d; })();
+    base.setHours(0,0,0,0);
+    slotTool.weekStart = base;
+    renderSlotTool();
+    $("#modalBackdrop").hidden = false;
+  }
+  function slotAsText(){
+    const isDt = slotTool.kind === "dt";
+    const { days } = slotComputeWeek();
+    const lines = [`${isDt ? "Open DT slots" : "Available training slots"} — ${slotWeekLabel()}`];
+    days.forEach(d => {
+      const items = d.cells.filter(c => c.free.length).map(c => isDt ? fmtTime(fromMin(c.m)) : `${fmtTime(fromMin(c.m))} (${c.free.join(", ")})`);
+      lines.push(`${d.d.toLocaleDateString(undefined,{weekday:"short",month:"short",day:"numeric"})}: ${items.length ? items.join(", ") : "no slots"}`);
+    });
+    return lines.join("\n");
+  }
+  async function copySlotText(){
+    const txt = slotAsText();
+    try{ await navigator.clipboard.writeText(txt); toast("Copied."); return; }catch(e){}
+    const ta = document.createElement("textarea"); ta.value = txt; ta.style.position = "fixed"; ta.style.opacity = "0";
+    document.body.appendChild(ta); ta.select();
+    try{ document.execCommand("copy"); toast("Copied."); }catch(e){ toast("Couldn't copy — select and copy manually."); }
+    ta.remove();
   }
 
   /* ---------------- Enrollment tracker ---------------- */
@@ -2581,11 +2740,13 @@
 
   /* ---------------- Modal plumbing ---------------- */
   function openModal(html){
+    $("#modal").classList.remove("modal-wide");
     $("#modal").innerHTML = html;
     $("#modalBackdrop").hidden = false;
   }
   function closeModal(){
     $("#modalBackdrop").hidden = true;
+    $("#modal").classList.remove("modal-wide");
     $("#modal").innerHTML = "";
   }
 
@@ -2636,7 +2797,7 @@
     `);
   }
 
-  function openNewDiagnostic(presetDate){
+  function openNewDiagnostic(presetDate, presetTime, presetExaminer){
     if(!STATE.settings.examiners.length){
       openModal(needStaffModal("examiner", "Settings"));
       return;
@@ -2656,7 +2817,7 @@
           <label class="field">Phone or email<input type="text" name="contact"></label>
           <div class="field-row">
             <label class="field">Date<input type="date" name="date" required value="${presetDate||todayISO()}"></label>
-            <label class="field">Time<input type="time" name="time" required value="10:00"></label>
+            <label class="field">Time<input type="time" name="time" required value="${esc(presetTime||"10:00")}"></label>
           </div>
           <div class="field-row">
             <label class="field">Subject
@@ -2681,6 +2842,7 @@
         </div>
       </form>
     `);
+    if(presetExaminer){ const sel = document.querySelector('#modal form[data-form="new-diagnostic"] select[name="examiner"]'); if(sel) sel.value = presetExaminer; }
   }
 
   function openEditDiagnosticModal(id){
@@ -2771,7 +2933,7 @@
     `);
   }
 
-  function openNewTraining(presetStudentId, presetDate){
+  function openNewTraining(presetStudentId, presetDate, presetTime, presetTrainer){
     if(!STATE.settings.trainers.length){
       openModal(needStaffModal("trainer", "Settings"));
       return;
@@ -2796,7 +2958,7 @@
           </label>
           <div class="field-row">
             <label class="field">Date<input type="date" name="date" required value="${presetDate||todayISO()}"></label>
-            <label class="field">Time<input type="time" name="time" required value="10:00"></label>
+            <label class="field">Time<input type="time" name="time" required value="${esc(presetTime||"10:00")}"></label>
           </div>
           ${fieldSelectStaff("trainer", STATE.settings.trainers, "Trainer", true)}
         </div>
@@ -2806,6 +2968,7 @@
         </div>
       </form>
     `);
+    if(presetTrainer){ const sel = document.querySelector('#modal form[data-form="new-training"] select[name="trainer"]'); if(sel) sel.value = presetTrainer; }
   }
 
   function openEditTrainingModal(id){
@@ -3461,6 +3624,19 @@
     else if(a === "open-new-schedule"){ openNewSchedule(el.dataset.student, el.dataset.kind); }
     else if(a === "open-monitor-promote"){ openMonitorPromote(el.dataset.student); }
     else if(a === "open-day"){ openDayModal(el.dataset.date); }
+    else if(a === "open-slot-tool"){ openSlotTool(el.dataset.kind); }
+    else if(a === "slot-week"){
+      const dir = Number(el.dataset.dir);
+      if(dir === 0){ const d = new Date(); d.setHours(0,0,0,0); d.setDate(d.getDate()-d.getDay()); slotTool.weekStart = d; }
+      else slotTool.weekStart = addDays(slotTool.weekStart, 7*dir);
+      renderSlotTool();
+    }
+    else if(a === "slot-copy"){ copySlotText(); }
+    else if(a === "slot-book"){
+      const { date, time, who } = el.dataset;
+      if(slotTool.kind === "dt") openNewDiagnostic(date, time, who);
+      else openNewTraining(null, date, time, who);
+    }
     else if(a === "open-student"){ openStudentModal(el.dataset.id); }
     else if(a === "delete-student"){ openDeleteConfirm("student", el.dataset.id); }
     else if(a === "mark-outcome"){ markOutcome(el.dataset.id, el.dataset.outcome, el.dataset.subject); }
@@ -3532,6 +3708,16 @@
 
   document.addEventListener("change", e => {
     if(e.target.matches('[data-action="cal-staff"]')){ STATE.calStaff = e.target.value; renderCalendar(); }
+    else if(e.target.matches('[data-action="slot-pref"]')){
+      const k = e.target.dataset.key;
+      slotTool.prefs[k] = k === "len" ? Number(e.target.value) : e.target.value;
+      saveSlotPrefs(); renderSlotTool();
+    }
+    else if(e.target.matches('[data-action="slot-day"]')){
+      const dw = Number(e.target.dataset.dow), set = new Set(slotTool.prefs.days);
+      if(e.target.checked) set.add(dw); else set.delete(dw);
+      slotTool.prefs.days = [...set]; saveSlotPrefs(); renderSlotTool();
+    }
     else if(e.target.matches('[data-action="set-subject"]')){ setStudentSubject(e.target.dataset.id, e.target.value); }
     else if(e.target.matches('[data-action="toggle-subject-block"]')){
       const box = $("#" + e.target.dataset.target);
