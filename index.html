@@ -518,7 +518,16 @@
 
     function docRef(table, id){
       return {
-        async update(patch){ const { error } = await sb.from(table).update(objToSnake(patch)).eq("id", id); if(error) throw error; },
+        async update(patch){
+          // .select() so a write that matched no row (blocked by permissions, or the record is gone) is
+          // reported instead of looking like it saved.
+          const { data, error } = await sb.from(table).update(objToSnake(patch)).eq("id", id).select("id");
+          if(error) throw error;
+          if(Array.isArray(data) && data.length === 0){
+            const e = new Error("Nothing was saved — no matching " + table.replace(/_/g," ") + " record was updated (permissions, or it was removed).");
+            e.code = "no_rows"; throw e;
+          }
+        },
         async delete(){ const { error } = await sb.from(table).delete().eq("id", id); if(error) throw error; }
       };
     }
