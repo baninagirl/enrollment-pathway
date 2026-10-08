@@ -1777,7 +1777,7 @@
                 <td>${esc(s.ageGrade||"—")}</td>
                 <td>${row.subj ? fmtSubjectPill(row.subj) : "—"}</td>
                 <td>${fmtEnrollmentTagPill(s.id, row.subj)}</td>
-                <td>${pipelineScheduleLabel(s.id)}</td>
+                <td>${pipelineScheduleLabel(s.id)}${s.status === "enrolled_pending_training" && subjectsNeedingSchedule(s).length ? ` <button type="button" class="btn sm ghost" data-action="open-new-schedule" data-kind="early" data-student="${s.id}" title="Set their schedule now, before training is done (goes on the monitor list)">Set schedule</button>` : ""}</td>
                 <td>${fmtModePill(s.mode)}</td>
                 <td><span class="pill ${st[1]}">${st[0]}</span></td>
               </tr>`;
@@ -1882,6 +1882,7 @@
       </div>
       <div class="modal-foot">
         <button class="btn danger" data-action="delete-student" data-id="${s.id}">Delete student</button>
+        ${s.status === "enrolled_pending_training" && subjectsNeedingSchedule(s).length ? `<button class="btn" data-action="open-new-schedule" data-kind="early" data-student="${s.id}">Set schedule</button>` : ""}
         <button class="btn primary" data-action="open-edit-student" data-id="${s.id}">Edit details</button>
       </div>
     `);
@@ -2840,23 +2841,41 @@
     return WEEK_ORDER.map(i => `<option value="${DOW[i]}" ${selected===DOW[i]?"selected":""}>${DOW_FULL[i]}</option>`).join("");
   }
 
+  // Subjects a student was enrolled in (off their diagnostic) that don't have a subject_enrollments
+  // row yet — what "Set schedule" can still add before/without monitor.
+  function subjectsNeedingSchedule(s){
+    const subj = studentSubject(s);
+    const wanted = subj === "Both" || !subj ? ["Math","Reading"] : [subj];
+    return wanted.filter(x => !STATE.enrollments.some(e => e.studentId === s.id && e.subject === x));
+  }
+  // Students still "Awaiting training" who can be given their regular schedule early.
+  function earlyScheduleCandidates(){
+    return awaitingTraining().filter(s => subjectsNeedingSchedule(s).length);
+  }
   function openNewSchedule(presetStudentId, kind){
     // kind "monitor": the student has just finished training. They get their real schedule now, under a
     // monitoring trainer, and show on that trainer's Monitor Students list (see the helpers by
     // onMonitorSchedule). Anything else is the original regular-schedule flow.
-    const monitorMode = kind === "monitor";
-    const pool = monitorMode ? onMonitorSchedule().filter(s => !monitorEnrollmentsFor(s.id).length) : readyForSchedule();
+    // kind "early": a schedule set for a student who is still Awaiting training. It's a monitor
+    // schedule (monitoring trainer, Monitor Students list) so they stay on the monitor list until
+    // a teacher moves them to the regular roster and assigns a teacher. Their status isn't touched.
+    const earlyMode = kind === "early";
+    const monitorMode = kind === "monitor" || earlyMode;
+    const modalTitle = earlyMode ? "Set schedule (before training)" : monitorMode ? "New monitor schedule" : "New regular schedule";
+    const pool = earlyMode ? earlyScheduleCandidates()
+      : monitorMode ? onMonitorSchedule().filter(s => !monitorEnrollmentsFor(s.id).length) : readyForSchedule();
     if(!pool.length){
       openModal(`
-        <div class="modal-head"><h3>${monitorMode ? "New monitor schedule" : "New regular schedule"}</h3><button class="iconbtn" data-action="close-modal">✕</button></div>
-        <div class="modal-body"><div class="empty">${monitorMode ? "No one needs a monitor schedule right now. A student appears here once both trainings are marked complete." : "No students are ready yet. A student appears here once both trainings are marked complete."}</div></div>
+        <div class="modal-head"><h3>${modalTitle}</h3><button class="iconbtn" data-action="close-modal">✕</button></div>
+        <div class="modal-body"><div class="empty">${monitorMode ? "No one needs a monitor schedule right now. A student appears here once both trainings are marked complete." : earlyMode ? "Everyone awaiting training already has their schedule set." : "No students are ready yet. A student appears here once both trainings are marked complete."}</div></div>
       `);
       return;
     }
     const presetStudent = presetStudentId ? studentById(presetStudentId) : null;
     const presetSubject = presetStudent ? presetStudent.subject : null;
-    const mathChecked = presetSubject === "Math" || presetSubject === "Both";
-    const readingChecked = presetSubject === "Reading" || presetSubject === "Both";
+    const needSubj = presetStudent && earlyMode ? subjectsNeedingSchedule(presetStudent) : null;
+    const mathChecked = (presetSubject === "Math" || presetSubject === "Both") && (!needSubj || needSubj.includes("Math"));
+    const readingChecked = (presetSubject === "Reading" || presetSubject === "Both") && (!needSubj || needSubj.includes("Reading"));
     // Best-effort defaults pulled straight from what Pipeline already collected on this
     // student — Worksheet mode from their own record, Current level guessed off their
     // diagnostic's start point — so assigning a teacher doesn't mean retyping everything
@@ -2869,9 +2888,9 @@
     const presetMathLevel = presetDiag ? guessLevelFromStartPoint(presetDiag.mathStartPoint || presetDiag.startPoint, "Math") : "";
     const presetReadingLevel = presetDiag ? guessLevelFromStartPoint(presetDiag.readingStartPoint || presetDiag.startPoint, "Reading") : "";
     openModal(`
-      <div class="modal-head"><h3>${monitorMode ? "New monitor schedule" : "New regular schedule"}</h3><button class="iconbtn" data-action="close-modal">✕</button></div>
+      <div class="modal-head"><h3>${modalTitle}</h3><button class="iconbtn" data-action="close-modal">✕</button></div>
       <form data-form="new-schedule">
-        <input type="hidden" name="kind" value="${monitorMode ? "monitor" : "regular"}">
+        <input type="hidden" name="kind" value="${earlyMode ? "early" : monitorMode ? "monitor" : "regular"}">
         <div class="modal-body">
           <label class="field">Student
             <select name="studentId" required>
@@ -2879,7 +2898,7 @@
               ${pool.map(s => `<option value="${s.id}" ${presetStudentId===s.id?"selected":""}>${esc(displayName(s))}</option>`).join("")}
             </select>
           </label>
-          <div class="hint">Two days a week — each can have its own time.</div>
+          <div class="hint">Two days a week — each can have its own time.${earlyMode ? " They stay under Awaiting training until both trainings are done." : ""}</div>
           <div class="field-row">
             <label class="field">Day 1
               <select name="day1" required>${daySelectOptions("Tue")}</select>
@@ -2938,7 +2957,7 @@
         </div>
         <div class="modal-foot">
           <button type="button" class="btn ghost" data-action="close-modal">Cancel</button>
-          <button type="submit" class="btn primary">${monitorMode ? "Set monitor schedule" : "Set schedule"}</button>
+          <button type="submit" class="btn primary">${earlyMode ? "Set schedule" : monitorMode ? "Set monitor schedule" : "Set schedule"}</button>
         </div>
       </form>
     `);
@@ -3198,9 +3217,13 @@
     if(day1 === day2){ toast("Pick two different days."); return; }
     const s = studentById(studentId);
     if(!s) return;
-    const mathOn = fd.get("mathOn") === "on";
-    const readingOn = fd.get("readingOn") === "on";
-    const monitorMode = fd.get("kind") === "monitor";
+    const earlyMode = fd.get("kind") === "early";
+    // Early schedules only add subjects that aren't already enrolled, so re-opening this never duplicates a row.
+    const alreadyHas = sub => STATE.enrollments.some(e => e.studentId === studentId && e.subject === sub);
+    const mathOn = fd.get("mathOn") === "on" && !(earlyMode && alreadyHas("Math"));
+    const readingOn = fd.get("readingOn") === "on" && !(earlyMode && alreadyHas("Reading"));
+    if(earlyMode && !mathOn && !readingOn){ toast("Pick Math, Reading, or both."); return; }
+    const monitorMode = fd.get("kind") === "monitor" || earlyMode;
     const monitorTrainer = (fd.get("monitorTrainer") || "").toString();
     if(monitorMode){
       if(!monitorTrainer){ toast("Pick the monitoring trainer."); return; }
@@ -3225,7 +3248,9 @@
         studentId, studentName: s.name, slots, startDate, status: "active", createdAt: new Date().toISOString()
       });
       // A monitor student stays "On monitor schedule" in Pipeline until they're moved to the regular roster.
-      await db.collection("students").doc(studentId).update(monitorMode ? { mode } : { status: "active", mode });
+      // An early schedule leaves the status alone — they're still Awaiting training; the normal
+      // training-complete flow moves them on and the roster rows already exist.
+      await db.collection("students").doc(studentId).update(monitorMode || earlyMode ? { mode } : { status: "active", mode });
       // Each subject enrollment gets its own linked schedule row (subjectEnrollmentId) —
       // that's what Student Roster's Schedule column actually reads (scheduleFor(enrollment.id),
       // see roster.html), so the days/times just picked above show up there immediately
@@ -3257,12 +3282,12 @@
         });
       }
       const subjectsOn = [mathOn && "Math", readingOn && "Reading"].filter(Boolean).join(" + ");
-      logHistory(monitorMode ? "set_monitor_schedule" : "set_regular_schedule",
+      logHistory(monitorMode ? "set_monitor_schedule" : earlyMode ? "set_early_schedule" : "set_regular_schedule",
         monitorMode
           ? `Set ${s.name}'s monitor schedule with ${monitorTrainer} — ${subjectsOn} (${enrollmentType.toUpperCase()})`
           : `Set ${s.name}'s regular schedule${subjectsOn ? " — " + subjectsOn + " (" + enrollmentType.toUpperCase() + ")" : ""}`,
         "student", studentId);
-      toast(monitorMode ? `Monitor schedule set — now on ${monitorTrainer}'s Monitor Students list.`
+      toast(earlyMode ? `Schedule set — now on ${monitorTrainer}'s Monitor Students list; still awaiting training.` : monitorMode ? `Monitor schedule set — now on ${monitorTrainer}'s Monitor Students list.`
         : mathOn || readingOn ? "Regular schedule set — now on their teacher's roster." : "Regular schedule set.");
     });
   }
