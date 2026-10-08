@@ -1433,7 +1433,7 @@
       </div>
       <div class="when tnum">${fmtDateShort(t.date)} · ${fmtTime(t.time)}</div>
       <div class="acts">
-        ${t.status==="scheduled" ? `<button class="btn sm" data-action="mark-training-complete" data-id="${t.id}">Mark complete</button>` : `<span class="pill good">Completed</span>`}
+        ${t.status==="scheduled" ? `<button class="btn sm" data-action="mark-training-complete" data-id="${t.id}">Mark complete</button>` : `<span class="pill good">Completed</span>${t.status==="completed" ? `<button class="btn sm ghost" data-action="mark-training-incomplete" data-id="${t.id}" title="Marked complete by mistake? Put it back to scheduled.">Mark not completed</button>` : ""}`}
         ${!compact && t.status==="scheduled" ? `<button class="btn sm ghost" data-action="cancel-training" data-id="${t.id}">Cancel</button>` : ""}
         <button class="btn sm ghost" data-action="edit-training" data-id="${t.id}">Edit</button>
         <button class="btn sm danger" title="Delete this student everywhere" data-action="delete-training" data-id="${t.id}">${iconTrash()}</button>
@@ -3347,6 +3347,24 @@
       toast("Training marked complete.");
     });
   }
+  // Undo a "Mark complete" done by mistake: the session goes back to scheduled. If that completion was what
+  // moved the student onto "On monitor schedule" and they haven't been given a monitor/regular schedule yet,
+  // they go back to waiting on their trainings too. Once they have a schedule, their status is left alone.
+  async function markTrainingIncomplete(id){
+    const t = STATE.trainings.find(x=>x.id===id);
+    if(!t) return;
+    await guardWrite(async ()=>{
+      await db.collection("trainings").doc(id).update({ status: "scheduled" });
+      const stu = studentById(t.studentId);
+      const completedLeft = trainingsFor(t.studentId).filter(x => x.id !== id && x.status === "completed").length;
+      const hasEnrollments = STATE.enrollments.some(e => e.studentId === t.studentId);
+      if(stu && stu.status === "monitor_schedule" && completedLeft < 2 && !hasEnrollments){
+        await db.collection("students").doc(t.studentId).update({ status: "enrolled_pending_training" });
+      }
+      logHistory("training_uncomplete", `Marked training session ${t.sessionNumber} not completed for ${t.studentName}`, "training", id);
+      toast("Training put back to scheduled.");
+    });
+  }
   async function markReadyForSchedule(studentId){
     await guardWrite(async ()=>{
       await db.collection("students").doc(studentId).update({ status: "ready_for_schedule" });
@@ -3422,6 +3440,7 @@
     else if(a === "edit-training"){ openEditTrainingModal(el.dataset.id); }
     else if(a === "cancel-training"){ cancelTraining(el.dataset.id); }
     else if(a === "mark-training-complete"){ markTrainingComplete(el.dataset.id); }
+    else if(a === "mark-training-incomplete"){ markTrainingIncomplete(el.dataset.id); }
     else if(a === "mark-ready-for-schedule"){ markReadyForSchedule(el.dataset.id); }
     else if(a === "delete-diagnostic"){ openDeleteConfirm("diagnostic", el.dataset.id); }
     else if(a === "delete-training"){ openDeleteConfirm("training", el.dataset.id); }
