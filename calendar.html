@@ -99,6 +99,9 @@
   select:focus, input:focus{ outline:none; border-color:var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
   label.field{ display:flex; flex-direction:column; gap:5px; font-size:12.5px; font-weight:600; color:var(--ink-muted); }
 
+  #slotLinks{ display:flex; gap:8px; flex-wrap:wrap; }
+  #slotLinks[hidden]{ display:none; }
+  #slotLinks a.btn{ text-decoration:none; display:inline-flex; align-items:center; }
   .cal-toolbar{ display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end; margin-bottom:16px; }
   .cal-toolbar .field{ max-width:230px; min-width:170px; flex:1; }
   .view-tabs{ display:flex; gap:3px; background:var(--surface-2); padding:3px; border-radius:11px; border:1px solid var(--border); }
@@ -281,6 +284,10 @@
         <span class="swatch"><span class="dot arrived"></span>Arrived today</span>
       </div>
       <span class="cal-count" id="calCount"></span>
+      <span id="slotLinks" hidden>
+        <a class="btn sm" href="index.html#slots-dt" title="Open diagnostic-test slots for a week">Generate DT slots</a>
+        <a class="btn sm" href="index.html#slots-st" title="Which trainer is free for student training, by time slot">Available training slots</a>
+      </span>
     </div>
 
     <div class="cal-wrap" id="calWrap">
@@ -415,6 +422,8 @@
     if(adminLink) adminLink.hidden = currentRole !== "superadmin";
     const pipelineLink = $("#navPipelineLink");
     if(pipelineLink) pipelineLink.hidden = currentRole === "teacher" || currentRole === "pending";
+    const slotLinks = $("#slotLinks");
+    if(slotLinks) slotLinks.hidden = currentRole === "teacher" || currentRole === "pending";
     const paymentsLink = $("#navPaymentsLink");
     if(paymentsLink) paymentsLink.hidden = !(currentRole === "admin" || currentRole === "superadmin" || currentRole === "teacher" || currentRole === "trainer_teacher");
     const absentLink = $("#navAbsentLink");

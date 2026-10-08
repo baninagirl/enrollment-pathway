@@ -885,7 +885,20 @@
     reconcileReadiness();
     if(renderQueued) return;
     renderQueued = true;
-    requestAnimationFrame(()=>{ renderQueued = false; renderAll(); });
+    requestAnimationFrame(()=>{ renderQueued = false; renderAll(); openSlotToolFromHash(); });
+  }
+  // Deep link from the Calendar page: index.html#slots-dt / #slots-st opens the slot finder once the
+  // data it needs (diagnostics, trainings, enrollments, schedules, staff) has loaded.
+  let slotHashHandled = false;
+  function openSlotToolFromHash(){
+    const h = (location.hash || "").slice(1);
+    if(slotHashHandled || !/^slots-(dt|st)$/.test(h)) return;
+    const L = STATE.loaded || {};
+    if(!(L.diagnostics && L.trainings && L.schedules && L.enrollments && L.settings)) return;
+    slotHashHandled = true;
+    STATE.activeTab = "calendar";
+    renderAll();
+    openSlotTool(h === "slots-st" ? "st" : "dt");
   }
 
   // Self-healing check: a student can end up stuck showing "2 of 2 completed" but still stuck
@@ -2197,14 +2210,18 @@
   // the needs-outcome queue and off the calendar, but it still feeds the New students table
   // and the roster's DT columns like any other diagnostic.
   async function createRecordedDiagnostic(studentId, info, dt){
-    return db.collection("diagnostics").add({
+    const row = {
       studentId, studentName: info.name, parentName: info.parentName || "", contact: info.contact || "",
       ageGrade: info.ageGrade || "", date: dt.date || todayISO(), time: "", examiner: dt.examiner || "",
       subject: info.subject || "", inquiry: "",
       status: "completed", outcome: "enrolled", notes: "",
       followUpStatus: "", followUpNotes: "", createdAt: new Date().toISOString(),
       ...dt.fields
-    });
+    };
+    const ref = await db.collection("diagnostics").add(row);
+    // Same idea as the edit path: make it visible on DT Results immediately.
+    if(ref && ref.id && !STATE.diagnostics.some(x => x.id === ref.id)) STATE.diagnostics.push({ id: ref.id, ...row });
+    return ref;
   }
 
   function openEditStudentModal(id){
@@ -2381,8 +2398,10 @@
     const sched = scheduleFor(id);
     const s = studentById(id);
     const d = activeDiagnosticFor(id);
+    // Decided from the subject the modal was opened with — before this save changes it.
+    const wasBothAtOpen = studentSubject(s) === "Both";
     await guardWrite(async ()=>{
-      await db.collection("students").doc(id).update({
+      const studentPatch = {
         name, firstName, lastName,
         parentName: fd.get("parentName").toString().trim(),
         parentPhone: fd.get("parentPhone").toString().trim(),
@@ -2391,7 +2410,9 @@
         mode: fd.get("mode").toString(),
         status: fd.get("status").toString(),
         notes: fd.get("notes").toString().trim()
-      });
+      };
+      await db.collection("students").doc(id).update(studentPatch);
+      if(s) Object.assign(s, studentPatch);
       // This student's diagnostic booking is edited from the same form (see the "Diagnostic
       // test" section in openEditStudentModal above) rather than a separate modal — the
       // fields are only present when `d` exists, so this only runs then.
@@ -2411,7 +2432,7 @@
         // the subject the modal was opened with, not whatever the Subject dropdown was just
         // changed to — see openEditStudentModal's isBoth. The new subject still gets saved below;
         // it just doesn't retroactively invent form fields that were never on the page.
-        const wasBoth = studentSubject(s) === "Both";
+        const wasBoth = wasBothAtOpen;
         const diagPatch = {
           studentName: name,
           parentName: fd.get("parentName").toString().trim(),
@@ -2439,6 +2460,8 @@
           diagPatch.startPoint = fd.get("startPoint").toString().trim();
         }
         await db.collection("diagnostics").doc(d.id).update(diagPatch);
+        // Show the new results on DT Results straight away instead of waiting on the live sync.
+        Object.assign(d, diagPatch);
         logHistory("edit_diagnostic", `Edited ${name}'s diagnostic booking`, "diagnostic", d.id);
       }
       // Every schedules row sharing this studentId (the plain one plus each subject-linked
@@ -2490,6 +2513,7 @@
       }
       logHistory("edit_student", `Edited ${name}`, "student", id);
       toast("Student updated.");
+      renderAll();
     });
   }
 
@@ -3167,7 +3191,15 @@
     try{ await fn(); }
     catch(e){
       console.warn(e);
-      toast(e && e.code === "quota_exceeded" ? "Storage limit reached." : "Couldn't save that. Try again.");
+      const msg = String((e && (e.message || e.details)) || "");
+      // A missing column means a database migration hasn't been run yet — say which one, instead of a vague retry.
+      const missingCol = /column .* does not exist|could not find the '.*' column|schema cache/i.test(msg);
+      const hint = /math_|reading_/.test(msg) ? "Run phase24-diagnostic-subject-results.sql in Supabase, then try again."
+        : /dt_time/.test(msg) ? "Run phase23-dt-time-result.sql in Supabase, then try again."
+        : /enrollment_type/.test(msg) ? "Run phase29-reporting-tags.sql in Supabase, then try again." : "";
+      toast(e && e.code === "quota_exceeded" ? "Storage limit reached."
+        : missingCol ? "Couldn't save — the database is missing a column (" + msg.slice(0,90) + "). " + hint
+        : "Couldn't save that: " + (msg ? msg.slice(0,120) : "try again."));
     }
   }
 
@@ -3734,6 +3766,7 @@
   window.addEventListener("hashchange", () => {
     const h = (location.hash || "").slice(1);
     if(["calendar","enrollment","roster","students","settings"].includes(h) && h !== STATE.activeTab){ STATE.activeTab = h; renderAll(); }
+    if(/^slots-(dt|st)$/.test(h)){ slotHashHandled = false; openSlotToolFromHash(); }
   });
   const FORM_HANDLERS = {
     "new-diagnostic": submitNewDiagnostic,
