@@ -1444,7 +1444,8 @@
   const SLOT_PREFS_KEY = "kumonSlotPrefs";
   const SLOT_DEFAULTS_BY_KIND = {
     dt: { start:"10:30", end:"18:00", len:60, days:[1,2,3,4,5,6], breakFrom:"12:00", breakTo:"13:30", maxPerDay:"" },
-    st: { start:"09:00", end:"18:00", len:60, days:[1,2,3,4,5,6], breakFrom:"", breakTo:"" }
+    // Training slots are only offered for these trainers (by core name); change under "Trainers" in the finder.
+    st: { start:"09:00", end:"18:00", len:60, days:[1,2,3,4,5,6], breakFrom:"", breakTo:"", trainers:["queenie","frixie","mira"] }
   };
   const slotTool = { kind:"dt", weekStart:null, prefs:null };
   function loadSlotPrefs(kind){
@@ -1454,7 +1455,9 @@
     return { ...def, ...p, days: Array.isArray(p.days) && p.days.length ? p.days : def.days };
   }
   function saveSlotPrefs(){ try{ localStorage.setItem(SLOT_PREFS_KEY + "_" + slotTool.kind, JSON.stringify(slotTool.prefs)); }catch(e){} }
-  const slotKey = s => String(s||"").trim().toLowerCase();
+  // Compare people by their core name, so "Miss Mira", "Ms. Mira" and "mira" are the same person
+  // whether the name came from Settings, a training, or a roster enrollment's teacher.
+  const slotKey = s => String(s||"").trim().toLowerCase().replace(/^(miss|ms\.?|mrs\.?|sir|mr\.?|teacher|coach)\s+/, "").replace(/\s+/g, " ");
   const toMin = t => { const m = /^(\d{1,2}):(\d{2})/.exec(t||""); return m ? (+m[1])*60 + (+m[2]) : null; };
   const fromMin = n => String(Math.floor(n/60)).padStart(2,"0") + ":" + String(n%60).padStart(2,"0");
   // Back-to-back slots from the start time. A slot that would run into the break isn't offered;
@@ -1492,7 +1495,8 @@
   function slotComputeWeek(){
     const p = slotTool.prefs, len = Number(p.len) || 60;
     const isDt = slotTool.kind === "dt";
-    const people = isDt ? ["Open"] : STATE.settings.trainers;
+    const chosen = Array.isArray(p.trainers) ? p.trainers : SLOT_DEFAULTS_BY_KIND.st.trainers;
+    const people = isDt ? ["Open"] : STATE.settings.trainers.filter(n => chosen.includes(slotKey(n)));
     const starts = slotStarts(p);
     const todayIso = todayISO();
     const nowMin = new Date().getHours()*60 + new Date().getMinutes();
@@ -1556,6 +1560,7 @@
           <label>Slot length
             <select data-action="slot-pref" data-key="len">${[30,45,60,90,120].map(n => `<option value="${n}" ${Number(p.len)===n?"selected":""}>${n} min</option>`).join("")}</select>
           </label>
+          ${isDt ? "" : `<div class="slot-days" title="Trainers shown in the grid">${STATE.settings.trainers.map(n => `<label><input type="checkbox" data-action="slot-trainer" data-name="${esc(slotKey(n))}" ${(Array.isArray(p.trainers) ? p.trainers : []).includes(slotKey(n)) ? "checked" : ""}>${esc(n)}</label>`).join("")}</div>`}
           ${isDt ? `<label>Max DTs per day<input type="number" min="0" max="20" step="1" placeholder="No limit" style="width:96px; padding:6px 8px; font-size:13px;" data-action="slot-pref" data-key="maxPerDay" value="${esc(p.maxPerDay===""||p.maxPerDay==null?"":p.maxPerDay)}"></label>
           <label>No DTs from<input type="time" data-action="slot-pref" data-key="breakFrom" value="${esc(p.breakFrom||"")}"></label>
           <label>until<input type="time" data-action="slot-pref" data-key="breakTo" value="${esc(p.breakTo||"")}"></label>` : ""}
@@ -1563,7 +1568,7 @@
         </div>
         <div class="hint">${isDt
           ? "Open hours with no diagnostic booked, whoever is doing it. Trainings and regular schedules are ignored. A DT is one hour, nothing runs through the break. Set Max DTs per day to cap how many a day can hold (existing bookings count). Tap Open to book it."
-          : "A trainer is free when they have no student training booked and no regular or monitor class with their own students at that time. Tap a name to schedule a training."}
+          : "Shown for the trainers ticked above (Miss Queenie, Miss Frixie and Miss Mira by default). A trainer is blocked at a time if they have a student training, a regular class or a monitor student then. Tap a name to schedule a training."}
           ${people.length ? "" : ` <b>No ${isDt ? "DT teachers" : "trainers"} are set up yet — add them in Settings.</b>`}</div>
         ${starts.length && days.length
           ? `<div class="table-scroll" style="max-height:48vh; overflow:auto;"><table class="slot-grid"><thead>${head}</thead><tbody>${body}</tbody></table></div>`
@@ -3787,6 +3792,11 @@
       const k = e.target.dataset.key;
       slotTool.prefs[k] = k === "len" ? Number(e.target.value) : k === "maxPerDay" ? (e.target.value === "" ? "" : Math.max(0, Math.floor(Number(e.target.value)))) : e.target.value;
       saveSlotPrefs(); renderSlotTool();
+    }
+    else if(e.target.matches('[data-action="slot-trainer"]')){
+      const k = e.target.dataset.name, set = new Set(slotTool.prefs.trainers || []);
+      if(e.target.checked) set.add(k); else set.delete(k);
+      slotTool.prefs.trainers = [...set]; saveSlotPrefs(); renderSlotTool();
     }
     else if(e.target.matches('[data-action="slot-day"]')){
       const dw = Number(e.target.dataset.dow), set = new Set(slotTool.prefs.days);
