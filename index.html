@@ -1443,7 +1443,7 @@
   // run through the 12:00-1:30 PM break. Training slots are about people (who's free).
   const SLOT_PREFS_KEY = "kumonSlotPrefs";
   const SLOT_DEFAULTS_BY_KIND = {
-    dt: { start:"10:30", end:"18:00", len:60, days:[1,2,3,4,5,6], breakFrom:"12:00", breakTo:"13:30", maxPerDay:"" },
+    dt: { start:"10:30", end:"18:00", len:60, days:[1,2,3,4,5,6], breakFrom:"12:00", breakTo:"13:30", perSlot:1 },
     // Training slots are only offered for these trainers (by core name); change under "Trainers" in the finder.
     st: { start:"09:00", end:"18:00", len:60, days:[1,2,3,4,5,6], breakFrom:"", breakTo:"", trainers:["queenie","frixie","mira"] }
   };
@@ -1508,21 +1508,15 @@
       const cells = starts.map(m => {
         const past = iso < todayIso || (iso === todayIso && m <= nowMin);
         // DT: open when no scheduled diagnostic (any DT teacher) overlaps this hour.
+        // DT: a time slot holds up to "DTs per time slot" bookings (default 1), whoever is doing them.
+        const taken = isDt ? allBusy.filter(b => b < m + len && b + len > m).length : 0;
+        const perSlot = Math.max(1, Math.floor(Number(p.perSlot)) || 1);
         const free = past ? []
-          : isDt ? (allBusy.some(b => b < m + len && b + len > m) ? [] : ["Open"])
+          : isDt ? (taken < perSlot ? ["Open"] : [])
           : people.filter(who => !(busy[slotKey(who)] || []).some(b => b < m + len && b + len > m));
-        return { m, past, free };
+        return { m, past, free, taken, left: isDt ? Math.max(0, perSlot - taken) : 0, perSlot };
       });
-      // Optional cap on DTs per day: bookings already made count toward it, so only the earliest
-      // open slots up to the cap stay offered and the rest read "Day full".
-      const cap = isDt && p.maxPerDay !== "" && p.maxPerDay != null && Number(p.maxPerDay) >= 0 ? Number(p.maxPerDay) : null;
-      let booked = 0;
-      if(cap != null){
-        booked = STATE.diagnostics.filter(x => x.date === iso && x.status !== "cancelled").length;
-        let room = Math.max(0, cap - booked);
-        cells.forEach(c => { if(c.free.length){ if(room > 0) room--; else { c.free = []; c.capped = true; } } });
-      }
-      return { dow, d, iso, cells, booked, cap };
+      return { dow, d, iso, cells };
     });
     return { starts, days, people };
   }
@@ -1540,8 +1534,8 @@
     const body = starts.map((m, i) => `<tr><td>${fmtTime(fromMin(m))}${isDt ? `<div class="hint" style="font-weight:400;">to ${fmtTime(fromMin(m + lenMin))}</div>` : ""}</td>${days.map(d => {
       const c = d.cells[i];
       if(c.past) return `<td class="past"><span class="slot-none">—</span></td>`;
-      if(!c.free.length) return `<td><span class="slot-none">${c.capped ? "Day full" : isDt ? "Booked" : "No one free"}</span></td>`;
-      if(isDt) return `<td><button type="button" class="slot-chip" data-action="slot-book" data-date="${d.iso}" data-time="${fromMin(m)}" data-who="" title="Book a diagnostic at this time">Open</button></td>`;
+      if(!c.free.length) return `<td><span class="slot-none">${isDt ? (c.perSlot > 1 ? `Full (${c.taken}/${c.perSlot})` : "Booked") : "No one free"}</span></td>`;
+      if(isDt) return `<td><button type="button" class="slot-chip" data-action="slot-book" data-date="${d.iso}" data-time="${fromMin(m)}" data-who="" title="Book a diagnostic at this time">Open${c.perSlot > 1 ? ` · ${c.left} left` : ""}</button></td>`;
       return `<td>${c.free.map(who => `<button type="button" class="slot-chip" data-action="slot-book" data-date="${d.iso}" data-time="${fromMin(m)}" data-who="${esc(who)}" title="Schedule a training with ${esc(who)}">${esc(who)}</button>`).join("")}</td>`;
     }).join("")}</tr>`).join("");
     $("#modal").classList.add("modal-wide");
@@ -1561,13 +1555,13 @@
             <select data-action="slot-pref" data-key="len">${[30,45,60,90,120].map(n => `<option value="${n}" ${Number(p.len)===n?"selected":""}>${n} min</option>`).join("")}</select>
           </label>
           ${isDt ? "" : `<div class="slot-days" title="Trainers shown in the grid">${STATE.settings.trainers.map(n => `<label><input type="checkbox" data-action="slot-trainer" data-name="${esc(slotKey(n))}" ${(Array.isArray(p.trainers) ? p.trainers : []).includes(slotKey(n)) ? "checked" : ""}>${esc(n)}</label>`).join("")}</div>`}
-          ${isDt ? `<label>Max DTs per day<input type="number" min="0" max="20" step="1" placeholder="No limit" style="width:96px; padding:6px 8px; font-size:13px;" data-action="slot-pref" data-key="maxPerDay" value="${esc(p.maxPerDay===""||p.maxPerDay==null?"":p.maxPerDay)}"></label>
+          ${isDt ? `<label>DTs per time slot<input type="number" min="1" max="10" step="1" style="width:96px; padding:6px 8px; font-size:13px;" data-action="slot-pref" data-key="perSlot" value="${esc(Math.max(1, Math.floor(Number(p.perSlot)) || 1))}"></label>
           <label>No DTs from<input type="time" data-action="slot-pref" data-key="breakFrom" value="${esc(p.breakFrom||"")}"></label>
           <label>until<input type="time" data-action="slot-pref" data-key="breakTo" value="${esc(p.breakTo||"")}"></label>` : ""}
           <div class="slot-days">${[1,2,3,4,5,6,0].map(dw => `<label><input type="checkbox" data-action="slot-day" data-dow="${dw}" ${p.days.includes(dw)?"checked":""}>${DOW[dw]}</label>`).join("")}</div>
         </div>
         <div class="hint">${isDt
-          ? "Open hours with no diagnostic booked, whoever is doing it. Trainings and regular schedules are ignored. A DT is one hour, nothing runs through the break. Set Max DTs per day to cap how many a day can hold (existing bookings count). Tap Open to book it."
+          ? "Open hours with no diagnostic booked, whoever is doing it. Trainings and regular schedules are ignored. A DT is one hour, nothing runs through the break. Set DTs per time slot if more than one can run at the same time. Tap Open to book it."
           : "Shown for the trainers ticked above (Miss Queenie, Miss Frixie and Miss Mira by default). A trainer is blocked at a time if they have a student training, a regular class or a monitor student then. Tap a name to schedule a training."}
           ${people.length ? "" : ` <b>No ${isDt ? "DT teachers" : "trainers"} are set up yet — add them in Settings.</b>`}</div>
         ${starts.length && days.length
@@ -3790,7 +3784,7 @@
     if(e.target.matches('[data-action="cal-staff"]')){ STATE.calStaff = e.target.value; renderCalendar(); }
     else if(e.target.matches('[data-action="slot-pref"]')){
       const k = e.target.dataset.key;
-      slotTool.prefs[k] = k === "len" ? Number(e.target.value) : k === "maxPerDay" ? (e.target.value === "" ? "" : Math.max(0, Math.floor(Number(e.target.value)))) : e.target.value;
+      slotTool.prefs[k] = k === "len" ? Number(e.target.value) : k === "perSlot" ? Math.max(1, Math.floor(Number(e.target.value)) || 1) : e.target.value;
       saveSlotPrefs(); renderSlotTool();
     }
     else if(e.target.matches('[data-action="slot-trainer"]')){
