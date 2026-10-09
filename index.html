@@ -920,6 +920,11 @@
   // with their actual completed trainings (e.g. data edited directly, or a write that didn't
   // fully land). Catches that every time data loads and nudges the status forward automatically.
   let reconciling = {};
+  // Each open page fixes a given student's status at most once per direction. If another computer
+  // still has an older copy of this page open, the two would otherwise keep flipping the student back
+  // and forth (Active ↔ On monitor schedule) forever.
+  const healedOnce = new Set();
+  function healOnce(key){ if(healedOnce.has(key)) return false; healedOnce.add(key); return true; }
   function reconcileReadiness(){
     if(!db) return;
     STATE.students.forEach(s => {
@@ -927,7 +932,7 @@
       // is a regular student now — nudge the student record's status to match.
       if(s.status === "monitor_schedule" && !reconciling[s.id]){
         const enr = STATE.enrollments.filter(e => e.studentId === s.id);
-        if(enr.length && !enr.some(isMonitorEnrollment)){
+        if(enr.length && !enr.some(isMonitorEnrollment) && healOnce(s.id + ":to-active")){
           reconciling[s.id] = true;
           db.collection("students").doc(s.id).update({ status: "active" })
             .catch(e => console.warn("reconcile failed", e))
@@ -938,7 +943,8 @@
       // The other direction: a Pipeline student marked Active whose subject was put on monitor from
       // Student Roster belongs under "On monitor schedule".
       if(s.status === "active" && s.origin !== "roster" && !reconciling[s.id]
-         && STATE.enrollments.some(e => e.studentId === s.id && isMonitorEnrollment(e))){
+         && STATE.enrollments.some(e => e.studentId === s.id && isMonitorEnrollment(e))
+         && healOnce(s.id + ":to-monitor")){
         reconciling[s.id] = true;
         db.collection("students").doc(s.id).update({ status: "monitor_schedule" })
           .catch(e => console.warn("reconcile failed", e))
