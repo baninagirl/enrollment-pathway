@@ -119,6 +119,7 @@
   .pill.tag-new{ background:var(--good-soft); color:var(--good); }
   .pill.tag-eo{ background:var(--accent-soft); color:var(--accent-soft-ink); }
   .pill.tag-resume, .pill.tag-new_returnee, .pill.tag-resume_transfer_in{ background:var(--warn-soft); color:var(--warn); }
+  #repBody tr.section-row td{ background:var(--surface-2, transparent); font-weight:700; font-size:12px; letter-spacing:.04em; text-transform:uppercase; color:var(--ink-muted); padding-top:18px; border-top:2px solid var(--border); }
   .pill.monitor-tag{ background:var(--warn-soft); color:var(--warn); margin-left:6px; font-size:10.5px; letter-spacing:.02em; }
   .pill.new-tag{ background:var(--accent-soft); color:var(--accent-soft-ink); margin-left:6px; font-size:10.5px; letter-spacing:.02em; }
   .monitor-count:not(:empty){ display:inline-block; min-width:18px; padding:0 6px; margin-left:4px; border-radius:99px; background:var(--accent-soft); color:var(--accent-soft-ink); font-size:11px; font-weight:700; text-align:center; }
@@ -1135,7 +1136,7 @@
         .filter(e => reportFilters.grade === "all" || gradeFor(e.student_id) === reportFilters.grade)
         .filter(e => !q || (e.student_name||"").toLowerCase().includes(q))
         .sort((a,b) => lastNameSortKey(a.student_id,a.student_name).localeCompare(lastNameSortKey(b.student_id,b.student_name)))
-        .map(e => ({ source:"live", id:e.id, monitor_cycle:e.monitor_cycle, enrollment_type:e.enrollment_type, student_id:e.student_id, student_name:e.student_name, subject:e.subject, teacher:e.teacher, mode:e.mode, status:e.status||"active",
+        .map(e => ({ source:"live", id:e.id, monitor_cycle:e.monitor_cycle, is_monitor:!!e.is_monitor, monitor_since:e.monitor_since, enrollment_type:e.enrollment_type, student_id:e.student_id, student_name:e.student_name, subject:e.subject, teacher:e.teacher, mode:e.mode, status:e.status||"active",
           lwc:e.lwc, nwu:e.nwu, no_of_days:e.no_of_days, no_of_months_current_level:e.no_of_months_current_level,
           test_date:e.test_date, test_level:e.test_level, test_time:e.test_time, test_score:e.test_score, test_group:e.test_group }));
     }
@@ -1151,7 +1152,7 @@
       .filter(h => reportFilters.grade === "all" || gradeFor(h.student_id) === reportFilters.grade)
       .filter(h => !q || (h.student_name||"").toLowerCase().includes(q))
       .sort((a,b) => lastNameSortKey(a.student_id,a.student_name).localeCompare(lastNameSortKey(b.student_id,b.student_name)))
-      .map(h => ({ source:"archived", id:h.id, student_id:h.student_id, student_name:h.student_name, subject:h.subject, teacher:h.teacher, mode:h.mode, status:"active",
+      .map(h => ({ source:"archived", id:h.id, monitor_cycle:h.monitor_cycle, is_monitor:!!h.is_monitor, monitor_since:h.monitor_since, enrollment_type:h.enrollment_type, student_id:h.student_id, student_name:h.student_name, subject:h.subject, teacher:h.teacher, mode:h.mode, status:"active",
         lwc:h.lwc, nwu:h.nwu, no_of_days:h.no_of_days, no_of_months_current_level:h.no_of_months_current_level,
         test_date:h.test_date, test_level:h.test_level, test_time:h.test_time, test_score:h.test_score, test_group:h.test_group }));
   }
@@ -1215,6 +1216,8 @@
       lwc: e.lwc, nwu: e.nwu, no_of_days: e.no_of_days, no_of_months_current_level: e.no_of_months_current_level,
       test_date: e.test_date, test_level: e.test_level, test_time: e.test_time, test_score: e.test_score, test_group: e.test_group,
       award: e.award, actual: e.actual,
+      // Phase34: keep who was New / Monitor that month, so the report's sections still work for closed months.
+      enrollment_type: e.enrollment_type || null, is_monitor: !!e.is_monitor, monitor_since: e.monitor_since || null, monitor_cycle: e.monitor_cycle || null,
       closed_by_email: currentUser ? currentUser.email : null
     }));
 
@@ -1288,10 +1291,32 @@
       return;
     }
     const editable = isCurrentCycle();
-    body.innerHTML = rows.map((r, idx) => `
+    // Sections (same order as the reporting sheet): regular students first, then everyone New to the
+    // roster this month (including new students who are on monitor), then Monitor students from earlier
+    // months. Numbering restarts in each section.
+    const cycleKey = monthKeyOf(viewMonth);
+    const sections = [
+      { key:"regular", title:"", rows:[] },
+      { key:"new", title:`New to roster · ${monthLabel(viewMonth)}`, rows:[] },
+      { key:"monitor", title:"Monitor students", rows:[] }
+    ];
+    rows.forEach(r => sections[reportSectionIndex(r, cycleKey)].rows.push(r));
+    const hasExtra = sections[1].rows.length || sections[2].rows.length;
+    body.innerHTML = sections.filter(sec => sec.rows.length).map(sec => `
+      ${sec.title ? `<tr class="section-row"><td colspan="16">${esc(sec.title)} (${sec.rows.length})</td></tr>`
+        : hasExtra ? `<tr class="section-row"><td colspan="16">Regular students (${sec.rows.length})</td></tr>` : ""}
+      ${sec.rows.map((r, idx) => reportRowHtml(r, idx, editable)).join("")}`).join("");
+  }
+  function reportSectionIndex(r, cycleKey){
+    if(r.monitor_cycle && r.monitor_cycle === cycleKey) return 1; // New to roster this month
+    if(r.is_monitor) return 2;                                   // Monitor (started an earlier month)
+    return 0;
+  }
+  function reportRowHtml(r, idx, editable){
+    return `
       <tr class="${editable?"clickrow":""}" ${editable?`data-action="edit-report" data-id="${r.id}"`:""}>
         <td class="rownum">${idx+1}</td>
-        <td>${esc(displayName(r.student_id, r.student_name))}${newTagHtml(r)}</td>
+        <td>${esc(displayName(r.student_id, r.student_name))}${r.is_monitor ? monitorTagHtml(r) : ""}${newTagHtml(r)}</td>
         <td><span class="pill ${r.subject==='Math'?'subj-math':'subj-reading'}">${esc(r.subject||"")}</span></td>
         <td>${r.archived ? `<span class="lvl empty-lvl" title="Archived snapshots don't keep the reporting tag.">—</span>` : reportTagPill(r.enrollment_type)}</td>
         <td>${fmtPlain(r.lwc)}</td>
@@ -1306,8 +1331,7 @@
         <td>${esc(gradeFor(r.student_id) || "—")}</td>
         <td>${editable ? fmtPaymentPill(r.student_id) : `<span class="lvl empty-lvl" title="An archived cycle is a snapshot — payment status only makes sense for the live roster.">not tracked</span>`}</td>
         <td>${fmtMode(r.mode)}</td>
-      </tr>
-    `).join("");
+      </tr>`;
   }
   function renderReportAndActions(){ renderPageHeadActions(); renderReport(); }
 
