@@ -935,6 +935,16 @@
         }
         return;
       }
+      // The other direction: a Pipeline student marked Active whose subject was put on monitor from
+      // Student Roster belongs under "On monitor schedule".
+      if(s.status === "active" && s.origin !== "roster" && !reconciling[s.id]
+         && STATE.enrollments.some(e => e.studentId === s.id && isMonitorEnrollment(e))){
+        reconciling[s.id] = true;
+        db.collection("students").doc(s.id).update({ status: "monitor_schedule" })
+          .catch(e => console.warn("reconcile failed", e))
+          .finally(()=>{ delete reconciling[s.id]; });
+        return;
+      }
       if(s.status !== "enrolled_pending_training" || reconciling[s.id]) return;
       const completed = trainingsFor(s.id).filter(t => t.status === "completed").length;
       if(completed >= 2){
@@ -995,7 +1005,10 @@
   // lapses by itself once a later recording cycle begins, at which point they're just a regular student of
   // that trainer. Until a trainer moves them sooner via "Move to regular roster".
   function currentCycleKey(){ return monthKeyOf(cycleMonthFor(new Date())); }
-  function isMonitorEnrollment(e){ return !!e.isMonitor && (!e.monitorCycle || e.monitorCycle >= currentCycleKey()); }
+  // Phase33: monitor no longer runs out at the end of the month — it stays on until someone moves the
+  // student off (Move to regular roster, unticking Monitor on Student Roster, or changing status here).
+  // monitorSince is the month it started; monitorCycle is only the NEW label month now.
+  function isMonitorEnrollment(e){ return !!e.isMonitor; }
   function monitorEnrollmentsFor(studentId){ return STATE.enrollments.filter(e => e.studentId === studentId && isMonitorEnrollment(e)); }
   function monitorCycleLabel(key){
     const m = /^(\d{4})-(\d{2})$/.exec(key || "");
@@ -1780,10 +1793,10 @@
       const trainers = [...new Set(enr.map(e => e.teacher).filter(Boolean))].join(", ");
       const sched = scheduleFor(s.id);
       const when = sched && sched.slots ? sched.slots.map(sl => `${sl.day} ${fmtTime(sl.time)}`).join(", ") : "";
-      const cycle = monitorCycleLabel(enr[0].monitorCycle);
+      const cycle = monitorCycleLabel(enr[0].monitorSince || enr[0].monitorCycle);
       return `<div class="rowi">
         <div class="who"><b>${esc(displayName(s))}</b><span>${esc(s.parentName||"")}</span></div>
-        <div class="when">Monitoring with ${esc(trainers || "—")}${when ? " · " + esc(when) : ""}${cycle ? " · NEW " + esc(cycle) : ""}</div>
+        <div class="when">Monitoring with ${esc(trainers || "—")}${when ? " · " + esc(when) : ""}${cycle ? " · Monitor since " + esc(cycle) : ""}</div>
         <div class="acts"><button class="btn sm primary" data-action="open-monitor-promote" data-student="${s.id}">Move to regular roster</button></div>
       </div>`;
     }).join("");
@@ -2486,8 +2499,22 @@
         status: fd.get("status").toString(),
         notes: fd.get("notes").toString().trim()
       };
+      const prevStatus = s ? s.status : null;
       await db.collection("students").doc(id).update(studentPatch);
       if(s) Object.assign(s, studentPatch);
+      // Status ↔ monitor (phase33): "On monitor schedule" is really decided by the subjects' monitor flag,
+      // so changing the status here flips that flag too — otherwise the page would undo the change on reload.
+      if(prevStatus !== studentPatch.status && (studentPatch.status === "monitor_schedule" || prevStatus === "monitor_schedule")){
+        const toMonitor = studentPatch.status === "monitor_schedule";
+        const flip = STATE.enrollments.filter(e => e.studentId === id && !e.archived && (toMonitor ? !e.isMonitor : !!e.isMonitor));
+        for(const enr of flip){
+          const mp = toMonitor ? { isMonitor: true, monitorSince: currentCycleKey() } : { isMonitor: false, monitorSince: null };
+          await db.collection("subject_enrollments").doc(enr.id).update(mp);
+          Object.assign(enr, mp);
+        }
+        if(flip.length) logHistory(toMonitor ? "monitor_on" : "monitor_off",
+          `${toMonitor ? "Put" : "Took"} ${name} ${toMonitor ? "on" : "off"} monitor (${flip.map(e => e.subject).filter(Boolean).join(", ")})`, "student", id);
+      }
       // This student's diagnostic booking is edited from the same form (see the "Diagnostic
       // test" section in openEditStudentModal above) rather than a separate modal — the
       // fields are only present when `d` exists, so this only runs then.
@@ -3509,7 +3536,7 @@
       if(!mathOn && !readingOn){ toast("Pick Math, Reading, or both."); return; }
     }
     // Extra columns written on each enrollment when this is a monitor schedule (see phase25).
-    const monitorFields = monitorMode ? { isMonitor: true, monitorCycle: currentCycleKey() } : {};
+    const monitorFields = monitorMode ? { isMonitor: true, monitorSince: currentCycleKey(), monitorCycle: currentCycleKey() } : {};
     const mode = fd.get("mode") || "";
     const slots = [{ day: day1, time: time1 }, { day: day2, time: time2 }];
     // Same two days/times, but tagged IC (In Center) by default for the linked, per-subject

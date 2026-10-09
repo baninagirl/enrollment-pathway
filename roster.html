@@ -119,6 +119,7 @@
   .pill.tag-new{ background:var(--good-soft); color:var(--good); }
   .pill.tag-eo{ background:var(--accent-soft); color:var(--accent-soft-ink); }
   .pill.tag-resume, .pill.tag-new_returnee, .pill.tag-resume_transfer_in{ background:var(--warn-soft); color:var(--warn); }
+  .pill.monitor-tag{ background:var(--warn-soft); color:var(--warn); margin-left:6px; font-size:10.5px; letter-spacing:.02em; }
   .pill.new-tag{ background:var(--accent-soft); color:var(--accent-soft-ink); margin-left:6px; font-size:10.5px; letter-spacing:.02em; }
   .monitor-count:not(:empty){ display:inline-block; min-width:18px; padding:0 6px; margin-left:4px; border-radius:99px; background:var(--accent-soft); color:var(--accent-soft-ink); font-size:11px; font-weight:700; text-align:center; }
   .monitor-banner{ margin:0 0 12px; padding:12px 16px; border-radius:12px; background:var(--accent-soft); color:var(--accent-soft-ink); font-size:13px; line-height:1.45; }
@@ -716,7 +717,7 @@
   async function loadStudents(){
     // status/monthly_tuition/billing_group_id are for the Payment tag (paymentStatusFor,
     // below) — Roster otherwise never touched billing fields before.
-    const { data, error } = await sbClient.from("students").select("id,name,age_grade,first_name,last_name,status,monthly_tuition,billing_group_id").order("name");
+    const { data, error } = await sbClient.from("students").select("id,name,age_grade,first_name,last_name,status,monthly_tuition,billing_group_id,origin").order("name");
     if(error){ console.warn(error); students = []; return; }
     students = data || [];
   }
@@ -1024,13 +1025,31 @@
   }
   function cycleKeyOf(date){ const c = cycleMonthFor(date); return monthKeyOf(c); }
   function isCurrentCycle(){ return monthKeyOf(viewMonth) === cycleKeyOf(new Date()); }
-  // Monitor students (phase25): a student who's finished training and is being watched by a
-  // trainer (Queenie / Frix) before joining a teacher's regular roster. They're tagged NEW for the
-  // cycle they started monitoring in (monitor_cycle, a "YYYY-MM" key), and fold into the regular
-  // roster automatically once a later cycle begins — derived here, nothing has to be rewritten.
-  // Only live (current-cycle) rows can be monitors; archived snapshots never are.
+  // Monitor students (phase25, phase33): a subject with is_monitor = true. It stays on monitor until
+  // someone clicks "Move to regular roster" or unticks Monitor in Edit — it no longer runs out at the
+  // end of the month. monitor_since ("YYYY-MM") is the month monitoring started; monitor_cycle is only
+  // the NEW label month now. Only live (current-cycle) rows can be monitors; archived snapshots never are.
   function isMonitorRow(e){
-    return !!e.is_monitor && !e.archived && (!e.monitor_cycle || e.monitor_cycle >= cycleKeyOf(new Date()));
+    return !!e.is_monitor && !e.archived;
+  }
+  function monitorSinceKey(e){ return e.monitor_since || e.monitor_cycle || ""; }
+  function monitorTagHtml(e){
+    if(!isMonitorRow(e)) return "";
+    const since = monitorCycleLabel(monitorSinceKey(e));
+    return `<span class="pill monitor-tag" title="On monitor schedule${since ? " since " + esc(since) : ""}">Monitor${since ? " · " + esc(since) : ""}</span>`;
+  }
+  // Keeps Pipeline's own student status in step with the roster's monitor flags (Pipeline students
+  // only). Best effort: Pipeline heals the same thing on its next load if this is refused.
+  async function syncPipelineMonitorStatus(studentId){
+    const stu = students.find(x => x.id === studentId);
+    if(!stu || stu.origin === "roster") return;
+    const anyMonitor = enrollments.some(x => x.student_id === studentId && x.is_monitor && !x.archived);
+    let next = null;
+    if(anyMonitor && stu.status === "active") next = "monitor_schedule";
+    else if(!anyMonitor && stu.status === "monitor_schedule") next = "active";
+    if(!next) return;
+    const { error } = await sbClient.from("students").update({ status: next }).eq("id", studentId);
+    if(error) console.warn("couldn't update student status", error); else stu.status = next;
   }
   function monitorCycleLabel(key){
     const m = /^(\d{4})-(\d{2})$/.exec(key||"");
@@ -1407,7 +1426,7 @@
     if(banner){
       banner.hidden = !inMonitor;
       banner.innerHTML = inMonitor
-        ? `On monitor schedule. Each student is tagged <b>NEW</b> for the month they started, stays in the monthly reports like everyone else, and joins the regular roster automatically when the next month starts. Use <b>Move to regular roster</b> any time they're ready, and pick their teacher there.`
+        ? `On monitor schedule. Each student shows <b>Monitor · the month they started</b> and stays in the monthly reports like everyone else. They stay here until someone clicks <b>Move to regular roster</b> (pick their teacher there) or unticks Monitor in Edit.`
         : "";
     }
     const actionHead = $("#monitorActionHead");
@@ -1442,7 +1461,7 @@
             ? `<input type="checkbox" class="row-check" data-action="toggle-select" data-id="${e.id}" ${selectedIds.has(e.id)?"checked":""}>`
             : `<span class="rownum">${idx+1}</span>`}</td>
           ${inMonitor && editable ? `<td><button type="button" class="btn sm primary" data-action="monitor-promote" data-id="${e.id}">Move to regular roster</button></td>` : ""}
-          <td>${esc(displayName(e.student_id, e.student_name))}${newTagHtml(e)}</td>
+          <td>${esc(displayName(e.student_id, e.student_name))}${monitorTagHtml(e)}${newTagHtml(e)}</td>
           <td>${esc(gradeFor(e.student_id) || "—")}</td>
           <td><span class="pill ${e.subject==='Math'?'subj-math':'subj-reading'}">${esc(e.subject)}</span></td>
           <td>${e.archived ? `<span class="lvl empty-lvl">—</span>` : reportTagPill(e.enrollment_type)}</td>
@@ -1568,7 +1587,11 @@
           </label>
           <label class="field">Teacher<select name="teacher" ${isTeacherScoped()?"disabled":""}>${teacherOptions(enrollment.teacher)}</select></label>
           <label class="field">Reporting tag${reportTagSelect(enrollment.enrollment_type || "", "enrollment_type")}</label>
-          ${enrollment.is_monitor && !enrollment.archived ? "" : `<label class="field">NEW label (this month)${newTagSelectHtml(enrollment.monitor_cycle || "")}<span class="hint" style="font-size:11.5px; margin-top:4px; display:block;">Shows a NEW label next to their name for the rest of the month. It clears itself when the next month starts.</span></label>`}
+          <label class="field" style="flex-direction:row; align-items:center; gap:8px; margin-bottom:2px;"><input type="hidden" name="monitor_field" value="1"><input type="checkbox" name="is_monitor" value="1" ${enrollment.is_monitor ? "checked" : ""} style="width:auto;"> Monitor student</label>
+          <span class="hint" style="font-size:11.5px; margin:0 0 12px; display:block;">${enrollment.is_monitor
+            ? `On monitor since ${esc(monitorCycleLabel(monitorSinceKey(enrollment)) || "—")}. Untick to move them to the regular roster.`
+            : `Tick to put this subject on the Monitor Students list, starting ${esc(monitorCycleLabel(cycleKeyOf(new Date())))}. It stays there until someone moves them off.`}</span>
+          <label class="field">NEW label (this month)${newTagSelectHtml(enrollment.monitor_cycle || "")}<span class="hint" style="font-size:11.5px; margin-top:4px; display:block;">Shows a NEW label next to their name for the rest of the month. It clears itself when the next month starts. Separate from Monitor.</span></label>
           <div class="field-row">
             <label class="field">Current level<select name="current_level" id="curLevelSelect">${levelOptions(subject, enrollment.current_level)}</select></label>
             <label class="field">Current page<input type="text" name="current_page" value="${esc(enrollment.current_page||"")}" placeholder="e.g. 130"></label>
@@ -1617,6 +1640,7 @@
             <label class="field">Current page<input type="text" name="current_page" placeholder="e.g. 130"></label>
           </div>
           <label class="field">Reporting tag${reportTagSelect("", "enrollment_type", "Automatic (NEW, or EO if they already have a subject)")}</label>
+          <label class="field" style="flex-direction:row; align-items:center; gap:8px;"><input type="checkbox" name="is_monitor" value="1" checked style="width:auto;"> Monitor student (starts ${esc(monitorCycleLabel(cycleKeyOf(new Date())))})</label>
           <label class="field" style="flex-direction:row; align-items:center; gap:8px;"><input type="checkbox" name="mark_new" value="1" checked style="width:auto;"> Mark as NEW for ${esc(monitorCycleLabel(cycleKeyOf(new Date())))}</label>
           ${scheduleSectionHtml(null, null)}
           <p class="hint" style="font-size:12px; color:var(--ink-muted); margin:8px 0 0;">For a student who still needs a diagnostic test, add them from Pipeline instead — this is for a student already enrolled and taking classes.</p>
@@ -1744,16 +1768,11 @@
       }
       if(moved.length){
         logHistory("monitor_promote", `Moved ${who} off monitor onto the regular roster (${moved.join(", ")})`, "subject_enrollment", ids[0]);
-        // Keep Pipeline's own status in step once nothing of theirs is still on monitor. Best effort:
-        // Pipeline also heals this on its next load if the update is refused here.
-        const stu = students.find(x => x.id === studentId);
-        if(stu && stu.status === "monitor_schedule"){
-          const { error: sErr } = await sbClient.from("students").update({ status:"active" }).eq("id", studentId);
-          if(sErr) console.warn("couldn't update student status", sErr);
-        }
       }
       closeModal();
       await Promise.all([loadStudents(), loadEnrollments()]);
+      // Keep Pipeline's own status in step once nothing of theirs is still on monitor.
+      if(moved.length && studentId) await syncPipelineMonitorStatus(studentId);
       renderBoth();
       return;
     }
@@ -1774,8 +1793,11 @@
           current_level: fd.get("current_level") || null,
           current_page: fd.get("current_page") || null,
           mode: fd.get("mode") || null,
-          // NEW tag: only present on the form for non-monitor rows (monitor rows are tagged automatically).
+          // NEW label month (separate from Monitor).
           ...(fd.get("new_cycle") !== null ? { monitor_cycle: (fd.get("new_cycle") || null) } : {}),
+          // Monitor on/off — only written when it actually changed, so the start month only moves for real changes.
+          ...(fd.get("monitor_field") !== null && !!fd.get("is_monitor") !== !!(editingEnrollment && editingEnrollment.is_monitor)
+              ? (fd.get("is_monitor") ? { is_monitor: true, monitor_since: cycleKeyOf(new Date()) } : { is_monitor: false, monitor_since: null }) : {}),
           // Reporting tag — only written when it actually changed, so its set-at date only moves for real corrections.
           ...((fd.get("enrollment_type") || null) !== ((editingEnrollment && editingEnrollment.enrollment_type) || null)
               ? { enrollment_type: fd.get("enrollment_type") || null, enrollment_type_set_at: new Date().toISOString() } : {}),
@@ -1785,8 +1807,10 @@
           // saving a roster edit never touches (or blanks) values the form no longer shows.
           updated_at: new Date().toISOString()
         };
-        const { error } = await sbClient.from("subject_enrollments").update(patch).eq("id", editingId);
+        const { data: savedRows, error } = await sbClient.from("subject_enrollments").update(patch).eq("id", editingId).select("id");
         if(error){ alert("Couldn't save: " + error.message); return; }
+        if(!savedRows || !savedRows.length){ alert("Couldn't save — the database didn't allow this change."); return; }
+        const monitorChanged = "is_monitor" in patch;
         if(editingEnrollment){
           await saveScheduleForEnrollment(editingId, editingEnrollment.student_id, editingEnrollment.student_name, readScheduleRowsFromForm(fd));
         }
@@ -1796,8 +1820,15 @@
           "subject_enrollment",
           editingId
         );
+        if(monitorChanged){
+          logHistory(patch.is_monitor ? "monitor_on" : "monitor_off",
+            `${patch.is_monitor ? "Put" : "Took"} ${editingEnrollment ? editingEnrollment.student_name : "a student"}${editingEnrollment && editingEnrollment.subject ? "'s " + editingEnrollment.subject : ""} ${patch.is_monitor ? "on" : "off"} monitor`,
+            "subject_enrollment", editingId);
+        }
         closeModal();
-        await loadEnrollments(); renderBoth();
+        await loadEnrollments();
+        if(monitorChanged && editingEnrollment){ await syncPipelineMonitorStatus(editingEnrollment.student_id); }
+        renderBoth();
         return;
       }
 
@@ -1852,7 +1883,10 @@
         enrollment_type: fd.get("enrollment_type") || (isNewStudent ? "new" : "eo"),
         enrollment_type_set_at: new Date().toISOString(),
         // The visible NEW label for this month (separate from the reporting tag above).
-        monitor_cycle: fd.get("mark_new") ? cycleKeyOf(new Date()) : null
+        monitor_cycle: fd.get("mark_new") ? cycleKeyOf(new Date()) : null,
+        // Monitor list (phase33) — stays on until someone moves them off.
+        is_monitor: !!fd.get("is_monitor"),
+        monitor_since: fd.get("is_monitor") ? cycleKeyOf(new Date()) : null
       };
       const { data: newEnrollment, error: enrollError } = await sbClient.from("subject_enrollments").insert(enrollPayload).select().single();
       if(enrollError){ alert("Couldn't save: " + enrollError.message); return; }
@@ -1862,9 +1896,10 @@
         await saveScheduleForEnrollment(newEnrollment.id, studentId, name, slots);
       }
 
-      logHistory("add_enrollment", `Added ${name} — ${subject} (${(enrollPayload.enrollment_type || "").toUpperCase()})`, "subject_enrollment", newEnrollment ? newEnrollment.id : null);
+      logHistory("add_enrollment", `Added ${name} — ${subject} (${(enrollPayload.enrollment_type || "").toUpperCase()})${enrollPayload.is_monitor ? " on monitor" : ""}`, "subject_enrollment", newEnrollment ? newEnrollment.id : null);
       closeModal();
       await Promise.all([loadStudents(), loadEnrollments()]);
+      if(enrollPayload.is_monitor) await syncPipelineMonitorStatus(studentId);
       renderBoth();
     }
     if(e.target.id === "reportForm"){
