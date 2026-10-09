@@ -681,8 +681,8 @@
   async function startApp(){
     if(started) return;
     started = true;
-    viewMonth = cycleMonthFor(new Date());
     await Promise.all([loadStudents(), loadSettings(), loadEnrollments(), loadSchedules(), loadHistory(), loadBillingGroups(), loadReceipts()]);
+    viewMonth = monthFromKey(openKey());
     populateTeacherFilter();
     populateReportTeacherFilter();
     populateGradeFilter();
@@ -853,7 +853,29 @@
     const { data } = await sbClient.from("settings").select("value").eq("id","staff").maybeSingle();
     const v = data ? data.value : {};
     trainers = Array.isArray(v.trainers) ? v.trainers : [];
+    await loadOpenMonth();
   }
+  // The open (editable) roster month is stored in the database (phase38: settings row "open_month",
+  // value {"key":"YYYY-MM"}) and only moves when an admin closes it out — it no longer rolls over by
+  // itself on the 21st. Falls back to the date-based month if the row doesn't exist yet.
+  let openMonthKey = null;
+  async function loadOpenMonth(){
+    const { data, error } = await sbClient.from("settings").select("value").eq("id","open_month").maybeSingle();
+    if(error) console.warn("couldn't load open month", error);
+    const k = data && data.value && data.value.key;
+    openMonthKey = /^\d{4}-\d{2}$/.test(k || "") ? k : null;
+  }
+  function openKey(){ return openMonthKey || cycleKeyOf(new Date()); }
+  function monthFromKey(key){ const [y,m] = key.split("-").map(Number); return new Date(y, m-1, 1); }
+  function nextKey(key){ const d = monthFromKey(key); return monthKeyOf(new Date(d.getFullYear(), d.getMonth()+1, 1)); }
+  async function saveOpenMonth(key){
+    const { error } = await sbClient.from("settings").upsert({ id:"open_month", value:{ key } });
+    if(error) throw error;
+    openMonthKey = key;
+  }
+  // Marked NEW for a month after the open one (joined after the open month's 20th, while it's still
+  // waiting to be closed out) — they belong to the next month's report, not this one.
+  function joinsLaterMonth(e){ return !!e.monitor_cycle && e.monitor_cycle > openKey(); }
   async function loadEnrollments(){
     const { data, error } = await sbClient.from("subject_enrollments").select("*").order("student_name");
     if(error){ console.warn(error); enrollments = []; return; }
@@ -1025,7 +1047,7 @@
       : new Date(date.getFullYear(), date.getMonth(), 1);
   }
   function cycleKeyOf(date){ const c = cycleMonthFor(date); return monthKeyOf(c); }
-  function isCurrentCycle(){ return monthKeyOf(viewMonth) === cycleKeyOf(new Date()); }
+  function isCurrentCycle(){ return monthKeyOf(viewMonth) === openKey(); }
   // Monitor students (phase25, phase33): a subject with is_monitor = true. It stays on monitor until
   // someone clicks "Move to regular roster" or unticks Monitor in Edit — it no longer runs out at the
   // end of the month. monitor_since ("YYYY-MM") is the month monitoring started; monitor_cycle is only
@@ -1060,7 +1082,7 @@
   // "NEW · October 2026" — shown while they're still on monitor, and for the rest of that same
   // cycle if the trainer moves them to a teacher early. Gone once the cycle rolls over.
   function newTagHtml(e){
-    if(e.archived || !e.monitor_cycle || e.monitor_cycle !== cycleKeyOf(new Date())) return "";
+    if(e.archived || !e.monitor_cycle || e.monitor_cycle < openKey()) return "";
     return `<span class="pill new-tag" title="New on the roster this month">NEW · ${esc(monitorCycleLabel(e.monitor_cycle))}</span>`;
   }
   // The NEW tag is just a cycle marker (monitor_cycle = "YYYY-MM"): it shows on a row for the rest of
@@ -1068,8 +1090,9 @@
   // for everyone else it's set by hand here, from the Add / Edit forms or in bulk.
   function newTagSelectHtml(current, name){
     const nowKey = cycleKeyOf(new Date());
-    const opts = [`<option value="">Not marked NEW</option>`, `<option value="${nowKey}" ${current===nowKey?"selected":""}>NEW · ${esc(monitorCycleLabel(nowKey))}</option>`];
-    if(current && current !== nowKey) opts.push(`<option value="${esc(current)}" selected>NEW · ${esc(monitorCycleLabel(current))} (past)</option>`);
+    const keys = [...new Set([openKey(), nowKey])].sort();
+    const opts = [`<option value="">Not marked NEW</option>`, ...keys.map(k => `<option value="${k}" ${current===k?"selected":""}>NEW · ${esc(monitorCycleLabel(k))}</option>`)];
+    if(current && !keys.includes(current)) opts.push(`<option value="${esc(current)}" selected>NEW · ${esc(monitorCycleLabel(current))} (past)</option>`);
     return `<select name="${name||"new_cycle"}">${opts.join("")}</select>`;
   }
   // Head-office reporting tag (same list as the reporting sheet). Stored in enrollment_type.
@@ -1129,6 +1152,7 @@
     const q = reportFilters.search.trim().toLowerCase();
     if(isCurrentCycle()){
       return enrollments
+        .filter(e => !joinsLaterMonth(e))
         .filter(e => reportFilters.status === "all" || (e.status||"active") === reportFilters.status)
         .filter(e => reportFilters.subject === "all" || e.subject === reportFilters.subject)
         .filter(e => reportFilters.teacher === "all" || e.teacher === reportFilters.teacher)
@@ -1158,9 +1182,9 @@
   }
 
   function openCloseOutCandidates(){
-    const cycleKey = cycleKeyOf(new Date());
+    const cycleKey = openKey();
     const closedIds = new Set(history.filter(h => h.cycle_key === cycleKey).map(h => h.subject_enrollment_id));
-    return enrollments.filter(e => (e.status||"active") === "active" && !closedIds.has(e.id));
+    return enrollments.filter(e => (e.status||"active") === "active" && !closedIds.has(e.id) && !joinsLaterMonth(e));
   }
   // Closing out a cycle archives everyone's numbers and clears the slate for the next one —
   // a front-desk/teacher mistake here isn't easily undone, so only admin/superadmin get the
@@ -1195,14 +1219,19 @@
 
   async function closeOutMonth(){
     if(!canCloseOut()) return;
-    const cycleKey = cycleKeyOf(new Date());
-    const cycleLabel = monthLabel(cycleMonthFor(new Date()));
+    const cycleKey = openKey();
+    const cycleLabel = monthLabel(monthFromKey(cycleKey));
+    const nextLabel = monthLabel(monthFromKey(nextKey(cycleKey)));
     const candidates = openCloseOutCandidates();
     if(!candidates.length){ alert(`Nothing to close out — every active enrollment already has a ${cycleLabel} record.`); return; }
 
+    const cycleEnd = new Date(monthFromKey(cycleKey).getFullYear(), monthFromKey(cycleKey).getMonth(), 20, 23, 59, 59);
+    const early = new Date() <= cycleEnd
+      ? `Heads up: ${cycleLabel} runs until ${cycleEnd.toLocaleDateString(undefined,{month:"short",day:"numeric"})}, and that hasn't passed yet.\n\n` : "";
     const ok = confirm(
+      early +
       `Close out ${cycleLabel} for ${candidates.length} enrollment${candidates.length===1?"":"s"}?\n\n` +
-      `This archives their current LWC, NWU, No. of days, No. of months, and Achievement test numbers under ${cycleLabel}, then clears those fields so the next cycle starts blank.\n\n` +
+      `This archives their current LWC, NWU, No. of days, No. of months, and Achievement test numbers under ${cycleLabel}, then clears those fields. ${nextLabel} becomes the open month.\n\n` +
       `Level, Goal, Schedule, Mode, Award and Actual are untouched.`
     );
     if(!ok) return;
@@ -1242,9 +1271,16 @@
     const { error: clearError } = await sbClient.from("subject_enrollments").update(clearedFields).in("id", candidateIds);
     if(clearError){ alert(`Archived, but couldn't clear this cycle's fields: ${clearError.message}`); }
 
+    // Move the open month on (phase38).
+    const prevOpenKey = openMonthKey;
+    let advanced = false;
+    try{ await saveOpenMonth(nextKey(cycleKey)); advanced = true; }
+    catch(err){ alert(`Archived, but couldn't move the open month to ${nextLabel}: ${err.message}`); }
+
     await Promise.all([loadEnrollments(), loadHistory()]);
-    renderReportAndActions();
-    alert(`${candidates.length} enrollment${candidates.length===1?"":"s"} closed out for ${cycleLabel}.`);
+    if(advanced) viewMonth = monthFromKey(openKey());
+    renderBoth();
+    alert(`${candidates.length} enrollment${candidates.length===1?"":"s"} closed out for ${cycleLabel}.${advanced ? ` ${nextLabel} is now the open month.` : ""}`);
 
     const label = `Close out ${cycleLabel} (${candidates.length})`;
     logHistory("close_out_month", label, "enrollment_monthly_history", cycleKey);
@@ -1260,8 +1296,9 @@
           const { error } = await sbClient.from("subject_enrollments").update(fields).eq("id", id);
           if(error) throw error;
         }
+        if(advanced){ if(prevOpenKey){ await saveOpenMonth(prevOpenKey); } else { await saveOpenMonth(cycleKey); } viewMonth = monthFromKey(openKey()); }
         await Promise.all([loadEnrollments(), loadHistory()]);
-        renderReportAndActions();
+        renderBoth();
       },
       async ()=>{
         const { data: reinserted, error: reErr } = await sbClient.from("enrollment_monthly_history").insert(rows).select();
@@ -1269,8 +1306,9 @@
         historyIds = (reinserted || []).map(h => h.id);
         const { error: clearErr } = await sbClient.from("subject_enrollments").update(clearedFields).in("id", candidateIds);
         if(clearErr) throw clearErr;
+        if(advanced){ await saveOpenMonth(nextKey(cycleKey)); viewMonth = monthFromKey(openKey()); }
         await Promise.all([loadEnrollments(), loadHistory()]);
-        renderReportAndActions();
+        renderBoth();
       }
     );
   }
@@ -2091,7 +2129,7 @@
     // one isn't on screen right now caught up too, ready the instant you switch to it.
     else if(action === "rep-prev"){ viewMonth = new Date(viewMonth.getFullYear(), viewMonth.getMonth()-1, 1); renderBoth(); }
     else if(action === "rep-next"){ viewMonth = new Date(viewMonth.getFullYear(), viewMonth.getMonth()+1, 1); renderBoth(); }
-    else if(action === "rep-today"){ viewMonth = cycleMonthFor(new Date()); renderBoth(); }
+    else if(action === "rep-today"){ viewMonth = monthFromKey(openKey()); renderBoth(); }
     else if(action === "close-out-month"){ await closeOutMonth(); }
     else if(action === "edit-report"){
       const id = btn.dataset.id;
