@@ -586,7 +586,7 @@
     if(started) return;
     started = true;
     if(!isAuthorized()) return;
-    if(isTeacherScoped()) teacherFilterVal = currentTeacherName || "all";
+    if(isTeacherScoped()) teacherFilterVal = currentTeacherName || "__none__"; // never "all" for a teacher
     await Promise.all([loadStudents(), loadEnrollments(), loadAbsences(), loadReceipts()]);
     populateTeacherFilter();
     render();
