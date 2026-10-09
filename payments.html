@@ -823,6 +823,61 @@
       .filter(r => r.student_id === studentId && r.status === "pending" && r.covers_month === monthDate)
       .reduce((sum, r) => sum + Number(r.amount||0), 0);
   }
+  // Subject split on a payment (phase39): allocation = {"Math": 2200, "Reading": 2200}, adding up to
+  // the amount. Every payment has one. Older rows are read as an even split, just in case.
+  function allocationOf(r){
+    if(r && r.allocation && typeof r.allocation === "object" && Object.keys(r.allocation).length) return r.allocation;
+    const subs = subjectsForPayment(r ? r.student_id : null);
+    const each = Number(r && r.amount || 0) / subs.length;
+    return Object.fromEntries(subs.map(k => [k, each]));
+  }
+  function allocationLabel(r){
+    const a = allocationOf(r);
+    const keys = Object.keys(a);
+    if(keys.length <= 1 && keys[0] !== "Unassigned") return keys.length ? keys[0] : "";
+    return keys.map(k => `${k} ${peso(a[k])}`).join(" · ");
+  }
+  // Subjects a payment for this student can be put toward: what they're actively taking, else
+  // anything they've ever been enrolled in.
+  function subjectsForPayment(studentId){
+    const active = activeSubjectsFor(studentId);
+    if(active.length) return active.slice().sort();
+    const any = [...new Set(enrollments.filter(e => e.student_id === studentId).map(e => e.subject).filter(Boolean))].sort();
+    return any.length ? any : ["Unassigned"];
+  }
+  // Verified + pending already put toward one subject for a month.
+  function loggedForSubject(studentId, ym, subject){
+    const monthDate = monthToDate(ym);
+    return receipts
+      .filter(r => r.student_id === studentId && (r.status === "verified" || r.status === "pending") && r.covers_month === monthDate)
+      .reduce((sum, r) => sum + Number(allocationOf(r)[subject] || 0), 0);
+  }
+  function allocFieldsHtml(studentId, ym){
+    const s = students.find(x => x.id === studentId);
+    if(!s) return `<div class="hint">Pick a student first.</div>`;
+    const rate = tuitionRateFor(s);
+    return `<div class="field-row" style="flex-wrap:wrap;">${subjectsForPayment(studentId).map(subj => {
+      const left = subj === "Unassigned" ? 0 : Math.max(0, rate - loggedForSubject(studentId, ym, subj));
+      return `<label class="field">${esc(subj)} amount<input type="number" name="alloc_${esc(subj)}" data-subject="${esc(subj)}" min="0" step="0.01" value="${left > 0 ? left : 0}"></label>`;
+    }).join("")}</div>
+    <div class="hint" id="payAllocTotal" style="margin-top:-6px;"></div>`;
+  }
+  function readAllocation(form){
+    const alloc = {};
+    form.querySelectorAll("input[data-subject]").forEach(inp => {
+      const v = Math.round(Number(inp.value || 0) * 100) / 100;
+      if(v > 0) alloc[inp.dataset.subject] = v;
+    });
+    const total = Math.round(Object.values(alloc).reduce((a,b)=>a+b, 0) * 100) / 100;
+    return { alloc, total };
+  }
+  function refreshAllocTotal(){
+    const form = $("#logPaymentForm");
+    const el = form && form.querySelector("#payAllocTotal");
+    if(!el) return;
+    const { total } = readAllocation(form);
+    el.textContent = `Total: ${peso(total)} — put 0 on a subject this payment isn't for.`;
+  }
   // What to pre-fill when logging a payment: THIS student's own remaining tuition for the month
   // (their rate x their active subjects, minus what's verified or already logged) — never the
   // whole billing group's total, since each payment is recorded against one student.
@@ -849,8 +904,9 @@
     if(!form) return;
     const sid = form.elements.studentId.value, ym = form.elements.coversMonth.value;
     if(!sid || !ym) return;
-    const g = suggestedPaymentFor(sid, ym);
-    if(g) form.elements.amount.value = g.amount > 0 ? g.amount : "";
+    const wrap = form.querySelector("#payAllocFields");
+    if(wrap) wrap.innerHTML = allocFieldsHtml(sid, ym);
+    refreshAllocTotal();
     const h = form.querySelector("#paySuggestHint");
     if(h) h.textContent = paymentSuggestHint(sid, ym);
   }
@@ -1472,7 +1528,7 @@
         <div class="receipt-thumb">🧾</div>
         <div class="receipt-info">
           <b>${esc(name)}</b>
-          <span class="sub">${peso(r.amount)} for ${esc(monthLabel)}${r.reference_number ? " · ref #" + esc(r.reference_number) : ""}${r.uploaded_by ? " · logged by " + esc(r.uploaded_by) : ""}</span>
+          <span class="sub">${peso(r.amount)} for ${esc(monthLabel)}${allocationLabel(r) ? " (" + esc(allocationLabel(r)) + ")" : ""}${r.reference_number ? " · ref #" + esc(r.reference_number) : ""}${r.uploaded_by ? " · logged by " + esc(r.uploaded_by) : ""}</span>
           ${r.status === "flagged" && r.status_note ? `<span class="note">Flagged: ${esc(r.status_note)}</span>` : ""}
           ${r.receipt_path ? `<a href="#" data-action="view-receipt" data-id="${esc(r.id)}" style="font-size:12px;">View receipt photo</a>` : ""}
         </div>
@@ -1505,10 +1561,8 @@
           <label class="field">Student
             <select name="studentId" required>${studentOptions(studentId)}</select>
           </label>
-          <div class="field-row">
-            <label class="field">Amount<input type="number" name="amount" min="0" step="0.01" required></label>
-            <label class="field">Covers month<input type="month" name="coversMonth" value="${esc(selectedMonth)}" required></label>
-          </div>
+          <label class="field">Covers month<input type="month" name="coversMonth" value="${esc(selectedMonth)}" required></label>
+          <div id="payAllocFields"></div>
           <div class="hint" id="paySuggestHint" style="margin-top:-6px;"></div>
           <div class="field-row">
             <label class="field">Reference number<input type="text" name="reference" placeholder="e.g. GC48213"></label>
@@ -1580,7 +1634,7 @@
       return `<div class="receipt-row">
         <div class="receipt-thumb">🧾</div>
         <div class="receipt-info">
-          <b>${peso(r.amount)} — ${esc(monthLabel)}</b>
+          <b>${peso(r.amount)} — ${esc(monthLabel)}</b>${allocationLabel(r) ? `<span class="sub">${esc(allocationLabel(r))}</span>` : ""}
           <span class="sub"><span class="pill ${esc(r.status)}">${esc(label)}</span>${r.reference_number ? " · ref #" + esc(r.reference_number) : ""}${r.uploaded_by ? " · logged by " + esc(r.uploaded_by) : ""}</span>
           ${r.status === "flagged" && r.status_note ? `<span class="note">Flagged: ${esc(r.status_note)}</span>` : ""}
           ${r.receipt_path ? `<a href="#" data-action="view-receipt" data-id="${esc(r.id)}" style="font-size:12px;">View receipt photo</a>` : ""}
@@ -1831,7 +1885,8 @@
       e.preventDefault();
       const fd = new FormData(e.target);
       const studentId = fd.get("studentId");
-      const amount = Number(fd.get("amount"));
+      const { alloc: allocation, total: amount } = readAllocation(e.target);
+      if(!amount){ alert("Enter an amount for at least one subject."); return; }
       const coversMonth = fd.get("coversMonth") + "-01";
       const file = fd.get("receiptFile");
       const submitBtn = e.target.querySelector('button[type="submit"]');
@@ -1842,6 +1897,7 @@
         const { error } = await sbClient.from("payment_receipts").insert({
           student_id: studentId,
           amount,
+          allocation,
           covers_month: coversMonth,
           reference_number: (fd.get("reference")||"").toString().trim() || null,
           uploaded_by: (fd.get("uploadedBy")||"").toString().trim() || null,
@@ -1914,6 +1970,7 @@
     if(e.target.closest && e.target.closest("#logPaymentForm") && (e.target.name === "studentId" || e.target.name === "coversMonth")) refreshLogPaymentSuggestion();
   });
   document.addEventListener("input", (e)=>{
+    if(e.target.dataset && e.target.dataset.subject && e.target.closest("#logPaymentForm")) refreshAllocTotal();
     if(e.target.id === "searchInput"){ filters.search = e.target.value; render(); }
     if(e.target.id === "groupMemberSearch"){ filterGroupMemberList(e.target.value); }
   });

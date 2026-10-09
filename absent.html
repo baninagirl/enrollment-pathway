@@ -443,6 +443,25 @@
       .reduce((sum, r) => sum + Number(r.amount||0), 0);
   }
 
+  // Subject split on a payment (phase39), e.g. {"Math": 2200, "Reading": 2200}. Older rows read as an even split.
+  function absenceSubjects(a){
+    const subs = [...new Set((a.subject_enrollment_ids || []).map(id => (enrollments.find(e => e.id === id) || {}).subject).filter(Boolean))].sort();
+    if(subs.length) return subs;
+    const any = [...new Set(enrollments.filter(e => e.student_id === a.student_id).map(e => e.subject).filter(Boolean))].sort();
+    return any.length ? any : ["Unassigned"];
+  }
+  function allocationOf(r){
+    if(r && r.allocation && typeof r.allocation === "object" && Object.keys(r.allocation).length) return r.allocation;
+    return { Unassigned: Number(r && r.amount || 0) };
+  }
+  function catchUpLeftForSubject(a, subj){
+    const monthDate = monthToDate(catchUpMonthFor(a));
+    const s = students.find(x => x.id === a.student_id);
+    const logged = receipts
+      .filter(r => r.student_id === a.student_id && (r.status === "verified" || r.status === "pending") && r.covers_month === monthDate)
+      .reduce((sum, r) => sum + Number(allocationOf(r)[subj] || 0), 0);
+    return subj === "Unassigned" ? 0 : Math.max(0, tuitionRateFor(s) - logged);
+  }
   // Pre-filled amount for a catch-up payment: the remaining balance for their catch-up month,
   // counting verified payments and ones already logged but not yet verified.
   function catchUpSuggestion(a){
@@ -823,7 +842,8 @@
     return mine.map(r => {
       const monthLabel = r.covers_month ? fmtMonthLabel(r.covers_month.slice(0,7)) : "—";
       const label = (r.status||"").charAt(0).toUpperCase() + (r.status||"").slice(1);
-      return `<div class="note-item"><div class="note-meta"><b>${peso(r.amount)}</b> — ${esc(monthLabel)} <span class="pill ${esc(r.status)}">${esc(label)}</span></div></div>`;
+      const split = Object.entries(allocationOf(r)).map(([k,v]) => `${k} ${peso(v)}`).join(" · ");
+      return `<div class="note-item"><div class="note-meta"><b>${peso(r.amount)}</b> — ${esc(monthLabel)} <span class="pill ${esc(r.status)}">${esc(label)}</span>${split ? ` <span style="color:var(--ink-muted); font-size:12px;">${esc(split)}</span>` : ""}</div></div>`;
     }).join("");
   }
   function renderDetailsModal(loading){
@@ -894,10 +914,9 @@
       <div class="modal-head"><h3>Log a payment — ${esc(displayName(s))}</h3><button class="iconbtn" data-action="close-modal">✕</button></div>
       <form id="logPaymentForm" data-absence="${esc(a.id)}">
         <div class="modal-body">
-          <div class="field-row">
-            <label class="field">Amount<input type="number" name="amount" min="0" step="0.01" value="${esc(catchUpSuggestion(a) || "")}" required></label>
-            <label class="field">Covers month<input type="month" name="coversMonth" value="${esc(catchUpMonthFor(a))}" required></label>
-          </div>
+          <label class="field">Covers month<input type="month" name="coversMonth" value="${esc(catchUpMonthFor(a))}" required></label>
+          <div class="field-row" style="flex-wrap:wrap;">${absenceSubjects(a).map(subj => `<label class="field">${esc(subj)} amount<input type="number" data-subject="${esc(subj)}" min="0" step="0.01" value="${catchUpLeftForSubject(a, subj)}"></label>`).join("")}</div>
+          <div class="hint" style="margin-top:-6px;">Put 0 on a subject this payment isn't for.</div>
           <div class="hint" style="margin-top:-6px;">Catch-up balance: ${peso(catchUpSuggestion(a))} (${(a.subject_enrollment_ids||[]).length||1} subject${((a.subject_enrollment_ids||[]).length||1)===1?"":"s"} × ${peso(tuitionRateFor(students.find(x=>x.id===a.student_id)))}, less anything already paid or logged).</div>
           <div class="field-row">
             <label class="field">Reference number<input type="text" name="reference" placeholder="e.g. GC48213"></label>
@@ -918,12 +937,19 @@
     const a = absences.find(x => x.id === absenceId);
     if(!a) return;
     const fd = new FormData(form);
-    const amount = Number(fd.get("amount"));
+    const allocation = {};
+    form.querySelectorAll("input[data-subject]").forEach(inp => {
+      const v = Math.round(Number(inp.value || 0) * 100) / 100;
+      if(v > 0) allocation[inp.dataset.subject] = v;
+    });
+    const amount = Math.round(Object.values(allocation).reduce((x,y)=>x+y, 0) * 100) / 100;
     const coversMonth = fd.get("coversMonth");
-    if(!amount || !coversMonth) return;
+    if(!coversMonth) return;
+    if(!amount){ alert("Enter an amount for at least one subject."); return; }
     const { error } = await sbClient.from("payment_receipts").insert({
       student_id: a.student_id,
       amount,
+      allocation,
       covers_month: monthToDate(coversMonth),
       reference_number: (fd.get("reference")||"").toString().trim() || null,
       uploaded_by: (fd.get("uploadedBy")||"").toString().trim() || null,
