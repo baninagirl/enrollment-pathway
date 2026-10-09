@@ -2507,6 +2507,17 @@
       };
       const prevStatus = s ? s.status : null;
       const prevName = s ? [s.firstName||"", s.lastName||"", s.name||""].join("|") : null;
+      // Leaving "On monitor schedule": clear the subjects' monitor mark FIRST — the database (phase37)
+      // refuses On monitor schedule → Active while a subject is still marked monitor.
+      const leavingMonitor = prevStatus === "monitor_schedule" && studentPatch.status !== "monitor_schedule";
+      if(leavingMonitor){
+        const flipOff = STATE.enrollments.filter(e => e.studentId === id && !e.archived && !!e.isMonitor);
+        for(const enr of flipOff){
+          await db.collection("subject_enrollments").doc(enr.id).update({ isMonitor: false, monitorSince: null });
+          Object.assign(enr, { isMonitor: false, monitorSince: null });
+        }
+        if(flipOff.length) logHistory("monitor_off", `Took ${name} off monitor (${flipOff.map(e => e.subject).filter(Boolean).join(", ")})`, "student", id);
+      }
       await db.collection("students").doc(id).update(studentPatch);
       // Name changed (phase35): copy it onto every subject, schedule, training and past month too.
       if(prevName !== [firstName, lastName, name].join("|")){
