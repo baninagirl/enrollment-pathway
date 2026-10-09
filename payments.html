@@ -1054,9 +1054,25 @@
     return _kumonLogoImg;
   }
 
+  async function fetchBillingSummary(studentIds, ym){
+    const { data, error } = await sbClient.rpc("billing_summary", { p_student_ids: studentIds, p_covers_month: monthToDate(ym) });
+    if(error){ console.warn("billing summary unavailable, using this page's own data", error); return null; }
+    const out = {};
+    (data || []).forEach(r => { out[r.student_id] = { subjects: (r.subjects || []).slice().sort(), paid: Number(r.paid || 0) }; });
+    return out;
+  }
   async function downloadTuitionImage(studentIds, names){
     const ym = selectedMonth;
-    const totals = monthTotalFor(studentIds, ym);
+    // phase41: a teacher can only see her own subjects/payments, so the SOA asks the database for
+    // the whole family's subjects and verified payments (every sibling in the billing group, every
+    // subject, whoever teaches it). Falls back to what this page already has if that call fails.
+    const summary = await fetchBillingSummary(studentIds, ym);
+    const subjectsOf = sid => summary && summary[sid] ? summary[sid].subjects : activeSubjectsFor(sid);
+    const paidOf = sid => summary && summary[sid] ? summary[sid].paid : verifiedPaidFor(sid, ym);
+    const dueOf = s => tuitionRateFor(s) * (subjectsOf(s.id).length || 1);
+    const totals = (()=>{ let due = 0, paid = 0;
+      studentIds.forEach(sid => { const s = students.find(x => x.id === sid); if(!s) return; due += dueOf(s); paid += paidOf(sid); });
+      return { due, paid, balance: due - paid }; })();
     const logo = await getKumonLogo();
 
     const NAVY = "#101A3D", GRAY = "#6B7280", BORDER = "#E4E7EF", PAGE_BG = "#F4F6FA";
@@ -1071,10 +1087,10 @@
     const rowsData = studentIds.map(sid => {
       const s = students.find(x => x.id === sid);
       if(!s) return null;
-      const due = tuitionDueFor(s);
-      const paid = verifiedPaidFor(sid, ym);
+      const due = dueOf(s);
+      const paid = paidOf(sid);
       const balance = due - paid;
-      const subjects = activeSubjectsFor(sid);
+      const subjects = subjectsOf(sid);
       return { student:s, due, paid, balance, subjects };
     }).filter(Boolean).sort((a,b) => displayName(a.student).localeCompare(displayName(b.student)));
 
@@ -1267,8 +1283,6 @@
   function renderPageView(){
     const absentTabBtn = $("#absentTabBtn");
     if(absentTabBtn) absentTabBtn.hidden = !isBillingAdmin();
-    const groupsBtn = $("#openGroupsBtn");
-    if(groupsBtn) groupsBtn.hidden = !isBillingAdmin(); // groups list every student — admin only
     // The Absent tab (and its Mark absent/Resume editing) is admin/superadmin only — if a
     // teacher session somehow lands on it (a stale click before the role loaded, say), bounce
     // back to Payments rather than leaving them on a view with nothing they're allowed to do.
@@ -1868,7 +1882,7 @@
         const { error } = await sbClient.from("billing_groups").insert({ id: g.id, name: g.name });
         if(error) throw error;
         if(memberIds.length){
-          const { error: e2 } = await sbClient.from("students").update({ billing_group_id: g.id }).in("id", memberIds);
+          const { error: e2 } = await sbClient.rpc("set_billing_group_members", { p_group_id: g.id, p_student_ids: memberIds });
           if(e2) throw e2;
         }
         await Promise.all([loadStudents(), loadBillingGroups()]); render();
@@ -1954,13 +1968,10 @@
           if(error) throw error;
           groupId = data.id;
         }
-        // Clear this group from anyone no longer checked, then assign everyone checked.
-        const { error: clearErr } = await sbClient.from("students").update({ billing_group_id: null }).eq("billing_group_id", groupId);
-        if(clearErr) throw clearErr;
-        if(memberIds.length){
-          const { error: assignErr } = await sbClient.from("students").update({ billing_group_id: groupId }).in("id", memberIds);
-          if(assignErr) throw assignErr;
-        }
+        // Clear this group from anyone no longer checked, then assign everyone checked (phase41 function,
+        // so teachers can manage groups too without being able to edit anything else on a student).
+        const { error: assignErr } = await sbClient.rpc("set_billing_group_members", { p_group_id: groupId, p_student_ids: memberIds });
+        if(assignErr) throw assignErr;
         logHistory(id ? "edit_group" : "add_group", `${id ? "Edited" : "Created"} billing group "${name}" (${memberIds.length} member${memberIds.length===1?"":"s"})`, "billing_group", groupId);
         await Promise.all([loadStudents(), loadBillingGroups()]);
         render();
@@ -2010,7 +2021,7 @@
       e.preventDefault();
       if(btn.dataset.group){
         const gid = btn.dataset.group;
-        const members = students.filter(s => s.billing_group_id === gid && isMyStudent(s.id));
+        const members = students.filter(s => s.billing_group_id === gid);
         downloadTuitionImage(members.map(s => s.id), groupNameFor(gid) || "Billing group");
       }else{
         const s = students.find(x => x.id === btn.dataset.student);
@@ -2018,14 +2029,14 @@
         // Student is part of a billing group (siblings) — pull in the whole group's
         // tuition rather than just this one student, same as the group-row download does.
         if(s.billing_group_id){
-          const members = students.filter(x => x.billing_group_id === s.billing_group_id && isMyStudent(x.id));
+          const members = students.filter(x => x.billing_group_id === s.billing_group_id);
           downloadTuitionImage(members.map(x => x.id), groupNameFor(s.billing_group_id) || "Billing group");
         }else{
           downloadTuitionImage([s.id], displayName(s));
         }
       }
     }
-    else if(action === "open-groups"){ if(isBillingAdmin()) openGroupsModal(); }
+    else if(action === "open-groups"){ openGroupsModal(); }
     else if(action === "new-group"){ openGroupEditModal(null); }
     else if(action === "edit-group"){ openGroupEditModal(btn.dataset.id); }
     else if(action === "back-to-groups"){ openGroupsModal(); }
