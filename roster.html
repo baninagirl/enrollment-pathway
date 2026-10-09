@@ -368,7 +368,7 @@
             <thead><tr>
               <th class="selectcol" id="selectHeaderCell">#</th>
               <th id="monitorActionHead" hidden></th>
-              <th>Student</th><th>Grade</th><th>Subject</th><th>Tag</th><th>Teacher</th><th>Current level</th><th>Schedule</th><th>Mode</th><th>Status</th><th>Payment</th><th>Date enrolled</th>
+              <th>Student</th><th>Grade</th><th>Subject</th><th>Teacher</th><th>Current level</th><th>Schedule</th><th>Mode</th><th>Status</th><th>Payment</th><th>Date enrolled</th>
             </tr></thead>
             <tbody id="rosterBody"></tbody>
           </table>
@@ -1344,6 +1344,7 @@
       <div class="modal-head"><h3>${esc(displayName(e.student_id, e.student_name))} — ${esc(e.subject||"")}</h3><button class="iconbtn" data-action="close-modal">✕</button></div>
       <form id="reportForm">
         <div class="modal-body">
+          <label class="field">Reporting tag${reportTagSelect(e.enrollment_type || "", "enrollment_type")}</label>
           <p class="hint" style="font-size:12px; color:var(--ink-muted); margin:0;">${esc(monthLabel(viewMonth))}'s numbers. Current level, Goal, Schedule, Mode, Award and Actual are edited from the Student Roster view instead.</p>
           <div class="field-row">
             <label class="field">LWC (last worksheet)<input type="text" name="lwc" value="${v("lwc")}" placeholder="e.g. 2A 120"></label>
@@ -1488,7 +1489,6 @@
           <td>${esc(displayName(e.student_id, e.student_name))}${monitorTagHtml(e)}${newTagHtml(e)}</td>
           <td>${esc(gradeFor(e.student_id) || "—")}</td>
           <td><span class="pill ${e.subject==='Math'?'subj-math':'subj-reading'}">${esc(e.subject)}</span></td>
-          <td>${e.archived ? `<span class="lvl empty-lvl">—</span>` : reportTagPill(e.enrollment_type)}</td>
           <td>${esc(e.teacher||"—")}</td>
           <td>${fmtLevel(e.current_level, e.current_page)}</td>
           <td>${e.archived ? `<span class="lvl empty-lvl" title="Schedules aren't part of a monthly close-out — only the roster's own numbers are.">not tracked</span>` : fmtSchedule(e)}</td>
@@ -1610,7 +1610,6 @@
             </select>
           </label>
           <label class="field">Teacher<select name="teacher" ${isTeacherScoped()?"disabled":""}>${teacherOptions(enrollment.teacher)}</select></label>
-          <label class="field">Reporting tag${reportTagSelect(enrollment.enrollment_type || "", "enrollment_type")}</label>
           <label class="field" style="flex-direction:row; align-items:center; gap:8px; margin-bottom:2px;"><input type="hidden" name="monitor_field" value="1"><input type="checkbox" name="is_monitor" value="1" ${enrollment.is_monitor ? "checked" : ""} style="width:auto;"> Monitor student</label>
           <span class="hint" style="font-size:11.5px; margin:0 0 12px; display:block;">${enrollment.is_monitor
             ? `On monitor since ${esc(monitorCycleLabel(monitorSinceKey(enrollment)) || "—")}. Untick to move them to the regular roster.`
@@ -1663,7 +1662,6 @@
             <label class="field">Current level<select name="current_level" id="curLevelSelect">${levelOptions(subject, null)}</select></label>
             <label class="field">Current page<input type="text" name="current_page" placeholder="e.g. 130"></label>
           </div>
-          <label class="field">Reporting tag${reportTagSelect("", "enrollment_type", "Automatic (NEW, or EO if they already have a subject)")}</label>
           <label class="field" style="flex-direction:row; align-items:center; gap:8px;"><input type="checkbox" name="is_monitor" value="1" checked style="width:auto;"> Monitor student (starts ${esc(monitorCycleLabel(cycleKeyOf(new Date())))})</label>
           <label class="field" style="flex-direction:row; align-items:center; gap:8px;"><input type="checkbox" name="mark_new" value="1" checked style="width:auto;"> Mark as NEW for ${esc(monitorCycleLabel(cycleKeyOf(new Date())))}</label>
           ${scheduleSectionHtml(null, null)}
@@ -1705,11 +1703,6 @@
             <option value="__nochange__" selected>No change</option>
             <option value="active">Active</option>
             <option value="inactive">Inactive</option>
-          </select></label>
-          <label class="field">Reporting tag<select name="enrollment_type">
-            <option value="__nochange__" selected>No change</option>
-            ${REPORT_TAGS.map(t=>`<option value="${t.value}">${esc(t.label)}</option>`).join("")}
-            <option value="__clear__">Remove tag</option>
           </select></label>
           <label class="field">NEW label (this month)<select name="new_cycle">
             <option value="__nochange__" selected>No change</option>
@@ -1823,7 +1816,7 @@
           ...(fd.get("monitor_field") !== null && !!fd.get("is_monitor") !== !!(editingEnrollment && editingEnrollment.is_monitor)
               ? (fd.get("is_monitor") ? { is_monitor: true, monitor_since: cycleKeyOf(new Date()) } : { is_monitor: false, monitor_since: null }) : {}),
           // Reporting tag — only written when it actually changed, so its set-at date only moves for real corrections.
-          ...((fd.get("enrollment_type") || null) !== ((editingEnrollment && editingEnrollment.enrollment_type) || null)
+          ...(fd.get("enrollment_type") !== null && (fd.get("enrollment_type") || null) !== ((editingEnrollment && editingEnrollment.enrollment_type) || null)
               ? { enrollment_type: fd.get("enrollment_type") || null, enrollment_type_set_at: new Date().toISOString() } : {}),
           // LWC/NWU/No. of days/No. of months/Achievement test are edited on the
           // Reporting page now, not here. Goal level/page and Award/Actual are hidden
@@ -1942,9 +1935,14 @@
         test_group: fd.get("test_group") || null,
         updated_at: new Date().toISOString()
       };
+      const reportEnrollment = enrollments.find(en => en.id === id);
+      // Reporting tag — only written when it actually changed, so its set-at date only moves for real corrections.
+      const newTag = fd.get("enrollment_type") || null;
+      if(fd.get("enrollment_type") !== null && newTag !== ((reportEnrollment && reportEnrollment.enrollment_type) || null)){
+        patch.enrollment_type = newTag; patch.enrollment_type_set_at = new Date().toISOString();
+      }
       const { error } = await sbClient.from("subject_enrollments").update(patch).eq("id", id);
       if(error){ alert("Couldn't save: " + error.message); return; }
-      const reportEnrollment = enrollments.find(en => en.id === id);
       logHistory("edit_report_fields", `Updated ${reportEnrollment ? reportEnrollment.student_name : "a student"}'s report fields (LWC/NWU/test info)`, "subject_enrollment", id);
       closeModal();
       await loadEnrollments(); renderReportAndActions();
