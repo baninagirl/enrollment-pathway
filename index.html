@@ -2500,7 +2500,13 @@
         notes: fd.get("notes").toString().trim()
       };
       const prevStatus = s ? s.status : null;
+      const prevName = s ? [s.firstName||"", s.lastName||"", s.name||""].join("|") : null;
       await db.collection("students").doc(id).update(studentPatch);
+      // Name changed (phase35): copy it onto every subject, schedule, training and past month too.
+      if(prevName !== [firstName, lastName, name].join("|")){
+        const { error: rnErr } = await sbClient.rpc("rename_student", { p_student_id: id, p_first: firstName, p_last: lastName });
+        if(rnErr) console.warn("couldn't copy the new name everywhere", rnErr);
+      }
       if(s) Object.assign(s, studentPatch);
       // Status ↔ monitor (phase33): "On monitor schedule" is really decided by the subjects' monitor flag,
       // so changing the status here flips that flag too — otherwise the page would undo the change on reload.

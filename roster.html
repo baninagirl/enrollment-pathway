@@ -1589,6 +1589,12 @@
   }
   function iconPlusSm(){ return `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>`; }
 
+  // First/last name as currently saved for a student (falls back to splitting the full name for older rows).
+  function studentNameParts(studentId, fallbackName){
+    const st = students.find(x => x.id === studentId);
+    if(st && st.first_name && st.last_name) return { first: st.first_name, last: st.last_name };
+    return splitNameGuess((st && st.name) || fallbackName || "");
+  }
   function openModal(enrollment, presetStudentId){
     editingId = enrollment ? enrollment.id : null;
     const subject = enrollment ? enrollment.subject : "Math";
@@ -1600,9 +1606,12 @@
       <div class="modal-head"><h3>Edit enrollment</h3><button class="iconbtn" data-action="close-modal">✕</button></div>
       <form id="enrollForm">
         <div class="modal-body">
-          <label class="field">Student
-            <select name="student_id" disabled>${studentOptions(enrollment.student_id)}</select>
-          </label>
+          ${(()=>{ const nm = studentNameParts(enrollment.student_id, enrollment.student_name); return `
+          <div class="field-row">
+            <label class="field">First name<input type="text" name="editFirstName" required autocomplete="off" value="${esc(nm.first)}"></label>
+            <label class="field">Last name<input type="text" name="editLastName" required autocomplete="off" value="${esc(nm.last)}"></label>
+          </div>
+          <span class="hint" style="font-size:11.5px; margin:-4px 0 12px; display:block;">Changing the name updates it everywhere — both subjects, schedules, Pipeline and past months.</span>`; })()}
           <label class="field">Subject
             <select name="subject" data-action="subject-change" disabled>
               <option value="Math" ${subject==="Math"?"selected":""}>Math</option>
@@ -1805,6 +1814,20 @@
       const fd = new FormData(e.target);
       if(editingId){
         const editingEnrollment = enrollments.find(en => en.id === editingId);
+        // Name change (phase35): one database call updates the student and every copy of the name.
+        let renamedTo = null;
+        if(editingEnrollment && fd.get("editFirstName") !== null){
+          const tidy = v => (v||"").toString().replace(/\s+/g," ").trim();
+          const nf = tidy(fd.get("editFirstName")), nl = tidy(fd.get("editLastName"));
+          const was = studentNameParts(editingEnrollment.student_id, editingEnrollment.student_name);
+          if(!nf || !nl){ alert("First and last name are both needed."); return; }
+          if(nf !== tidy(was.first) || nl !== tidy(was.last)){
+            const { error: rnErr } = await sbClient.rpc("rename_student", { p_student_id: editingEnrollment.student_id, p_first: nf, p_last: nl });
+            if(rnErr){ alert("Couldn't change the name: " + rnErr.message); return; }
+            renamedTo = `${nf} ${nl}`;
+            logHistory("rename_student", `Renamed ${editingEnrollment.student_name || "a student"} to ${renamedTo}`, "student", editingEnrollment.student_id);
+          }
+        }
         const patch = {
           teacher: isTeacherScoped() ? currentTeacherName : (fd.get("teacher") || null),
           current_level: fd.get("current_level") || null,
@@ -1843,7 +1866,7 @@
             "subject_enrollment", editingId);
         }
         closeModal();
-        await loadEnrollments();
+        await (renamedTo ? Promise.all([loadStudents(), loadEnrollments()]) : loadEnrollments());
         if(monitorChanged && editingEnrollment){ await syncPipelineMonitorStatus(editingEnrollment.student_id); }
         renderBoth();
         return;
