@@ -903,7 +903,7 @@
             <label class="field">Reference number<input type="text" name="reference" placeholder="e.g. GC48213"></label>
             <label class="field">Logged by<input type="text" name="uploadedBy" value="${esc(currentUser ? currentUser.email : "")}"></label>
           </div>
-          <div class="banner info" style="margin:0;">New entries start "pending" — verify it from Payments' review queue once it's confirmed. A verified payment that fully covers the balance above resumes this student automatically.</div>
+          <div class="banner info" style="margin:0;">New entries start "pending" — a superadmin verifies it from Payments' review queue once it's confirmed. A verified payment that fully covers the balance above resumes this student automatically.</div>
         </div>
         <div class="modal-foot">
           <button type="button" class="btn ghost" data-action="close-modal">Cancel</button>
@@ -935,7 +935,7 @@
     await loadReceipts();
     closeModal();
     renderList();
-    toast("Payment logged — verify it from Payments once confirmed.");
+    toast("Payment logged — it counts once a superadmin verifies it in Payments.");
   }
   function closeModal(){
     $("#modalBackdrop").hidden = true;

@@ -431,6 +431,10 @@
   // and the database only lets them touch their own enrollments and absence records, see phase20).
   function canMarkAbsent(){ return isBillingAdmin() || isTeacherScoped(); }
   function isBillingAdmin(){ return currentRole === "admin" || currentRole === "superadmin"; }
+  // Verify / Flag / Reject, and deleting anything that's no longer pending, are superadmin-only
+  // (enforced in the database by phase32 — this just keeps the buttons from showing).
+  function isSuperadmin(){ return currentRole === "superadmin"; }
+  function canDeleteReceipt(r){ return !!r && (isSuperadmin() || r.status === "pending"); }
 
   // Site-wide edit history (Activity page, admin/superadmin only) — every page logs its own
   // significant writes into the same edit_history table. Fire-and-forget on purpose: a slow
@@ -1473,10 +1477,12 @@
           ${r.receipt_path ? `<a href="#" data-action="view-receipt" data-id="${esc(r.id)}" style="font-size:12px;">View receipt photo</a>` : ""}
         </div>
         <div class="receipt-acts">
+          ${isSuperadmin() ? `
           <button class="btn sm good" data-action="verify-receipt" data-id="${esc(r.id)}">Verify</button>
           <button class="btn sm warn" data-action="flag-receipt" data-id="${esc(r.id)}">Flag</button>
-          <button class="btn sm danger" data-action="reject-receipt" data-id="${esc(r.id)}">Reject</button>
-          <button class="iconbtn" data-action="delete-receipt" data-id="${esc(r.id)}" title="Delete (only if this was logged by mistake)">🗑</button>
+          <button class="btn sm danger" data-action="reject-receipt" data-id="${esc(r.id)}">Reject</button>`
+          : `<span class="sub" style="font-size:12px;">Waiting for a superadmin to verify</span>`}
+          ${canDeleteReceipt(r) ? `<button class="iconbtn" data-action="delete-receipt" data-id="${esc(r.id)}" title="Delete (only if this was logged by mistake)">🗑</button>` : ""}
         </div>
       </div>`;
     }).join("");
@@ -1509,7 +1515,7 @@
             <label class="field">Logged by<input type="text" name="uploadedBy" value="${esc(currentUser ? currentUser.email : "")}"></label>
           </div>
           <label class="field">Receipt photo (optional)<input type="file" name="receiptFile" accept="image/*"></label>
-          <div class="banner info" style="margin:0;">New entries start "pending" — verify it from the review queue below once it's confirmed, and it'll count toward this student's paid total.</div>
+          <div class="banner info" style="margin:0;">New entries start "pending" — a superadmin verifies it from the review queue once it's confirmed, and then it counts toward this student's paid total.</div>
         </div>
         <div class="modal-foot">
           <button type="button" class="btn ghost" data-action="close-modal">Cancel</button>
@@ -1580,7 +1586,7 @@
           ${r.receipt_path ? `<a href="#" data-action="view-receipt" data-id="${esc(r.id)}" style="font-size:12px;">View receipt photo</a>` : ""}
         </div>
         <div class="receipt-acts">
-          <button class="iconbtn" data-action="delete-receipt" data-id="${esc(r.id)}" title="Undo this payment">🗑</button>
+          ${canDeleteReceipt(r) ? `<button class="iconbtn" data-action="delete-receipt" data-id="${esc(r.id)}" title="${r.status === "pending" ? "Delete (only if this was logged by mistake)" : "Undo this payment"}">🗑</button>` : ""}
         </div>
       </div>`;
     }).join("");
@@ -1695,12 +1701,14 @@
   // them, or null otherwise — callers fold that into whatever toast they show, rather than
   // this function toasting on its own and getting immediately overwritten by the caller's.
   async function setReceiptStatus(id, status, note){
+    if(!isSuperadmin()){ toast("Only a superadmin can verify, flag or reject payments."); return null; }
     const before = receipts.find(x => x.id === id);
     const s = before ? students.find(x => x.id === before.student_id) : null;
     const patch = { status, reviewed_by: currentUser ? currentUser.id : null, reviewed_at: new Date().toISOString() };
     if(note !== undefined) patch.status_note = note;
-    const { error } = await sbClient.from("payment_receipts").update(patch).eq("id", id);
+    const { data: changed, error } = await sbClient.from("payment_receipts").update(patch).eq("id", id).select("id");
     if(error){ toast("Couldn't update that receipt: " + error.message); return null; }
+    if(!changed || !changed.length){ toast("Couldn't update that receipt — the database didn't allow it."); return null; }
     logHistory(
       `${status}_receipt`,
       `${status.charAt(0).toUpperCase() + status.slice(1)} ${before ? peso(before.amount) : ""} payment for ${s ? displayName(s) : "a student"}${note ? " — " + note : ""}`,
@@ -1757,12 +1765,14 @@
   async function deleteReceipt(id){
     const r = receipts.find(x => x.id === id);
     if(!r) return;
+    if(!canDeleteReceipt(r)){ toast("Only a superadmin can remove a payment that's already been reviewed."); return; }
     const msg = r.status === "verified"
       ? "Undo this payment? This removes it from the student's paid total — only do this if it was logged in error. You can undo this undo from the Undo button afterward."
       : "Delete this payment entry? Only do this if it was logged by mistake — you can undo this from the Undo button afterward.";
     if(!confirm(msg)) return;
-    const { error } = await sbClient.from("payment_receipts").delete().eq("id", id);
+    const { data: gone, error } = await sbClient.from("payment_receipts").delete().eq("id", id).select("id");
     if(error){ toast("Couldn't delete: " + error.message); return; }
+    if(!gone || !gone.length){ toast("Couldn't delete — it may have just been reviewed. Only a superadmin can remove a reviewed payment."); await loadReceipts(); render(); refreshPaymentHistoryModalIfOpen(); return; }
     await loadReceipts(); render(); refreshPaymentHistoryModalIfOpen();
     const s = students.find(x => x.id === r.student_id);
     logHistory("delete_receipt", `Deleted ${peso(r.amount)} payment (${s ? displayName(s) : "student"})`, "payment_receipt", id);
@@ -1843,7 +1853,7 @@
         logHistory("log_payment", `Logged ${peso(amount)} payment for ${loggedStudent ? displayName(loggedStudent) : "a student"}`, "payment_receipt", null);
         closeModal();
         await loadReceipts(); render();
-        toast("Payment logged — verify it from the review queue once confirmed.");
+        toast("Payment logged — it counts once a superadmin verifies it.");
       }catch(err){
         toast("Couldn't log that payment: " + err.message);
       }finally{
@@ -1957,16 +1967,19 @@
     else if(action === "delete-group"){ await deleteGroup(btn.dataset.id); }
     else if(action === "view-receipt"){ e.preventDefault(); await viewReceipt(btn.dataset.id); }
     else if(action === "verify-receipt"){
+      if(!isSuperadmin()) return;
       const autoResumedName = await setReceiptStatus(btn.dataset.id, "verified");
       toast(autoResumedName ? `Marked verified — ${autoResumedName} automatically resumed, payment covers their return.` : "Marked verified.");
     }
     else if(action === "reject-receipt"){
+      if(!isSuperadmin()) return;
       const note = prompt("Optional — why is this being rejected?");
       if(note === null) return;
       await setReceiptStatus(btn.dataset.id, "rejected", note || null);
       toast("Marked rejected.");
     }
     else if(action === "flag-receipt"){
+      if(!isSuperadmin()) return;
       const note = prompt("What's off about this one?");
       if(note === null) return;
       await setReceiptStatus(btn.dataset.id, "flagged", note || null);
