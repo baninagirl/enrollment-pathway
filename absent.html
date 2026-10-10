@@ -436,12 +436,25 @@
     const subjCount = (a.subject_enrollment_ids || []).length || 1;
     return tuitionRateFor(s) * subjCount;
   }
-  function verifiedPaidForAbsence(a){
-    const monthDate = monthToDate(catchUpMonthFor(a));
-    return receipts
-      .filter(r => r.student_id === a.student_id && r.status === "verified" && r.covers_month === monthDate)
-      .reduce((sum, r) => sum + Number(r.amount||0), 0);
+  // Per-subject: only the part of each payment put toward this absence's subject(s) counts.
+  function absenceSubjectsOnly(a){
+    return [...new Set((a.subject_enrollment_ids || []).map(id => (enrollments.find(e => e.id === id) || {}).subject).filter(Boolean))];
   }
+  function absenceTeachers(a){
+    return [...new Set((a.subject_enrollment_ids || []).map(id => (enrollments.find(e => e.id === id) || {}).teacher).filter(Boolean))];
+  }
+  function paidTowardAbsence(a, statuses){
+    const monthDate = monthToDate(catchUpMonthFor(a));
+    const subs = absenceSubjectsOnly(a);
+    return receipts
+      .filter(r => r.student_id === a.student_id && statuses.includes(r.status) && r.covers_month === monthDate)
+      .reduce((sum, r) => {
+        if(!subs.length) return sum + Number(r.amount || 0);
+        const al = allocationOf(r);
+        return sum + subs.reduce((n, k) => n + Number(al[k] || 0), 0);
+      }, 0);
+  }
+  function verifiedPaidForAbsence(a){ return paidTowardAbsence(a, ["verified"]); }
 
   // Subject split on a payment (phase39), e.g. {"Math": 2200, "Reading": 2200}. Older rows read as an even split.
   function absenceSubjects(a){
@@ -465,10 +478,7 @@
   // Pre-filled amount for a catch-up payment: the remaining balance for their catch-up month,
   // counting verified payments and ones already logged but not yet verified.
   function catchUpSuggestion(a){
-    const monthDate = monthToDate(catchUpMonthFor(a));
-    const logged = receipts
-      .filter(r => r.student_id === a.student_id && (r.status === "verified" || r.status === "pending") && r.covers_month === monthDate)
-      .reduce((sum, r) => sum + Number(r.amount||0), 0);
+    const logged = paidTowardAbsence(a, ["verified", "pending"]);
     return Math.max(0, tuitionDueForAbsence(a) - logged);
   }
 
@@ -645,21 +655,22 @@
     $("#absentMonthRange").textContent = monthRangeLabel(selectedMonth);
   }
 
-  // A student may carry more than one open absence_records row only in edge cases (shouldn't
-  // normally happen since Resume closes one out before a new Mark absent could start another) —
-  // guard by always taking the most recently opened one per student.
+  // Every open absence — one per subject since per-subject absences, so Math and Reading can be
+  // absent separately and each shows as its own row.
   function openAbsences(){
-    const byStudent = new Map();
-    absences.filter(a => !a.resumed_at).forEach(a => {
-      const existing = byStudent.get(a.student_id);
-      if(!existing || new Date(a.marked_absent_at) > new Date(existing.marked_absent_at)) byStudent.set(a.student_id, a);
-    });
-    return [...byStudent.values()];
+    return absences.filter(a => !a.resumed_at);
   }
 
-  function teacherMatches(studentId){
+  // Matches on the teacher of the absent subject itself (a teacher only sees her own subjects' absences).
+  function teacherMatches(a){
     if(teacherFilterVal === "all") return true;
-    return teachersFor(studentId).includes(teacherFilterVal);
+    const t = absenceTeachers(a);
+    return (t.length ? t : (isTeacherScoped() ? [] : teachersFor(a.student_id))).includes(teacherFilterVal);
+  }
+  function absenceBadges(a){
+    const subs = absenceSubjectsOnly(a);
+    if(!subs.length) return subjectBadgesFor(a.student_id);
+    return subs.map(subj => `<span class="pill ${subj === "Reading" ? "subj-reading" : "subj-math"} name-subj-pill" title="${esc(subj)}">${subj === "Reading" ? "R" : "M"}</span>`).join("");
   }
   function searchMatches(studentId){
     if(!filters.search.trim()) return true;
@@ -672,12 +683,12 @@
       .map(a => ({ absence: a, months: monthDiff(a.last_paid_month, selectedMonth) }))
       .filter(x => x.months !== null && x.months >= 1 && x.months <= 4)
       .filter(x => bucketFilter === null || x.months === bucketFilter)
-      .filter(x => teacherMatches(x.absence.student_id) && searchMatches(x.absence.student_id))
+      .filter(x => teacherMatches(x.absence) && searchMatches(x.absence.student_id))
       .sort((a,b) => b.months - a.months);
   }
   function allTimeRows(){
     return absences
-      .filter(a => teacherMatches(a.student_id) && searchMatches(a.student_id))
+      .filter(a => teacherMatches(a) && searchMatches(a.student_id))
       .map(a => ({ absence: a, months: monthDiff(a.last_paid_month, a.resumed_at ? monthKeyOfSomeDate(a.resumed_at) : monthKeyOfToday()) }))
       .filter(x => bucketFilter === null || x.months === bucketFilter)
       .sort((a,b) => new Date(b.absence.marked_absent_at) - new Date(a.absence.marked_absent_at));
@@ -704,7 +715,7 @@
   }
 
   function renderStats(){
-    const tracking = openAbsences().map(a => ({ absence:a, months: monthDiff(a.last_paid_month, selectedMonth) }));
+    const tracking = openAbsences().filter(a => teacherMatches(a)).map(a => ({ absence:a, months: monthDiff(a.last_paid_month, selectedMonth) }));
     const counts = { 1:0, 2:0, 3:0, 4:0 };
     tracking.forEach(x => { if(x.months >= 1 && x.months <= 4) counts[x.months]++; });
     // Each tile doubles as a filter — click "2 months absent" to narrow the list below to
@@ -742,7 +753,7 @@
       : `<tr><th>Student</th><th>Grade</th><th>Teacher</th><th>Marked absent</th><th>Last paid</th><th>Status</th><th>Tuition due</th><th>Paid</th><th>Balance</th><th>Log payment</th></tr>`;
 
     const rows = isTracking ? trackingRows() : allTimeRows();
-    $("#listCount").textContent = rows.length ? `${rows.length} student${rows.length===1?"":"s"}` : "";
+    $("#listCount").textContent = rows.length ? `${rows.length} subject${rows.length===1?"":"s"}` : "";
     const body = $("#listBody");
     if(!rows.length){
       const emptyMsg = bucketFilter !== null
@@ -754,7 +765,7 @@
     body.innerHTML = rows.map(x => {
       const a = x.absence;
       const s = students.find(st => st.id === a.student_id);
-      const teacherList = teachersFor(a.student_id).join(", ") || "—";
+      const teacherList = (absenceTeachers(a).length ? absenceTeachers(a) : teachersFor(a.student_id)).join(", ") || "—";
       const due = tuitionDueForAbsence(a);
       const paid = verifiedPaidForAbsence(a);
       const balance = Math.max(0, due - paid);
@@ -766,7 +777,7 @@
       const logBtn = !a.resumed_at ? `<button class="btn sm" data-action="log-payment" data-absence="${esc(a.id)}">Log payment</button>` : `<span class="lvl empty-lvl">—</span>`;
       if(isTracking){
         return `<tr class="clickrow" data-action="open-details" data-absence="${esc(a.id)}">
-          <td>${esc(displayName(s))}${subjectBadgesFor(a.student_id)}</td>
+          <td>${esc(displayName(s))}${absenceBadges(a)}</td>
           <td class="muted">${esc(gradeFor(a.student_id) || "—")}</td>
           <td class="muted">${esc(teacherList)}</td>
           <td class="muted">${esc(fmtMonthLabel(a.last_paid_month))}</td>
@@ -779,7 +790,7 @@
         ? `<span class="pill resumed">Resumed ${esc(new Date(a.resumed_at).toLocaleDateString(undefined,{month:"short",day:"numeric",year:"numeric"}))}</span>`
         : bucketPillHtml(x.months);
       return `<tr class="clickrow" data-action="open-details" data-absence="${esc(a.id)}">
-        <td>${esc(displayName(s))}${subjectBadgesFor(a.student_id)}</td>
+        <td>${esc(displayName(s))}${absenceBadges(a)}</td>
         <td class="muted">${esc(gradeFor(a.student_id) || "—")}</td>
         <td class="muted">${esc(teacherList)}</td>
         <td class="muted">${esc(new Date(a.marked_absent_at).toLocaleDateString(undefined,{month:"short",day:"numeric",year:"numeric"}))}</td>
