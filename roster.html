@@ -731,11 +731,7 @@
     const { data, error } = await sbClient.from("payment_receipts").select("id,student_id,status,covers_month,amount");
     if(error){ console.warn(error); receipts = []; return; }
     receipts = data || [];
-    // Hand-set bills (phase47) — a new enrollee's first month.
-    const adj = await sbClient.from("billing_adjustments").select("student_id,covers_month,amount");
-    billAdjustments = adj.error ? [] : (adj.data || []);
   }
-  let billAdjustments = [];
 
   // ---------------- Payment tag (mirrors Payments' own billing math) ----------------
   // Roster and Report show a simple two-state PAID/UNPAID tag for whichever calendar
@@ -789,10 +785,8 @@
   function paymentStatusFor(studentId, ym){
     const s = students.find(x => x.id === studentId);
     if(!s) return null;
-    const month = ym || monthDefault();
-    const adj = billAdjustments.find(b => b.student_id === studentId && b.covers_month === monthToDate(month));
-    const due = adj ? Number(adj.amount) : tuitionDueFor(s);
-    const paid = verifiedPaidFor(studentId, month);
+    const due = tuitionDueFor(s);
+    const paid = verifiedPaidFor(studentId, ym || monthDefault());
     return paid >= due ? "paid" : "unpaid";
   }
   // The report's paid/unpaid is for the month AFTER the report month (October's report shows
