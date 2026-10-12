@@ -464,7 +464,7 @@
       const signupClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
         auth: { persistSession: false, autoRefreshToken: false }
       });
-      const { data, error } = await signupClient.auth.signUp({ email, password });
+      const { data, error } = await signupClient.auth.signUp({ email, password, options: { emailRedirectTo: location.origin + "/index.html" } });
       if(error){ errBox.textContent = error.message; errBox.hidden = false; return; }
       const newId = data && data.user ? data.user.id : null;
       if(newId){
@@ -481,7 +481,7 @@
       closeModal();
       [profiles, trainers] = await Promise.all([loadProfiles(), loadTrainers()]);
       renderAdmin();
-      alert(`Login created for ${email}. They'll get a confirmation email — once they click it, they can log in with the password you set.`);
+      alert(`Login created for ${email}. They can log in right away with the password you set — tell them their password yourself.`);
     }
   });
 
