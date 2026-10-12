@@ -1940,7 +1940,8 @@
     return s ? (s.enrollmentType || null) : null;
   }
   function fmtEnrollmentTagPill(studentId, subject){
-    const tag = subject ? enrollmentTagFor(studentId, subject) : null;
+    // No subject yet (e.g. a RESUME student added without one): show the tag saved on the student.
+    const tag = subject ? enrollmentTagFor(studentId, subject) : ((studentById(studentId) || {}).enrollmentType || null);
     if(tag === "new") return `<span class="pill good">NEW</span>`;
     if(tag === "eo") return `<span class="pill subj">EO</span>`;
     if(tag === "resume") return `<span class="pill warn">RESUME</span>`;
