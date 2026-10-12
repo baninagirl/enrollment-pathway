@@ -1985,9 +1985,12 @@
   // they have one, otherwise the cycle they were added — so the roster naturally rolls
   // into a new cycle as new diagnostics come in, while every earlier cycle stays browsable
   // as history.
+  // Which month's New Students list a student belongs to: their First day (first training, or the
+  // date an admin set), else their DT date, else when they were added. 21st–20th months, so a
+  // First day of Sep 23 counts as October.
   function studentCohortMonthKey(s){
     const d = activeDiagnosticFor(s.id);
-    const iso = (d && d.date) || (s.createdAt ? s.createdAt.slice(0,10) : null);
+    const iso = firstDayFor(s) || (d && d.date) || (s.createdAt ? s.createdAt.slice(0,10) : null);
     if(!iso) return null;
     const [y,m,dd] = iso.split("-").map(Number);
     return monthKeyOf(cycleMonthFor(new Date(y, m-1, dd)));
