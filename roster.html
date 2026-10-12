@@ -608,6 +608,142 @@
     const hit = students.find(s => s.name.trim().toLowerCase() === name.trim().toLowerCase());
     return hit ? hit.id : null;
   }
+  // ---- Duplicate check: names that look like the same child ----
+  // Ignores accents, punctuation, case and middle initials; then treats two names as alike when the
+  // surnames match (or differ by one letter) and the first names match or differ by about one letter in four
+  // (Muhammad / Mohammad), or when every word of the shorter name is in the longer one
+  // (Jarrius Palonson / Jarrius Dhian Palonson).
+  function dupNameTokens(n){
+    return String(n || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase()
+      .replace(/[^a-z\s]/g, " ").split(/\s+/).filter(w => w.length > 1);
+  }
+  function dupLev(a, b){
+    if(a === b) return 0;
+    if(Math.abs(a.length - b.length) > 2) return 3;
+    let prev = Array.from({ length: b.length + 1 }, (_, i) => i);
+    for(let i = 1; i <= a.length; i++){
+      const cur = [i];
+      for(let j = 1; j <= b.length; j++) cur[j] = Math.min(prev[j] + 1, cur[j-1] + 1, prev[j-1] + (a[i-1] === b[j-1] ? 0 : 1));
+      prev = cur;
+    }
+    return prev[b.length];
+  }
+  function namesLookAlike(x, y){
+    const A = dupNameTokens(x), B = dupNameTokens(y);
+    if(!A.length || !B.length) return false;
+    if(A.join(" ") === B.join(" ")) return true;
+    const la = A[A.length-1], lb = B[B.length-1], fa = A[0], fb = B[0];
+    const lastOk = la === lb || (la.length > 3 && lb.length > 3 && dupLev(la, lb) <= 1);
+    // About one letter per four (Muhammad/Mohammad differ by 2 of 8; Ezrah/Eziah by 2 of 5 → different).
+    const firstOk = fa === fb || (fa.length > 3 && fb.length > 3 && dupLev(fa, fb) <= Math.floor(Math.max(fa.length, fb.length) / 4));
+    if(lastOk && firstOk) return true;
+    const [S, L] = A.length <= B.length ? [A, B] : [B, A];
+    return S.length >= 2 && S.every(t => L.includes(t));
+  }
+  function similarStudents(name, list){
+    const exact = String(name || "").trim().toLowerCase();
+    return list.filter(s => s.name && s.name.trim().toLowerCase() !== exact && namesLookAlike(name, s.name));
+  }
+  // Shows a "possible duplicate" box at the top of the form and returns true (stop saving) until the
+  // person ticks "It's a different child".
+  function blockIfLookAlike(form, name, list, describe, extraHtml){
+    if(new FormData(form).get("notDuplicate")) return false;
+    const hits = similarStudents(name, list);
+    if(!hits.length) return false;
+    let box = form.querySelector(".dup-warning");
+    if(!box){
+      box = document.createElement("div");
+      box.className = "dup-warning";
+      box.setAttribute("style", "border:1px solid var(--warn, #C2831F); background:var(--warn-soft, #FBF0E1); border-radius:10px; padding:10px 12px; font-size:13px; line-height:1.5; display:flex; flex-direction:column; gap:6px;");
+      (form.querySelector(".modal-body") || form).prepend(box);
+    }
+    box.innerHTML = `<b>Possible duplicate — Kumon Hub already has:</b>
+      ${hits.slice(0, 5).map(s => `<div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;"><span>${esc(s.name)}${describe ? ` <span style="opacity:.75;">— ${esc(describe(s))}</span>` : ""}</span>${extraHtml ? extraHtml(s) : ""}</div>`).join("")}
+      <label style="display:flex; gap:8px; align-items:center; margin:2px 0 0;"><input type="checkbox" name="notDuplicate" value="1" style="width:auto;"> It's a different child — add anyway</label>`;
+    box.scrollIntoView({ block: "nearest" });
+    return true;
+  }
+  function describeStudentForDup(s){
+    const subs = enrollments.filter(e => e.student_id === s.id).map(e => `${e.subject || "?"}${e.teacher ? " · " + e.teacher : ""}`);
+    return subs.length ? subs.join(", ") : (s.origin === "roster" ? "on Student Roster" : "in Pipeline");
+  }
+  // ---- Duplicates tool (admin/superadmin): likely pairs + merge (merge_students, phase36) ----
+  let dupPairsCache = null, notDupKeys = [];
+  async function loadNotDuplicates(){
+    const { data } = await sbClient.from("settings").select("value").eq("id","not_duplicates").maybeSingle();
+    notDupKeys = data && data.value && Array.isArray(data.value.pairs) ? data.value.pairs : [];
+    dupPairsCache = null;
+  }
+  function pairKey(a, b){ return [a, b].sort().join("|"); }
+  function duplicatePairs(){
+    if(dupPairsCache) return dupPairsCache;
+    const skip = new Set(notDupKeys), out = [];
+    for(let i = 0; i < students.length; i++){
+      for(let j = i + 1; j < students.length; j++){
+        const a = students[i], b = students[j];
+        if(!a.name || !b.name || skip.has(pairKey(a.id, b.id))) continue;
+        if(namesLookAlike(a.name, b.name)) out.push([a, b]);
+      }
+    }
+    dupPairsCache = out;
+    return out;
+  }
+  function dupCardHtml(a, b, idx){
+    // Default keeper: the Pipeline record (it has the DT/trainings), else the older one.
+    const keepA = (a.origin !== "roster" && b.origin === "roster") || (a.origin === b.origin && (a.created_at || "") <= (b.created_at || ""));
+    const side = (s, checked) => `<label style="display:flex; gap:8px; align-items:flex-start; flex:1 1 220px; min-width:0;">
+        <input type="radio" name="keep_${idx}" value="${esc(s.id)}" ${checked ? "checked" : ""} style="width:auto; margin-top:3px;">
+        <span><b>${esc(s.name)}</b><br><span class="hint" style="font-size:12px;">${esc(describeStudentForDup(s))} · ${s.origin === "roster" ? "Student Roster" : "Pipeline"}${s.created_at ? " · added " + esc(new Date(s.created_at).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"})) : ""}</span></span>
+      </label>`;
+    return `<div style="border:1px solid var(--border); border-radius:10px; padding:10px 12px; display:flex; flex-direction:column; gap:8px;">
+      <div style="display:flex; gap:12px; flex-wrap:wrap;">${side(a, keepA)}${side(b, !keepA)}</div>
+      <div style="display:flex; gap:8px; justify-content:flex-end; flex-wrap:wrap;">
+        <button type="button" class="btn sm ghost" data-action="not-duplicate" data-a="${esc(a.id)}" data-b="${esc(b.id)}">Not the same child</button>
+        <button type="button" class="btn sm primary" data-action="merge-pair" data-a="${esc(a.id)}" data-b="${esc(b.id)}" data-idx="${idx}">Merge into the ticked one</button>
+      </div>
+    </div>`;
+  }
+  function openDuplicatesModal(){
+    if(!canCloseOut()) return;
+    const pairs = duplicatePairs();
+    const opts = students.slice().sort((x,y) => (x.name||"").localeCompare(y.name||"")).map(s => `<option value="${esc(s.id)}">${esc(s.name)}</option>`).join("");
+    $("#modal").innerHTML = `
+      <div class="modal-head"><h3>Possible duplicates</h3><button class="iconbtn" data-action="close-modal">✕</button></div>
+      <div class="modal-body">
+        <p class="hint" style="margin:0; font-size:12.5px;">Merging moves everything from the other record (subjects, schedules, payments, absences, DT, trainings, past months) onto the one you tick, fills its blank details, then deletes the other. It can't be undone. Fix the name afterwards from Edit if needed.</p>
+        ${pairs.length ? pairs.map(([a, b], i) => dupCardHtml(a, b, i)).join("") : `<div class="empty">No likely duplicates found.</div>`}
+        <div style="border-top:1px solid var(--border); padding-top:12px; display:flex; flex-direction:column; gap:8px;">
+          <b style="font-size:13px;">Merge any two students</b>
+          <label class="field">Keep<select id="mergeKeep"><option value="">Choose…</option>${opts}</select></label>
+          <label class="field">Merge into it (this record is deleted)<select id="mergeDrop"><option value="">Choose…</option>${opts}</select></label>
+          <div><button type="button" class="btn sm primary" data-action="merge-manual">Merge</button></div>
+        </div>
+      </div>
+      <div class="modal-foot"><button type="button" class="btn ghost" data-action="close-modal" style="margin-left:auto;">Done</button></div>`;
+    $("#modalBackdrop").hidden = false;
+  }
+  async function mergeStudents(keepId, dropId){
+    if(!keepId || !dropId || keepId === dropId){ alert("Pick two different students."); return; }
+    const keep = students.find(s => s.id === keepId), drop = students.find(s => s.id === dropId);
+    if(!confirm(`Merge "${drop ? drop.name : "?"}" into "${keep ? keep.name : "?"}"?\n\nEverything moves onto ${keep ? keep.name : "the kept record"} and the other record is deleted. This can't be undone.`)) return;
+    const { error } = await sbClient.rpc("merge_students", { p_keep: keepId, p_drop: dropId });
+    if(error){ alert("Couldn't merge: " + error.message); return; }
+    logHistory("merge_students", `Merged ${drop ? drop.name : "a student"} into ${keep ? keep.name : "a student"}`, "student", keepId);
+    await Promise.all([loadStudents(), loadEnrollments(), loadSchedules(), loadHistory(), loadReceipts()]);
+    dupPairsCache = null;
+    renderBoth();
+    openDuplicatesModal();
+  }
+  async function markNotDuplicate(a, b){
+    const key = pairKey(a, b);
+    if(!notDupKeys.includes(key)) notDupKeys = [...notDupKeys, key];
+    const { error } = await sbClient.from("settings").upsert({ id: "not_duplicates", value: { pairs: notDupKeys } });
+    if(error){ alert("Couldn't save: " + error.message); return; }
+    dupPairsCache = null;
+    renderPageHeadActions();
+    openDuplicatesModal();
+  }
+
 
   function showLogin(errMsg){
     $("#loginScreen").hidden = false;
@@ -718,9 +854,10 @@
   async function loadStudents(){
     // status/monthly_tuition/billing_group_id are for the Payment tag (paymentStatusFor,
     // below) — Roster otherwise never touched billing fields before.
-    const { data, error } = await sbClient.from("students").select("id,name,age_grade,first_name,last_name,status,monthly_tuition,billing_group_id,origin").order("name");
+    const { data, error } = await sbClient.from("students").select("id,name,age_grade,first_name,last_name,status,monthly_tuition,billing_group_id,origin,created_at").order("name");
     if(error){ console.warn(error); students = []; return; }
     students = data || [];
+    dupPairsCache = null;
   }
   async function loadBillingGroups(){
     const { data, error } = await sbClient.from("billing_groups").select("id,name");
@@ -862,6 +999,7 @@
     const v = data ? data.value : {};
     trainers = Array.isArray(v.trainers) ? v.trainers : [];
     await loadOpenMonth();
+    if(canCloseOut()) await loadNotDuplicates();
   }
   // The open (editable) roster month is stored in the database (phase38: settings row "open_month",
   // value {"key":"YYYY-MM"}) and only moves when an admin closes it out — it no longer rolls over by
@@ -1222,7 +1360,9 @@
         : `<span class="hint" style="font-size:12px; color:var(--ink-muted);">Everything's closed out for ${esc(cycleLabel)}.</span>`;
     }
 
-    wrap.innerHTML = [addBtnHtml, closeOutHtml].filter(Boolean).join("");
+    const dupN = canCloseOut() ? duplicatePairs().length : 0;
+    const dupHtml = canCloseOut() ? `<button class="btn" data-action="open-duplicates" title="Students that may be the same child entered twice">Duplicates${dupN ? ` (${dupN})` : ""}</button>` : "";
+    wrap.innerHTML = [dupHtml, addBtnHtml, closeOutHtml].filter(Boolean).join("");
   }
 
   async function closeOutMonth(){
@@ -1933,6 +2073,8 @@
       const subject = fd.get("subject");
 
       let studentId = findExistingStudentId(name);
+      if(!studentId && blockIfLookAlike(e.target, name, students, describeStudentForDup,
+          s => `<button type="button" class="btn sm" data-action="use-existing-student" data-id="${esc(s.id)}">Use this student</button>`)) return;
       if(studentId){
         const already = enrollments.find(en => en.student_id === studentId && en.subject === subject);
         if(already){ alert(`${name} already has a ${subject} enrollment — edit that row instead.`); return; }
@@ -2145,6 +2287,23 @@
     // one isn't on screen right now caught up too, ready the instant you switch to it.
     else if(action === "rep-prev"){ viewMonth = new Date(viewMonth.getFullYear(), viewMonth.getMonth()-1, 1); renderBoth(); }
     else if(action === "rep-next"){ viewMonth = new Date(viewMonth.getFullYear(), viewMonth.getMonth()+1, 1); renderBoth(); }
+    else if(action === "open-duplicates"){ openDuplicatesModal(); }
+    else if(action === "merge-pair"){
+      const picked = document.querySelector(`input[name="keep_${btn.dataset.idx}"]:checked`);
+      const keepId = picked ? picked.value : btn.dataset.a;
+      await mergeStudents(keepId, keepId === btn.dataset.a ? btn.dataset.b : btn.dataset.a);
+    }
+    else if(action === "merge-manual"){ await mergeStudents(($("#mergeKeep")||{}).value, ($("#mergeDrop")||{}).value); }
+    else if(action === "not-duplicate"){ await markNotDuplicate(btn.dataset.a, btn.dataset.b); }
+    else if(action === "use-existing-student"){
+      const st = students.find(x => x.id === btn.dataset.id);
+      if(st){
+        const parts = (st.first_name && st.last_name) ? { first: st.first_name, last: st.last_name } : splitNameGuess(st.name);
+        const fi = $("#firstNameInput"), li = $("#lastNameInput");
+        if(fi && li){ fi.value = parts.first; li.value = parts.last; fi.dispatchEvent(new Event("input", { bubbles: true })); }
+        const box = document.querySelector("#enrollForm .dup-warning"); if(box) box.remove();
+      }
+    }
     else if(action === "rep-today"){ viewMonth = monthFromKey(openKey()); renderBoth(); }
     else if(action === "close-out-month"){ await closeOutMonth(); }
     else if(action === "edit-report"){

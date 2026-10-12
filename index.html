@@ -2854,6 +2854,8 @@
     const name = `${firstName} ${lastName}`.trim();
     if(!firstName || !lastName) return;
     if(findExistingStudentId(name)){ toast("A student with that name is already on the roster."); return; }
+    // Same child under a slightly different name? Ask before creating a second record.
+    if(blockIfLookAlike(form, name, STATE.students, describeStudentForDup)){ toast("Check the possible duplicate first."); return false; }
     const needsTraining = fd.get("needsTraining") === "1";
     await guardWrite(async ()=>{
       const newStudent = await db.collection("students").add({
@@ -3381,6 +3383,66 @@
     const hit = STATE.students.find(s => s.name.trim().toLowerCase() === name.trim().toLowerCase());
     return hit ? hit.id : null;
   }
+  // ---- Duplicate check: names that look like the same child ----
+  // Ignores accents, punctuation, case and middle initials; then treats two names as alike when the
+  // surnames match (or differ by one letter) and the first names match or differ by about one letter in four
+  // (Muhammad / Mohammad), or when every word of the shorter name is in the longer one
+  // (Jarrius Palonson / Jarrius Dhian Palonson).
+  function dupNameTokens(n){
+    return String(n || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase()
+      .replace(/[^a-z\s]/g, " ").split(/\s+/).filter(w => w.length > 1);
+  }
+  function dupLev(a, b){
+    if(a === b) return 0;
+    if(Math.abs(a.length - b.length) > 2) return 3;
+    let prev = Array.from({ length: b.length + 1 }, (_, i) => i);
+    for(let i = 1; i <= a.length; i++){
+      const cur = [i];
+      for(let j = 1; j <= b.length; j++) cur[j] = Math.min(prev[j] + 1, cur[j-1] + 1, prev[j-1] + (a[i-1] === b[j-1] ? 0 : 1));
+      prev = cur;
+    }
+    return prev[b.length];
+  }
+  function namesLookAlike(x, y){
+    const A = dupNameTokens(x), B = dupNameTokens(y);
+    if(!A.length || !B.length) return false;
+    if(A.join(" ") === B.join(" ")) return true;
+    const la = A[A.length-1], lb = B[B.length-1], fa = A[0], fb = B[0];
+    const lastOk = la === lb || (la.length > 3 && lb.length > 3 && dupLev(la, lb) <= 1);
+    // About one letter per four (Muhammad/Mohammad differ by 2 of 8; Ezrah/Eziah by 2 of 5 → different).
+    const firstOk = fa === fb || (fa.length > 3 && fb.length > 3 && dupLev(fa, fb) <= Math.floor(Math.max(fa.length, fb.length) / 4));
+    if(lastOk && firstOk) return true;
+    const [S, L] = A.length <= B.length ? [A, B] : [B, A];
+    return S.length >= 2 && S.every(t => L.includes(t));
+  }
+  function similarStudents(name, list){
+    const exact = String(name || "").trim().toLowerCase();
+    return list.filter(s => s.name && s.name.trim().toLowerCase() !== exact && namesLookAlike(name, s.name));
+  }
+  // Shows a "possible duplicate" box at the top of the form and returns true (stop saving) until the
+  // person ticks "It's a different child".
+  function blockIfLookAlike(form, name, list, describe, extraHtml){
+    if(new FormData(form).get("notDuplicate")) return false;
+    const hits = similarStudents(name, list);
+    if(!hits.length) return false;
+    let box = form.querySelector(".dup-warning");
+    if(!box){
+      box = document.createElement("div");
+      box.className = "dup-warning";
+      box.setAttribute("style", "border:1px solid var(--warn, #C2831F); background:var(--warn-soft, #FBF0E1); border-radius:10px; padding:10px 12px; font-size:13px; line-height:1.5; display:flex; flex-direction:column; gap:6px;");
+      (form.querySelector(".modal-body") || form).prepend(box);
+    }
+    box.innerHTML = `<b>Possible duplicate — Kumon Hub already has:</b>
+      ${hits.slice(0, 5).map(s => `<div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;"><span>${esc(s.name)}${describe ? ` <span style="opacity:.75;">— ${esc(describe(s))}</span>` : ""}</span>${extraHtml ? extraHtml(s) : ""}</div>`).join("")}
+      <label style="display:flex; gap:8px; align-items:center; margin:2px 0 0;"><input type="checkbox" name="notDuplicate" value="1" style="width:auto;"> It's a different child — add anyway</label>`;
+    box.scrollIntoView({ block: "nearest" });
+    return true;
+  }
+
+  function describeStudentForDup(s){
+    const subs = STATE.enrollments.filter(e => e.studentId === s.id).map(e => `${e.subject || "?"}${e.teacher ? " · " + e.teacher : ""}`);
+    return subs.length ? subs.join(", ") : (s.origin === "roster" ? "on Student Roster" : "in Pipeline");
+  }
 
   async function submitNewDiagnostic(form){
     const fd = new FormData(form);
@@ -3397,6 +3459,7 @@
     const examiner = fd.get("examiner");
     const notes = fd.get("notes").toString().trim();
     if(!firstName || !lastName || !date || !time || !examiner) return;
+    if(!findExistingStudentId(studentName) && blockIfLookAlike(form, studentName, STATE.students, describeStudentForDup)){ toast("Check the possible duplicate first."); return false; }
 
     await guardWrite(async ()=>{
       let studentId = findExistingStudentId(studentName);
@@ -3974,7 +4037,8 @@
     if(btn && btn.disabled) return;
     if(btn){ btn.dataset.label = btn.textContent; btn.textContent = "Saving…"; btn.disabled = true; }
     handler(form)
-      .then(()=>{ if(db) closeModal(); })
+      // A handler returns false to keep its form open (e.g. a possible-duplicate warning to answer).
+      .then(result => { if(db && result !== false) closeModal(); })
       .finally(()=>{ if(btn){ btn.disabled = false; btn.textContent = btn.dataset.label; } });
   });
 

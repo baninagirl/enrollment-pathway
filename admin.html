@@ -362,7 +362,7 @@
     const sharedTrainerList = $("#trainerNamesListInline");
     if(sharedTrainerList) sharedTrainerList.innerHTML = trainers.map(t=>`<option value="${esc(t)}">`).join("");
     body.innerHTML = `
-      <div class="banner info">"+ New login" creates their account right here. They'll get a confirmation email — once they click it, they can log in with the password you set. Everyone can have a name. For a teacher, just type their name — new teacher names are added to your Trainers list automatically.</div>
+      <div class="banner info">"+ New login" creates their account right here. They can log in right away with the password you set — tell them their password yourself. Everyone can have a name. For a teacher, just type their name — new teacher names are added to your Trainers list automatically.</div>
       <div class="card">
         <div class="card-head"><h3>Team accounts</h3><span class="hint">${profiles.length}</span></div>
         <div class="table-scroll">
