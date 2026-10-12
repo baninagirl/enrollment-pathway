@@ -3525,7 +3525,7 @@
         <div class="modal-body">
           <div class="hint">Their schedule, records and history all carry over. Pick who teaches them from now on.</div>
           ${enr.map(e => `<label class="field">${esc(e.subject)} teacher
-            <select name="teacher_${e.id}">${opts(e.teacher || "")}</select>
+            <select name="teacher_${e.id}">${opts(e.finalTeacher || e.teacher || "")}</select>
           </label>`).join("")}
         </div>
         <div class="modal-foot">

@@ -423,7 +423,7 @@
         <div class="table-scroll">
           <table class="stable">
             <thead><tr>
-              <th>#</th><th>Student</th><th>Subject</th><th>Tag</th><th>LWC</th><th>NWU</th><th>No. of days</th><th>No. of months</th><th>Test date</th><th>Test level</th><th>Test time</th><th>Test score</th><th>Test group</th><th>Grade</th><th>Payment</th><th>Mode</th>
+              <th>#</th><th>Student</th><th>Subject</th><th>Tag</th><th>LWC</th><th>NWU</th><th>No. of days</th><th>No. of months</th><th>Test date</th><th>Test level</th><th>Test time</th><th>Test score</th><th>Test group</th><th>Grade</th><th id="repPaymentHead">Payment</th><th>Mode</th>
             </tr></thead>
             <tbody id="repBody"></tbody>
           </table>
@@ -789,8 +789,16 @@
     const paid = verifiedPaidFor(studentId, ym || monthDefault());
     return paid >= due ? "paid" : "unpaid";
   }
-  function fmtPaymentPill(studentId){
-    const ym = monthDefault();
+  // The report's paid/unpaid is for the month AFTER the report month (October's report shows
+  // November's tuition) — saved with each row when the month is closed out (phase42).
+  function reportPaymentMonth(){ return shiftMonth(monthKeyOf(viewMonth), 1); }
+  function savedPaymentPill(status, ym){
+    if(status === "paid") return `<span class="pill payment-paid" title="${esc(fmtMonthLabelYm(ym))} — saved at close-out">Paid</span>`;
+    if(status === "unpaid") return `<span class="pill payment-unpaid" title="${esc(fmtMonthLabelYm(ym))} — saved at close-out">Unpaid</span>`;
+    return `<span class="lvl empty-lvl" title="Closed out before paid/unpaid was saved with the report.">not saved</span>`;
+  }
+  function fmtPaymentPill(studentId, ymOverride){
+    const ym = ymOverride || monthDefault();
     const status = paymentStatusFor(studentId, ym);
     if(status === "paid") return `<span class="pill payment-paid">Paid</span>`;
     if(status === "unpaid"){
@@ -1176,7 +1184,7 @@
       .filter(h => reportFilters.grade === "all" || gradeFor(h.student_id) === reportFilters.grade)
       .filter(h => !q || (h.student_name||"").toLowerCase().includes(q))
       .sort((a,b) => lastNameSortKey(a.student_id,a.student_name).localeCompare(lastNameSortKey(b.student_id,b.student_name)))
-      .map(h => ({ source:"archived", id:h.id, monitor_cycle:h.monitor_cycle, is_monitor:!!h.is_monitor, monitor_since:h.monitor_since, enrollment_type:h.enrollment_type, student_id:h.student_id, student_name:h.student_name, subject:h.subject, teacher:h.teacher, mode:h.mode, status:"active",
+      .map(h => ({ source:"archived", id:h.id, payment_status:h.payment_status, payment_month:h.payment_month, monitor_cycle:h.monitor_cycle, is_monitor:!!h.is_monitor, monitor_since:h.monitor_since, enrollment_type:h.enrollment_type, student_id:h.student_id, student_name:h.student_name, subject:h.subject, teacher:h.teacher, mode:h.mode, status:"active",
         lwc:h.lwc, nwu:h.nwu, no_of_days:h.no_of_days, no_of_months_current_level:h.no_of_months_current_level,
         test_date:h.test_date, test_level:h.test_level, test_time:h.test_time, test_score:h.test_score, test_group:h.test_group }));
   }
@@ -1247,6 +1255,8 @@
       award: e.award, actual: e.actual,
       // Phase34: keep who was New / Monitor that month, so the report's sections still work for closed months.
       enrollment_type: e.enrollment_type || null, is_monitor: !!e.is_monitor, monitor_since: e.monitor_since || null, monitor_cycle: e.monitor_cycle || null,
+      // Phase42: paid/unpaid for the month after this one, as it stood at close-out.
+      payment_month: shiftMonth(cycleKey, 1), payment_status: paymentStatusFor(e.student_id, shiftMonth(cycleKey, 1)),
       closed_by_email: currentUser ? currentUser.email : null
     }));
 
@@ -1319,6 +1329,12 @@
     rmLabel.textContent = monthLabel(viewMonth);
     rmRange.textContent = monthRangeLabel(viewMonth);
     rcTitle.textContent = isCurrentCycle() ? "This cycle — editable" : "Archived cycle";
+    const payHead = $("#repPaymentHead");
+    if(payHead){
+      const pm = reportPaymentMonth();
+      payHead.textContent = `Paid · ${new Date(+pm.slice(0,4), +pm.slice(5,7)-1, 1).toLocaleDateString("en-US",{ month:"short" })}`;
+      payHead.title = `Paid or unpaid for ${fmtMonthLabelYm(pm)} tuition`;
+    }
 
     const rows = rowsForReportView();
     $("#repCount").textContent = rows.length + (rows.length===1 ? " record" : " records");
@@ -1367,7 +1383,7 @@
         <td>${fmtPlain(r.test_score)}</td>
         <td>${fmtPlain(r.test_group)}</td>
         <td>${esc(gradeFor(r.student_id) || "—")}</td>
-        <td>${editable ? fmtPaymentPill(r.student_id) : `<span class="lvl empty-lvl" title="An archived cycle is a snapshot — payment status only makes sense for the live roster.">not tracked</span>`}</td>
+        <td>${editable ? fmtPaymentPill(r.student_id, reportPaymentMonth()) : savedPaymentPill(r.payment_status, r.payment_month || reportPaymentMonth())}</td>
         <td>${fmtMode(r.mode)}</td>
       </tr>`;
   }
@@ -1798,7 +1814,7 @@
         <div class="modal-body">
           <p class="hint" style="font-size:12.5px; margin:0 0 6px;">Their records, schedule and history all stay as they are. Pick who their teacher is from now on. Keep the current teacher to leave them where they are.</p>
           ${group.map(g => `<label class="field">${esc(g.subject)} teacher
-            <select name="teacher_${g.id}">${opts(g.teacher||"")}</select>
+            <select name="teacher_${g.id}">${opts(g.final_teacher||g.teacher||"")}</select>
           </label>`).join("")}
         </div>
         <div class="modal-foot">
