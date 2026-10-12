@@ -988,6 +988,19 @@
     const g = splitNameGuess(s.name);
     return `${g.last} ${g.first}`.trim().toLowerCase();
   }
+  // "First day" = the student's first training day. Automatic from the earliest training session
+  // that isn't cancelled; an admin/superadmin can override it (students.first_day, phase44).
+  function autoFirstDay(studentId){
+    const dates = STATE.trainings.filter(t => t.studentId === studentId && t.status !== "cancelled" && t.date).map(t => t.date).sort();
+    return dates[0] || null;
+  }
+  function firstDayFor(s){ return (s && s.firstDay) || (s ? autoFirstDay(s.id) : null); }
+  function fmtFirstDay(s){
+    const d = firstDayFor(s);
+    if(!d) return `<span class="muted">—</span>`;
+    return `<span class="tnum"${s.firstDay ? ` title="Set by hand"` : ` title="From their first training session"`}>${fmtDateShort(d)}</span>`;
+  }
+  function canEditFirstDay(){ return currentRole === "admin" || currentRole === "superadmin"; }
   function trainingsFor(studentId){ return STATE.trainings.filter(t => t.studentId === studentId).sort((a,b)=> a.sessionNumber - b.sessionNumber); }
   function activeDiagnosticFor(studentId){
     return STATE.diagnostics.filter(d => d.studentId === studentId).sort((a,b)=> (b.date||"").localeCompare(a.date||""))[0];
@@ -2032,7 +2045,7 @@
     const emptyMsg = qTokens.length ? "No students match that search." : STATE.studentMonthMode==="month" ? `No enrolled students on the ${esc(monthLabel)} roster yet. Try <b>All time</b> — a student shows up here once their diagnostic is marked <b>Enrolled</b>.` : "No enrolled students yet. A student shows up here once their diagnostic is marked <b>Enrolled</b>.";
 
     const listTable = `<table class="stable">
-          <thead><tr><th>#</th><th>Student</th><th>Grade</th><th>Subject</th><th>Tag</th><th>Schedule</th><th>Mode</th><th>Status</th></tr></thead>
+          <thead><tr><th>#</th><th>Student</th><th>Grade</th><th>Subject</th><th>Tag</th><th>First day</th><th>Schedule</th><th>Mode</th><th>Status</th></tr></thead>
           <tbody>
             ${rows.map((row, i) => {
               const s = row.s;
@@ -2043,6 +2056,7 @@
                 <td>${esc(s.ageGrade||"—")}</td>
                 <td>${row.subj ? fmtSubjectPill(row.subj) : "—"}</td>
                 <td>${fmtEnrollmentTagPill(s.id, row.subj)}</td>
+                <td>${fmtFirstDay(s)}</td>
                 <td>${pipelineScheduleLabel(s.id)}${s.status === "enrolled_pending_training" && subjectsNeedingSchedule(s).length ? ` <button type="button" class="btn sm ghost" data-action="open-new-schedule" data-kind="early" data-student="${s.id}" title="Set their schedule now, before training is done (goes on the monitor list)">Set schedule</button>` : ""}</td>
                 <td>${fmtModePill(s.mode)}</td>
                 <td><span class="pill ${st[1]}">${st[0]}</span></td>
@@ -2052,7 +2066,7 @@
         </table>`;
 
     const reportTable = `<table class="stable">
-          <thead><tr><th>#</th><th>Student</th><th>Grade</th><th>Subject</th><th>Tag</th><th>Start point</th><th>DT test</th><th>DT date</th><th>Score</th><th>Time</th></tr></thead>
+          <thead><tr><th>#</th><th>Student</th><th>Grade</th><th>Subject</th><th>Tag</th><th>First day</th><th>Start point</th><th>DT test</th><th>DT date</th><th>Score</th><th>Time</th></tr></thead>
           <tbody>
             ${rows.map((row, i) => {
               const s = row.s;
@@ -2064,6 +2078,7 @@
                 <td>${esc(s.ageGrade||"—")}</td>
                 <td>${row.subj ? fmtSubjectPill(row.subj) : "—"}</td>
                 <td>${fmtEnrollmentTagPill(s.id, row.subj)}</td>
+                <td>${fmtFirstDay(s)}</td>
                 <td>${esc(r.startPoint || "—")}</td>
                 <td>${esc(r.dtTest || "—")}</td>
                 <td class="tnum">${d ? fmtDateShort(d.date) : "—"}</td>
@@ -2435,6 +2450,8 @@
               </select>
             </label>
           </div>
+          ${canEditFirstDay() ? `<label class="field">First day<input type="date" name="firstDay" value="${esc(s.firstDay || "")}">
+            <span class="hint" style="margin-top:4px;">${autoFirstDay(s.id) ? `Automatic: ${esc(fmtDateShort(autoFirstDay(s.id)))} (first training). ` : "No training booked yet. "}Leave blank to use the automatic date; set a date to override it.</span></label>` : ""}
           <label class="field">Notes<textarea name="notes" rows="2">${esc(s.notes||"")}</textarea></label>
           ${studentEnrollments.length ? `
             <div class="hint" style="margin-top:4px;">Reporting tag</div>
@@ -2505,6 +2522,8 @@
         status: fd.get("status").toString(),
         notes: fd.get("notes").toString().trim()
       };
+      // First day (phase44): only on the form for admin/superadmin; blank = automatic.
+      if(canEditFirstDay() && fd.get("firstDay") !== null) studentPatch.firstDay = (fd.get("firstDay") || "").toString() || null;
       const prevStatus = s ? s.status : null;
       const prevName = s ? [s.firstName||"", s.lastName||"", s.name||""].join("|") : null;
       // Leaving "On monitor schedule": clear the subjects' monitor mark FIRST — the database (phase37)
