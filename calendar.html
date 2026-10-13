@@ -104,6 +104,21 @@
   #slotLinks a.btn{ text-decoration:none; display:inline-flex; align-items:center; }
   .cal-toolbar{ display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end; margin-bottom:16px; }
   .cal-toolbar .field{ max-width:230px; min-width:170px; flex:1; }
+  .tpick{ position:relative; }
+  .tpick-label{ font-size:12.5px; font-weight:600; color:var(--ink-muted); }
+  .tpick-btn{ display:flex; align-items:center; justify-content:space-between; gap:8px; width:100%; font:inherit; font-size:13.5px; font-weight:500; color:var(--ink); background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:8px 10px; cursor:pointer; text-align:left; }
+  .tpick-btn:focus{ outline:none; border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-soft); }
+  .tpick-btn span:first-child{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .tpick-caret{ color:var(--ink-muted); font-size:11px; }
+  .tpick-menu{ position:absolute; top:100%; left:0; margin-top:4px; z-index:30; min-width:240px; background:var(--surface); border:1px solid var(--border); border-radius:10px; box-shadow:0 8px 24px rgba(0,0,0,.12); padding:6px; }
+  .tpick-actions{ display:flex; justify-content:space-between; padding:4px 6px 8px; border-bottom:1px solid var(--border); margin-bottom:4px; }
+  .tpick-actions button{ border:none; background:none; color:var(--accent); font:inherit; font-size:12.5px; font-weight:700; cursor:pointer; padding:2px 0; }
+  .tpick-hint{ font-size:12px; color:var(--ink-muted); align-self:center; }
+  .tpick-list{ max-height:320px; overflow:auto; }
+  .tpick-item{ display:flex; align-items:center; gap:9px; padding:7px 8px; border-radius:7px; font-size:13.5px; font-weight:500; color:var(--ink); cursor:pointer; }
+  .tpick-item:hover{ background:var(--surface-2); }
+  .tpick-item input{ width:16px; height:16px; accent-color:var(--accent); margin:0; flex:none; }
+  .tpick-item .n{ margin-left:auto; font-size:12px; color:var(--ink-muted); }
   .view-tabs{ display:flex; gap:3px; background:var(--surface-2); padding:3px; border-radius:11px; border:1px solid var(--border); }
   .view-tab{ border:none; background:transparent; padding:8px 13px; border-radius:8px; font-size:12.5px; font-weight:700; color:var(--ink-muted); cursor:pointer; white-space:nowrap; transition: background .12s ease, color .12s ease, box-shadow .12s ease; }
   .view-tab:hover{ color:var(--ink); }
@@ -266,13 +281,15 @@
     </div>
 
     <div class="cal-toolbar" id="calToolbar">
-      <div class="view-tabs" id="calViewTabs" hidden>
-        <button type="button" class="view-tab active" data-action="set-view" data-view="all">All center</button>
-        <button type="button" class="view-tab" data-action="set-view" data-view="teacher">By teacher</button>
-        <button type="button" class="view-tab" data-action="set-view" data-view="group">By group</button>
+      <div class="field tpick" id="calTeacherField" hidden>
+        <span class="tpick-label">Teachers</span>
+        <button type="button" class="tpick-btn" id="tpickBtn" data-action="tpick-toggle" aria-haspopup="true" aria-expanded="false"><span id="tpickText">All teachers</span><span class="tpick-caret">▾</span></button>
+        <div class="tpick-menu" id="tpickMenu" hidden>
+          <div class="tpick-actions"><span class="tpick-hint">Tick one or more</span><button type="button" data-action="tpick-all">Show all</button></div>
+          <div class="tpick-list" id="tpickList"></div>
+        </div>
       </div>
-      <label class="field" id="calTeacherField" hidden>Teacher<select id="calTeacherFilter"></select></label>
-      <label class="field" id="calGroupField" hidden>Group<select id="calGroupFilter"></select></label>
+      <label class="field" id="calGroupField">Group<select id="calGroupFilter"></select></label>
       <label class="field" id="calModeField">Mode<select id="calModeFilter">
         <option value="all">All modes</option>
         <option value="IC">IC only</option>
@@ -382,7 +399,9 @@
 
   let sbClient = null, currentUser = null, currentRole = null, currentTeacherName = null;
   let schedules = [], enrollments = [], trainers = [], attendance = [];
-  let filters = { teacher:"all", group:"all", mode:"all" };
+  // teachers: empty Set = everyone; otherwise only those names (pick as many as you like).
+  let filters = { teachers: new Set(), group:"all", mode:"all" };
+  const TPICK_KEY = "kumonCalTeachers";
 
   // Site-wide edit history (Activity page, admin/superadmin only) — every page logs its own
   // significant writes into the same edit_history table. Fire-and-forget on purpose: a slow
@@ -525,46 +544,54 @@
   }
 
   function populateFilters(){
-    const tabs = $("#calViewTabs");
     const teacherField = $("#calTeacherField");
-    const groupField = $("#calGroupField");
-    const teacherSel = $("#calTeacherFilter");
     const groupSel = $("#calGroupFilter");
     groupSel.innerHTML = `<option value="all">All groups</option>` + LEVEL_GROUPS.map(g=>`<option value="${g.key}">${esc(g.label)}</option>`).join("");
-
     if(isTeacherScoped()){
-      // A teacher (or trainer_teacher) only ever gets sent her own students by the
-      // database anyway (same rule as Student roster) — "All center" / "By teacher"
-      // tabs would just be noise for her, so she only ever sees the Group filter,
-      // same as before.
-      if(tabs) tabs.hidden = true;
+      // A teacher only ever gets her own students from the database, so no teacher picker.
       if(teacherField) teacherField.hidden = true;
-      if(groupField) groupField.hidden = false;
-      filters.teacher = "all";
+      filters.teachers = new Set();
     }else{
-      teacherSel.innerHTML = `<option value="all">All teachers</option>` + trainers.map(t=>`<option value="${esc(t)}">${esc(t)}</option>`).join("");
-      if(tabs) tabs.hidden = false;
-      applyViewMode("all");
+      if(teacherField) teacherField.hidden = false;
+      // Remembered per browser, so the same teachers are picked next time.
+      try{ const saved = JSON.parse(localStorage.getItem(TPICK_KEY) || "[]"); if(Array.isArray(saved)) filters.teachers = new Set(saved); }catch(_){}
     }
+    renderTeacherPicker();
+    renderCalendar();
   }
 
-  // The three tabs are mutually exclusive on purpose — "By teacher" and "By group" each
-  // show their own picker and hide the other, so there's never a question of which
-  // filter is actually in charge of what's on screen.
-  function applyViewMode(mode){
-    viewMode = mode;
-    filters.teacher = "all";
-    filters.group = "all";
-    $$(".view-tab").forEach(b => b.classList.toggle("active", b.dataset.view === mode));
-    const teacherField = $("#calTeacherField");
-    const groupField = $("#calGroupField");
-    if(teacherField) teacherField.hidden = mode !== "teacher";
-    if(groupField) groupField.hidden = mode !== "group";
-    const teacherSel = $("#calTeacherFilter");
-    const groupSel = $("#calGroupFilter");
-    if(teacherSel) teacherSel.value = "all";
-    if(groupSel) groupSel.value = "all";
+  // Teacher names to offer: the Staff → Teachers list plus anyone who actually has students
+  // on the calendar (so a name missing from Staff still shows up), A–Z.
+  function teacherOptions(){
+    const counts = {};
+    for(const en of buildEntries()) if(en.teacher) counts[en.teacher] = (counts[en.teacher] || 0) + 1;
+    const names = [...new Set([...trainers, ...Object.keys(counts)])].sort((a,b) => a.localeCompare(b));
+    return names.map(n => ({ name:n, count: counts[n] || 0 }));
+  }
+  function renderTeacherPicker(){
+    const list = $("#tpickList"), text = $("#tpickText");
+    if(!list || !text) return;
+    const opts = teacherOptions();
+    // Drop remembered names that no longer exist.
+    filters.teachers = new Set([...filters.teachers].filter(n => opts.some(o => o.name === n)));
+    list.innerHTML = opts.map(o => `<label class="tpick-item"><input type="checkbox" data-action="tpick-one" value="${esc(o.name)}" ${filters.teachers.has(o.name)?"checked":""}><span>${esc(o.name)}</span><span class="n">${o.count}</span></label>`).join("")
+      || `<div class="tpick-item" style="cursor:default;color:var(--ink-muted)">No teachers yet</div>`;
+    const picked = [...filters.teachers];
+    text.textContent = !picked.length ? "All teachers" : picked.length <= 2 ? picked.join(", ") : `${picked.length} teachers`;
+    $("#tpickBtn").title = picked.length ? picked.join(", ") : "All teachers";
+  }
+  function setTeachers(set){
+    filters.teachers = set;
+    try{ localStorage.setItem(TPICK_KEY, JSON.stringify([...set])); }catch(_){}
+    renderTeacherPicker();
     renderCalendar();
+  }
+  function toggleTeacherMenu(open){
+    const menu = $("#tpickMenu"), btn = $("#tpickBtn");
+    if(!menu) return;
+    const show = open === undefined ? menu.hidden : open;
+    menu.hidden = !show;
+    btn.setAttribute("aria-expanded", String(show));
   }
 
   function buildEntries(){
@@ -623,7 +650,7 @@
     // subject_enrollments/schedules to their own students) — this just mirrors that
     // for the "showTeacherLabel" decision below, it doesn't add a second gate.
     return buildEntries().filter(en => {
-      if(!isTeacherScoped() && filters.teacher !== "all" && en.teacher !== filters.teacher) return false;
+      if(!isTeacherScoped() && filters.teachers.size && !filters.teachers.has(en.teacher)) return false;
       if(filters.group !== "all" && en.groupKey !== filters.group) return false;
       if(filters.mode !== "all" && en.mode !== filters.mode) return false;
       return true;
@@ -647,7 +674,7 @@
 
     const days = DAY_ORDER.filter(d => d !== "Sun" || entries.some(e => e.day === "Sun"));
     const times = [...new Set(entries.map(e => e.time))].sort();
-    const showTeacherLabel = !isTeacherScoped() && filters.teacher === "all";
+    const showTeacherLabel = !isTeacherScoped() && filters.teachers.size !== 1;
 
     const byCell = {};
     for(const e of entries){
@@ -722,8 +749,14 @@
     }
   });
 
+  document.addEventListener("keydown", (e)=>{ if(e.key === "Escape") toggleTeacherMenu(false); });
   document.addEventListener("change", (e)=>{
-    if(e.target.id === "calTeacherFilter"){ filters.teacher = e.target.value; renderCalendar(); }
+    if(e.target.dataset && e.target.dataset.action === "tpick-one"){
+      const set = new Set(filters.teachers);
+      e.target.checked ? set.add(e.target.value) : set.delete(e.target.value);
+      setTeachers(set);
+      return;
+    }
     if(e.target.id === "calGroupFilter"){ filters.group = e.target.value; renderCalendar(); }
     if(e.target.id === "calModeFilter"){ filters.mode = e.target.value; renderCalendar(); }
     if(e.target.dataset && e.target.dataset.action === "toggle-arrived"){
@@ -732,10 +765,13 @@
   });
 
   document.addEventListener("click", async (e)=>{
+    // Click outside the teacher menu closes it.
+    if(!e.target.closest("#calTeacherField")) toggleTeacherMenu(false);
     const btn = e.target.closest("[data-action]");
     if(!btn) return;
     if(btn.dataset.action === "logout"){ await sbClient.auth.signOut(); }
-    else if(btn.dataset.action === "set-view"){ applyViewMode(btn.dataset.view); }
+    else if(btn.dataset.action === "tpick-toggle"){ toggleTeacherMenu(); }
+    else if(btn.dataset.action === "tpick-all"){ setTeachers(new Set()); }
   });
 
   boot();
