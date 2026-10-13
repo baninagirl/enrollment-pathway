@@ -1251,7 +1251,7 @@
     fillTextSpaced(ctx, "STATEMENT OF ACCOUNT", rx, c1.y + 34, 1.5);
     ctx.fillStyle = GRAY;
     ctx.font = "500 14px Arial, sans-serif";
-    ctx.fillText("For the Period: " + periodLabel(reportYm(ym)), rx, c1.y + 56);
+    ctx.fillText("For the Period: " + periodLabel(ym), rx, c1.y + 56);
 
     const dueBoxW = c1.x + c1.w - padX - rx, dueBoxY = c1.y + 72, dueBoxH = 52;
     roundRectPath(ctx, rx, dueBoxY, dueBoxW, dueBoxH, 10);
