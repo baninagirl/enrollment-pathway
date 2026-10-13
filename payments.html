@@ -317,7 +317,7 @@
           <div class="month-range" id="paymentsMonthRange"></div>
         </div>
         <button class="btn ghost sm" data-action="month-next">›</button>
-        <button class="btn sm" data-action="month-today" title="Next month's tuition — the one due on the 25th of this month">Current bill</button>
+        <button class="btn sm" data-action="month-today" title="This month's report (bills next month's tuition, due the 25th)">This month</button>
       </div>
     </div>
 
@@ -479,6 +479,11 @@
     const end = new Date(y, m, 0);
     return `${start.toLocaleDateString("en-US",{month:"short",day:"numeric"})} – ${end.toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"})}`;
   }
+  // Labels: the page runs on next month's tuition (selectedMonth = November in October), but
+  // everything on screen is NAMED for the report month it belongs to — the month before.
+  // November tuition, due Oct 25 → shown as "October 2026". Data (covers_month) is unchanged.
+  function reportYm(ym){ return shiftMonth(ym, -1); }
+  function fmtBillLabel(ym){ return fmtMonthLabel(reportYm(ym)); }
   function shiftMonth(ym, delta){
     const [y,m] = ym.split("-").map(Number);
     const d = new Date(y, m-1+delta, 1);
@@ -523,8 +528,8 @@
     return (ty - fy) * 12 + (tm - fm);
   }
   function renderMonthNav(){
-    $("#paymentsMonthLabel").textContent = fmtMonthLabel(selectedMonth);
-    $("#paymentsMonthRange").textContent = monthRangeLabel(selectedMonth);
+    $("#paymentsMonthLabel").textContent = fmtBillLabel(selectedMonth);
+    $("#paymentsMonthRange").textContent = monthRangeLabel(reportYm(selectedMonth));
   }
 
   function populateTeacherFilter(){
@@ -941,8 +946,9 @@
   function refreshLogPaymentSuggestion(){
     const form = $("#logPaymentForm");
     if(!form) return;
-    const sid = form.elements.studentId.value, ym = form.elements.coversMonth.value;
-    if(!sid || !ym) return;
+    const sid = form.elements.studentId.value, shown = form.elements.coversMonth.value;
+    if(!sid || !shown) return;
+    const ym = shiftMonth(shown, 1); // field shows the report month; tuition is the month after
     const wrap = form.querySelector("#payAllocFields");
     if(wrap) wrap.innerHTML = allocFieldsHtml(sid, ym);
     refreshAllocTotal();
@@ -1001,7 +1007,7 @@
             const lp = lastFullyPaidMonthForSubject(studentId, e.subject, selectedMonth);
             return `<label class="field" style="flex-direction:row; align-items:center; gap:8px;">
               <input type="checkbox" name="enrollment" value="${esc(e.id)}" ${active.length === 1 ? "checked" : ""} style="width:auto;">
-              <span><b>${esc(e.subject || "Subject")}</b> · ${esc(e.teacher || "—")} <span class="muted" style="font-size:12px;">— last paid ${esc(fmtMonthLabel(lp))}, absent from ${esc(fmtMonthLabel(shiftMonth(lp, 1)))}</span></span>
+              <span><b>${esc(e.subject || "Subject")}</b> · ${esc(e.teacher || "—")} <span class="muted" style="font-size:12px;">— last paid ${esc(fmtBillLabel(lp))}, absent from ${esc(fmtBillLabel(shiftMonth(lp, 1)))}</span></span>
             </label>`;
           }).join("")}
         </div>
@@ -1245,7 +1251,7 @@
     fillTextSpaced(ctx, "STATEMENT OF ACCOUNT", rx, c1.y + 34, 1.5);
     ctx.fillStyle = GRAY;
     ctx.font = "500 14px Arial, sans-serif";
-    ctx.fillText("For the Period: " + periodLabel(ym), rx, c1.y + 56);
+    ctx.fillText("For the Period: " + periodLabel(reportYm(ym)), rx, c1.y + 56);
 
     const dueBoxW = c1.x + c1.w - padX - rx, dueBoxY = c1.y + 72, dueBoxH = 52;
     roundRectPath(ctx, rx, dueBoxY, dueBoxW, dueBoxH, 10);
@@ -1435,7 +1441,7 @@
   }
 
   function renderTable(){
-    $("#tableTitle").textContent = `${fmtMonthLabel(selectedMonth)} tuition — due ${dueDateLabel(selectedMonth)}`;
+    $("#tableTitle").textContent = `${fmtBillLabel(selectedMonth)} — due ${dueDateLabel(selectedMonth)}`;
     const rows = filteredRows();
     $("#tableCount").textContent = rows.length ? `${rows.length} student${rows.length===1?"":"s"}` : "";
     const body = $("#paymentsBody");
@@ -1509,7 +1515,7 @@
     if(pageView !== "unpaid") return;
     const rows = filteredUnpaidRows();
     const overdue = isPastTenthOf(selectedMonth);
-    $("#unpaidTitle").textContent = `Unpaid — as of ${fmtMonthLabel(selectedMonth)}`;
+    $("#unpaidTitle").textContent = `Unpaid — as of ${fmtBillLabel(selectedMonth)}`;
     $("#unpaidCount").textContent = rows.length ? `${rows.length} student${rows.length===1?"":"s"}` : "";
     const body = $("#unpaidBody");
     if(!rows.length){
@@ -1521,11 +1527,11 @@
       // Still just a flag, not a verdict — being overdue never marks anyone absent by itself.
       // It just tells staff this one's worth a look; Mark absent (below) is still their call.
       return `<tr class="clickrow" data-action="open-payment-history" data-student="${esc(s.id)}" title="Click for payment history">
-        <td>${esc(displayName(s))}${subjectBadgesFor(s.id)}${overdue ? ` <span class="pill overdue" title="Still unpaid past the 10th of ${esc(fmtMonthLabel(selectedMonth))} — worth a decision.">Overdue</span>` : ""}</td>
+        <td>${esc(displayName(s))}${subjectBadgesFor(s.id)}${overdue ? ` <span class="pill overdue" title="Still unpaid past ${esc(fmtMonthLabel(selectedMonth).split(' ')[0])} 10 — worth a decision.">Overdue</span>` : ""}</td>
         <td class="muted">${esc(s.age_grade || "—")}</td>
         <td class="muted">${esc(groupNameFor(s.billing_group_id) || "—")}</td>
         <td class="muted">${esc(x.dueSince)}</td>
-        <td class="muted">${esc(fmtMonthLabel(x.lastPaidMonth))}</td>
+        <td class="muted">${esc(fmtBillLabel(x.lastPaidMonth))}</td>
         <td class="money">${peso(x.due)}</td>
         <td><div class="row-actions"><button class="iconbtn" data-action="open-payment-history" data-student="${esc(s.id)}" title="Payment history">🕘</button><button class="btn sm" data-action="open-log-payment" data-student="${esc(s.id)}">Log payment</button>${canMarkAbsent() ? `<button class="btn sm danger" data-action="mark-absent" data-student="${esc(s.id)}">Mark absent</button>` : ""}</div></td>
       </tr>`;
@@ -1570,7 +1576,7 @@
       return `<tr class="clickrow" data-action="open-payment-history" data-student="${esc(a.student_id)}" title="Click for payment history">
         <td>${esc(s ? displayName(s) : "—")}${subjectBadgesForIds(a.subject_enrollment_ids)}</td>
         <td class="muted">${esc(s ? (s.age_grade || "—") : "—")}</td>
-        <td class="muted">${esc(fmtMonthLabel(a.last_paid_month))}</td>
+        <td class="muted">${esc(fmtBillLabel(a.last_paid_month))}</td>
         <td class="muted">${new Date(a.marked_absent_at).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"})}</td>
         <td class="muted">${monthsGone == null ? "—" : `${monthsGone} month${monthsGone===1?"":"s"}`}</td>
         <td><div class="row-actions"><button class="iconbtn" data-action="open-payment-history" data-student="${esc(a.student_id)}" title="Payment history">🕘</button><button class="btn sm" data-action="resume-absence" data-id="${esc(a.id)}">Resume</button></div></td>
@@ -1624,7 +1630,7 @@
     body.innerHTML = queue.map(r => {
       const s = students.find(x => x.id === r.student_id);
       const name = s ? displayName(s) : "(deleted student)";
-      const monthLabel = new Date(r.covers_month + "T00:00:00").toLocaleDateString("en-US", { month:"short", year:"numeric" });
+      const monthLabel = new Date(reportYm(r.covers_month.slice(0,7)) + "-01T00:00:00").toLocaleDateString("en-US", { month:"short", year:"numeric" });
       return `<div class="receipt-row">
         <div class="receipt-thumb">🧾</div>
         <div class="receipt-info">
@@ -1662,7 +1668,7 @@
           <label class="field">Student
             <select name="studentId" required>${studentOptions(studentId)}</select>
           </label>
-          <label class="field">Covers month<input type="month" name="coversMonth" value="${esc(selectedMonth)}" required></label>
+          <label class="field">Month<input type="month" name="coversMonth" value="${esc(reportYm(selectedMonth))}" required></label>
           <div id="payAllocFields"></div>
           <div class="hint" id="paySuggestHint" style="margin-top:-6px;"></div>
           <div class="field-row">
@@ -1720,8 +1726,8 @@
     const paid = verifiedPaidFor(studentId, catchUpYm);
     const balance = due - paid;
     return `<div class="hint" style="margin-bottom:12px;">
-      Currently absent since ${esc(new Date(a.marked_absent_at).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"}))} — last paid through ${esc(fmtMonthLabel(a.last_paid_month))}.
-      To catch up: ${peso(due)} due for ${esc(fmtMonthLabel(catchUpYm))}, ${peso(paid)} paid${balance > 0 ? `, ${peso(balance)} remaining` : " — fully covered"}.
+      Currently absent since ${esc(new Date(a.marked_absent_at).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"}))} — last paid through ${esc(fmtBillLabel(a.last_paid_month))}.
+      To catch up: ${peso(due)} due for ${esc(fmtBillLabel(catchUpYm))}, ${peso(paid)} paid${balance > 0 ? `, ${peso(balance)} remaining` : " — fully covered"}.
     </div>`;
   }
 
@@ -1730,7 +1736,7 @@
       .sort((a,b) => new Date(b.created_at) - new Date(a.created_at));
     if(!mine.length) return `<div class="empty">No payments logged yet.</div>`;
     return mine.map(r => {
-      const monthLabel = r.covers_month ? new Date(r.covers_month + "T00:00:00").toLocaleDateString("en-US", { month:"short", year:"numeric" }) : "—";
+      const monthLabel = r.covers_month ? new Date(reportYm(r.covers_month.slice(0,7)) + "-01T00:00:00").toLocaleDateString("en-US", { month:"short", year:"numeric" }) : "—";
       const label = (r.status||"").charAt(0).toUpperCase() + (r.status||"").slice(1);
       return `<div class="receipt-row">
         <div class="receipt-thumb">🧾</div>
@@ -2002,7 +2008,7 @@
       const studentId = fd.get("studentId");
       const { alloc: allocation, total: amount } = readAllocation(e.target);
       if(!amount){ alert("Enter an amount for at least one subject."); return; }
-      const coversMonth = fd.get("coversMonth") + "-01";
+      const coversMonth = shiftMonth(fd.get("coversMonth"), 1) + "-01"; // report month → tuition month
       const file = fd.get("receiptFile");
       const submitBtn = e.target.querySelector('button[type="submit"]');
       submitBtn.disabled = true;

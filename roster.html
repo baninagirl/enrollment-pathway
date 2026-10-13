@@ -932,8 +932,8 @@
   // November's tuition) — saved with each row when the month is closed out (phase42).
   function reportPaymentMonth(){ return shiftMonth(monthKeyOf(viewMonth), 1); }
   function savedPaymentPill(status, ym){
-    if(status === "paid") return `<span class="pill payment-paid" title="${esc(fmtMonthLabelYm(ym))} — saved at close-out">Paid</span>`;
-    if(status === "unpaid") return `<span class="pill payment-unpaid" title="${esc(fmtMonthLabelYm(ym))} — saved at close-out">Unpaid</span>`;
+    if(status === "paid") return `<span class="pill payment-paid" title="${esc(fmtMonthLabelYm(shiftYmBack(ym)))} report — saved at close-out">Paid</span>`;
+    if(status === "unpaid") return `<span class="pill payment-unpaid" title="${esc(fmtMonthLabelYm(shiftYmBack(ym)))} report — saved at close-out">Unpaid</span>`;
     return `<span class="lvl empty-lvl" title="Closed out before paid/unpaid was saved with the report.">not saved</span>`;
   }
   function fmtPaymentPill(studentId, ymOverride){
@@ -945,11 +945,12 @@
       // actually absent is a Payments-only action now (see payments.html); Roster/Report
       // just surface the tag.
       return isPastTenthOf(ym)
-        ? `<span class="pill payment-overdue" title="Still unpaid past the 10th of ${esc(fmtMonthLabelYm(ym))} — worth a decision.">Overdue</span>`
+        ? `<span class="pill payment-overdue" title="Still unpaid past ${esc(fmtMonthLabelYm(ym).split(' ')[0])} 10 — worth a decision.">Overdue</span>`
         : `<span class="pill payment-unpaid">Unpaid</span>`;
     }
     return `<span class="lvl empty-lvl">—</span>`;
   }
+  function shiftYmBack(ym){ const [y,m]=ym.split("-").map(Number); const d=new Date(y,m-2,1); return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0"); }
   function fmtMonthLabelYm(ym){
     const [y,m] = ym.split("-").map(Number);
     return new Date(y, m-1, 1).toLocaleDateString("en-US", { month:"long", year:"numeric" });
@@ -1474,8 +1475,8 @@
     const payHead = $("#repPaymentHead");
     if(payHead){
       const pm = reportPaymentMonth();
-      payHead.textContent = `Paid · ${new Date(+pm.slice(0,4), +pm.slice(5,7)-1, 1).toLocaleDateString("en-US",{ month:"short" })}`;
-      payHead.title = `Paid or unpaid for ${fmtMonthLabelYm(pm)} tuition`;
+      payHead.textContent = "Paid";
+      payHead.title = "Paid or unpaid for this report's bill (next month's tuition, due the 25th)";
     }
 
     const rows = rowsForReportView();
