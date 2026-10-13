@@ -293,6 +293,20 @@
   .banner a, .banner button.link{ color:inherit; text-decoration:underline; background:none; border:none; font:inherit; font-weight:700; cursor:pointer; padding:0; }
 
   .taglist{ display:flex; flex-wrap:wrap; gap:7px; }
+  .staff-add{ display:flex; flex-wrap:wrap; align-items:center; gap:8px 14px; padding:12px; border:1px solid var(--border); border-radius:10px; background:var(--surface-2); margin-bottom:14px; }
+  .staff-add input[type=text]{ flex:1 1 220px; min-width:0; }
+  .staff-check{ display:inline-flex; align-items:center; gap:6px; font-size:13px; font-weight:600; white-space:nowrap; cursor:pointer; }
+  .staff-search{ width:100%; max-width:280px; margin-bottom:10px; }
+  .staff-table{ width:100%; border-collapse:collapse; }
+  .staff-table th, .staff-table td{ padding:9px 10px; border-bottom:1px solid var(--border); text-align:left; }
+  .staff-table th{ font-size:11.5px; text-transform:uppercase; letter-spacing:.04em; color:var(--ink-muted); font-weight:700; }
+  .staff-table .c{ text-align:center; width:110px; }
+  .staff-table .r{ text-align:right; width:1%; white-space:nowrap; }
+  .staff-table .staff-name{ font-weight:600; }
+  .staff-table tbody tr:hover{ background:var(--surface-2); }
+  .staff-table input[type=checkbox], .staff-check input{ width:17px; height:17px; cursor:pointer; accent-color:var(--accent); }
+  .danger-text{ color:#B42318 !important; }
+  @media (max-width:640px){ .staff-table .c{ width:auto; } .staff-table th, .staff-table td{ padding:8px 6px; } }
   .tagchip{ display:flex; align-items:center; gap:6px; background:var(--surface-2); border:1px solid var(--border); border-radius:99px; padding:5px 6px 5px 12px; font-size:12.5px; font-weight:600; }
   .tagchip button{ border:none; background:var(--border); color:var(--ink); width:17px; height:17px; border-radius:50%; cursor:pointer; font-size:11px; line-height:1; }
 
@@ -698,7 +712,7 @@
   /* ---------------- State ---------------- */
   const STATE = {
     students: [], diagnostics: [], trainings: [], schedules: [], enrollments: [],
-    settings: { examiners: [], trainers: [] },
+    settings: { examiners: [], trainers: [], teachers: [] },
     loaded: { students:false, diagnostics:false, trainings:false, schedules:false, settings:false, enrollments:false },
     activeTab: (()=>{ const h = (location.hash || "").slice(1); return ["calendar","enrollment","roster","students","settings"].includes(h) ? h : "calendar"; })(),
     calMonth: (()=>{ const d=new Date(); return new Date(d.getFullYear(), d.getMonth(), 1); })(),
@@ -879,6 +893,9 @@
       // has the old "trainer" string (from before multiple trainers were supported) and no
       // "trainers" list yet, seed the list with that one name so nothing is lost.
       STATE.settings.trainers = Array.isArray(d.trainers) ? d.trainers : (d.trainer ? [d.trainer] : []);
+      // Teachers (subject teachers — the Math/Reading teacher pickers, roster filters). Before this list
+      // existed the Trainers list did double duty, so until it's saved once it starts as a copy of Trainers.
+      STATE.settings.teachers = Array.isArray(d.teachers) ? d.teachers : STATE.settings.trainers.slice();
       STATE.loaded.settings = true;
       onData();
     }, err => console.warn("settings sub error", err));
@@ -1103,7 +1120,7 @@
     enrollment: ["Enrollment", "Tag outcomes, schedule trainings, and follow up with families."],
     roster: ["Weekly view", "Ongoing students on their regular two-day schedule."],
     students: ["New students", "Every family that's come through, and where they stand."],
-    settings: ["Settings", "Your examiners, your trainer, and how bookings are labeled."]
+    settings: ["Settings", "Your staff and what each person does."]
   };
 
   function renderView(){
@@ -2032,7 +2049,6 @@
       // Every word typed must appear in the student's or parent's name, in any order and with
       // or without commas/accents, so "santos ava", "Santos, Ava" and "ava s" all find Ava Santos.
       .filter(s => !qTokens.length || (() => { const hay = normSearch(s.name + " " + (s.firstName||"") + " " + (s.lastName||"") + " " + (s.parentName||"")); return qTokens.every(t => hay.includes(t)); })())
-      .filter(s => STATE.studentMonthMode === "all" || studentCohortMonthKey(s) === monthKey)
       .sort((a,b)=> (b.createdAt||"").localeCompare(a.createdAt||""));
 
     // A student enrolled in "Both" subjects gets a row per subject, since that's how the roster
@@ -2042,7 +2058,13 @@
       const subj = studentSubject(s);
       const isBoth = subj === "Both";
       const subjects = isBoth ? ["Math","Reading"] : [subj || ""];
-      subjects.forEach(sub => rows.push({ s, subj: sub, isBoth }));
+      subjects.forEach(sub => {
+        // A subject added later with "Add subject" (phase50) shows in the month it was added;
+        // everything else follows the student's own month (First day, else DT date, else added).
+        const enr = STATE.enrollments.find(e => e.studentId === s.id && e.subject === sub && !e.archived);
+        const rowMonth = (enr && enr.addedMonth) || studentCohortMonthKey(s);
+        if(STATE.studentMonthMode === "all" || rowMonth === monthKey) rows.push({ s, subj: sub, isBoth });
+      });
     });
 
     const isReport = STATE.studentsView === "report";
@@ -2168,9 +2190,75 @@
       <div class="modal-foot">
         <button class="btn danger" data-action="delete-student" data-id="${s.id}">Delete student</button>
         ${s.status === "enrolled_pending_training" && subjectsNeedingSchedule(s).length ? `<button class="btn" data-action="open-new-schedule" data-kind="early" data-student="${s.id}">Set schedule</button>` : ""}
+        ${missingSubjects(s).length ? `<button class="btn" data-action="open-add-subject" data-id="${s.id}">+ Add subject</button>` : ""}
         <button class="btn primary" data-action="open-edit-student" data-id="${s.id}">Edit details</button>
       </div>
     `);
+  }
+  // ---- Add subject (phase50): a second subject for a student, tagged NEW for this month ----
+  function missingSubjects(s){
+    const have = new Set(STATE.enrollments.filter(e => e.studentId === s.id && !e.archived).map(e => e.subject));
+    const own = studentSubject(s);
+    if(own === "Math" || own === "Both") have.add("Math");
+    if(own === "Reading" || own === "Both") have.add("Reading");
+    return ["Math","Reading"].filter(x => !have.has(x));
+  }
+  function openAddSubjectModal(id){
+    const s = studentById(id);
+    if(!s) return;
+    const missing = missingSubjects(s);
+    if(!missing.length){ toast("This student already has Math and Reading."); return; }
+    const curTeacher = (STATE.enrollments.find(e => e.studentId === s.id && !e.archived && e.teacher) || {}).teacher || "";
+    const opts = STATE.settings.teachers.slice();
+    if(curTeacher && !opts.includes(curTeacher)) opts.push(curTeacher);
+    const key = currentCycleKey();
+    openModal(`
+      <div class="modal-head"><h3>Add a subject — ${esc(displayName(s))}</h3><button class="iconbtn" data-action="close-modal">✕</button></div>
+      <form data-form="add-subject" data-student="${s.id}">
+        <div class="modal-body">
+          <div class="field-row">
+            <label class="field">Subject<select name="subject">${missing.map(m => `<option value="${m}">${m}</option>`).join("")}</select></label>
+            <label class="field">Teacher<select name="teacher" required>
+              <option value="">Choose…</option>
+              ${opts.map(o => `<option value="${esc(o)}" ${o===curTeacher?"selected":""}>${esc(o)}</option>`).join("")}
+            </select></label>
+          </div>
+          <label class="field">Reporting tag<select name="tag">
+            ${TAG_OPTIONS.filter(o => o.value).map(o => `<option value="${o.value}" ${o.value==="new"?"selected":""}>${esc(o.label)}</option>`).join("")}
+          </select></label>
+          <div class="hint">Shows on New Students for ${esc(monitorCycleLabel(key))} with this tag, and on the teacher's Student Roster marked NEW · ${esc(monitorCycleLabel(key))}. Set days and times later from Student Roster or "New regular schedule".</div>
+        </div>
+        <div class="modal-foot">
+          <button type="button" class="btn ghost" data-action="close-modal">Cancel</button>
+          <button type="submit" class="btn primary">Add subject</button>
+        </div>
+      </form>`);
+  }
+  async function submitAddSubject(form){
+    const s = studentById(form.dataset.student);
+    if(!s) return false;
+    const fd = new FormData(form);
+    const subject = (fd.get("subject") || "").toString();
+    const teacher = (fd.get("teacher") || "").toString();
+    const tag = (fd.get("tag") || "new").toString();
+    if(!subject || !teacher){ toast("Pick a subject and a teacher."); return false; }
+    if(!missingSubjects(s).includes(subject)){ toast(`${displayName(s)} already has ${subject}.`); return false; }
+    const key = currentCycleKey(), now = new Date().toISOString();
+    let ok = false;
+    await guardWrite(async ()=>{
+      await db.collection("subject_enrollments").add({
+        studentId: s.id, studentName: s.name, subject, teacher, status: "active", mode: s.mode || null,
+        enrollmentType: tag, enrollmentTypeSetAt: now, monitorCycle: key, addedMonth: key
+      });
+      const other = subject === "Math" ? "Reading" : "Math";
+      const hasOther = STATE.enrollments.some(e => e.studentId === s.id && e.subject === other && !e.archived) || studentSubject(s) === other;
+      const newSubj = hasOther ? "Both" : subject;
+      if(studentSubject(s) !== newSubj){ await db.collection("students").doc(s.id).update({ subject: newSubj }); s.subject = newSubj; }
+      logHistory("add_subject", `Added ${subject} for ${s.name} with ${teacher} (${(TAG_OPTIONS.find(o => o.value === tag) || {}).label || tag})`, "student", s.id);
+      toast(`${subject} added — on New Students for ${monitorCycleLabel(key)}.`);
+      ok = true;
+    });
+    return ok ? undefined : false;
   }
 
   // Covers every column shown on New Students / DT Results: name, grade, subject, mode,
@@ -2195,7 +2283,7 @@
     const mk = (subj) => {
       const ex = studentId ? STATE.enrollments.find(e => e.studentId === studentId && e.subject === subj && !e.archived) : null;
       const cur = ex ? (ex.teacher || "") : "";
-      const opts = STATE.settings.trainers.slice();
+      const opts = STATE.settings.teachers.slice();
       if(cur && !opts.includes(cur)) opts.push(cur);
       return `<label class="field">${subj} teacher
         <select name="teacher${subj}">
@@ -2749,7 +2837,7 @@
             <label class="field">Teacher <span class="hint" style="margin:0;">(optional)</span>
               <select name="teacher">
                 <option value="">Choose…</option>
-                ${STATE.settings.trainers.map(o=>`<option value="${esc(o)}">${esc(o)}</option>`).join("")}
+                ${STATE.settings.teachers.map(o=>`<option value="${esc(o)}">${esc(o)}</option>`).join("")}
               </select>
             </label>
           </div>
@@ -2882,40 +2970,51 @@
   }
 
   /* ---------------- Settings ---------------- */
+  // One table of everyone on staff, with a checkbox per job — the usual "people × roles" layout,
+  // instead of three separate tag lists where the same person had to be typed in three times.
+  // Saved as three plain lists in settings/staff (examiners / trainers / teachers) so every other
+  // page keeps reading them the same way.
+  const STAFF_ROLES = [
+    { key:"teachers",  label:"Teacher",    hint:"Math / Reading teacher pickers, roster filters" },
+    { key:"trainers",  label:"Trainer",    hint:"Trainer picker when booking a training" },
+    { key:"examiners", label:"DT teacher", hint:"DT teacher picker when booking a diagnostic" },
+  ];
+  function staffNames(){
+    const all = new Set([...STATE.settings.teachers, ...STATE.settings.trainers, ...STATE.settings.examiners]);
+    return [...all].sort((a,b) => a.localeCompare(b));
+  }
   function renderSettings(){
     const el = $("#view-settings");
+    const names = staffNames();
+    const q = (STATE.staffSearch || "").trim().toLowerCase();
+    const shown = q ? names.filter(n => n.toLowerCase().includes(q)) : names;
+    const count = k => STATE.settings[k].length;
     el.innerHTML = `
       <div class="section card">
-        <div class="card-head"><h3>DT teachers</h3><span class="count">conduct diagnostic tests</span></div>
+        <div class="card-head"><h3>Staff</h3><span class="count">${names.length} ${names.length===1?"person":"people"} · ${count("teachers")} teachers · ${count("trainers")} trainers · ${count("examiners")} DT teachers</span></div>
         <div class="card-body">
-          <p class="hint" style="margin:6px 0 10px;">These names fill the DT teacher picker when booking a diagnostic test. Add everyone who conducts them.</p>
-          <div class="taglist" id="examinerTags"></div>
-          <div style="display:flex; gap:8px; margin-top:12px;">
-            <input type="text" id="newExaminer" placeholder="Add a DT teacher's name">
-            <button class="btn primary sm" data-action="add-examiner">Add</button>
-          </div>
-        </div>
-      </div>
-      <div class="section card">
-        <div class="card-head"><h3>Trainers</h3><span class="count">conduct student trainings</span></div>
-        <div class="card-body">
-          <p class="hint" style="margin:6px 0 10px;">These names fill the trainer picker when booking a training. Add everyone who conducts them.</p>
-          <div class="taglist" id="trainerTags"></div>
-          <div style="display:flex; gap:8px; margin-top:12px;">
-            <input type="text" id="newTrainer" placeholder="Add a trainer's name">
-            <button class="btn primary sm" data-action="add-trainer">Add</button>
+          <p class="hint" style="margin:6px 0 12px;">Tick what each person does — that decides which pickers their name shows up in. Removing someone only takes their name off the pickers; students already under their name keep it.</p>
+          <form class="staff-add" data-form="add-staff">
+            <input type="text" name="name" placeholder="New staff name, e.g. Miss Ana" required autocomplete="off">
+            ${STAFF_ROLES.map(r => `<label class="staff-check"><input type="checkbox" name="${r.key}" ${r.key==="teachers"?"checked":""}> ${r.label}</label>`).join("")}
+            <button class="btn primary sm" type="submit">Add</button>
+          </form>
+          ${names.length > 8 ? `<input type="search" class="staff-search" data-action="staff-search" placeholder="Search staff" value="${esc(STATE.staffSearch || "")}">` : ""}
+          <div class="table-wrap staff-table-wrap">
+            <table class="staff-table">
+              <thead><tr><th>Name</th>${STAFF_ROLES.map(r => `<th class="c" title="${esc(r.hint)}">${r.label}</th>`).join("")}<th></th></tr></thead>
+              <tbody>
+                ${shown.length ? shown.map(n => `<tr>
+                  <td class="staff-name">${esc(n)}</td>
+                  ${STAFF_ROLES.map(r => `<td class="c"><input type="checkbox" data-action="staff-role" data-name="${esc(n)}" data-role="${r.key}" aria-label="${esc(n)} — ${r.label}" ${STATE.settings[r.key].includes(n) ? "checked" : ""}></td>`).join("")}
+                  <td class="r"><button class="btn sm ghost danger-text" data-action="remove-staff" data-name="${esc(n)}">Remove</button></td>
+                </tr>`).join("") : `<tr><td colspan="${STAFF_ROLES.length + 2}" class="hint">${names.length ? "No one matches that search." : "No staff added yet."}</td></tr>`}
+              </tbody>
+            </table>
           </div>
         </div>
       </div>
     `;
-    const tags = $("#examinerTags", el);
-    tags.innerHTML = STATE.settings.examiners.length
-      ? STATE.settings.examiners.map(x => `<span class="tagchip">${esc(x)}<button data-action="remove-examiner" data-name="${esc(x)}">✕</button></span>`).join("")
-      : `<span class="hint">No examiners added yet.</span>`;
-    const trainerTags = $("#trainerTags", el);
-    trainerTags.innerHTML = STATE.settings.trainers.length
-      ? STATE.settings.trainers.map(x => `<span class="tagchip">${esc(x)}<button data-action="remove-trainer" data-name="${esc(x)}">✕</button></span>`).join("")
-      : `<span class="hint">No trainers added yet.</span>`;
   }
 
   /* ---------------- Modal plumbing ---------------- */
@@ -3274,7 +3373,7 @@
             <input type="checkbox" name="mathOn" data-action="toggle-subject-block" data-target="mathScheduleBlock" ${mathChecked?"checked":""}> Math
           </label>
           <div id="mathScheduleBlock" ${mathChecked?"":"hidden"} style="margin:8px 0 4px;">
-            ${monitorMode ? "" : fieldSelectStaff("mathTeacher", STATE.settings.trainers, "Math teacher", false)}
+            ${monitorMode ? "" : fieldSelectStaff("mathTeacher", STATE.settings.teachers, "Math teacher", false)}
             <div class="field-row">
               <label class="field">Current level${levelSelect("mathCurLevel","Math",presetMathLevel)}</label>
               <label class="field">Current page<input type="text" name="mathCurPage" placeholder="e.g. 130"></label>
@@ -3289,7 +3388,7 @@
             <input type="checkbox" name="readingOn" data-action="toggle-subject-block" data-target="readingScheduleBlock" ${readingChecked?"checked":""}> Reading
           </label>
           <div id="readingScheduleBlock" ${readingChecked?"":"hidden"} style="margin:8px 0 4px;">
-            ${monitorMode ? "" : fieldSelectStaff("readingTeacher", STATE.settings.trainers, "Reading teacher", false)}
+            ${monitorMode ? "" : fieldSelectStaff("readingTeacher", STATE.settings.teachers, "Reading teacher", false)}
             <div class="field-row">
               <label class="field">Current level${levelSelect("readingCurLevel","Reading",presetReadingLevel)}</label>
               <label class="field">Current page<input type="text" name="readingCurPage" placeholder="e.g. 130"></label>
@@ -3583,7 +3682,7 @@
     const enr = monitorEnrollmentsFor(studentId);
     if(!s || !enr.length) return;
     const opts = cur => {
-      const list = STATE.settings.trainers.includes(cur) || !cur ? STATE.settings.trainers : [cur, ...STATE.settings.trainers];
+      const list = STATE.settings.teachers.includes(cur) || !cur ? STATE.settings.teachers : [cur, ...STATE.settings.teachers];
       return list.map(t => `<option value="${esc(t)}" ${t===cur?"selected":""}>${esc(t)}</option>`).join("");
     };
     openModal(`
@@ -3856,23 +3955,36 @@
   }
 
 
-  async function addExaminer(name){
+  async function saveStaff(next){
+    const v = { examiners: STATE.settings.examiners, trainers: STATE.settings.trainers, teachers: STATE.settings.teachers, ...next };
+    let ok = false;
+    await guardWrite(async ()=>{ await db.doc("settings/staff").set(v); ok = true; });
+    // Apply right away (the realtime refresh follows) so quick clicks build on each other.
+    if(ok){ Object.assign(STATE.settings, v); renderSettings(); }
+  }
+  async function addStaff(name, roles){
     name = name.trim();
-    if(!name) return;
-    if(STATE.settings.examiners.includes(name)) return;
-    await guardWrite(async ()=>{ await db.doc("settings/staff").set({ examiners: [...STATE.settings.examiners, name], trainers: STATE.settings.trainers }); });
+    if(!name) return false;
+    if(!roles.length){ toast("Tick at least one: Teacher, Trainer or DT teacher."); return false; }
+    if(staffNames().some(n => n.toLowerCase() === name.toLowerCase())){ toast(`${name} is already on the list — tick their boxes in the table.`); return false; }
+    const next = {};
+    roles.forEach(k => { next[k] = [...STATE.settings[k], name]; });
+    await saveStaff(next);
+    logHistory("add_staff", `Added ${name} to staff (${roles.map(k => STAFF_ROLES.find(r=>r.key===k).label).join(", ")})`, "settings", "staff");
+    return true;
   }
-  async function removeExaminer(name){
-    await guardWrite(async ()=>{ await db.doc("settings/staff").set({ examiners: STATE.settings.examiners.filter(x=>x!==name), trainers: STATE.settings.trainers }); });
+  async function setStaffRole(name, key, on){
+    const list = STATE.settings[key].filter(x => x !== name);
+    if(on) list.push(name);
+    await saveStaff({ [key]: list });
   }
-  async function addTrainer(name){
-    name = name.trim();
-    if(!name) return;
-    if(STATE.settings.trainers.includes(name)) return;
-    await guardWrite(async ()=>{ await db.doc("settings/staff").set({ examiners: STATE.settings.examiners, trainers: [...STATE.settings.trainers, name] }); });
-  }
-  async function removeTrainer(name){
-    await guardWrite(async ()=>{ await db.doc("settings/staff").set({ examiners: STATE.settings.examiners, trainers: STATE.settings.trainers.filter(x=>x!==name) }); });
+  async function removeStaff(name){
+    if(!confirm(`Remove ${name} from staff?\n\nTheir name comes off every picker. Students already under their name keep it until you change it.`)) return;
+    const next = {};
+    STAFF_ROLES.forEach(r => { next[r.key] = STATE.settings[r.key].filter(x => x !== name); });
+    await saveStaff(next);
+    logHistory("remove_staff", `Removed ${name} from staff`, "settings", "staff");
+    toast(`${name} removed.`);
   }
 
   /* ---------------- Event delegation ---------------- */
@@ -3911,6 +4023,7 @@
       else openNewTraining(null, date, time, who);
     }
     else if(a === "open-student"){ openStudentModal(el.dataset.id); }
+    else if(a === "open-add-subject"){ openAddSubjectModal(el.dataset.id); }
     else if(a === "delete-student"){ openDeleteConfirm("student", el.dataset.id); }
     else if(a === "mark-outcome"){ markOutcome(el.dataset.id, el.dataset.outcome, el.dataset.subject); }
     else if(a === "cancel-diagnostic"){ cancelDiagnostic(el.dataset.id); }
@@ -3953,18 +4066,7 @@
     }
     else if(a === "cal-view"){ STATE.calView = el.dataset.view; renderCalendar(); }
     else if(a === "cal-filter"){ STATE.calFilter = el.dataset.filter; renderCalendar(); }
-    else if(a === "add-examiner"){
-      const input = $("#newExaminer");
-      addExaminer(input.value);
-      input.value = "";
-    }
-    else if(a === "remove-examiner"){ removeExaminer(el.dataset.name); }
-    else if(a === "add-trainer"){
-      const input = $("#newTrainer");
-      addTrainer(input.value);
-      input.value = "";
-    }
-    else if(a === "remove-trainer"){ removeTrainer(el.dataset.name); }
+    else if(a === "remove-staff"){ removeStaff(el.dataset.name); }
     else if(a === "open-new-student"){ openNewStudentModal(); }
     else if(a === "open-new-eo"){ openNewEoModal(); }
     else if(a === "student-month-prev"){ STATE.studentMonth = new Date(STATE.studentMonth.getFullYear(), STATE.studentMonth.getMonth()-1, 1); renderStudents(); }
@@ -3980,7 +4082,18 @@
   });
 
   document.addEventListener("change", e => {
-    if(e.target.matches('[data-action="cal-staff"]')){ STATE.calStaff = e.target.value; renderCalendar(); }
+    if(e.target.matches('[data-action="staff-role"]')){
+      const { name, role } = e.target.dataset;
+      const others = STAFF_ROLES.filter(r => r.key !== role).some(r => STATE.settings[r.key].includes(name));
+      if(!e.target.checked && !others){
+        // Unticking the last box would make them vanish from the table — treat that as Remove.
+        e.target.checked = true;
+        removeStaff(name);
+        return;
+      }
+      setStaffRole(name, role, e.target.checked);
+    }
+    else if(e.target.matches('[data-action="cal-staff"]')){ STATE.calStaff = e.target.value; renderCalendar(); }
     else if(e.target.matches('[data-action="slot-pref"]')){
       const k = e.target.dataset.key;
       slotTool.prefs[k] = k === "len" ? Number(e.target.value) : k === "perSlot" ? Math.max(1, Math.floor(Number(e.target.value)) || 1) : e.target.value;
@@ -4004,6 +4117,14 @@
   });
 
   document.addEventListener("input", e => {
+    if(e.target.matches('[data-action="staff-search"]')){
+      STATE.staffSearch = e.target.value;
+      const pos = e.target.selectionStart;
+      renderSettings();
+      const box = document.querySelector('[data-action="staff-search"]');
+      if(box){ box.focus(); try{ box.setSelectionRange(pos, pos); }catch(_){} }
+      return;
+    }
     if(e.target.matches('[data-action="followup-notes"]')){
       scheduleFollowupSave(e.target.dataset.id, e.target.value);
     }
@@ -4015,6 +4136,12 @@
     if(/^slots-(dt|st)$/.test(h)){ slotHashHandled = false; openSlotToolFromHash(); }
   });
   const FORM_HANDLERS = {
+    "add-staff": async form => {
+      const roles = STAFF_ROLES.map(r => r.key).filter(k => form.elements[k].checked);
+      const ok = await addStaff(form.elements.name.value, roles);
+      if(ok){ form.reset(); toast("Added."); }
+      return false; // not a modal — never close one
+    },
     "new-diagnostic": submitNewDiagnostic,
     "edit-diagnostic": submitEditDiagnostic,
     "new-training": submitNewTraining,
@@ -4023,7 +4150,8 @@
     "new-eo": submitNewEo,
     "edit-student": submitEditStudent,
     "new-schedule": submitNewSchedule,
-    "monitor-promote": submitMonitorPromote
+    "monitor-promote": submitMonitorPromote,
+    "add-subject": submitAddSubject
   };
   document.addEventListener("submit", e => {
     const form = e.target;

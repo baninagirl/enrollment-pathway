@@ -323,24 +323,30 @@
     return data;
   }
   async function loadTrainers(){
+    // Name suggestions for the teacher-name box: the Teachers list (Pipeline → Settings → Staff).
     const { data } = await sbClient.from("settings").select("value").eq("id","staff").maybeSingle();
     const v = data ? data.value : {};
-    return Array.isArray(v.trainers) ? v.trainers : [];
+    const t = Array.isArray(v.teachers) ? v.teachers : (Array.isArray(v.trainers) ? v.trainers : []);
+    return t;
   }
-  // Adds a name to the Trainers list (Pipeline → Settings) if it's not already there —
-  // so typing a brand-new teacher's name here is enough, no separate trip to Pipeline.
-  async function ensureTrainer(name){
+  // Adds a teacher login's name to Staff (Pipeline → Settings) if it's not there yet — Teacher
+  // always, Trainer too for Trainer + Teacher logins — so no separate trip to Pipeline.
+  async function ensureTrainer(name, role){
     const { data } = await sbClient.from("settings").select("value").eq("id","staff").maybeSingle();
     const v = data ? data.value : {};
     const examiners = Array.isArray(v.examiners) ? v.examiners : [];
-    const list = Array.isArray(v.trainers) ? v.trainers : [];
-    if(list.includes(name)) return;
-    await sbClient.from("settings").upsert({ id: "staff", value: { examiners, trainers: [...list, name] } });
+    const trainers = Array.isArray(v.trainers) ? v.trainers : [];
+    const teachers = Array.isArray(v.teachers) ? v.teachers : trainers.slice();
+    const addT = !teachers.includes(name), addTr = role === "trainer_teacher" && !trainers.includes(name);
+    if(!addT && !addTr && Array.isArray(v.teachers)) return;
+    await sbClient.from("settings").upsert({ id: "staff", value: { ...v, examiners,
+      trainers: addTr ? [...trainers, name] : trainers,
+      teachers: addT ? [...teachers, name] : teachers } });
   }
 
   function teacherNameCell(p){
     // Every account can have a name. For teacher roles it's the name rosters match on; for anyone else
-    // it's just their name (it is not added to the Trainers list and changes nothing about their access).
+    // it's just their name (it is not added to the Staff list and changes nothing about their access).
     const isTeach = p.role === "teacher" || p.role === "trainer_teacher";
     return `<input type="text" class="teacher-name-select" data-action="change-teacher-name" data-id="${p.id}"
       ${isTeach ? `list="trainerNamesListInline"` : ""} autocomplete="off" value="${esc(p.teacher_name||"")}" placeholder="${isTeach ? "Type a name…" : "Add a name…"}" style="max-width:160px;">`;
@@ -362,7 +368,7 @@
     const sharedTrainerList = $("#trainerNamesListInline");
     if(sharedTrainerList) sharedTrainerList.innerHTML = trainers.map(t=>`<option value="${esc(t)}">`).join("");
     body.innerHTML = `
-      <div class="banner info">"+ New login" creates their account right here. They can log in right away with the password you set — tell them their password yourself. Everyone can have a name. For a teacher, just type their name — new teacher names are added to your Trainers list automatically.</div>
+      <div class="banner info">"+ New login" creates their account right here. They can log in right away with the password you set — tell them their password yourself. Everyone can have a name. For a teacher, just type their name — new teacher names are added to Staff (Pipeline → Settings) automatically.</div>
       <div class="card">
         <div class="card-head"><h3>Team accounts</h3><span class="hint">${profiles.length}</span></div>
         <div class="table-scroll">
@@ -424,7 +430,7 @@
               <input type="text" name="teacher_name" list="trainerNamesList" autocomplete="off" placeholder="Type their name — pick an existing one, or add new">
               <datalist id="trainerNamesList">${trainers.map(t=>`<option value="${esc(t)}">`).join("")}</datalist>
             </label>
-            <div class="hint" id="newLoginTeacherHint">Optional. Just their name for the team list — it isn't added to Trainers and doesn't change their access.</div>
+            <div class="hint" id="newLoginTeacherHint">Optional. Just their name for the team list — it isn't added to Staff and doesn't change their access.</div>
           </div>
           <div id="newLoginError" class="login-error" hidden></div>
         </div>
@@ -475,7 +481,7 @@
         // The trigger that creates their profile row runs the instant signUp() is called
         // (before they've even confirmed their email), so this update is safe right away.
         await sbClient.from("profiles").update(patch).eq("id", newId);
-        if(role === "teacher" || role === "trainer_teacher") await ensureTrainer(teacherName);
+        if(role === "teacher" || role === "trainer_teacher") await ensureTrainer(teacherName, role);
         logHistory("create_login", `Created a login for ${email} (${role}${teacherName ? " — " + teacherName : ""})`, "profile", newId);
       }
       closeModal();
@@ -499,8 +505,8 @@
       const isTeach = e.target.value === "teacher" || e.target.value === "trainer_teacher";
       const hint = $("#newLoginTeacherHint");
       if(hint) hint.textContent = isTeach
-        ? "Not on the list yet? Just type their name — it'll be added to Trainers (Pipeline → Settings) automatically."
-        : "Optional. Just their name for the team list — it isn't added to Trainers and doesn't change their access.";
+        ? "Not on the list yet? Just type their name — it'll be added to Staff (Pipeline → Settings) automatically."
+        : "Optional. Just their name for the team list — it isn't added to Staff and doesn't change their access.";
       if(box) box.hidden = false;
     }
     if(e.target.dataset && e.target.dataset.action === "change-role"){
@@ -527,7 +533,7 @@
       if(error){ alert("Couldn't save that: " + error.message); return; }
       const renamedProfile = profiles.find(p => p.id === id);
       logHistory("change_teacher_name", `Set ${renamedProfile ? renamedProfile.email : "a login"}'s teacher name to ${teacher_name || "(none)"}`, "profile", id);
-      if(teacher_name && renamedProfile && (renamedProfile.role === "teacher" || renamedProfile.role === "trainer_teacher")) await ensureTrainer(teacher_name);
+      if(teacher_name && renamedProfile && (renamedProfile.role === "teacher" || renamedProfile.role === "trainer_teacher")) await ensureTrainer(teacher_name, renamedProfile.role);
       [profiles, trainers] = await Promise.all([loadProfiles(), loadTrainers()]);
       const sharedTrainerList = $("#trainerNamesListInline");
       if(sharedTrainerList) sharedTrainerList.innerHTML = trainers.map(t=>`<option value="${esc(t)}">`).join("");

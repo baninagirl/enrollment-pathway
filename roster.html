@@ -1000,7 +1000,8 @@
   async function loadSettings(){
     const { data } = await sbClient.from("settings").select("value").eq("id","staff").maybeSingle();
     const v = data ? data.value : {};
-    trainers = Array.isArray(v.trainers) ? v.trainers : [];
+    // Teacher pickers/filters use the Teachers list (Pipeline → Settings → Staff); before it existed, Trainers did double duty.
+    trainers = Array.isArray(v.teachers) ? v.teachers : (Array.isArray(v.trainers) ? v.trainers : []);
     await loadOpenMonth();
     if(canCloseOut()) await loadNotDuplicates();
   }
