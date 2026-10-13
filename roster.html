@@ -878,10 +878,12 @@
   // duplicates a few of Payments' functions rather than sharing code (no shared build step
   // in this project) — keep these in sync with payments.html if the billing rules change.
   function monthDefault(){
+    // The tuition being collected all month is NEXT month's: in October the SOA is for
+    // November, due Oct 25; in November it's for December, due Nov 25. Changes by itself
+    // on the 1st of each month.
     const d = new Date();
-    let y = d.getFullYear(), m = d.getMonth();
-    if(d.getDate() >= 25){ m += 1; if(m > 11){ m = 0; y += 1; } }
-    return y + "-" + String(m+1).padStart(2,"0");
+    const n = new Date(d.getFullYear(), d.getMonth() + 1, 1);
+    return n.getFullYear() + "-" + String(n.getMonth() + 1).padStart(2, "0");
   }
   function shiftMonth(ym, delta){
     const [y,m] = ym.split("-").map(Number);

@@ -317,7 +317,7 @@
           <div class="month-range" id="paymentsMonthRange"></div>
         </div>
         <button class="btn ghost sm" data-action="month-next">›</button>
-        <button class="btn sm" data-action="month-today">This month</button>
+        <button class="btn sm" data-action="month-today" title="Next month's tuition — the one due on the 25th of this month">Current bill</button>
       </div>
     </div>
 
@@ -459,10 +459,12 @@
   // month's — "This month" (and the initial view) follows that same cutover instead of
   // just the raw calendar date.
   function monthDefault(){
+    // The tuition being collected all month is NEXT month's: in October the SOA is for
+    // November, due Oct 25; in November it's for December, due Nov 25. Changes by itself
+    // on the 1st of each month.
     const d = new Date();
-    let y = d.getFullYear(), m = d.getMonth();
-    if(d.getDate() >= 25){ m += 1; if(m > 11){ m = 0; y += 1; } }
-    return y + "-" + String(m+1).padStart(2,"0");
+    const n = new Date(d.getFullYear(), d.getMonth() + 1, 1);
+    return n.getFullYear() + "-" + String(n.getMonth() + 1).padStart(2, "0");
   }
   function monthToDate(ym){ return ym + "-01"; } // matches covers_month, which is always the 1st
   function fmtMonthLabel(ym){
@@ -1433,7 +1435,7 @@
   }
 
   function renderTable(){
-    $("#tableTitle").textContent = `This month — ${fmtMonthLabel(selectedMonth)}`;
+    $("#tableTitle").textContent = `${fmtMonthLabel(selectedMonth)} tuition — due ${dueDateLabel(selectedMonth)}`;
     const rows = filteredRows();
     $("#tableCount").textContent = rows.length ? `${rows.length} student${rows.length===1?"":"s"}` : "";
     const body = $("#paymentsBody");
