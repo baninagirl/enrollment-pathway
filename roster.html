@@ -94,6 +94,23 @@
   .card-head h3{ font-size:14.5px; font-weight:700; }
   .empty{ padding:30px 16px; text-align:center; color:var(--ink-muted); font-size:13.5px; }
 
+  .mp{ position:relative; display:inline-flex; flex-direction:column; gap:5px; }
+  .mp-label{ font-size:12.5px; font-weight:600; color:var(--ink-muted); }
+  .mp-btn{ display:flex; align-items:center; justify-content:space-between; gap:8px; min-width:140px; max-width:240px; font:inherit; font-size:13.5px; font-weight:500; color:var(--ink); background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:8px 10px; cursor:pointer; text-align:left; }
+  .mp-btn:focus{ outline:none; border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-soft); }
+  .mp.mp-on .mp-btn{ border-color:var(--accent); }
+  .mp-text{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .mp-caret{ color:var(--ink-muted); font-size:11px; }
+  .mp-menu{ position:absolute; top:100%; left:0; margin-top:4px; z-index:60; min-width:220px; background:var(--surface); border:1px solid var(--border); border-radius:10px; box-shadow:0 8px 24px rgba(0,0,0,.12); padding:6px; }
+  .mp-actions{ display:flex; justify-content:space-between; align-items:center; padding:4px 6px 8px; border-bottom:1px solid var(--border); margin-bottom:4px; }
+  .mp-hint{ font-size:12px; color:var(--ink-muted); }
+  .mp-actions button{ border:none; background:none; color:var(--accent); font:inherit; font-size:12.5px; font-weight:700; cursor:pointer; padding:2px 0; }
+  .mp-list{ max-height:320px; overflow:auto; }
+  .mp-item{ display:flex; align-items:center; gap:9px; padding:7px 8px; border-radius:7px; font-size:13.5px; font-weight:500; color:var(--ink); cursor:pointer; }
+  .mp-item:hover{ background:var(--surface-2); }
+  .mp-item input{ width:16px; height:16px; accent-color:var(--accent); margin:0; flex:none; }
+  .mp-item .n{ margin-left:auto; font-size:12px; color:var(--ink-muted); }
+  .search-row .mp-btn{ min-width:120px; }
   .search-row{ display:flex; gap:8px; margin-bottom:14px; flex-wrap:wrap; align-items:center; }
   .search-row input, .search-row select{ font-size:13.5px; width:auto; flex:0 0 auto; }
   .search-row select{ min-width:112px; }
@@ -345,6 +362,7 @@
           <option value="Paper">Paper</option>
           <option value="KC">KC</option>
         </select>
+        <span id="rosterLevelSlot" style="display:contents"></span>
         <select id="gradeFilter"><option value="all">All grades</option></select>
         <select id="statusFilter">
           <option value="active" selected>Active</option>
@@ -407,6 +425,7 @@
           <option value="Paper">Paper</option>
           <option value="KC">KC</option>
         </select>
+        <span id="repLevelSlot" style="display:contents"></span>
         <select id="repGradeFilter"><option value="all">All grades</option></select>
         <select id="repStatusFilter">
           <option value="active" selected>Active</option>
@@ -558,7 +577,7 @@
   // Billing data, read-only here — Payments owns editing tuition/receipts/groups. Just
   // enough to compute the PAID/UNPAID tag shown on Roster and Report (paymentStatusFor).
   let billingGroups = [], receipts = [];
-  let filters = { search:"", subject:"all", teacher:"all", mode:"all", grade:"all", status:"active" };
+  let filters = { search:"", subject:"all", teacher:"all", mode:"all", grade:"all", status:"active", levels: new Set() };
   let editingId = null;
   let selectedIds = new Set();
   let selectMode = false;
@@ -574,7 +593,7 @@
   // `history` for that cycle_key. Roster projects that data onto its own columns (level,
   // goal, teacher, mode, award, actual); Report projects it onto LWC/NWU/test numbers.
   let viewMonth = null; // a Date, 1st of the cycle's label month
-  let reportFilters = { search:"", subject:"all", teacher:"all", mode:"all", grade:"all", status:"active" };
+  let reportFilters = { search:"", subject:"all", teacher:"all", mode:"all", grade:"all", status:"active", levels: new Set() };
   let editingReportId = null;
 
   // A plain teacher and a trainer_teacher (a trainor who also carries her own roster,
@@ -813,6 +832,94 @@
     });
   }
 
+  /* ---------- Multi-pick filter (tick any number; none ticked = all) ---------- */
+  // MP[id] = { allText, noun, options: () => [{value, label, count}], selected: Set, onChange(set) }
+  const MP = {};
+  const LEVEL_SORT = ["7A","6A","5A","4A","3A","2A","A","AI","AII","B","BI","BII","C","CI","CII","D","DI","DII","E","EI","EII","F","FI","FII","G","GI","GII","H","HI","HII","I","I-I","I-II","J","K","L","M","N","O"];
+  const NO_LEVEL = "__none";
+  function levelKey(lv){ const s = String(lv || "").trim().toUpperCase(); return s || NO_LEVEL; }
+  function levelSortIdx(v){ const i = LEVEL_SORT.indexOf(v); return v === NO_LEVEL ? 9999 : (i < 0 ? 5000 : i); }
+  // Options for a level picker from a list of rows that have current_level.
+  function levelOptionsFrom(rows, getLevel){
+    const counts = {};
+    rows.forEach(r => { const k = levelKey(getLevel(r)); counts[k] = (counts[k] || 0) + 1; });
+    return Object.keys(counts)
+      .sort((a, b) => levelSortIdx(a) - levelSortIdx(b) || a.localeCompare(b))
+      .map(k => ({ value: k, label: k === NO_LEVEL ? "No level yet" : k, count: counts[k] }));
+  }
+  function mpHtml(id, label){
+    return `<div class="mp" id="${id}">
+      ${label ? `<span class="mp-label">${label}</span>` : ""}
+      <button type="button" class="mp-btn" data-mp-toggle="${id}" aria-haspopup="true" aria-expanded="false"><span class="mp-text"></span><span class="mp-caret">▾</span></button>
+      <div class="mp-menu" hidden>
+        <div class="mp-actions"><span class="mp-hint">Tick one or more</span><button type="button" data-mp-all="${id}">Show all</button></div>
+        <div class="mp-list"></div>
+      </div>
+    </div>`;
+  }
+  function mpRender(id){
+    const c = MP[id], root = document.getElementById(id);
+    if(!c || !root) return;
+    const opts = c.options();
+    const list = root.querySelector(".mp-list");
+    list.innerHTML = opts.length
+      ? opts.map(o => `<label class="mp-item"><input type="checkbox" data-mp-item="${id}" value="${esc(o.value)}" ${c.selected.has(o.value) ? "checked" : ""}><span>${esc(o.label)}</span>${o.count != null ? `<span class="n">${o.count}</span>` : ""}</label>`).join("")
+      : `<div class="mp-item" style="cursor:default;color:var(--ink-muted)">Nothing to pick yet</div>`;
+    const labelOf = v => (opts.find(o => o.value === v) || { label: v }).label;
+    const picked = [...c.selected];
+    const text = !picked.length ? c.allText : picked.length <= 3 ? picked.map(labelOf).join(", ") : `${picked.length} ${c.noun}`;
+    root.querySelector(".mp-text").textContent = text;
+    root.querySelector(".mp-btn").title = picked.length ? picked.map(labelOf).join(", ") : c.allText;
+    root.classList.toggle("mp-on", picked.length > 0);
+  }
+  function mpSet(id, set){ const c = MP[id]; if(!c) return; c.selected = set; mpRender(id); c.onChange(set); }
+  function mpCloseAll(except){
+    document.querySelectorAll(".mp").forEach(r => {
+      if(r.id === except) return;
+      const m = r.querySelector(".mp-menu"); if(m) m.hidden = true;
+      const b = r.querySelector(".mp-btn"); if(b) b.setAttribute("aria-expanded", "false");
+    });
+  }
+  document.addEventListener("click", e => {
+    const t = e.target.closest("[data-mp-toggle]");
+    if(t){
+      const root = document.getElementById(t.dataset.mpToggle), menu = root.querySelector(".mp-menu");
+      const open = menu.hidden;
+      mpCloseAll(root.id);
+      if(open) mpRender(root.id);
+      menu.hidden = !open; t.setAttribute("aria-expanded", String(open));
+      // Keep the menu on screen when the picker sits near the right edge.
+      menu.style.left = ""; menu.style.right = "";
+      if(open && menu.getBoundingClientRect().right > window.innerWidth - 8){ menu.style.left = "auto"; menu.style.right = "0"; }
+      return;
+    }
+    const all = e.target.closest("[data-mp-all]");
+    if(all){ mpSet(all.dataset.mpAll, new Set()); return; }
+    if(!e.target.closest(".mp")) mpCloseAll();
+  });
+  document.addEventListener("change", e => {
+    const id = e.target.dataset && e.target.dataset.mpItem;
+    if(!id || !MP[id]) return;
+    const set = new Set(MP[id].selected);
+    e.target.checked ? set.add(e.target.value) : set.delete(e.target.value);
+    mpSet(id, set);
+  });
+  document.addEventListener("keydown", e => { if(e.key === "Escape") mpCloseAll(); });
+
+  // Level filters on Student Roster and the Report — tick any number of levels.
+  function mountLevelPickers(){
+    const a = $("#rosterLevelSlot"), b = $("#repLevelSlot");
+    if(a) a.innerHTML = mpHtml("mpRosterLevels", "");
+    if(b) b.innerHTML = mpHtml("mpRepLevels", "");
+    MP.mpRosterLevels = { allText:"All levels", noun:"levels", selected: filters.levels,
+      onChange: set => { filters.levels = set; render(); },
+      options: () => levelOptionsFrom(filtered(true), e => e.current_level) };
+    MP.mpRepLevels = { allText:"All levels", noun:"levels", selected: reportFilters.levels,
+      onChange: set => { reportFilters.levels = set; renderReport(); },
+      options: () => levelOptionsFrom(rowsForReportView(true), e => e.current_level) };
+    mpRender("mpRosterLevels"); mpRender("mpRepLevels");
+  }
+
   let started = false;
   async function startApp(){
     if(started) return;
@@ -823,6 +930,7 @@
     populateReportTeacherFilter();
     populateGradeFilter();
     populateReportGradeFilter();
+    mountLevelPickers();
     if(isTeacherScoped() && currentTeacherName){ filters.teacher = currentTeacherName; reportFilters.teacher = currentTeacherName; }
     renderView();
 
@@ -1298,7 +1406,8 @@
   // The current (open) cycle reads live off subject_enrollments — that's the row a close-out
   // hasn't archived yet, so it's what's still editable. Any past cycle reads the frozen
   // snapshot in enrollment_monthly_history instead.
-  function rowsForReportView(){
+  function rowsForReportView(skipLevel){
+    const lvOk = lv => skipLevel || !reportFilters.levels.size || reportFilters.levels.has(levelKey(lv));
     const q = reportFilters.search.trim().toLowerCase();
     if(isCurrentCycle()){
       return enrollments
@@ -1308,9 +1417,10 @@
         .filter(e => reportFilters.teacher === "all" || e.teacher === reportFilters.teacher)
         .filter(e => reportFilters.mode === "all" || e.mode === reportFilters.mode)
         .filter(e => reportFilters.grade === "all" || gradeFor(e.student_id) === reportFilters.grade)
+        .filter(e => lvOk(e.current_level))
         .filter(e => !q || (e.student_name||"").toLowerCase().includes(q))
         .sort((a,b) => lastNameSortKey(a.student_id,a.student_name).localeCompare(lastNameSortKey(b.student_id,b.student_name)))
-        .map(e => ({ source:"live", id:e.id, monitor_cycle:e.monitor_cycle, is_monitor:!!e.is_monitor, monitor_since:e.monitor_since, enrollment_type:e.enrollment_type, student_id:e.student_id, student_name:e.student_name, subject:e.subject, teacher:e.teacher, mode:e.mode, status:e.status||"active",
+        .map(e => ({ source:"live", id:e.id, monitor_cycle:e.monitor_cycle, is_monitor:!!e.is_monitor, monitor_since:e.monitor_since, enrollment_type:e.enrollment_type, student_id:e.student_id, student_name:e.student_name, subject:e.subject, teacher:e.teacher, mode:e.mode, status:e.status||"active", current_level:e.current_level,
           lwc:e.lwc, nwu:e.nwu, no_of_days:e.no_of_days, no_of_months_current_level:e.no_of_months_current_level,
           test_date:e.test_date, test_level:e.test_level, test_time:e.test_time, test_score:e.test_score, test_group:e.test_group }));
     }
@@ -1324,9 +1434,10 @@
       .filter(h => reportFilters.teacher === "all" || h.teacher === reportFilters.teacher)
       .filter(h => reportFilters.mode === "all" || h.mode === reportFilters.mode)
       .filter(h => reportFilters.grade === "all" || gradeFor(h.student_id) === reportFilters.grade)
+      .filter(h => lvOk(h.current_level))
       .filter(h => !q || (h.student_name||"").toLowerCase().includes(q))
       .sort((a,b) => lastNameSortKey(a.student_id,a.student_name).localeCompare(lastNameSortKey(b.student_id,b.student_name)))
-      .map(h => ({ source:"archived", id:h.id, payment_status:h.payment_status, payment_month:h.payment_month, monitor_cycle:h.monitor_cycle, is_monitor:!!h.is_monitor, monitor_since:h.monitor_since, enrollment_type:h.enrollment_type, student_id:h.student_id, student_name:h.student_name, subject:h.subject, teacher:h.teacher, mode:h.mode, status:"active",
+      .map(h => ({ source:"archived", id:h.id, payment_status:h.payment_status, payment_month:h.payment_month, monitor_cycle:h.monitor_cycle, is_monitor:!!h.is_monitor, monitor_since:h.monitor_since, enrollment_type:h.enrollment_type, student_id:h.student_id, student_name:h.student_name, subject:h.subject, teacher:h.teacher, mode:h.mode, status:"active", current_level:h.current_level,
         lwc:h.lwc, nwu:h.nwu, no_of_days:h.no_of_days, no_of_months_current_level:h.no_of_months_current_level,
         test_date:h.test_date, test_level:h.test_level, test_time:h.test_time, test_score:h.test_score, test_group:h.test_group }));
   }
@@ -1611,7 +1722,7 @@
     }));
   }
 
-  function filtered(){
+  function filtered(skipLevel){
     // A teacher (and a trainer_teacher, like Queenie) only ever sees their own students,
     // no matter what the filter says.
     const lockedTeacher = isTeacherScoped() ? currentTeacherName : null;
@@ -1624,6 +1735,7 @@
       if(filters.mode !== "all" && e.mode !== filters.mode) return false;
       if(filters.grade !== "all" && gradeFor(e.student_id) !== filters.grade) return false;
       if(filters.status !== "all" && (e.status || "active") !== filters.status) return false;
+      if(!skipLevel && filters.levels.size && !filters.levels.has(levelKey(e.current_level))) return false;
       if(filters.search && !(e.student_name||"").toLowerCase().includes(filters.search.toLowerCase())) return false;
       return true;
     });

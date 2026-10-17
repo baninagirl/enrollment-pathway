@@ -104,21 +104,23 @@
   #slotLinks a.btn{ text-decoration:none; display:inline-flex; align-items:center; }
   .cal-toolbar{ display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end; margin-bottom:16px; }
   .cal-toolbar .field{ max-width:230px; min-width:170px; flex:1; }
-  .tpick{ position:relative; }
-  .tpick-label{ font-size:12.5px; font-weight:600; color:var(--ink-muted); }
-  .tpick-btn{ display:flex; align-items:center; justify-content:space-between; gap:8px; width:100%; font:inherit; font-size:13.5px; font-weight:500; color:var(--ink); background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:8px 10px; cursor:pointer; text-align:left; }
-  .tpick-btn:focus{ outline:none; border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-soft); }
-  .tpick-btn span:first-child{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .tpick-caret{ color:var(--ink-muted); font-size:11px; }
-  .tpick-menu{ position:absolute; top:100%; left:0; margin-top:4px; z-index:30; min-width:240px; background:var(--surface); border:1px solid var(--border); border-radius:10px; box-shadow:0 8px 24px rgba(0,0,0,.12); padding:6px; }
-  .tpick-actions{ display:flex; justify-content:space-between; padding:4px 6px 8px; border-bottom:1px solid var(--border); margin-bottom:4px; }
-  .tpick-actions button{ border:none; background:none; color:var(--accent); font:inherit; font-size:12.5px; font-weight:700; cursor:pointer; padding:2px 0; }
-  .tpick-hint{ font-size:12px; color:var(--ink-muted); align-self:center; }
-  .tpick-list{ max-height:320px; overflow:auto; }
-  .tpick-item{ display:flex; align-items:center; gap:9px; padding:7px 8px; border-radius:7px; font-size:13.5px; font-weight:500; color:var(--ink); cursor:pointer; }
-  .tpick-item:hover{ background:var(--surface-2); }
-  .tpick-item input{ width:16px; height:16px; accent-color:var(--accent); margin:0; flex:none; }
-  .tpick-item .n{ margin-left:auto; font-size:12px; color:var(--ink-muted); }
+  .mp{ position:relative; display:inline-flex; flex-direction:column; gap:5px; }
+  .mp-label{ font-size:12.5px; font-weight:600; color:var(--ink-muted); }
+  .mp-btn{ display:flex; align-items:center; justify-content:space-between; gap:8px; min-width:140px; max-width:240px; font:inherit; font-size:13.5px; font-weight:500; color:var(--ink); background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:8px 10px; cursor:pointer; text-align:left; }
+  .mp-btn:focus{ outline:none; border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-soft); }
+  .mp.mp-on .mp-btn{ border-color:var(--accent); }
+  .mp-text{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .mp-caret{ color:var(--ink-muted); font-size:11px; }
+  .mp-menu{ position:absolute; top:100%; left:0; margin-top:4px; z-index:60; min-width:220px; background:var(--surface); border:1px solid var(--border); border-radius:10px; box-shadow:0 8px 24px rgba(0,0,0,.12); padding:6px; }
+  .mp-actions{ display:flex; justify-content:space-between; align-items:center; padding:4px 6px 8px; border-bottom:1px solid var(--border); margin-bottom:4px; }
+  .mp-hint{ font-size:12px; color:var(--ink-muted); }
+  .mp-actions button{ border:none; background:none; color:var(--accent); font:inherit; font-size:12.5px; font-weight:700; cursor:pointer; padding:2px 0; }
+  .mp-list{ max-height:320px; overflow:auto; }
+  .mp-item{ display:flex; align-items:center; gap:9px; padding:7px 8px; border-radius:7px; font-size:13.5px; font-weight:500; color:var(--ink); cursor:pointer; }
+  .mp-item:hover{ background:var(--surface-2); }
+  .mp-item input{ width:16px; height:16px; accent-color:var(--accent); margin:0; flex:none; }
+  .mp-item .n{ margin-left:auto; font-size:12px; color:var(--ink-muted); }
+  .lvl-tag{ font-size:10.5px; font-weight:700; padding:0 5px; border-radius:5px; background:rgba(0,0,0,.06); margin-left:4px; white-space:nowrap; }
   .view-tabs{ display:flex; gap:3px; background:var(--surface-2); padding:3px; border-radius:11px; border:1px solid var(--border); }
   .view-tab{ border:none; background:transparent; padding:8px 13px; border-radius:8px; font-size:12.5px; font-weight:700; color:var(--ink-muted); cursor:pointer; white-space:nowrap; transition: background .12s ease, color .12s ease, box-shadow .12s ease; }
   .view-tab:hover{ color:var(--ink); }
@@ -281,15 +283,7 @@
     </div>
 
     <div class="cal-toolbar" id="calToolbar">
-      <div class="field tpick" id="calTeacherField" hidden>
-        <span class="tpick-label">Teachers</span>
-        <button type="button" class="tpick-btn" id="tpickBtn" data-action="tpick-toggle" aria-haspopup="true" aria-expanded="false"><span id="tpickText">All teachers</span><span class="tpick-caret">▾</span></button>
-        <div class="tpick-menu" id="tpickMenu" hidden>
-          <div class="tpick-actions"><span class="tpick-hint">Tick one or more</span><button type="button" data-action="tpick-all">Show all</button></div>
-          <div class="tpick-list" id="tpickList"></div>
-        </div>
-      </div>
-      <label class="field" id="calGroupField">Group<select id="calGroupFilter"></select></label>
+      <span id="calPickers" style="display:contents"></span>
       <label class="field" id="calModeField">Mode<select id="calModeFilter">
         <option value="all">All modes</option>
         <option value="IC">IC only</option>
@@ -400,8 +394,9 @@
   let sbClient = null, currentUser = null, currentRole = null, currentTeacherName = null;
   let schedules = [], enrollments = [], trainers = [], attendance = [];
   // teachers: empty Set = everyone; otherwise only those names (pick as many as you like).
-  let filters = { teachers: new Set(), group:"all", mode:"all" };
-  const TPICK_KEY = "kumonCalTeachers";
+  // Each Set: empty = everything; otherwise only those (tick as many as you like).
+  let filters = { teachers: new Set(), groups: new Set(), levels: new Set(), mode:"all" };
+  const PICK_KEYS = { teachers:"kumonCalTeachers", groups:"kumonCalGroups", levels:"kumonCalLevels" };
 
   // Site-wide edit history (Activity page, admin/superadmin only) — every page logs its own
   // significant writes into the same edit_history table. Fire-and-forget on purpose: a slow
@@ -543,20 +538,104 @@
     trainers = Array.isArray(v.teachers) ? v.teachers : (Array.isArray(v.trainers) ? v.trainers : []);
   }
 
-  function populateFilters(){
-    const teacherField = $("#calTeacherField");
-    const groupSel = $("#calGroupFilter");
-    groupSel.innerHTML = `<option value="all">All groups</option>` + LEVEL_GROUPS.map(g=>`<option value="${g.key}">${esc(g.label)}</option>`).join("");
-    if(isTeacherScoped()){
-      // A teacher only ever gets her own students from the database, so no teacher picker.
-      if(teacherField) teacherField.hidden = true;
-      filters.teachers = new Set();
-    }else{
-      if(teacherField) teacherField.hidden = false;
-      // Remembered per browser, so the same teachers are picked next time.
-      try{ const saved = JSON.parse(localStorage.getItem(TPICK_KEY) || "[]"); if(Array.isArray(saved)) filters.teachers = new Set(saved); }catch(_){}
+  /* ---------- Multi-pick filter (tick any number; none ticked = all) ---------- */
+  // MP[id] = { allText, noun, options: () => [{value, label, count}], selected: Set, onChange(set) }
+  const MP = {};
+  const LEVEL_SORT = ["7A","6A","5A","4A","3A","2A","A","AI","AII","B","BI","BII","C","CI","CII","D","DI","DII","E","EI","EII","F","FI","FII","G","GI","GII","H","HI","HII","I","I-I","I-II","J","K","L","M","N","O"];
+  const NO_LEVEL = "__none";
+  function levelKey(lv){ const s = String(lv || "").trim().toUpperCase(); return s || NO_LEVEL; }
+  function levelSortIdx(v){ const i = LEVEL_SORT.indexOf(v); return v === NO_LEVEL ? 9999 : (i < 0 ? 5000 : i); }
+  // Options for a level picker from a list of rows that have current_level.
+  function levelOptionsFrom(rows, getLevel){
+    const counts = {};
+    rows.forEach(r => { const k = levelKey(getLevel(r)); counts[k] = (counts[k] || 0) + 1; });
+    return Object.keys(counts)
+      .sort((a, b) => levelSortIdx(a) - levelSortIdx(b) || a.localeCompare(b))
+      .map(k => ({ value: k, label: k === NO_LEVEL ? "No level yet" : k, count: counts[k] }));
+  }
+  function mpHtml(id, label){
+    return `<div class="mp" id="${id}">
+      ${label ? `<span class="mp-label">${label}</span>` : ""}
+      <button type="button" class="mp-btn" data-mp-toggle="${id}" aria-haspopup="true" aria-expanded="false"><span class="mp-text"></span><span class="mp-caret">▾</span></button>
+      <div class="mp-menu" hidden>
+        <div class="mp-actions"><span class="mp-hint">Tick one or more</span><button type="button" data-mp-all="${id}">Show all</button></div>
+        <div class="mp-list"></div>
+      </div>
+    </div>`;
+  }
+  function mpRender(id){
+    const c = MP[id], root = document.getElementById(id);
+    if(!c || !root) return;
+    const opts = c.options();
+    const list = root.querySelector(".mp-list");
+    list.innerHTML = opts.length
+      ? opts.map(o => `<label class="mp-item"><input type="checkbox" data-mp-item="${id}" value="${esc(o.value)}" ${c.selected.has(o.value) ? "checked" : ""}><span>${esc(o.label)}</span>${o.count != null ? `<span class="n">${o.count}</span>` : ""}</label>`).join("")
+      : `<div class="mp-item" style="cursor:default;color:var(--ink-muted)">Nothing to pick yet</div>`;
+    const labelOf = v => (opts.find(o => o.value === v) || { label: v }).label;
+    const picked = [...c.selected];
+    const text = !picked.length ? c.allText : picked.length <= 3 ? picked.map(labelOf).join(", ") : `${picked.length} ${c.noun}`;
+    root.querySelector(".mp-text").textContent = text;
+    root.querySelector(".mp-btn").title = picked.length ? picked.map(labelOf).join(", ") : c.allText;
+    root.classList.toggle("mp-on", picked.length > 0);
+  }
+  function mpSet(id, set){ const c = MP[id]; if(!c) return; c.selected = set; mpRender(id); c.onChange(set); }
+  function mpCloseAll(except){
+    document.querySelectorAll(".mp").forEach(r => {
+      if(r.id === except) return;
+      const m = r.querySelector(".mp-menu"); if(m) m.hidden = true;
+      const b = r.querySelector(".mp-btn"); if(b) b.setAttribute("aria-expanded", "false");
+    });
+  }
+  document.addEventListener("click", e => {
+    const t = e.target.closest("[data-mp-toggle]");
+    if(t){
+      const root = document.getElementById(t.dataset.mpToggle), menu = root.querySelector(".mp-menu");
+      const open = menu.hidden;
+      mpCloseAll(root.id);
+      if(open) mpRender(root.id);
+      menu.hidden = !open; t.setAttribute("aria-expanded", String(open));
+      // Keep the menu on screen when the picker sits near the right edge.
+      menu.style.left = ""; menu.style.right = "";
+      if(open && menu.getBoundingClientRect().right > window.innerWidth - 8){ menu.style.left = "auto"; menu.style.right = "0"; }
+      return;
     }
-    renderTeacherPicker();
+    const all = e.target.closest("[data-mp-all]");
+    if(all){ mpSet(all.dataset.mpAll, new Set()); return; }
+    if(!e.target.closest(".mp")) mpCloseAll();
+  });
+  document.addEventListener("change", e => {
+    const id = e.target.dataset && e.target.dataset.mpItem;
+    if(!id || !MP[id]) return;
+    const set = new Set(MP[id].selected);
+    e.target.checked ? set.add(e.target.value) : set.delete(e.target.value);
+    mpSet(id, set);
+  });
+  document.addEventListener("keydown", e => { if(e.key === "Escape") mpCloseAll(); });
+
+  function loadPick(k){ try{ const v = JSON.parse(localStorage.getItem(PICK_KEYS[k]) || "[]"); return new Set(Array.isArray(v) ? v : []); }catch(_){ return new Set(); } }
+  function savePick(k, set){ try{ localStorage.setItem(PICK_KEYS[k], JSON.stringify([...set])); }catch(_){} }
+  function populateFilters(){
+    const slot = $("#calPickers");
+    const scoped = isTeacherScoped();
+    slot.innerHTML = (scoped ? "" : mpHtml("mpTeachers", "Teachers")) + mpHtml("mpGroups", "Group") + mpHtml("mpLevels", "Level");
+    filters.teachers = scoped ? new Set() : loadPick("teachers");
+    filters.groups = loadPick("groups");
+    filters.levels = loadPick("levels");
+    const hook = k => set => { filters[k] = set; savePick(k, set); renderCalendar(); };
+    if(!scoped) MP.mpTeachers = { allText:"All teachers", noun:"teachers", selected: filters.teachers, onChange: hook("teachers"), options: teacherOptions };
+    MP.mpGroups = { allText:"All groups", noun:"groups", selected: filters.groups, onChange: hook("groups"),
+      options: () => LEVEL_GROUPS.map(g => ({ value:g.key, label:g.label })) };
+    // Levels on offer = the ones in view for the picked teachers / mode (counts match).
+    MP.mpLevels = { allText:"All levels", noun:"levels", selected: filters.levels, onChange: hook("levels"),
+      options: () => levelOptionsFrom(baseEntries(), en => en.level) };
+    Object.keys(MP).forEach(id => {
+      const c = MP[id], valid = new Set(c.options().map(o => o.value));
+      // Drop remembered picks that no longer exist (a teacher removed, a level nobody's on).
+      c.selected = new Set([...c.selected].filter(v => valid.has(v)));
+      mpRender(id);
+    });
+    filters.teachers = MP.mpTeachers ? MP.mpTeachers.selected : new Set();
+    filters.groups = MP.mpGroups.selected; filters.levels = MP.mpLevels.selected;
     renderCalendar();
   }
 
@@ -566,32 +645,7 @@
     const counts = {};
     for(const en of buildEntries()) if(en.teacher) counts[en.teacher] = (counts[en.teacher] || 0) + 1;
     const names = [...new Set([...trainers, ...Object.keys(counts)])].sort((a,b) => a.localeCompare(b));
-    return names.map(n => ({ name:n, count: counts[n] || 0 }));
-  }
-  function renderTeacherPicker(){
-    const list = $("#tpickList"), text = $("#tpickText");
-    if(!list || !text) return;
-    const opts = teacherOptions();
-    // Drop remembered names that no longer exist.
-    filters.teachers = new Set([...filters.teachers].filter(n => opts.some(o => o.name === n)));
-    list.innerHTML = opts.map(o => `<label class="tpick-item"><input type="checkbox" data-action="tpick-one" value="${esc(o.name)}" ${filters.teachers.has(o.name)?"checked":""}><span>${esc(o.name)}</span><span class="n">${o.count}</span></label>`).join("")
-      || `<div class="tpick-item" style="cursor:default;color:var(--ink-muted)">No teachers yet</div>`;
-    const picked = [...filters.teachers];
-    text.textContent = !picked.length ? "All teachers" : picked.length <= 2 ? picked.join(", ") : `${picked.length} teachers`;
-    $("#tpickBtn").title = picked.length ? picked.join(", ") : "All teachers";
-  }
-  function setTeachers(set){
-    filters.teachers = set;
-    try{ localStorage.setItem(TPICK_KEY, JSON.stringify([...set])); }catch(_){}
-    renderTeacherPicker();
-    renderCalendar();
-  }
-  function toggleTeacherMenu(open){
-    const menu = $("#tpickMenu"), btn = $("#tpickBtn");
-    if(!menu) return;
-    const show = open === undefined ? menu.hidden : open;
-    menu.hidden = !show;
-    btn.setAttribute("aria-expanded", String(show));
+    return names.map(n => ({ value:n, label:n, count: counts[n] || 0 }));
   }
 
   function buildEntries(){
@@ -615,6 +669,7 @@
             studentName: sc.student_name || e.student_name || "",
             subject: e.subject, teacher: e.teacher || "",
             groupKey: levelGroupKey(e.subject, e.current_level, e.current_page),
+            level: e.current_level || "",
           });
         }
       }
@@ -645,14 +700,20 @@
     renderCalendar();
   }
 
-  function filteredEntries(){
-    // Teachers can only ever see rows the database hands them (RLS already scoped
-    // subject_enrollments/schedules to their own students) — this just mirrors that
-    // for the "showTeacherLabel" decision below, it doesn't add a second gate.
+  // Teacher + mode only — what the Level picker counts from.
+  function baseEntries(){
     return buildEntries().filter(en => {
       if(!isTeacherScoped() && filters.teachers.size && !filters.teachers.has(en.teacher)) return false;
-      if(filters.group !== "all" && en.groupKey !== filters.group) return false;
       if(filters.mode !== "all" && en.mode !== filters.mode) return false;
+      return true;
+    });
+  }
+  function filteredEntries(){
+    // Teachers only ever get their own students from the database (RLS); the teacher
+    // filter here is for admins picking which teachers to look at.
+    return baseEntries().filter(en => {
+      if(filters.groups.size && !filters.groups.has(en.groupKey)) return false;
+      if(filters.levels.size && !filters.levels.has(levelKey(en.level))) return false;
       return true;
     });
   }
@@ -694,17 +755,18 @@
         html += `<div class="cal-cell">${items.map(it => {
           const cls = it.subject === "Reading" ? "subj-reading" : "subj-math";
           const teacherLine = showTeacherLabel && it.teacher ? `<span class="teacher-sub">${esc(it.teacher)}</span>` : "";
-          const titleBits = [it.studentName, it.subject, it.teacher].filter(Boolean).join(" — ");
+          const titleBits = [it.studentName, it.subject, it.level ? "Level " + it.level : "", it.teacher].filter(Boolean).join(" — ");
           const rec = it.scheduleId ? attendanceFor(it.scheduleId, it.day) : null;
           const arrived = !!(rec && rec.arrived);
           const modeTag = it.mode === "RI" ? `<span class="mode-tag">RI</span>` : "";
+          const lvlTag = it.level ? `<span class="lvl-tag" title="Level">${esc(String(it.level).toUpperCase())}</span>` : "";
           // Only today's column ever gets the toggle — yesterday's is done, tomorrow's
           // hasn't happened yet, so there's nothing useful to check off either way.
           const checkbox = (isToday && it.scheduleId)
             ? `<input type="checkbox" data-action="toggle-arrived" data-schedule="${esc(it.scheduleId)}" data-day="${esc(it.day)}" ${arrived?"checked":""}>`
             : "";
           return `<div class="cal-chip ${cls} ${isToday && arrived?"arrived":""}" title="${esc(titleBits)}">
-            <label class="chip-row">${checkbox}<span class="chip-name">${esc(chipDisplayName(it.studentName))} ${modeTag}</span></label>
+            <label class="chip-row">${checkbox}<span class="chip-name">${esc(chipDisplayName(it.studentName))}${lvlTag} ${modeTag}</span></label>
             ${teacherLine}
           </div>`;
         }).join("")}</div>`;
@@ -749,29 +811,18 @@
     }
   });
 
-  document.addEventListener("keydown", (e)=>{ if(e.key === "Escape") toggleTeacherMenu(false); });
   document.addEventListener("change", (e)=>{
-    if(e.target.dataset && e.target.dataset.action === "tpick-one"){
-      const set = new Set(filters.teachers);
-      e.target.checked ? set.add(e.target.value) : set.delete(e.target.value);
-      setTeachers(set);
-      return;
-    }
-    if(e.target.id === "calGroupFilter"){ filters.group = e.target.value; renderCalendar(); }
-    if(e.target.id === "calModeFilter"){ filters.mode = e.target.value; renderCalendar(); }
+    if(e.target.id === "calModeFilter"){ filters.mode = e.target.value; renderCalendar(); if(MP.mpLevels) mpRender("mpLevels"); }
     if(e.target.dataset && e.target.dataset.action === "toggle-arrived"){
       toggleArrived(e.target.dataset.schedule, e.target.dataset.day, e.target.checked);
     }
   });
 
   document.addEventListener("click", async (e)=>{
-    // Click outside the teacher menu closes it.
-    if(!e.target.closest("#calTeacherField")) toggleTeacherMenu(false);
     const btn = e.target.closest("[data-action]");
     if(!btn) return;
     if(btn.dataset.action === "logout"){ await sbClient.auth.signOut(); }
-    else if(btn.dataset.action === "tpick-toggle"){ toggleTeacherMenu(); }
-    else if(btn.dataset.action === "tpick-all"){ setTeachers(new Set()); }
+
   });
 
   boot();
