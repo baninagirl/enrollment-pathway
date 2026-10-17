@@ -1653,6 +1653,7 @@
       <div class="modal-foot">
         <span class="hint" style="margin-right:auto; align-self:center;">${totalFree} open slot${totalFree===1?"":"s"} this week</span>
         <button class="btn" data-action="slot-copy">Copy as text</button>
+        <button class="btn" data-action="slot-image">Save as image</button>
         <button class="btn primary" data-action="close-modal">Done</button>
       </div>
     `;
@@ -1684,6 +1685,90 @@
     document.body.appendChild(ta); ta.select();
     try{ document.execCommand("copy"); toast("Copied."); }catch(e){ toast("Couldn't copy — select and copy manually."); }
     ta.remove();
+  }
+
+  // JPEG of the open slots for the week shown — one column per day, open times only — for
+  // sending to parents. Same numbers as the grid (past times and full slots left out).
+  function saveSlotImage(){
+    const isDt = slotTool.kind === "dt";
+    const { days } = slotComputeWeek();
+    const len = Number(slotTool.prefs.len) || 60;
+    if(!days.length){ toast("Pick at least one day first."); return; }
+    // Portrait, phone-friendly: one row per day, big start-time buttons.
+    const rowsData = days.map(d => ({
+      day: d.d.toLocaleDateString("en-US", { weekday:"long" }),
+      date: d.d.toLocaleDateString("en-US", { month:"long", day:"numeric" }),
+      items: d.cells.filter(c => c.free.length).map(c => isDt ? fmtTime(fromMin(c.m)) : `${fmtTime(fromMin(c.m))} · ${c.free.join(", ")}`)
+    }));
+    const NAVY = "#1B2559", BLUE = "#3454D1", SOFT = "#E9EDFC", INK = "#15171C", GRAY = "#5B6474", BORDER = "#DDE2EC";
+    const W = 1080, M = 56, labelW = 250, chipH = 74, chipGap = 14, chipPadX = 26, rowPad = 28;
+    const chipFont = "800 32px Arial, sans-serif";
+    const meas = document.createElement("canvas").getContext("2d");
+    const areaW = W - M*2 - labelW - 28 - 24;
+    // Lay out each day's chips into lines that fit.
+    rowsData.forEach(r => {
+      meas.font = chipFont;
+      const lines = [[]]; let lineW = 0;
+      r.items.forEach(t => {
+        const w = Math.min(areaW, Math.ceil(meas.measureText(t).width) + chipPadX*2);
+        if(lines[lines.length-1].length && lineW + chipGap + w > areaW){ lines.push([]); lineW = 0; }
+        lines[lines.length-1].push({ t, w }); lineW += (lineW ? chipGap : 0) + w;
+      });
+      r.lines = r.items.length ? lines : [];
+      r.h = Math.max(120, rowPad*2 + Math.max(1, r.lines.length) * chipH + Math.max(0, r.lines.length - 1) * chipGap);
+    });
+    const headH = 330, footH = 190, rowGap = 18;
+    const H = headH + rowsData.reduce((a, r) => a + r.h, 0) + rowGap*(rowsData.length - 1) + footH;
+    const cv = document.createElement("canvas"); cv.width = W*2; cv.height = H*2;
+    const ctx = cv.getContext("2d"); ctx.scale(2,2);
+    const rr = (x,y,w,h,r) => { ctx.beginPath(); ctx.moveTo(x+r,y); ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r); ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r); ctx.closePath(); };
+    ctx.fillStyle = "#F3F5FA"; ctx.fillRect(0,0,W,H);
+    // Header band
+    ctx.fillStyle = NAVY; ctx.fillRect(0, 0, W, 250);
+    ctx.fillStyle = "#AFC0FF"; ctx.font = "800 26px Arial, sans-serif"; ctx.fillText("KUMON ILIGAN CITY LEARNING CENTER", M, 72);
+    ctx.fillStyle = "#FFFFFF"; ctx.font = "800 64px Arial, sans-serif"; ctx.fillText(isDt ? "Diagnostic Test" : "Training slots", M, 148);
+    ctx.font = "800 64px Arial, sans-serif"; ctx.fillStyle = "#FFD45C"; ctx.fillText(isDt ? "Open slots" : "Open slots", M, 220);
+    const f = days[0].d, l = days[days.length-1].d;
+    const range = f.getMonth() === l.getMonth()
+      ? `${f.toLocaleDateString("en-US",{month:"long",day:"numeric"})} – ${l.getDate()}, ${l.getFullYear()}`
+      : `${f.toLocaleDateString("en-US",{month:"long",day:"numeric"})} – ${l.toLocaleDateString("en-US",{month:"long",day:"numeric",year:"numeric"})}`;
+    ctx.fillStyle = INK; ctx.font = "800 36px Arial, sans-serif"; ctx.fillText(range, M, 300);
+    if(isDt){ ctx.textAlign = "right"; ctx.fillStyle = GRAY; ctx.font = "600 26px Arial, sans-serif"; ctx.fillText(`Each test takes about ${len === 60 ? "1 hour" : len + " minutes"}`, W - M, 298); ctx.textAlign = "left"; }
+    // Day rows
+    let y = headH;
+    rowsData.forEach(r => {
+      rr(M, y, W - M*2, r.h, 22); ctx.fillStyle = "#FFFFFF"; ctx.fill(); ctx.strokeStyle = BORDER; ctx.lineWidth = 2; ctx.stroke();
+      const midY = y + r.h/2;
+      ctx.fillStyle = NAVY; ctx.font = "800 38px Arial, sans-serif"; ctx.fillText(r.day, M + 28, midY - 4);
+      ctx.fillStyle = GRAY; ctx.font = "600 28px Arial, sans-serif"; ctx.fillText(r.date, M + 28, midY + 36);
+      const ax = M + 28 + labelW;
+      if(!r.lines.length){
+        ctx.fillStyle = "#9AA1AF"; ctx.font = "italic 600 30px Arial, sans-serif"; ctx.fillText("Fully booked", ax, midY + 10);
+      }
+      r.lines.forEach((line, li) => {
+        let x = ax; const cy = y + rowPad + li*(chipH + chipGap);
+        line.forEach(c => {
+          rr(x, cy, c.w, chipH, 16); ctx.fillStyle = SOFT; ctx.fill(); ctx.strokeStyle = "#C9D3FA"; ctx.lineWidth = 2; ctx.stroke();
+          ctx.fillStyle = BLUE; ctx.font = chipFont; ctx.textAlign = "center"; ctx.fillText(c.t, x + c.w/2, cy + 48, c.w - 16); ctx.textAlign = "left";
+          x += c.w + chipGap;
+        });
+      });
+      y += r.h + rowGap;
+    });
+    // How to book
+    const fy = y + 12;
+    rr(M, fy, W - M*2, footH - 50, 22); ctx.fillStyle = NAVY; ctx.fill();
+    ctx.fillStyle = "#FFD45C"; ctx.font = "800 32px Arial, sans-serif"; ctx.fillText("How to book", M + 32, fy + 54);
+    ctx.fillStyle = "#FFFFFF"; ctx.font = "600 28px Arial, sans-serif";
+    ctx.fillText("Message us your child's name, the day and the time you prefer.", M + 32, fy + 100, W - M*2 - 64);
+    cv.toBlob(b => {
+      if(!b){ toast("Couldn't make the image."); return; }
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(b);
+      a.download = `${isDt ? "Open DT slots" : "Training slots"} ${isoDate(days[0].d)}.jpg`;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+    }, "image/jpeg", 0.92);
   }
 
   /* ---------------- Enrollment tracker ---------------- */
@@ -4017,6 +4102,7 @@
       renderSlotTool();
     }
     else if(a === "slot-copy"){ copySlotText(); }
+    else if(a === "slot-image"){ saveSlotImage(); }
     else if(a === "slot-book"){
       const { date, time, who } = el.dataset;
       if(slotTool.kind === "dt") openNewDiagnostic(date, time, who);
