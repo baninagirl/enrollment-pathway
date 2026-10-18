@@ -1462,7 +1462,8 @@
 
     // Adding only ever adds to the live roster, so the button only makes sense while
     // you're looking at the current cycle — browsing an archived one is read-only.
-    const addBtnHtml = (isTeacherScoped() || !isCurrentCycle()) ? ""
+    // Teachers can add too — the new row is always under their own name (see the Add form).
+    const addBtnHtml = !isCurrentCycle() ? ""
       : `<button class="btn primary" data-action="open-new" id="addToRosterBtn">+ Add to roster</button>`;
 
     // Closing out is likewise only meaningful for the current cycle, and admin-only.
@@ -1981,7 +1982,7 @@
             <label class="field">Current level<select name="current_level" id="curLevelSelect">${levelOptions(subject, null)}</select></label>
             <label class="field">Current page<input type="text" name="current_page" placeholder="e.g. 130"></label>
           </div>
-          <label class="field" style="flex-direction:row; align-items:center; gap:8px;"><input type="checkbox" name="is_monitor" value="1" checked style="width:auto;"> Monitor student (starts ${esc(monitorCycleLabel(cycleKeyOf(new Date())))})</label>
+          <label class="field" style="flex-direction:row; align-items:center; gap:8px;"><input type="checkbox" name="is_monitor" value="1" ${currentRole === "teacher" ? "" : "checked"} style="width:auto;"> Monitor student (starts ${esc(monitorCycleLabel(cycleKeyOf(new Date())))})</label>
           <label class="field" style="flex-direction:row; align-items:center; gap:8px;"><input type="checkbox" name="mark_new" value="1" checked style="width:auto;"> Mark as NEW for ${esc(monitorCycleLabel(cycleKeyOf(new Date())))}</label>
           ${scheduleSectionHtml(null, null)}
           <p class="hint" style="font-size:12px; color:var(--ink-muted); margin:8px 0 0;">For a student who still needs a diagnostic test, add them from Pipeline instead — this is for a student already enrolled and taking classes.</p>
@@ -2194,6 +2195,15 @@
       if(studentId){
         const already = enrollments.find(en => en.student_id === studentId && en.subject === subject);
         if(already){ alert(`${name} already has a ${subject} enrollment — edit that row instead.`); return; }
+        // A teacher only sees her own rows, so ask the database whether another teacher
+        // already has this child for this subject (phase66) — avoids a second, duplicate row.
+        if(isTeacherScoped()){
+          const { data: takenBy, error: tkErr } = await sbClient.rpc("subject_taken_by", { p_student_id: studentId, p_subject: subject });
+          if(!tkErr && takenBy && takenBy !== currentTeacherName){
+            alert(`${name} already has ${subject} with ${takenBy}. Ask an admin to move them to you instead of adding a new row.`);
+            return;
+          }
+        }
       }else{
         const payload = {
           name,
@@ -2427,7 +2437,7 @@
       openReportModal(id);
     }
     else if(action === "monitor-promote"){ e.stopPropagation(); openMonitorPromoteModal(btn.dataset.id); }
-    else if(action === "open-new"){ if(isTeacherScoped()) return; openModal(null); }
+    else if(action === "open-new"){ openModal(null); }
     else if(action === "edit"){
       const id = btn.dataset.id;
       const en = enrollments.find(x => x.id === id);

@@ -253,6 +253,7 @@
     html.rail-collapsed .rail-divider{ margin:6px 8px; }
   }
   @media (max-width:860px){ .rail-pipeline{ display:none !important; } }
+  .btn.paid-btn{ color:#1E7B46; border-color:#BFE3CC; background:#EEF8F2; }
 </style>
 <script>try{if(localStorage.getItem("kumonRailCollapsed")==="1")document.documentElement.classList.add("rail-collapsed")}catch(e){}</script>
 </head>
@@ -897,6 +898,41 @@
     }
     return shiftMonth(fromYm, -1);
   }
+  // ---- Manual "Mark paid": records what's still owed this month as one payment, no receipt ----
+  // Per subject: rate minus what's already logged (verified or waiting). A superadmin's goes in
+  // verified straight away; anyone else's goes in as "waiting for review" like any logged payment.
+  function markPaidAllocation(studentId, ym){
+    const s = students.find(x => x.id === studentId);
+    if(!s) return { alloc:{}, total:0 };
+    const rate = tuitionRateFor(s), alloc = {};
+    subjectsForPayment(studentId).forEach(subj => {
+      if(subj === "Unassigned") return;
+      const left = Math.max(0, rate - loggedForSubject(studentId, ym, subj));
+      if(left > 0) alloc[subj] = Math.round(left * 100) / 100;
+    });
+    return { alloc, total: Math.round(Object.values(alloc).reduce((a,b)=>a+b,0) * 100) / 100 };
+  }
+  function markPaidLeft(studentId){ return markPaidAllocation(studentId, selectedMonth).total; }
+  async function markPaid(studentId){
+    const s = students.find(x => x.id === studentId);
+    if(!s) return;
+    const { alloc, total } = markPaidAllocation(studentId, selectedMonth);
+    if(!total){ toast("Nothing left to pay this month."); return; }
+    const parts = Object.entries(alloc).map(([k,v]) => `${k} ${peso(v)}`).join(" + ");
+    const verifiedNow = isSuperadmin();
+    if(!confirm(`Mark ${displayName(s)} paid for ${fmtBillLabel(selectedMonth)}?\n\n${parts} = ${peso(total)}\n\n` +
+      (verifiedNow ? "This counts as paid right away." : "It counts once a superadmin verifies it."))) return;
+    const row = { student_id: studentId, amount: total, allocation: alloc, covers_month: monthToDate(selectedMonth),
+      reference_number: "Marked paid (no receipt)", uploaded_by: currentUser ? currentUser.email : null,
+      receipt_path: null, status: verifiedNow ? "verified" : "pending" };
+    if(verifiedNow){ row.reviewed_by = currentUser ? currentUser.id : null; row.reviewed_at = new Date().toISOString(); }
+    const { error } = await sbClient.from("payment_receipts").insert(row);
+    if(error){ toast("Couldn't mark paid: " + error.message); return; }
+    logHistory("mark_paid", `Marked ${displayName(s)} paid — ${peso(total)} for ${fmtBillLabel(selectedMonth)}`, "student", studentId);
+    await loadReceipts(); render();
+    toast(verifiedNow ? `${displayName(s)} marked paid.` : "Marked paid — it counts once a superadmin verifies it.");
+  }
+
   function allocFieldsHtml(studentId, ym){
     const s = students.find(x => x.id === studentId);
     if(!s) return `<div class="hint">Pick a student first.</div>`;
@@ -1499,7 +1535,7 @@
       <td class="money">${peso(r.paid)}</td>
       <td class="money">${peso(r.balance)}</td>
       <td>${statusPill(r.status)}</td>
-      <td><div class="row-actions"><button class="iconbtn" data-action="open-payment-history" data-student="${esc(s.id)}" title="Payment history — undo a payment">🕘</button><button class="btn sm" data-action="open-log-payment" data-student="${esc(s.id)}">Log payment</button>${canMarkAbsent() ? `<button class="btn sm danger" data-action="mark-absent" data-student="${esc(s.id)}">Mark absent</button>` : ""}</div></td>
+      <td><div class="row-actions"><button class="iconbtn" data-action="open-payment-history" data-student="${esc(s.id)}" title="Payment history — undo a payment">🕘</button><button class="btn sm" data-action="open-log-payment" data-student="${esc(s.id)}">Log payment</button>${markPaidLeft(s.id) > 0 ? `<button class="btn sm paid-btn" data-action="mark-paid" data-student="${esc(s.id)}" title="Record this month's remaining tuition as paid, no receipt needed">Mark paid</button>` : ""}${canMarkAbsent() ? `<button class="btn sm danger" data-action="mark-absent" data-student="${esc(s.id)}">Mark absent</button>` : ""}</div></td>
     </tr>`;
   }
 
@@ -1534,7 +1570,7 @@
         <td class="muted">${esc(x.dueSince)}</td>
         <td class="muted">${esc(fmtBillLabel(x.lastPaidMonth))}</td>
         <td class="money">${peso(x.due)}</td>
-        <td><div class="row-actions"><button class="iconbtn" data-action="open-payment-history" data-student="${esc(s.id)}" title="Payment history">🕘</button><button class="btn sm" data-action="open-log-payment" data-student="${esc(s.id)}">Log payment</button>${canMarkAbsent() ? `<button class="btn sm danger" data-action="mark-absent" data-student="${esc(s.id)}">Mark absent</button>` : ""}</div></td>
+        <td><div class="row-actions"><button class="iconbtn" data-action="open-payment-history" data-student="${esc(s.id)}" title="Payment history">🕘</button><button class="btn sm" data-action="open-log-payment" data-student="${esc(s.id)}">Log payment</button>${markPaidLeft(s.id) > 0 ? `<button class="btn sm paid-btn" data-action="mark-paid" data-student="${esc(s.id)}" title="Record this month's remaining tuition as paid, no receipt needed">Mark paid</button>` : ""}${canMarkAbsent() ? `<button class="btn sm danger" data-action="mark-absent" data-student="${esc(s.id)}">Mark absent</button>` : ""}</div></td>
       </tr>`;
     }).join("");
   }
@@ -2112,6 +2148,7 @@
       btn.textContent = groupView ? "View by student" : "View by billing group";
       render();
     }
+    else if(action === "mark-paid"){ markPaid(btn.dataset.student); }
     else if(action === "open-log-payment"){ openLogPaymentModal(btn.dataset.student || null); }
     else if(action === "mark-absent"){ openMarkAbsentModal(btn.dataset.student); }
     else if(action === "resume-absence"){ await resumeAbsence(btn.dataset.id); }
