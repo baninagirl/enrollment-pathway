@@ -207,6 +207,7 @@
       <a class="navbtn" href="absent.html" id="navAbsentLink" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.5-7 8-7s8 3 8 7"/><path d="M2 2l20 20"/></svg>Retention</a>
       <a class="navbtn" href="admin.html" id="navAdminLink" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v6c0 5-3.5 8-7 9-3.5-1-7-4-7-9V6l7-3z"/></svg>Admin</a>
       <a class="navbtn active" href="activity.html" id="navActivityLink" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></svg>Activity</a>
+      <a class="navbtn" href="reports.html" id="navReportsLink" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a9 9 0 1 0 9 9h-9z"/><path d="M15 3.5A9 9 0 0 1 20.5 9H15z"/></svg>Reports</a>
     </div>
     <div class="rail-divider"></div>
     <div class="rail-pipeline" id="navPipelineGroup" hidden>
@@ -279,6 +280,8 @@
     if(adminLink) adminLink.hidden = currentRole !== "superadmin";
     const activityLink = $("#navActivityLink");
     if(activityLink) activityLink.hidden = !(currentRole === "admin" || currentRole === "superadmin");
+    const reportsLink = $("#navReportsLink");
+    if(reportsLink) reportsLink.hidden = currentRole !== "superadmin";
   }
 
   async function loadRole(){

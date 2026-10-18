@@ -1,0 +1,820 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Kumon Hub — Reports</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700&family=Inter:wght@400;500;600;700;800&display=swap">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  :root{
+    --bg:#F5F6FA; --surface:#FFFFFF; --surface-2:#FBFBFE; --border:#E1E4EB;
+    --ink:#1B1F27; --ink-muted:#636C7C; --ink-faint:#9AA1AF;
+    --accent:#3454D1; --accent-ink:#FFFFFF; --accent-soft:#E9EDFC; --accent-soft-ink:#2A41A8;
+    --good:#1E8E5A; --good-soft:#E4F5EC; --warn:#C2831F; --warn-soft:#FBF0E1; --bad:#C23B2B; --bad-soft:#FBE8E5;
+    --shadow: 0 1px 2px rgba(16,20,30,.04), 0 2px 8px rgba(16,20,30,.06), 0 20px 40px -20px rgba(16,20,30,.25);
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#14161C; --surface:#1C1F27; --surface-2:#20232C; --border:#2C303B;
+      --ink:#EDEFF4; --ink-muted:#9BA3B2; --ink-faint:#6B7280;
+      --accent:#6C86F0; --accent-ink:#0E1220; --accent-soft:#232A47; --accent-soft-ink:#B7C3FA;
+      --good:#4FC48A; --good-soft:#173226; --warn:#E0A23F; --warn-soft:#332711; --bad:#F0796A; --bad-soft:#3A1F1C;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#14161C; --surface:#1C1F27; --surface-2:#20232C; --border:#2C303B;
+    --ink:#EDEFF4; --ink-muted:#9BA3B2; --ink-faint:#6B7280;
+    --accent:#6C86F0; --accent-ink:#0E1220; --accent-soft:#232A47; --accent-soft-ink:#B7C3FA;
+    --good:#4FC48A; --good-soft:#173226; --warn:#E0A23F; --warn-soft:#332711; --bad:#F0796A; --bad-soft:#3A1F1C;
+    color-scheme: dark;
+  }
+
+  *{box-sizing:border-box;}
+  body{
+    background:var(--bg); color:var(--ink); margin:0;
+    font-family:"Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  h1,h2,h3,.brand{ font-family:"Sora", system-ui, sans-serif; }
+  h1,h2,h3{ text-wrap:balance; margin:0; }
+  button{ font-family:inherit; }
+  a{ color:var(--accent); }
+
+  .app{ display:grid; grid-template-columns: 216px 1fr; min-height:100vh; min-height:100dvh; }
+  .rail{
+    background:var(--surface); border-right:1px solid var(--border);
+    padding:20px 12px; display:flex; flex-direction:column; gap:4px;
+    position:sticky; top:0; align-self:start; height:100vh; height:100dvh;
+  }
+  .brand{ font-weight:700; font-size:16px; padding:6px 10px 18px; display:flex; align-items:center; gap:8px; color:var(--ink); }
+  .brand .dot{ width:9px;height:9px;border-radius:50%;background:var(--accent); flex:none; }
+  .navbtn{
+    display:flex; align-items:center; gap:10px; padding:9px 10px; border-radius:9px;
+    border:none; background:transparent; color:var(--ink-muted); font-size:14px; font-weight:600;
+    cursor:pointer; text-align:left; width:100%; text-decoration:none;
+    transition: background .12s ease, color .12s ease, box-shadow .12s ease;
+  }
+  .navbtn:hover{ background:var(--surface-2); color:var(--ink); }
+  .navbtn.active{ background:var(--accent-soft); color:var(--accent-soft-ink); box-shadow: inset 3px 0 0 var(--accent); }
+  .navbtn:focus-visible{ outline:none; box-shadow:0 0 0 3px var(--accent-soft); }
+  .navbtn svg{ width:17px; height:17px; flex:none; }
+  .rail-pages{ display:flex; flex-direction:column; gap:4px; margin-bottom:8px; }
+  .rail-divider{ height:1px; background:var(--border); margin:4px 10px 10px; }
+  .rail-account{ padding:0 10px 10px; }
+  .account-row{ display:flex; align-items:center; justify-content:space-between; gap:8px; padding:8px 8px; border-top:1px solid var(--border); font-size:12px; color:var(--ink-muted); }
+  .account-email{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .rail-foot{ margin-top:auto; padding:10px; font-size:12px; color:var(--ink-faint); line-height:1.5; }
+
+  .main{ padding:26px 30px 60px; max-width:1000px; width:100%; min-width:0; }
+  .page-head{ margin-bottom:18px; }
+  .page-head h1{ font-size:22px; font-weight:700; }
+  .page-sub{ color:var(--ink-muted); font-size:13.5px; margin-top:4px; }
+
+  .btn{
+    display:inline-flex; align-items:center; gap:7px; padding:9px 14px; border-radius:9px;
+    font-size:13.5px; font-weight:600; border:1px solid var(--border); background:var(--surface);
+    color:var(--ink); cursor:pointer; white-space:nowrap;
+    transition:transform .08s ease, filter .08s ease, background .12s ease, box-shadow .12s ease;
+  }
+  .btn:hover{ background:var(--surface-2); }
+  .btn:active{ transform:scale(.96); }
+  .btn:focus-visible{ outline:none; box-shadow:0 0 0 3px var(--accent-soft); }
+  .btn.primary{ background:var(--accent); color:var(--accent-ink); border-color:var(--accent); box-shadow: 0 1px 2px rgba(0,0,0,.08); }
+  .btn.ghost{ border-color:transparent; background:transparent; }
+  .btn.sm{ padding:6px 10px; font-size:12.5px; border-radius:7px; }
+
+  .card{ background:var(--surface); border:1px solid var(--border); border-radius:14px; margin-bottom:18px; }
+  .card-head{ display:flex; align-items:center; justify-content:space-between; padding:14px 16px; border-bottom:1px solid var(--border); gap:10px; flex-wrap:wrap; }
+  .card-head h3{ font-size:14.5px; font-weight:700; }
+  .empty{ padding:30px 16px; text-align:center; color:var(--ink-muted); font-size:13.5px; }
+
+  .filters-row{ display:flex; gap:10px; padding:14px 16px; border-bottom:1px solid var(--border); flex-wrap:wrap; align-items:flex-end; }
+  .filters-row .field{ min-width:150px; flex:1; }
+  .filters-row .field.grow{ flex:2; min-width:200px; }
+
+  .table-scroll{ overflow-x:auto; }
+  .stable{ width:100%; border-collapse:collapse; }
+  .stable th{ text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--ink-muted); padding:8px 16px; border-bottom:1px solid var(--border); }
+  .stable td{ padding:10px 16px; border-bottom:1px solid var(--border); font-size:13px; vertical-align:middle; }
+  .stable tr:last-child td{ border-bottom:none; }
+  .stable tbody tr td{ transition: background-color .12s ease; }
+  .stable tbody tr:hover td{ background:var(--surface-2); }
+  .pill{ display:inline-flex; align-items:center; gap:5px; padding:3px 9px; border-radius:99px; font-size:11.5px; font-weight:700; white-space:nowrap; }
+  .pill.page-roster{ background:var(--accent-soft); color:var(--accent-soft-ink); }
+  .pill.page-payments{ background:var(--good-soft); color:var(--good); }
+  .pill.page-admin{ background:var(--bad-soft); color:var(--bad); }
+  .pill.page-calendar{ background:var(--warn-soft); color:var(--warn); }
+  .pill.page-absent{ background:var(--warn-soft); color:var(--warn); }
+  .pill.page-index{ background:var(--surface-2); color:var(--ink-muted); }
+  .pill.page-activity{ background:var(--surface-2); color:var(--ink-muted); }
+  .muted{ color:var(--ink-muted); }
+  .when-cell{ white-space:nowrap; }
+
+  select, input[type=text], input[type=date]{
+    font-family:inherit; font-size:13.5px; padding:8px 10px; border-radius:8px; border:1px solid var(--border);
+    background:var(--surface); color:var(--ink); width:100%;
+    transition: border-color .15s ease, box-shadow .15s ease;
+  }
+  select:focus, input:focus{ outline:none; border-color:var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+  label.field{ display:flex; flex-direction:column; gap:5px; font-size:12.5px; font-weight:600; color:var(--ink-muted); }
+  .hint{ font-size:12px; color:var(--ink-muted); font-weight:500; }
+
+  .banner{ background:var(--warn-soft); color:var(--warn); border-radius:11px; padding:11px 14px; font-size:13px; font-weight:600; margin-bottom:16px; }
+  .banner.info{ background:var(--accent-soft); color:var(--accent-soft-ink); }
+
+  .login-screen{ position:fixed; inset:0; display:flex; align-items:center; justify-content:center; background:var(--bg); z-index:100; padding:20px; }
+  .login-card{ width:100%; max-width:360px; background:var(--surface); border:1px solid var(--border); border-radius:16px; padding:28px 26px; box-shadow:var(--shadow); display:flex; flex-direction:column; gap:14px; }
+  .login-brand{ font-family:"Sora", system-ui, sans-serif; font-weight:700; font-size:18px; display:flex; align-items:center; gap:8px; color:var(--ink); }
+  .login-brand .dot{ width:9px; height:9px; border-radius:50%; background:var(--accent); flex:none; }
+  .login-sub{ font-size:13px; color:var(--ink-muted); margin:-6px 0 4px; }
+  .login-error{ background:var(--bad-soft); color:var(--bad); border-radius:9px; padding:9px 12px; font-size:12.5px; font-weight:600; }
+
+  [hidden]{ display:none !important; }
+
+  @media (max-width: 860px){
+    .app{ grid-template-columns:1fr; }
+    .rail{ position:fixed; bottom:0; left:0; right:0; top:auto; height:auto; flex-direction:row; padding:8px; border-right:none; border-top:1px solid var(--border); z-index:40; }
+    .brand, .rail-foot, .rail-account{ display:none; }
+    .rail-pages{ flex-direction:row; flex:1; margin-bottom:0; }
+    .rail-divider{ display:none; }
+    .navbtn{ text-align:center; justify-content:center; }
+    .main{ padding:16px 14px calc(70px + env(safe-area-inset-bottom)); }
+    .stable th, .stable td{ padding:9px 8px; font-size:12.5px; }
+    .filters-row .field{ min-width:100%; }
+  }
+
+  /* ===== Shared across pages: collapsible sidebar + fit-to-screen ===== */
+  :root{ --rail-w:216px; --z:1; }
+  html.rail-collapsed{ --rail-w:68px; }
+  .rail-toggle{ display:none; }
+  .rail-pipeline .rail-section-label{ font-size:10.5px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:var(--ink-faint); padding:2px 10px 6px; }
+  .rail-pipeline{ display:flex; flex-direction:column; gap:4px; margin-bottom:8px; }
+  @media (min-width:1600px){ :root{ --z:1.1; } }
+  @media (min-width:1900px){ :root{ --z:1.2; } }
+  @media (min-width:2300px){ :root{ --z:1.4; } }
+  @media (min-width:2800px){ :root{ --z:1.7; } }
+  @media (min-width:3400px){ :root{ --z:2; } }
+  @media (min-width:861px){
+    /* Big screens: the page fills the window and everything scales up together (steps above), instead of
+       sitting in a narrow column with tiny text and empty space on the right. */
+    body{ zoom:var(--z); }
+    .app{ grid-template-columns:var(--rail-w) minmax(0,1fr); min-height:calc(100dvh / var(--z)); transition:grid-template-columns .18s ease; }
+    .rail{ height:calc(100dvh / var(--z)); overflow-y:auto; overflow-x:hidden; }
+    .main{ max-width:none; }
+    .rail-pipeline-mobile{ display:none !important; }
+    .rail-toggle{ display:inline-flex; position:absolute; top:20px; right:10px; width:28px; height:28px; align-items:center; justify-content:center; border:1px solid var(--border); background:var(--surface); color:var(--ink-muted); border-radius:8px; cursor:pointer; padding:0; }
+    .rail-toggle:hover{ background:var(--surface-2); color:var(--ink); }
+    .rail-toggle svg{ width:15px; height:15px; transition:transform .18s ease; }
+    html.rail-collapsed .rail-toggle svg{ transform:rotate(180deg); }
+    html.rail-collapsed .rail{ padding:20px 8px; }
+    html.rail-collapsed .rail-toggle{ position:static; align-self:center; margin-bottom:12px; }
+    html.rail-collapsed .brand{ display:none; }
+    html.rail-collapsed .navbtn{ font-size:0; justify-content:center; padding:10px 0; position:relative; gap:0; }
+    html.rail-collapsed .navbtn svg{ width:19px; height:19px; }
+    html.rail-collapsed .navbtn .badge{ position:absolute; top:3px; right:8px; font-size:10px; margin:0; padding:0 4px; min-width:15px; line-height:15px; }
+    html.rail-collapsed .rail-section-label, html.rail-collapsed .rail-account, html.rail-collapsed .rail-foot{ display:none; }
+    html.rail-collapsed .rail-divider{ margin:6px 8px; }
+  }
+  @media (max-width:860px){ .rail-pipeline{ display:none !important; } }
+  .main{ max-width:1240px; }
+  .loading{ color:var(--ink-muted); padding:40px 0; text-align:center; }
+  /* chart palette — validated (light + dark), fixed order per level group */
+  .viz{ --g1:#2a78d6; --g2:#eb6834; --g3:#1baf7a; --g4:#eda100; --g5:#e87ba4; --gnone:#B7BCC6;
+        --math:#2a78d6; --reading:#e34948; --paper:#6250d6; --kc:#008300; --bar:#2a78d6; }
+  @media (prefers-color-scheme: dark){ :root:where(:not([data-theme="light"])) .viz{ --g1:#3987e5; --g2:#d95926; --g3:#199e70; --g4:#c98500; --g5:#d55181; --gnone:#4A4F5A; --math:#3987e5; --reading:#e66767; --paper:#9085e9; --kc:#2E9E2E; --bar:#3987e5; } }
+  :root[data-theme="dark"] .viz{ --g1:#3987e5; --g2:#d95926; --g3:#199e70; --g4:#c98500; --g5:#d55181; --gnone:#4A4F5A; --math:#3987e5; --reading:#e66767; --paper:#9085e9; --kc:#2E9E2E; --bar:#3987e5; }
+
+  .rep-filters{ position:sticky; top:0; z-index:20; background:var(--bg); padding:6px 0 12px; display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end; }
+  .seg{ display:inline-flex; background:var(--surface-2); border:1px solid var(--border); border-radius:10px; padding:3px; gap:2px; }
+  .seg button{ border:none; background:transparent; padding:7px 12px; border-radius:8px; font-size:13px; font-weight:600; color:var(--ink-muted); cursor:pointer; }
+  .seg button.on{ background:var(--surface); color:var(--ink); box-shadow:0 1px 2px rgba(0,0,0,.08); }
+  .fld{ display:flex; flex-direction:column; gap:5px; font-size:12.5px; font-weight:600; color:var(--ink-muted); }
+  .fld select{ font:inherit; font-size:13.5px; font-weight:500; color:var(--ink); background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:8px 10px; }
+  .showing{ font-size:13px; color:var(--ink-muted); margin:-2px 0 14px; }
+  .showing b{ color:var(--ink); }
+
+  .kpis{ display:grid; grid-template-columns:repeat(auto-fit, minmax(150px,1fr)); gap:12px; margin-bottom:16px; }
+  .kpi{ background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:14px 16px; }
+  .kpi .v{ font-family:"Sora", system-ui, sans-serif; font-size:28px; font-weight:700; line-height:1.1; }
+  .kpi .l{ font-size:12.5px; font-weight:600; color:var(--ink-muted); margin-top:4px; }
+  .kpi .s{ font-size:12px; color:var(--ink-faint); margin-top:2px; }
+  .kpi.warn .v{ color:var(--warn); }
+
+  .grid3{ display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:16px; margin-bottom:16px; }
+  .grid2{ display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:16px; margin-bottom:16px; }
+  .card{ margin-bottom:16px; }
+  .grid3 .card, .grid2 .card{ margin-bottom:0; }
+  .card-body{ padding:14px 16px 16px; }
+  .card-head .hint{ font-size:12px; color:var(--ink-muted); font-weight:500; }
+
+  .donut-wrap{ display:flex; align-items:center; gap:16px; flex-wrap:wrap; }
+  .donut-wrap svg{ flex:none; }
+  .legend{ display:flex; flex-direction:column; gap:7px; font-size:13px; min-width:0; flex:1; }
+  .legend .it{ display:flex; align-items:center; gap:8px; cursor:default; border-radius:6px; padding:2px 4px; margin:-2px -4px; }
+  .legend .it.clickable{ cursor:pointer; }
+  .legend .it.clickable:hover{ background:var(--surface-2); }
+  .legend .sw{ width:11px; height:11px; border-radius:3px; flex:none; }
+  .legend .nm{ color:var(--ink); font-weight:600; min-width:0; }
+  .legend .ct{ margin-left:auto; color:var(--ink-muted); font-variant-numeric:tabular-nums; white-space:nowrap; }
+  .donut-center{ font-family:"Sora", system-ui, sans-serif; font-weight:700; fill:var(--ink); }
+  .donut-sub{ fill:var(--ink-muted); font-size:11px; font-weight:600; }
+  .seg-arc{ cursor:pointer; transition:opacity .12s; }
+  .dim .seg-arc:not(:hover){ opacity:.55; }
+
+  .bars{ width:100%; overflow-x:auto; }
+  .bars svg{ display:block; }
+  .bar-rect{ cursor:default; }
+  .axis-t{ fill:var(--ink-muted); font-size:11.5px; font-weight:600; }
+  .val-t{ fill:var(--ink); font-size:11.5px; font-weight:700; }
+  .grid-l{ stroke:var(--border); stroke-width:1; }
+  .empty-note{ color:var(--ink-faint); font-size:13px; padding:20px 0; text-align:center; }
+
+  table.t{ width:100%; border-collapse:collapse; font-size:13px; }
+  table.t th{ text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--ink-muted); font-weight:700; padding:8px 10px; border-bottom:1px solid var(--border); white-space:nowrap; }
+  table.t td{ padding:9px 10px; border-bottom:1px solid var(--border); vertical-align:middle; }
+  table.t td.n, table.t th.n{ text-align:right; font-variant-numeric:tabular-nums; }
+  table.t tr.clickrow{ cursor:pointer; }
+  table.t tr.clickrow:hover td{ background:var(--surface-2); }
+  table.t tr.on td{ background:var(--accent-soft); }
+  table.t tfoot td{ font-weight:700; border-bottom:none; }
+  .stack{ display:flex; gap:2px; height:14px; min-width:180px; border-radius:4px; overflow:hidden; }
+  .stack span{ display:block; height:100%; }
+  .stack span:first-child{ border-radius:4px 0 0 4px; } .stack span:last-child{ border-radius:0 4px 4px 0; }
+  .tname{ font-weight:600; }
+  .muted{ color:var(--ink-muted); }
+  .warnnum{ color:var(--warn); font-weight:700; }
+  .table-scroll{ overflow-x:auto; }
+
+  .tabs{ display:flex; gap:6px; flex-wrap:wrap; margin-bottom:10px; }
+  .tabs button{ border:1px solid var(--border); background:var(--surface); border-radius:99px; padding:6px 12px; font-size:12.5px; font-weight:600; color:var(--ink-muted); cursor:pointer; }
+  .tabs button.on{ background:var(--accent-soft); color:var(--accent-soft-ink); border-color:transparent; }
+  .issue-list{ max-height:360px; overflow:auto; }
+  .main{ min-width:0; }
+
+  .tip{ position:fixed; z-index:100; pointer-events:none; background:var(--ink); color:var(--surface); font-size:12.5px; font-weight:600; padding:7px 10px; border-radius:8px; box-shadow:0 6px 18px rgba(0,0,0,.18); white-space:nowrap; }
+  .tip[hidden]{ display:none; }
+  .tip .tl{ opacity:.75; font-weight:500; }
+
+  @media (max-width: 1000px){ .grid3{ grid-template-columns:minmax(0,1fr) minmax(0,1fr); } }
+  .grid3 > *, .grid2 > *{ min-width:0; }
+  .viz{ min-width:0; }
+  @media (max-width: 720px){ .grid3, .grid2{ grid-template-columns:minmax(0,1fr); } .rep-filters{ position:static; } }
+  .mp{ position:relative; display:inline-flex; flex-direction:column; gap:5px; }
+  .mp-label{ font-size:12.5px; font-weight:600; color:var(--ink-muted); }
+  .mp-btn{ display:flex; align-items:center; justify-content:space-between; gap:8px; min-width:140px; max-width:240px; font:inherit; font-size:13.5px; font-weight:500; color:var(--ink); background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:8px 10px; cursor:pointer; text-align:left; }
+  .mp-btn:focus{ outline:none; border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-soft); }
+  .mp.mp-on .mp-btn{ border-color:var(--accent); }
+  .mp-text{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .mp-caret{ color:var(--ink-muted); font-size:11px; }
+  .mp-menu{ position:absolute; top:100%; left:0; margin-top:4px; z-index:60; min-width:220px; background:var(--surface); border:1px solid var(--border); border-radius:10px; box-shadow:0 8px 24px rgba(0,0,0,.12); padding:6px; }
+  .mp-actions{ display:flex; justify-content:space-between; align-items:center; padding:4px 6px 8px; border-bottom:1px solid var(--border); margin-bottom:4px; }
+  .mp-hint{ font-size:12px; color:var(--ink-muted); }
+  .mp-actions button{ border:none; background:none; color:var(--accent); font:inherit; font-size:12.5px; font-weight:700; cursor:pointer; padding:2px 0; }
+  .mp-list{ max-height:320px; overflow:auto; }
+  .mp-item{ display:flex; align-items:center; gap:9px; padding:7px 8px; border-radius:7px; font-size:13.5px; font-weight:500; color:var(--ink); cursor:pointer; }
+  .mp-item:hover{ background:var(--surface-2); }
+  .mp-item input{ width:16px; height:16px; accent-color:var(--accent); margin:0; flex:none; }
+  .mp-item .n{ margin-left:auto; font-size:12px; color:var(--ink-muted); }
+</style>
+<script>try{if(localStorage.getItem("kumonRailCollapsed")==="1")document.documentElement.classList.add("rail-collapsed")}catch(e){}</script>
+</head>
+<body>
+
+<div class="login-screen" id="loginScreen">
+  <form class="login-card" id="loginForm">
+    <div class="login-brand"><span class="dot"></span>Kumon Hub</div>
+    <div class="login-sub">Sign in with your team account.</div>
+    <div class="login-error" id="loginError" hidden></div>
+    <label class="field">Email<input type="email" name="email" required autocomplete="username" autofocus></label>
+    <label class="field">Password<input type="password" name="password" required autocomplete="current-password"></label>
+    <button class="btn primary" type="submit" style="justify-content:center;">Log in</button>
+  </form>
+</div>
+
+<div class="app" id="appRoot" hidden>
+  <nav class="rail">
+    <button type="button" class="rail-toggle" id="railToggle" aria-label="Collapse sidebar" title="Collapse sidebar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg></button>
+    <div class="brand"><span class="dot"></span>Kumon Hub</div>
+    <div class="rail-pages">
+      <a class="navbtn rail-pipeline-mobile" href="index.html" id="navPipelineLink" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16l-6.5 8.5V19l-3 1.5v-8L4 4z"/></svg>Pipeline</a>
+      <a class="navbtn" href="roster.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3L2 8l10 5 10-5-10-5z"/><path d="M6 10.5V15c0 1.5 2.5 3 6 3s6-1.5 6-3v-4.5"/></svg>Student roster</a>
+      <a class="navbtn" href="calendar.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>Calendar</a>
+      <a class="navbtn" href="payments.html" id="navPaymentsLink" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20M6 15h4"/></svg>Payments</a>
+      <a class="navbtn" href="absent.html" id="navAbsentLink" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.5-7 8-7s8 3 8 7"/><path d="M2 2l20 20"/></svg>Retention</a>
+      <a class="navbtn" href="admin.html" id="navAdminLink" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v6c0 5-3.5 8-7 9-3.5-1-7-4-7-9V6l7-3z"/></svg>Admin</a>
+      <a class="navbtn" href="activity.html" id="navActivityLink" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></svg>Activity</a>
+      <a class="navbtn active" href="reports.html" id="navReportsLink" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a9 9 0 1 0 9 9h-9z"/><path d="M15 3.5A9 9 0 0 1 20.5 9H15z"/></svg>Reports</a>
+    </div>
+    <div class="rail-divider"></div>
+    <div class="rail-pipeline" id="navPipelineGroup" hidden>
+      <div class="rail-section-label">Pipeline views</div>
+      <a class="navbtn" href="index.html#calendar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 3v3h6V3"/><path d="M9 12l2 2 4-4"/></svg>DT &amp; Training</a>
+      <a class="navbtn" href="index.html#enrollment"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 12l2 2 4-4"/><circle cx="12" cy="12" r="9"/></svg>Enrollment</a>
+      <a class="navbtn" href="index.html#roster"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h16M4 18h10"/></svg>Weekly view</a>
+      <a class="navbtn" href="index.html#students"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-7 8-7s8 3 8 7"/></svg>New students</a>
+      <a class="navbtn" href="index.html#settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M19 5l-2 2M7 17l-2 2"/></svg>Settings</a>
+    </div>
+    <div class="rail-account" id="railAccount"></div>
+    <div class="rail-foot">Students and levels, by teacher.</div>
+  </nav>
+
+  <main class="main">
+    <div class="page-head">
+      <h1>Reports</h1>
+      <div class="page-sub">Students and levels by teacher, live from Student Roster. Pick teachers and groups to compare them.</div>
+    </div>
+    <div id="repBody"><div class="loading">Loading…</div></div>
+  </main>
+</div>
+
+<script>
+(function(){
+  "use strict";
+  const SUPABASE_URL = "https://bcnmsryahczapnxbpkve.supabase.co";
+  const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJjbm1zcnlhaGN6YXBueGJwa3ZlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTAyMDQ4NzksImV4cCI6MjEwNTc4MDg3OX0.VgCX3CR7YCJxR9-vwD8HlYcCx0MxlY7atgD_0h3F3to";
+  const $ = (sel, el) => (el||document).querySelector(sel);
+  function esc(s){ return String(s==null?"":s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+
+  /* ---------- Multi-pick filter (tick any number; none ticked = all) ---------- */
+  // MP[id] = { allText, noun, options: () => [{value, label, count}], selected: Set, onChange(set) }
+  const MP = {};
+  const LEVEL_SORT = ["7A","6A","5A","4A","3A","2A","A","AI","AII","B","BI","BII","C","CI","CII","D","DI","DII","E","EI","EII","F","FI","FII","G","GI","GII","H","HI","HII","I","I-I","I-II","J","K","L","M","N","O"];
+  const NO_LEVEL = "__none";
+  function levelKey(lv){ const s = String(lv || "").trim().toUpperCase(); return s || NO_LEVEL; }
+  function levelSortIdx(v){ const i = LEVEL_SORT.indexOf(v); return v === NO_LEVEL ? 9999 : (i < 0 ? 5000 : i); }
+  // Options for a level picker from a list of rows that have current_level.
+  function levelOptionsFrom(rows, getLevel){
+    const counts = {};
+    rows.forEach(r => { const k = levelKey(getLevel(r)); counts[k] = (counts[k] || 0) + 1; });
+    return Object.keys(counts)
+      .sort((a, b) => levelSortIdx(a) - levelSortIdx(b) || a.localeCompare(b))
+      .map(k => ({ value: k, label: k === NO_LEVEL ? "No level yet" : k, count: counts[k] }));
+  }
+  function mpHtml(id, label){
+    return `<div class="mp" id="${id}">
+      ${label ? `<span class="mp-label">${label}</span>` : ""}
+      <button type="button" class="mp-btn" data-mp-toggle="${id}" aria-haspopup="true" aria-expanded="false"><span class="mp-text"></span><span class="mp-caret">▾</span></button>
+      <div class="mp-menu" hidden>
+        <div class="mp-actions"><span class="mp-hint">Tick one or more</span><button type="button" data-mp-all="${id}">Show all</button></div>
+        <div class="mp-list"></div>
+      </div>
+    </div>`;
+  }
+  function mpRender(id){
+    const c = MP[id], root = document.getElementById(id);
+    if(!c || !root) return;
+    const opts = c.options();
+    const list = root.querySelector(".mp-list");
+    list.innerHTML = opts.length
+      ? opts.map(o => `<label class="mp-item"><input type="checkbox" data-mp-item="${id}" value="${esc(o.value)}" ${c.selected.has(o.value) ? "checked" : ""}><span>${esc(o.label)}</span>${o.count != null ? `<span class="n">${o.count}</span>` : ""}</label>`).join("")
+      : `<div class="mp-item" style="cursor:default;color:var(--ink-muted)">Nothing to pick yet</div>`;
+    const labelOf = v => (opts.find(o => o.value === v) || { label: v }).label;
+    const picked = [...c.selected];
+    const text = !picked.length ? c.allText : picked.length <= 3 ? picked.map(labelOf).join(", ") : `${picked.length} ${c.noun}`;
+    root.querySelector(".mp-text").textContent = text;
+    root.querySelector(".mp-btn").title = picked.length ? picked.map(labelOf).join(", ") : c.allText;
+    root.classList.toggle("mp-on", picked.length > 0);
+  }
+  function mpSet(id, set){ const c = MP[id]; if(!c) return; c.selected = set; mpRender(id); c.onChange(set); }
+  function mpCloseAll(except){
+    document.querySelectorAll(".mp").forEach(r => {
+      if(r.id === except) return;
+      const m = r.querySelector(".mp-menu"); if(m) m.hidden = true;
+      const b = r.querySelector(".mp-btn"); if(b) b.setAttribute("aria-expanded", "false");
+    });
+  }
+  document.addEventListener("click", e => {
+    const t = e.target.closest("[data-mp-toggle]");
+    if(t){
+      const root = document.getElementById(t.dataset.mpToggle), menu = root.querySelector(".mp-menu");
+      const open = menu.hidden;
+      mpCloseAll(root.id);
+      if(open) mpRender(root.id);
+      menu.hidden = !open; t.setAttribute("aria-expanded", String(open));
+      menu.style.left = ""; menu.style.right = "";
+      if(open && menu.getBoundingClientRect().right > window.innerWidth - 8){ menu.style.left = "auto"; menu.style.right = "0"; }
+      return;
+    }
+    const all = e.target.closest("[data-mp-all]");
+    if(all){ mpSet(all.dataset.mpAll, new Set()); return; }
+    if(!e.target.closest(".mp")) mpCloseAll();
+  });
+  document.addEventListener("change", e => {
+    const id = e.target.dataset && e.target.dataset.mpItem;
+    if(!id || !MP[id]) return;
+    const set = new Set(MP[id].selected);
+    e.target.checked ? set.add(e.target.value) : set.delete(e.target.value);
+    mpSet(id, set);
+  });
+  document.addEventListener("keydown", e => { if(e.key === "Escape") mpCloseAll(); });
+
+
+  // ---- Level groups (same bands as Calendar) ----
+  const GROUPS = [
+    { key:"7a-3a61", label:"7A – 3A (≤ pg 61)", short:"7A–3A", color:"var(--g1)" },
+    { key:"3a61-a",  label:"3A (pg 62+) – A", short:"3A–A",  color:"var(--g2)" },
+    { key:"bcd",     label:"B · C · D",           short:"B·C·D", color:"var(--g3)" },
+    { key:"efg",     label:"E · F · G",           short:"E·F·G", color:"var(--g4)" },
+    { key:"h-o",     label:"H – O",               short:"H–O",   color:"var(--g5)" },
+    { key:"none",    label:"No level yet",        short:"None",  color:"var(--gnone)" },
+  ];
+  const GROUP_MATH = { "7a-3a61":["7A","6A","5A","4A"], "3a61-a":["2A","A"], "bcd":["B","C","D"], "efg":["E","F","G"], "h-o":["H","I","J","K","L","M","N","O"] };
+  const GROUP_READ = { "7a-3a61":["7A","6A","5A","4A"], "3a61-a":["2A","AI","AII"], "bcd":["BI","BII","CI","CII","DI","DII"], "efg":["EI","EII","FI","FII","GI","GII"], "h-o":["HI","HII","I-I","I-II","J","K","L","M","N","O"] };
+  const MATH_ORDER = ["7A","6A","5A","4A","3A","2A","A","B","C","D","E","F","G","H","I","J","K","L","M","N","O"];
+  const READ_ORDER = ["7A","6A","5A","4A","3A","2A","AI","AII","BI","BII","CI","CII","DI","DII","EI","EII","FI","FII","GI","GII","HI","HII","I-I","I-II","J","K","L","M","N","O"];
+  const GRADE_ORDER = ["PK1","PK2","PK3","K","P1","P2","P3","P4","P5","P6","P7","P8","P9","P10","P11","P12","P13","P14"];
+  function groupOf(subject, level, page){
+    const lv = String(level || "").trim().toUpperCase();
+    if(!lv) return "none";
+    if(lv === "3A"){ const p = parseInt(page, 10); return (!isNaN(p) && p > 61) ? "3a61-a" : "7a-3a61"; }
+    const map = subject === "Reading" ? GROUP_READ : GROUP_MATH;
+    for(const k in map) if(map[k].includes(lv)) return k;
+    return "none";
+  }
+  const groupMeta = k => GROUPS.find(g => g.key === k) || GROUPS[GROUPS.length-1];
+
+  let sbClient = null, currentUser = null, currentRole = null;
+  let rows = []; // one per active subject enrollment, enriched
+  const F = { teachers: new Set(), groups: new Set(), subject: "all", mode: "all" };
+  let issueTab = "nolevel";
+  const PICK = { teachers:"kumonRepTeachers", groups:"kumonRepGroups" };
+  function loadPick(k){ try{ const v = JSON.parse(localStorage.getItem(PICK[k]) || "[]"); return new Set(Array.isArray(v) ? v : []); }catch(_){ return new Set(); } }
+  function savePick(k){ try{ localStorage.setItem(PICK[k], JSON.stringify([...F[k]])); }catch(_){} }
+
+  // ---- Auth shell (same as the other pages) ----
+  function showLogin(errMsg){
+    $("#loginScreen").hidden = false; $("#appRoot").hidden = true;
+    const err = $("#loginError"); if(errMsg){ err.textContent = errMsg; err.hidden = false; } else err.hidden = true;
+  }
+  function showApp(){ $("#loginScreen").hidden = true; $("#appRoot").hidden = false; }
+  function renderAccount(){
+    const el = $("#railAccount");
+    if(el) el.innerHTML = currentUser ? `<div class="account-row"><span class="account-email">${esc(currentUser.email)}</span><button class="btn sm ghost" data-action="logout">Log out</button></div>` : "";
+    const show = (id, on) => { const a = document.getElementById(id); if(a) a.hidden = !on; };
+    const r = currentRole;
+    show("navPipelineLink", !(r === "teacher" || r === "pending"));
+    show("navPaymentsLink", ["admin","superadmin","teacher","trainer_teacher"].includes(r));
+    show("navAbsentLink", ["admin","superadmin","teacher","trainer_teacher"].includes(r));
+    show("navAdminLink", r === "superadmin");
+    show("navActivityLink", r === "admin" || r === "superadmin");
+    show("navReportsLink", r === "superadmin");
+  }
+  async function loadRole(){
+    if(!sbClient || !currentUser){ currentRole = null; return; }
+    try{
+      const { data, error } = await sbClient.from("profiles").select("role").eq("id", currentUser.id).maybeSingle();
+      if(error) throw error;
+      currentRole = data ? data.role : "pending";
+    }catch(e){ console.warn(e); currentRole = "pending"; }
+  }
+  let started = false;
+  async function boot(){
+    if(!window.supabase){ showLogin("Couldn't load Supabase."); return; }
+    try{ sbClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY); }catch(e){ showLogin("Couldn't connect to Supabase."); return; }
+    const { data:{ session } } = await sbClient.auth.getSession();
+    if(session){ currentUser = session.user; showApp(); await loadRole(); renderAccount(); await startApp(); }
+    else showLogin();
+    sbClient.auth.onAuthStateChange(async (event, session)=>{
+      if(session){ currentUser = session.user; showApp(); await loadRole(); renderAccount(); await startApp(); }
+      else{ currentUser = null; currentRole = null; started = false; showLogin(); }
+    });
+  }
+
+  // Supabase returns at most 1000 rows per request — page through everything.
+  async function fetchAll(table, cols, apply){
+    const out = []; const size = 1000;
+    for(let from = 0; ; from += size){
+      let q = sbClient.from(table).select(cols).range(from, from + size - 1);
+      if(apply) q = apply(q);
+      const { data, error } = await q;
+      if(error) throw error;
+      out.push(...(data || []));
+      if(!data || data.length < size) break;
+    }
+    return out;
+  }
+
+  async function startApp(){
+    const body = $("#repBody");
+    if(currentRole !== "superadmin"){
+      body.innerHTML = `<div class="banner">Reports are for superadmins only.</div>`;
+      return;
+    }
+    if(started) return;
+    started = true;
+    try{
+      const [enr, studs, scheds] = await Promise.all([
+        fetchAll("subject_enrollments", "id,student_id,student_name,subject,teacher,current_level,current_page,mode,status,is_monitor,schedule", q => q.eq("status","active")),
+        fetchAll("students", "id,name,first_name,last_name,age_grade"),
+        fetchAll("schedules", "subject_enrollment_id,slots,status", q => q.eq("status","active"))
+      ]);
+      const stuById = new Map(studs.map(s => [s.id, s]));
+      const timed = new Set(scheds.filter(s => Array.isArray(s.slots) && s.slots.length && s.slots.every(x => x && x.time)).map(s => s.subject_enrollment_id));
+      rows = enr.filter(e => e.subject === "Math" || e.subject === "Reading").map(e => {
+        const st = stuById.get(e.student_id) || {};
+        const lv = String(e.current_level || "").trim().toUpperCase();
+        return {
+          id: e.id, sid: e.student_id, subject: e.subject,
+          name: st.name || e.student_name || "—",
+          last: st.last_name || "", first: st.first_name || "",
+          teacher: (e.teacher || "").trim() || "(No teacher)",
+          level: lv, page: e.current_page || "", group: groupOf(e.subject, lv, e.current_page),
+          mode: e.mode === "KC" ? "KC" : (e.mode === "Paper" ? "Paper" : ""),
+          grade: (st.age_grade || "").trim().toUpperCase(),
+          onCal: timed.has(e.id), monitor: !!e.is_monitor
+        };
+      });
+    }catch(err){
+      console.warn(err);
+      body.innerHTML = `<div class="banner">Couldn't load the numbers: ${esc(err.message || err)}</div>`;
+      return;
+    }
+    F.teachers = loadPick("teachers"); F.groups = loadPick("groups");
+    const teacherNames = new Set(rows.map(r => r.teacher));
+    F.teachers = new Set([...F.teachers].filter(t => teacherNames.has(t)));
+    render();
+  }
+
+  // ---- Filtering ----
+  function base(){ // teacher + subject + mode (what group counts are made from)
+    return rows.filter(r => (!F.teachers.size || F.teachers.has(r.teacher))
+      && (F.subject === "all" || r.subject === F.subject)
+      && (F.mode === "all" || r.mode === F.mode));
+  }
+  function view(){ return base().filter(r => !F.groups.size || F.groups.has(r.group)); }
+  const uniq = arr => new Set(arr).size;
+  const pct = (n, d) => d ? Math.round(n * 100 / d) : 0;
+  const fmt = n => Number(n).toLocaleString("en-US");
+
+  // ---- Tooltip ----
+  const tip = document.createElement("div"); tip.className = "tip"; tip.hidden = true; document.body.appendChild(tip);
+  document.addEventListener("mousemove", e => {
+    const t = e.target.closest && e.target.closest("[data-tip]");
+    if(!t){ tip.hidden = true; return; }
+    tip.innerHTML = t.getAttribute("data-tip");
+    tip.hidden = false;
+    const w = tip.offsetWidth, h = tip.offsetHeight;
+    let x = e.clientX + 14, y = e.clientY + 14;
+    if(x + w > window.innerWidth - 8) x = e.clientX - w - 14;
+    if(y + h > window.innerHeight - 8) y = e.clientY - h - 14;
+    tip.style.left = x + "px"; tip.style.top = y + "px";
+  });
+  const tipText = (title, line) => esc(title) + (line ? `<div class="tl">${esc(line)}</div>` : "");
+
+  // ---- Charts (plain SVG) ----
+  function donut(parts, centerLabel, opts){
+    // parts: [{key,label,value,color,clickGroup?}]
+    const total = parts.reduce((a,p) => a + p.value, 0);
+    const size = 168, r = 74, ri = 48, cx = size/2, cy = size/2;
+    let svg = `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" role="img" aria-label="${esc(centerLabel)}">`;
+    if(!total){
+      svg += `<circle cx="${cx}" cy="${cy}" r="${(r+ri)/2}" fill="none" stroke="var(--border)" stroke-width="${r-ri}"/>`;
+    }else{
+      let a0 = -Math.PI/2;
+      const live = parts.filter(p => p.value > 0);
+      live.forEach(p => {
+        const frac = p.value / total, a1 = a0 + frac * Math.PI * 2;
+        const tipH = tipText(`${p.label}: ${fmt(p.value)}`, `${pct(p.value,total)}% of ${fmt(total)}`);
+        const faded = opts && opts.selected && opts.selected.size && !opts.selected.has(p.clickGroup);
+        const attrs = `class="seg-arc" ${faded ? 'opacity="0.28"' : ""} fill="${p.color}" stroke="var(--surface)" stroke-width="2" data-tip="${esc(tipH)}"${p.clickGroup ? ` data-action="toggle-group" data-key="${esc(p.clickGroup)}"` : ""}`;
+        if(live.length === 1){
+          svg += `<path ${attrs} fill-rule="evenodd" d="M${cx-r},${cy}a${r},${r} 0 1,0 ${2*r},0a${r},${r} 0 1,0 ${-2*r},0M${cx-ri},${cy}a${ri},${ri} 0 1,1 ${2*ri},0a${ri},${ri} 0 1,1 ${-2*ri},0"/>`;
+        }else{
+          const big = (a1 - a0) > Math.PI ? 1 : 0;
+          const p0 = [cx + r*Math.cos(a0), cy + r*Math.sin(a0)], p1 = [cx + r*Math.cos(a1), cy + r*Math.sin(a1)];
+          const q1 = [cx + ri*Math.cos(a1), cy + ri*Math.sin(a1)], q0 = [cx + ri*Math.cos(a0), cy + ri*Math.sin(a0)];
+          svg += `<path ${attrs} d="M${p0[0]},${p0[1]}A${r},${r} 0 ${big},1 ${p1[0]},${p1[1]}L${q1[0]},${q1[1]}A${ri},${ri} 0 ${big},0 ${q0[0]},${q0[1]}Z"/>`;
+        }
+        a0 = a1;
+      });
+    }
+    svg += `<text class="donut-center" x="${cx}" y="${cy+2}" text-anchor="middle" font-size="22">${fmt(total)}</text>`;
+    svg += `<text class="donut-sub" x="${cx}" y="${cy+20}" text-anchor="middle">${esc(centerLabel)}</text></svg>`;
+    const legend = parts.map(p => {
+      const on = opts && opts.selected && opts.selected.has(p.clickGroup);
+      const faded = opts && opts.selected && opts.selected.size && !on;
+      return `<div class="it ${p.clickGroup ? "clickable" : ""}" style="${faded ? "opacity:.45" : ""}" ${p.clickGroup ? `data-action="toggle-group" data-key="${esc(p.clickGroup)}" title="Click to filter to this group"` : ""} data-tip="${esc(tipText(`${p.label}: ${fmt(p.value)}`, `${pct(p.value,total)}%`))}">
+        <span class="sw" style="background:${p.color}"></span><span class="nm">${on ? "✓ " : ""}${esc(p.label)}</span><span class="ct">${fmt(p.value)} · ${pct(p.value,total)}%</span></div>`;
+    }).join("");
+    return `<div class="donut-wrap">${svg}<div class="legend">${legend}</div></div>`;
+  }
+
+  function columns(items, opts){
+    // items: [{label, value, color, tip}]
+    if(!items.length || !items.some(i => i.value)) return `<div class="empty-note">${esc((opts && opts.empty) || "Nothing to show.")}</div>`;
+    const bw = 30, gap = 10, padL = 6, padT = 22, h = 170, axis = 22;
+    const max = Math.max(...items.map(i => i.value));
+    const W = padL*2 + items.length*bw + (items.length-1)*gap;
+    let svg = `<svg width="${Math.max(W, 200)}" height="${padT + h + axis}" role="img" aria-label="${esc(opts && opts.aria || "Bar chart")}">`;
+    svg += `<line class="grid-l" x1="0" x2="${Math.max(W,200)}" y1="${padT + h}" y2="${padT + h}"/>`;
+    items.forEach((it, i) => {
+      const x = padL + i*(bw+gap);
+      const bh = max ? Math.max(it.value ? 3 : 0, Math.round(it.value / max * h)) : 0;
+      const y = padT + h - bh;
+      const rr = Math.min(4, bh);
+      if(bh){
+        svg += `<path class="bar-rect" fill="${it.color}" data-tip="${esc(it.tip || tipText(`${it.label}: ${fmt(it.value)}`))}" d="M${x},${padT+h}V${y+rr}Q${x},${y} ${x+rr},${y}H${x+bw-rr}Q${x+bw},${y} ${x+bw},${y+rr}V${padT+h}Z"/>`;
+        svg += `<text class="val-t" x="${x + bw/2}" y="${y - 6}" text-anchor="middle">${fmt(it.value)}</text>`;
+      }
+      svg += `<rect x="${x-gap/2}" y="${padT}" width="${bw+gap}" height="${h}" fill="transparent" data-tip="${esc(it.tip || tipText(`${it.label}: ${fmt(it.value)}`))}"/>`;
+      svg += `<text class="axis-t" x="${x + bw/2}" y="${padT + h + 16}" text-anchor="middle">${esc(it.label)}</text>`;
+    });
+    svg += `</svg>`;
+    return `<div class="bars">${svg}</div>`;
+  }
+
+  // ---- Render ----
+  function render(){
+    const body = $("#repBody");
+    // Keep a picker menu open while ticking several boxes (the page redraws on each tick).
+    const openMenu = document.querySelector(".mp .mp-menu:not([hidden])");
+    const openId = openMenu ? openMenu.closest(".mp").id : null;
+    const scrollY = window.scrollY;
+    const v = view(), b = base();
+    const students = uniq(v.map(r => r.sid));
+    const math = v.filter(r => r.subject === "Math").length, reading = v.length - math;
+    const bySid = new Map(); v.forEach(r => { const s = bySid.get(r.sid) || new Set(); s.add(r.subject); bySid.set(r.sid, s); });
+    const both = [...bySid.values()].filter(s => s.size > 1).length;
+    const onCal = v.filter(r => r.onCal).length;
+    const noLevel = v.filter(r => r.group === "none").length;
+    const teachersAll = [...new Set(rows.map(r => r.teacher))].sort((a,b) => a.localeCompare(b));
+
+    // Showing line
+    const tSel = [...F.teachers], gSel = [...F.groups].map(k => groupMeta(k).short);
+    const showing = `Showing <b>${tSel.length ? (tSel.length <= 3 ? tSel.map(esc).join(", ") : tSel.length + " teachers") : "all teachers"}</b>`
+      + ` · <b>${gSel.length ? gSel.map(esc).join(", ") : "all level groups"}</b>`
+      + (F.subject !== "all" ? ` · <b>${F.subject} only</b>` : "") + (F.mode !== "all" ? ` · <b>${F.mode} only</b>` : "")
+      + ` · active students on Student Roster, monitor students included.`;
+
+    // Donut data
+    const groupParts = GROUPS.map(g => ({ key:g.key, label:g.label, value: b.filter(r => r.group === g.key).length, color:g.color, clickGroup:g.key }));
+    const subjParts = [{ label:"Math", value:math, color:"var(--math)" }, { label:"Reading", value:reading, color:"var(--reading)" }];
+    const modeParts = [{ label:"Paper", value: v.filter(r => r.mode === "Paper").length, color:"var(--paper)" },
+                       { label:"KC", value: v.filter(r => r.mode === "KC").length, color:"var(--kc)" }];
+    const noMode = v.filter(r => !r.mode).length;
+    if(noMode) modeParts.push({ label:"Not set", value:noMode, color:"var(--gnone)" });
+
+    // Level columns
+    const lvCols = (subject, order) => {
+      const list = v.filter(r => r.subject === subject && r.level);
+      const counts = {}; list.forEach(r => counts[r.level] = (counts[r.level] || 0) + 1);
+      const extra = Object.keys(counts).filter(k => !order.includes(k)).sort();
+      return [...order, ...extra].filter(k => counts[k]).map(k => {
+        const g = groupMeta(groupOf(subject, k, k === "3A" ? null : ""));
+        const color = k === "3A" ? "var(--g1)" : g.color;
+        return { label:k, value:counts[k], color, tip: tipText(`${subject} ${k}: ${fmt(counts[k])}`, `${pct(counts[k], list.length)}% of ${subject} with a level · ${g.label}`) };
+      });
+    };
+    // Grades
+    const gradeCounts = {}; const seen = new Set();
+    v.forEach(r => { if(seen.has(r.sid)) return; seen.add(r.sid); const g = r.grade || "—"; gradeCounts[g] = (gradeCounts[g] || 0) + 1; });
+    const gKeys = [...GRADE_ORDER.filter(g => gradeCounts[g]), ...Object.keys(gradeCounts).filter(g => !GRADE_ORDER.includes(g)).sort()];
+    const gradeCols = gKeys.map(g => ({ label: g === "—" ? "None" : g, value: gradeCounts[g], color:"var(--bar)", tip: tipText(`${g === "—" ? "No grade" : g}: ${fmt(gradeCounts[g])} students`) }));
+
+    // Per-teacher table (respects subject/mode/group filters; lists picked teachers, or all)
+    const tList = (F.teachers.size ? [...F.teachers] : teachersAll).filter(t => rows.some(r => r.teacher === t));
+    const allForGroups = rows.filter(r => (F.subject === "all" || r.subject === F.subject) && (F.mode === "all" || r.mode === F.mode) && (!F.groups.size || F.groups.has(r.group)));
+    const tRows = tList.map(t => {
+      const tr = allForGroups.filter(r => r.teacher === t);
+      const segs = GROUPS.map(g => ({ g, n: tr.filter(r => r.group === g.key).length })).filter(s => s.n);
+      return { t, tr, students: uniq(tr.map(r => r.sid)), subjects: tr.length,
+        math: tr.filter(r => r.subject === "Math").length, reading: tr.filter(r => r.subject === "Reading").length,
+        noLevel: tr.filter(r => r.group === "none").length, noCal: tr.filter(r => !r.onCal).length, segs };
+    }).sort((a,b) => b.subjects - a.subjects);
+    const teacherTable = `
+      <div class="table-scroll"><table class="t">
+        <thead><tr><th>Teacher</th><th class="n">Students</th><th class="n">Subjects</th><th class="n">Math</th><th class="n">Reading</th><th>Level groups</th><th class="n">No level</th><th class="n">Not on Calendar</th></tr></thead>
+        <tbody>${tRows.map(x => `<tr class="clickrow ${F.teachers.has(x.t) ? "on" : ""}" data-action="toggle-teacher" data-name="${esc(x.t)}" title="Click to ${F.teachers.has(x.t) ? "remove from" : "add to"} the teacher filter">
+          <td class="tname">${esc(x.t)}</td><td class="n">${fmt(x.students)}</td><td class="n">${fmt(x.subjects)}</td><td class="n">${fmt(x.math)}</td><td class="n">${fmt(x.reading)}</td>
+          <td><div class="stack">${x.segs.map(s => `<span style="flex:${s.n};background:${s.g.color}" data-tip="${esc(tipText(`${s.g.label}: ${fmt(s.n)}`, `${pct(s.n, x.subjects)}% of ${x.t}'s subjects`))}"></span>`).join("") || `<span style="flex:1;background:var(--border)"></span>`}</div></td>
+          <td class="n ${x.noLevel ? "warnnum" : "muted"}">${fmt(x.noLevel)}</td><td class="n ${x.noCal ? "warnnum" : "muted"}">${fmt(x.noCal)}</td></tr>`).join("")}</tbody>
+        <tfoot><tr><td>Total</td><td class="n">${fmt(uniq(tRows.flatMap(x => x.tr.map(r => r.sid))))}</td><td class="n">${fmt(tRows.reduce((a,x)=>a+x.subjects,0))}</td><td class="n">${fmt(tRows.reduce((a,x)=>a+x.math,0))}</td><td class="n">${fmt(tRows.reduce((a,x)=>a+x.reading,0))}</td><td></td><td class="n">${fmt(tRows.reduce((a,x)=>a+x.noLevel,0))}</td><td class="n">${fmt(tRows.reduce((a,x)=>a+x.noCal,0))}</td></tr></tfoot>
+      </table></div>`;
+
+    // Needs attention
+    const dupKey = {}; v.forEach(r => { const k = r.sid + "|" + r.subject; (dupKey[k] = dupKey[k] || []).push(r); });
+    const dups = Object.values(dupKey).filter(a => a.length > 1);
+    const issues = {
+      nolevel: v.filter(r => r.group === "none"),
+      nocal: v.filter(r => !r.onCal),
+      dup: dups.flat()
+    };
+    const issueLabels = { nolevel:"No level yet", nocal:"Not on Calendar (no class time)", dup:"Same subject twice" };
+    const list = issues[issueTab].slice().sort((a,b) => a.teacher.localeCompare(b.teacher) || (a.last||a.name).localeCompare(b.last||b.name));
+    const issuesHtml = `
+      <div class="tabs">${Object.keys(issues).map(k => `<button class="${issueTab===k?"on":""}" data-action="issue-tab" data-tab="${k}">${issueLabels[k]} · ${fmt(issues[k].length)}</button>`).join("")}</div>
+      ${list.length ? `<div class="issue-list"><table class="t"><thead><tr><th>Student</th><th>Subject</th><th>Teacher</th><th>Level</th></tr></thead><tbody>
+        ${list.map(r => `<tr><td>${esc(r.last && r.first ? `${r.last}, ${r.first}` : r.name)}</td><td>${r.subject}</td><td class="muted">${esc(r.teacher)}</td><td>${r.level ? esc(r.level + (r.page ? " " + r.page : "")) : `<span class="muted">—</span>`}</td></tr>`).join("")}
+      </tbody></table></div>` : `<div class="empty-note">Nothing here 🎉</div>`}`;
+
+    body.innerHTML = `
+      <div class="viz">
+        <div class="rep-filters">
+          ${mpHtml("mpRepTeachers", "Teachers")}
+          ${mpHtml("mpRepGroups", "Level groups")}
+          <div class="fld">Subject<div class="seg">${["all","Math","Reading"].map(s => `<button data-action="subject" data-v="${s}" class="${F.subject===s?"on":""}">${s === "all" ? "Both" : s}</button>`).join("")}</div></div>
+          <label class="fld">Mode<select id="repMode"><option value="all">All modes</option><option value="Paper" ${F.mode==="Paper"?"selected":""}>Paper</option><option value="KC" ${F.mode==="KC"?"selected":""}>KC</option></select></label>
+          ${(F.teachers.size || F.groups.size || F.subject !== "all" || F.mode !== "all") ? `<button class="btn sm" data-action="reset">Clear filters</button>` : ""}
+        </div>
+        <div class="showing">${showing}</div>
+
+        <div class="kpis">
+          <div class="kpi"><div class="v">${fmt(students)}</div><div class="l">Students</div><div class="s">each child once</div></div>
+          <div class="kpi"><div class="v">${fmt(v.length)}</div><div class="l">Subjects</div><div class="s">Math + Reading rows</div></div>
+          <div class="kpi"><div class="v">${fmt(math)}</div><div class="l">Math</div><div class="s">${pct(math, v.length)}% of subjects</div></div>
+          <div class="kpi"><div class="v">${fmt(reading)}</div><div class="l">Reading</div><div class="s">${pct(reading, v.length)}% of subjects</div></div>
+          <div class="kpi"><div class="v">${fmt(both)}</div><div class="l">Taking both</div><div class="s">${pct(both, students)}% of students</div></div>
+          <div class="kpi ${onCal < v.length ? "warn" : ""}"><div class="v">${pct(onCal, v.length)}%</div><div class="l">On Calendar</div><div class="s">${fmt(onCal)} of ${fmt(v.length)} have class times</div></div>
+          <div class="kpi ${noLevel ? "warn" : ""}"><div class="v">${fmt(noLevel)}</div><div class="l">No level yet</div><div class="s">${pct(noLevel, v.length)}% of subjects</div></div>
+        </div>
+
+        <div class="grid3">
+          <div class="card"><div class="card-head"><h3>Level groups</h3><span class="hint">${F.groups.size ? "faded = not selected · click to change" : "click a group to filter"}</span></div><div class="card-body ${F.groups.size ? "" : ""}">${donut(groupParts, "subjects", { selected:F.groups })}</div></div>
+          <div class="card"><div class="card-head"><h3>Math vs Reading</h3></div><div class="card-body">${donut(subjParts, "subjects")}</div></div>
+          <div class="card"><div class="card-head"><h3>Paper vs KC</h3></div><div class="card-body">${donut(modeParts, "subjects")}</div></div>
+        </div>
+
+        <div class="grid2">
+          <div class="card"><div class="card-head"><h3>Math — students per level</h3><span class="hint">${fmt(v.filter(r=>r.subject==="Math"&&r.level).length)} with a level</span></div><div class="card-body">${columns(lvCols("Math", MATH_ORDER), { aria:"Math students per level", empty:"No Math students in this view." })}</div></div>
+          <div class="card"><div class="card-head"><h3>Reading — students per level</h3><span class="hint">${fmt(v.filter(r=>r.subject==="Reading"&&r.level).length)} with a level</span></div><div class="card-body">${columns(lvCols("Reading", READ_ORDER), { aria:"Reading students per level", empty:"No Reading students in this view." })}</div></div>
+        </div>
+        <div class="legend" style="flex-direction:row; flex-wrap:wrap; gap:14px; margin:-6px 0 16px;">${GROUPS.filter(g => g.key !== "none").map(g => `<div class="it"><span class="sw" style="background:${g.color}"></span><span class="nm" style="font-weight:500;color:var(--ink-muted)">${esc(g.label)}</span></div>`).join("")}</div>
+
+        <div class="card"><div class="card-head"><h3>By teacher</h3><span class="hint">click a teacher to add or remove them from the filter</span></div><div class="card-body" style="padding-top:4px;">${teacherTable}</div></div>
+
+        <div class="grid2">
+          <div class="card"><div class="card-head"><h3>Students per grade</h3></div><div class="card-body">${columns(gradeCols, { aria:"Students per grade", empty:"No students in this view." })}</div></div>
+          <div class="card"><div class="card-head"><h3>Needs attention</h3></div><div class="card-body">${issuesHtml}</div></div>
+        </div>
+      </div>`;
+
+    // Pickers
+    const tCounts = {}; rows.filter(r => (F.subject === "all" || r.subject === F.subject)).forEach(r => tCounts[r.teacher] = (tCounts[r.teacher] || 0) + 1);
+    MP.mpRepTeachers = { allText:"All teachers", noun:"teachers", selected:F.teachers,
+      onChange: s => { F.teachers = s; savePick("teachers"); render(); },
+      options: () => teachersAll.map(t => ({ value:t, label:t, count: tCounts[t] || 0 })) };
+    const gCounts = {}; b.forEach(r => gCounts[r.group] = (gCounts[r.group] || 0) + 1);
+    MP.mpRepGroups = { allText:"All groups", noun:"groups", selected:F.groups,
+      onChange: s => { F.groups = s; savePick("groups"); render(); },
+      options: () => GROUPS.map(g => ({ value:g.key, label:g.label, count: gCounts[g.key] || 0 })) };
+    mpRender("mpRepTeachers"); mpRender("mpRepGroups");
+    if(openId){ const r = document.getElementById(openId); if(r){ r.querySelector(".mp-menu").hidden = false; r.querySelector(".mp-btn").setAttribute("aria-expanded","true"); } }
+    window.scrollTo(0, scrollY);
+  }
+
+  document.addEventListener("click", async e => {
+    const btn = e.target.closest("[data-action]");
+    if(!btn) return;
+    const a = btn.dataset.action;
+    if(a === "logout"){ await sbClient.auth.signOut(); return; }
+    if(a === "subject"){ F.subject = btn.dataset.v; render(); }
+    else if(a === "reset"){ F.teachers = new Set(); F.groups = new Set(); F.subject = "all"; F.mode = "all"; savePick("teachers"); savePick("groups"); render(); }
+    else if(a === "toggle-group"){ const s = new Set(F.groups); s.has(btn.dataset.key) ? s.delete(btn.dataset.key) : s.add(btn.dataset.key); F.groups = s; savePick("groups"); tip.hidden = true; render(); }
+    else if(a === "toggle-teacher"){ const s = new Set(F.teachers); s.has(btn.dataset.name) ? s.delete(btn.dataset.name) : s.add(btn.dataset.name); F.teachers = s; savePick("teachers"); render(); }
+    else if(a === "issue-tab"){ issueTab = btn.dataset.tab; render(); }
+  });
+  document.addEventListener("change", e => { if(e.target.id === "repMode"){ F.mode = e.target.value; render(); } });
+  document.addEventListener("submit", async e => {
+    if(e.target.id === "loginForm"){
+      e.preventDefault();
+      const fd = new FormData(e.target);
+      const { error } = await sbClient.auth.signInWithPassword({ email: fd.get("email"), password: fd.get("password") });
+      if(error) showLogin(error.message);
+    }
+  });
+  boot();
+})();
+</script>
+<script>
+(function(){
+  var KEY = "kumonRailCollapsed", root = document.documentElement;
+  function apply(c){
+    root.classList.toggle("rail-collapsed", c);
+    var b = document.getElementById("railToggle");
+    if(b){ var t = c ? "Expand sidebar" : "Collapse sidebar"; b.title = t; b.setAttribute("aria-label", t); b.setAttribute("aria-expanded", String(!c)); }
+  }
+  apply(root.classList.contains("rail-collapsed"));
+  var b = document.getElementById("railToggle");
+  if(b) b.addEventListener("click", function(){
+    var c = !root.classList.contains("rail-collapsed"); apply(c);
+    try{ localStorage.setItem(KEY, c ? "1" : "0"); }catch(e){}
+  });
+  // Collapsed rail is icons only, so every link gets a tooltip with its name.
+  document.querySelectorAll(".rail .navbtn").forEach(function(a){
+    if(a.title) return;
+    var t = (a.textContent || "").replace(/\s+/g, " ").trim().replace(/\s*\d+$/, "");
+    if(t) a.title = t;
+  });
+  // The Pipeline views group follows the same who-can-see-Pipeline flag as the single Pipeline link.
+  var link = document.getElementById("navPipelineLink"), grp = document.getElementById("navPipelineGroup");
+  if(link && grp){
+    var sync = function(){ grp.hidden = link.hidden; };
+    sync(); new MutationObserver(sync).observe(link, { attributes:true, attributeFilter:["hidden"] });
+  }
+})();
+</script>
+</body>
+</html>
