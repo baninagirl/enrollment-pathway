@@ -425,6 +425,16 @@
   const GROUP_READ = { "7a-3a61":["7A","6A","5A","4A"], "3a61-a":["2A","AI","AII"], "bcd":["BI","BII","CI","CII","DI","DII"], "efg":["EI","EII","FI","FII","GI","GII"], "h-o":["HI","HII","I-I","I-II","J","K","L","M","N","O"] };
   const MATH_ORDER = ["7A","6A","5A","4A","3A","2A","A","B","C","D","E","F","G","H","I","J","K","L","M","N","O"];
   const READ_ORDER = ["7A","6A","5A","4A","3A","2A","AI","AII","BI","BII","CI","CII","DI","DII","EI","EII","FI","FII","GI","GII","HI","HII","I-I","I-II","J","K","L","M","N","O"];
+  // "1st", "Grade 1", "G1", "1" → P1; "Kinder" → K
+  function normGrade(g){
+    const t = String(g || "").trim().toUpperCase().replace(/\s+/g, " ");
+    if (!t) return "";
+    let m = t.match(/^(?:GRADE ?|GR\.? ?|G ?)?(\d{1,2})(?:ST|ND|RD|TH)?(?: GRADE)?$/);
+    if (m) return "P" + Number(m[1]);
+    m = t.match(/^P ?(\d{1,2})$/); if (m) return "P" + Number(m[1]);
+    if (/^(K|KG|KINDER|KINDERGARTEN|KINDER ?\d?)$/.test(t)) return "K";
+    return t;
+  }
   const GRADE_ORDER = ["PK1","PK2","PK3","K","P1","P2","P3","P4","P5","P6","P7","P8","P9","P10","P11","P12","P13","P14"];
   function groupOf(subject, level, page){
     const lv = String(level || "").trim().toUpperCase();
@@ -523,7 +533,7 @@
           teacher: (e.teacher || "").trim() || "(No teacher)",
           level: lv, page: e.current_page || "", group: groupOf(e.subject, lv, e.current_page),
           mode: e.mode === "KC" ? "KC" : (e.mode === "Paper" ? "Paper" : ""),
-          grade: (st.age_grade || "").trim().toUpperCase(),
+          grade: normGrade(st.age_grade),
           onCal: timed.has(e.id), monitor: !!e.is_monitor
         };
       });
