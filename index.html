@@ -1543,7 +1543,7 @@
   // run through the 12:00-1:30 PM break. Training slots are about people (who's free).
   const SLOT_PREFS_KEY = "kumonSlotPrefs";
   const SLOT_DEFAULTS_BY_KIND = {
-    dt: { start:"10:30", end:"18:00", len:60, days:[1,2,3,4,5,6], breakFrom:"12:00", breakTo:"13:30", perSlot:1 },
+    dt: { start:"10:30", end:"18:00", len:60, days:[1,2,3,4,5,6], breakFrom:"12:00", breakTo:"13:30", perSlot:1, satOnly:"13:30" },
     // Training slots are only offered for these trainers (by core name); change under "Trainers" in the finder.
     st: { start:"09:00", end:"18:00", len:60, days:[1,2,3,4,5,6], breakFrom:"", breakTo:"", trainers:["queenie","frixie","mira"] }
   };
@@ -1607,14 +1607,17 @@
       const allBusy = isDt ? Object.values(busy).flat() : [];
       const cells = starts.map(m => {
         const past = iso < todayIso || (iso === todayIso && m <= nowMin);
+        // DT on Saturday: only the one start time set in "Saturday only at" (blank = every time).
+        const satMin = isDt && dow === 6 ? toMin(p.satOnly) : null;
+        const off = satMin != null && m !== satMin;
         // DT: open when no scheduled diagnostic (any DT teacher) overlaps this hour.
         // DT: a time slot holds up to "DTs per time slot" bookings (default 1), whoever is doing them.
         const taken = isDt ? allBusy.filter(b => b < m + len && b + len > m).length : 0;
         const perSlot = Math.max(1, Math.floor(Number(p.perSlot)) || 1);
-        const free = past ? []
+        const free = (past || off) ? []
           : isDt ? (taken < perSlot ? ["Open"] : [])
           : people.filter(who => !(busy[slotKey(who)] || []).some(b => b < m + len && b + len > m));
-        return { m, past, free, taken, left: isDt ? Math.max(0, perSlot - taken) : 0, perSlot };
+        return { m, past, off, free, taken, left: isDt ? Math.max(0, perSlot - taken) : 0, perSlot };
       });
       return { dow, d, iso, cells };
     });
@@ -1633,7 +1636,7 @@
     const lenMin = Number(p.len) || 60;
     const body = starts.map((m, i) => `<tr><td>${fmtTime(fromMin(m))}${isDt ? `<div class="hint" style="font-weight:400;">to ${fmtTime(fromMin(m + lenMin))}</div>` : ""}</td>${days.map(d => {
       const c = d.cells[i];
-      if(c.past) return `<td class="past"><span class="slot-none">—</span></td>`;
+      if(c.past || c.off) return `<td class="past"><span class="slot-none">—</span></td>`;
       if(!c.free.length) return `<td><span class="slot-none">${isDt ? (c.perSlot > 1 ? `Full (${c.taken}/${c.perSlot})` : "Booked") : "No one free"}</span></td>`;
       if(isDt) return `<td><button type="button" class="slot-chip" data-action="slot-book" data-date="${d.iso}" data-time="${fromMin(m)}" data-who="" title="Book a diagnostic at this time">Open${c.perSlot > 1 ? ` · ${c.left} left` : ""}</button></td>`;
       return `<td>${c.free.map(who => `<button type="button" class="slot-chip" data-action="slot-book" data-date="${d.iso}" data-time="${fromMin(m)}" data-who="${esc(who)}" title="Schedule a training with ${esc(who)}">${esc(who)}</button>`).join("")}</td>`;
@@ -1657,7 +1660,8 @@
           ${isDt ? "" : `<div class="slot-days" title="Trainers shown in the grid">${STATE.settings.trainers.map(n => `<label><input type="checkbox" data-action="slot-trainer" data-name="${esc(slotKey(n))}" ${(Array.isArray(p.trainers) ? p.trainers : []).includes(slotKey(n)) ? "checked" : ""}>${esc(n)}</label>`).join("")}</div>`}
           ${isDt ? `<label>DTs per time slot<input type="number" min="1" max="10" step="1" style="width:96px; padding:6px 8px; font-size:13px;" data-action="slot-pref" data-key="perSlot" value="${esc(Math.max(1, Math.floor(Number(p.perSlot)) || 1))}"></label>
           <label>No DTs from<input type="time" data-action="slot-pref" data-key="breakFrom" value="${esc(p.breakFrom||"")}"></label>
-          <label>until<input type="time" data-action="slot-pref" data-key="breakTo" value="${esc(p.breakTo||"")}"></label>` : ""}
+          <label>until<input type="time" data-action="slot-pref" data-key="breakTo" value="${esc(p.breakTo||"")}"></label>
+          <label title="Clear it to offer every time on Saturday">Saturday only at<input type="time" data-action="slot-pref" data-key="satOnly" value="${esc(p.satOnly||"")}"></label>` : ""}
           <div class="slot-days">${[1,2,3,4,5,6,0].map(dw => `<label><input type="checkbox" data-action="slot-day" data-dow="${dw}" ${p.days.includes(dw)?"checked":""}>${DOW[dw]}</label>`).join("")}</div>
         </div>
         <div class="hint">${isDt
