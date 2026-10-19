@@ -184,7 +184,11 @@
 </head>
 <body>
 
-<div class="login-screen" id="loginScreen">
+<!-- While the page checks who's signed in: a quiet loading screen instead of flashing the login form. -->
+<div class="login-screen" id="bootSplash" aria-live="polite">
+  <div class="login-brand" style="opacity:.85"><span class="dot"></span>Kumon Hub</div>
+</div>
+<div class="login-screen" id="loginScreen" hidden>
   <form class="login-card" id="loginForm">
     <div class="login-brand"><span class="dot"></span>Kumon Hub</div>
     <div class="login-sub">Sign in with your team account.</div>
@@ -195,6 +199,11 @@
   </form>
 </div>
 
+<script>
+  // No saved sign-in on this browser at all → show the login form right away (no splash).
+  (function(){ try{ var has = Object.keys(localStorage).some(function(k){ return /^sb-.*-auth-token$/.test(k); });
+    if(!has){ document.getElementById("bootSplash").hidden = true; document.getElementById("loginScreen").hidden = false; } }catch(e){} })();
+</script>
 <div class="app" id="appRoot" hidden>
   <nav class="rail">
     <button type="button" class="rail-toggle" id="railToggle" aria-label="Collapse sidebar" title="Collapse sidebar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg></button>
@@ -260,13 +269,13 @@
   let pagedFurther = false;
   const filters = { page: "all", actor: "all", since: "", search: "" };
 
-  function showLogin(errMsg){
+  function showLogin(errMsg){ { const sp = document.getElementById("bootSplash"); if(sp) sp.hidden = true; }
     $("#loginScreen").hidden = false;
     $("#appRoot").hidden = true;
     const err = $("#loginError");
     if(errMsg){ err.textContent = errMsg; err.hidden = false; } else { err.hidden = true; }
   }
-  function showApp(){ $("#loginScreen").hidden = true; $("#appRoot").hidden = false; }
+  function showApp(){ { const sp = document.getElementById("bootSplash"); if(sp) sp.hidden = true; } $("#loginScreen").hidden = true; $("#appRoot").hidden = false; }
   function renderAccount(){
     const el = $("#railAccount");
     if(el) el.innerHTML = currentUser ? `<div class="account-row"><span class="account-email">${esc(currentUser.email)}</span><button class="btn sm ghost" data-action="logout">Log out</button></div>` : "";
