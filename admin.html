@@ -103,6 +103,10 @@
   .pill.admin{ background:var(--surface-2); color:var(--ink-muted); }
   .role-select, .teacher-name-select{ font-family:inherit; font-size:12.5px; padding:6px 8px; border-radius:7px; border:1px solid var(--border); background:var(--surface); color:var(--ink); transition: border-color .15s ease, box-shadow .15s ease; }
   .role-select:focus, .teacher-name-select:focus{ outline:none; border-color:var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+  .pill.removed{ background:var(--bad-soft, #FBE8E5); color:var(--bad, #C23B2B); }
+  .removed-row td{ color:var(--ink-muted); }
+  .btn.danger-ghost{ color:var(--bad, #C23B2B); border-color:transparent; background:transparent; }
+  .btn.danger-ghost:hover{ background:var(--bad-soft, #FBE8E5); }
   .you-tag{ font-size:11px; color:var(--ink-faint); font-weight:600; }
 
   select, input[type=text], input[type=number], input[type=date], input[type=email], input[type=password]{
@@ -389,9 +393,15 @@
         <div class="card-head"><h3>Team accounts</h3><span class="hint">${profiles.length}</span></div>
         <div class="table-scroll">
           <table class="stable">
-            <thead><tr><th>Email</th><th>Role</th><th>Name</th><th></th></tr></thead>
+            <thead><tr><th>Email</th><th>Role</th><th>Name</th><th></th><th></th></tr></thead>
             <tbody>
-              ${profiles.map(p => `
+              ${profiles.map(p => p.access_removed_at ? `
+                <tr class="removed-row">
+                  <td>${esc(p.email || p.id)}</td>
+                  <td colspan="2"><span class="pill removed">Access removed</span> <span class="hint">since ${esc(new Date(p.access_removed_at).toLocaleDateString(undefined,{month:"short",day:"numeric",year:"numeric"}))} — can't sign in</span></td>
+                  <td></td>
+                  <td style="text-align:right;"><button class="btn sm" data-action="restore-access" data-id="${p.id}">Restore access</button></td>
+                </tr>` : `
                 <tr>
                   <td>${esc(p.email || p.id)}</td>
                   <td>
@@ -405,6 +415,7 @@
                   </td>
                   <td>${teacherNameCell(p)}</td>
                   <td>${p.id === currentUser.id ? `<span class="you-tag">that's you</span>` : ""}</td>
+                  <td style="text-align:right;">${p.id === currentUser.id ? "" : `<button class="btn sm danger-ghost" data-action="remove-access" data-id="${p.id}">Remove access</button>`}</td>
                 </tr>
               `).join("")}
             </tbody>
@@ -513,6 +524,21 @@
     if(btn.dataset.action === "logout"){ await sbClient.auth.signOut(); }
     else if(btn.dataset.action === "open-new-login"){ openNewLoginModal(); }
     else if(btn.dataset.action === "close-modal"){ closeModal(); }
+    else if(btn.dataset.action === "remove-access" || btn.dataset.action === "restore-access"){
+      const id = btn.dataset.id, removing = btn.dataset.action === "remove-access";
+      const prof = profiles.find(p => p.id === id) || {};
+      const who = prof.email || "this login";
+      const msg = removing
+        ? `Remove ${who}'s access?\n\nThey'll be signed out and won't be able to log in to Kumon Hub. Their teacher name is cleared, so they no longer see any students. Their students, payments and history stay as they are.\n\nYou can restore the login later.`
+        : `Restore ${who}?\n\nThey'll be able to sign in again, as "Pending approval" with no name — set their role and name afterwards.`;
+      if(!confirm(msg)) return;
+      btn.disabled = true;
+      const { error } = await sbClient.rpc(removing ? "remove_login_access" : "restore_login_access", { p_user: id });
+      if(error){ btn.disabled = false; alert((removing ? "Couldn't remove access: " : "Couldn't restore access: ") + error.message + (/function/i.test(error.message) ? "\n\nRun phase87-remove-login-access.sql in Supabase first." : "")); return; }
+      logHistory(removing ? "remove_access" : "restore_access", `${removing ? "Removed" : "Restored"} ${who}'s access`, "profile", id);
+      profiles = await loadProfiles();
+      renderAdmin();
+    }
   });
 
   document.addEventListener("change", async (e)=>{
