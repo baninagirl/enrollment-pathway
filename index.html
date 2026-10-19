@@ -1543,7 +1543,7 @@
   // run through the 12:00-1:30 PM break. Training slots are about people (who's free).
   const SLOT_PREFS_KEY = "kumonSlotPrefs";
   const SLOT_DEFAULTS_BY_KIND = {
-    dt: { start:"10:30", end:"18:00", len:60, days:[1,2,3,4,5,6], breakFrom:"12:00", breakTo:"13:30", perSlot:1, satOnly:"13:30" },
+    dt: { start:"10:30", end:"18:00", len:60, days:[1,2,3,4,5,6], breakFrom:"12:00", breakTo:"13:30", perSlot:1, satTimes:"9:30 AM, 10:30 AM, 1:30 PM" },
     // Training slots are only offered for these trainers (by core name); change under "Trainers" in the finder.
     st: { start:"09:00", end:"18:00", len:60, days:[1,2,3,4,5,6], breakFrom:"", breakTo:"", trainers:["queenie","frixie","mira"] }
   };
@@ -1562,6 +1562,18 @@
   const fromMin = n => String(Math.floor(n/60)).padStart(2,"0") + ":" + String(n%60).padStart(2,"0");
   // Back-to-back slots from the start time. A slot that would run into the break isn't offered;
   // the next one starts right when the break ends (e.g. 10:30, then 1:30, 2:30 ...).
+  // "9:30 AM, 10:30, 1:30 PM" -> [570, 630, 810]. Times 1:00–6:59 without AM/PM are read as afternoon.
+  function parseTimeList(str){
+    const out = [];
+    String(str || "").split(/[,;\n]+/).forEach(part => {
+      const m = /^\s*(\d{1,2})(?::(\d{2}))?\s*(am|pm|a\.m\.|p\.m\.)?\s*$/i.exec(part);
+      if(!m) return;
+      let h = +m[1]; const mi = +(m[2] || 0); const ap = (m[3] || "").toLowerCase().replace(/\./g, "");
+      if(ap === "pm" && h < 12) h += 12; else if(ap === "am" && h === 12) h = 0; else if(!ap && h >= 1 && h <= 6) h += 12;
+      if(h < 24 && mi < 60) out.push(h*60 + mi);
+    });
+    return [...new Set(out)].sort((a,b) => a - b);
+  }
   function slotStarts(p){
     const a = toMin(p.start), b = toMin(p.end), len = Number(p.len) || 60;
     const bf = toMin(p.breakFrom), bt = toMin(p.breakTo);
@@ -1597,7 +1609,11 @@
     const isDt = slotTool.kind === "dt";
     const chosen = Array.isArray(p.trainers) ? p.trainers : SLOT_DEFAULTS_BY_KIND.st.trainers;
     const people = isDt ? ["Open"] : STATE.settings.trainers.filter(n => chosen.includes(slotKey(n)));
-    const starts = slotStarts(p);
+    // DT on Saturday uses its own list of start times ("Saturday times"); blank = same as weekdays.
+    const weekStarts = slotStarts(p);
+    const satList = isDt ? parseTimeList(p.satTimes) : [];
+    const useSat = satList.length && p.days.includes(6);
+    const starts = useSat ? [...new Set(weekStarts.concat(satList))].sort((a,b)=>a-b) : weekStarts;
     const todayIso = todayISO();
     const nowMin = new Date().getHours()*60 + new Date().getMinutes();
     const days = p.days.slice().sort((a,b)=> ((a+6)%7)-((b+6)%7)).map(dow => {
@@ -1607,9 +1623,7 @@
       const allBusy = isDt ? Object.values(busy).flat() : [];
       const cells = starts.map(m => {
         const past = iso < todayIso || (iso === todayIso && m <= nowMin);
-        // DT on Saturday: only the one start time set in "Saturday only at" (blank = every time).
-        const satMin = isDt && dow === 6 ? toMin(p.satOnly) : null;
-        const off = satMin != null && m !== satMin;
+        const off = !((useSat && dow === 6) ? satList : weekStarts).includes(m);
         // DT: open when no scheduled diagnostic (any DT teacher) overlaps this hour.
         // DT: a time slot holds up to "DTs per time slot" bookings (default 1), whoever is doing them.
         const taken = isDt ? allBusy.filter(b => b < m + len && b + len > m).length : 0;
@@ -1661,7 +1675,7 @@
           ${isDt ? `<label>DTs per time slot<input type="number" min="1" max="10" step="1" style="width:96px; padding:6px 8px; font-size:13px;" data-action="slot-pref" data-key="perSlot" value="${esc(Math.max(1, Math.floor(Number(p.perSlot)) || 1))}"></label>
           <label>No DTs from<input type="time" data-action="slot-pref" data-key="breakFrom" value="${esc(p.breakFrom||"")}"></label>
           <label>until<input type="time" data-action="slot-pref" data-key="breakTo" value="${esc(p.breakTo||"")}"></label>
-          <label title="Clear it to offer every time on Saturday">Saturday only at<input type="time" data-action="slot-pref" data-key="satOnly" value="${esc(p.satOnly||"")}"></label>` : ""}
+          <label title="Start times offered on Saturday, separated by commas. Leave blank to use the same times as weekdays.">Saturday times<input type="text" style="width:220px;" placeholder="same as weekdays" data-action="slot-pref" data-key="satTimes" value="${esc(p.satTimes||"")}"></label>` : ""}
           <div class="slot-days">${[1,2,3,4,5,6,0].map(dw => `<label><input type="checkbox" data-action="slot-day" data-dow="${dw}" ${p.days.includes(dw)?"checked":""}>${DOW[dw]}</label>`).join("")}</div>
         </div>
         <div class="hint">${isDt
