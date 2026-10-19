@@ -815,20 +815,26 @@
     }catch(e){ console.warn("couldn't load role", e); currentRole = "pending"; currentTeacherName = null; }
   }
 
+  let shownUserId = null;   // the account whose data this tab has loaded
   async function boot(){
     if(!window.supabase){ showLogin("Couldn't load Supabase."); return; }
     try{ sbClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY); }
     catch(e){ showLogin("Couldn't connect to Supabase."); return; }
 
     const { data:{ session } } = await sbClient.auth.getSession();
-    if(session){ currentUser = session.user; showApp(); await loadRole(); renderAccount(); startApp(); }
+    if(session){ currentUser = session.user; shownUserId = session.user.id; await loadRole(); showApp(); renderAccount(); startApp(); }
     else{ showLogin(); }
 
     sbClient.auth.onAuthStateChange(async (event, session)=>{
       if(session){
-        currentUser = session.user;
-        showApp(); await loadRole(); renderAccount(); startApp();
+        // Same person (token refresh / page start): nothing to do. A different person signed in
+        // (e.g. in another tab): reload so nothing from the previous account stays on screen.
+        if(shownUserId === session.user.id) return;
+        if(shownUserId){ location.reload(); return; }
+        currentUser = session.user; shownUserId = session.user.id;
+        await loadRole(); showApp(); renderAccount(); startApp();
       }else{
+        if(shownUserId){ location.reload(); return; }  // signed out: reload so nothing from that account stays in memory or on screen
         currentUser = null; currentRole = null;
         showLogin();
       }
