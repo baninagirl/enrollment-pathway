@@ -183,6 +183,77 @@
   .login-sub{ font-size:13px; color:var(--ink-muted); margin:-6px 0 4px; }
   .login-error{ background:var(--bad-soft); color:var(--bad); border-radius:9px; padding:9px 12px; font-size:12.5px; font-weight:600; }
 
+  /* ===== Comments (Google Sheets style): corner flag on a cell, side panel to read / reply / resolve ===== */
+  :root{ --cc:#F4B400; --cc-soft:#FEF7E0; --cc-ink:#8A6100; }
+  :root[data-theme="dark"]{ --cc:#E2A93B; --cc-soft:#3A2F12; --cc-ink:#F2C766; }
+  @media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){ --cc:#E2A93B; --cc-soft:#3A2F12; --cc-ink:#F2C766; } }
+  .cal-grid .cal-cell{ position:relative; }
+  .cc-add{ position:absolute; top:3px; right:3px; width:20px; height:20px; padding:0; border-radius:6px;
+    border:1px solid var(--border); background:var(--surface); color:var(--ink-muted); cursor:pointer;
+    display:flex; align-items:center; justify-content:center; opacity:0; transition:opacity .12s ease; z-index:2; }
+  .cc-add svg{ width:12px; height:12px; }
+  .cal-cell:hover .cc-add, .cc-add:focus-visible{ opacity:1; }
+  .cc-add:hover{ color:var(--ink); border-color:var(--ink-faint); }
+  @media (hover:none){ .cc-add{ opacity:.55; } }
+  .cc-flag{ position:absolute; top:0; right:0; width:0; height:0; padding:0; border:none; cursor:pointer; z-index:3;
+    border-top:12px solid var(--cc); border-left:12px solid transparent; background:transparent; }
+  .cal-cell.has-cc .cc-add{ right:15px; }
+  .cal-cell.has-cc{ background:linear-gradient(var(--cc-soft), var(--cc-soft)) top right / 100% 3px no-repeat; }
+  .cal-cell.cc-focus{ box-shadow:inset 0 0 0 2px var(--cc); background:var(--cc-soft); transition:background .3s ease; }
+  .cc-chip-dot{ display:inline-block; width:7px; height:7px; border-radius:50%; background:var(--cc); margin-left:4px; vertical-align:middle; }
+
+  .cc-toggle{ position:relative; }
+  .cc-toggle .cc-count{ min-width:18px; height:18px; padding:0 5px; border-radius:9px; background:var(--cc); color:#3B2A00; font-size:11px; font-weight:800; display:inline-flex; align-items:center; justify-content:center; }
+  .cc-toggle.on{ background:var(--accent-soft); color:var(--accent-soft-ink); border-color:var(--accent-soft); }
+
+  .cc-panel{ position:fixed; top:0; right:0; bottom:0; width:380px; max-width:100%; z-index:90; background:var(--surface);
+    border-left:1px solid var(--border); box-shadow:-12px 0 32px -18px rgba(16,20,30,.35); display:flex; flex-direction:column; }
+  @media (min-width:861px){ .cc-panel{ height:calc(100dvh / var(--z)); bottom:auto; } body.cc-open .main{ padding-right:410px; } }
+  .cc-head{ display:flex; align-items:center; justify-content:space-between; gap:8px; padding:16px 16px 10px; }
+  .cc-head h2{ font-size:17px; font-weight:700; }
+  .cc-x{ border:none; background:transparent; color:var(--ink-muted); width:32px; height:32px; border-radius:8px; cursor:pointer; font-size:20px; line-height:1; }
+  .cc-x:hover{ background:var(--surface-2); color:var(--ink); }
+  .cc-tabs{ display:flex; gap:3px; margin:0 16px 10px; background:var(--surface-2); padding:3px; border-radius:10px; border:1px solid var(--border); }
+  .cc-tab{ flex:1; border:none; background:transparent; padding:7px 10px; border-radius:7px; font-size:12.5px; font-weight:700; color:var(--ink-muted); cursor:pointer; }
+  .cc-tab.active{ background:var(--surface); color:var(--ink); box-shadow:var(--shadow); }
+  .cc-scope{ display:flex; align-items:center; justify-content:space-between; gap:8px; margin:0 16px 10px; padding:8px 10px; border-radius:9px; background:var(--cc-soft); color:var(--cc-ink); font-size:12.5px; font-weight:600; }
+  .cc-scope button{ border:none; background:none; color:inherit; font:inherit; font-weight:800; text-decoration:underline; cursor:pointer; padding:0; }
+  .cc-body{ flex:1; overflow-y:auto; padding:2px 16px 20px; display:flex; flex-direction:column; gap:10px; }
+  .cc-empty{ text-align:center; color:var(--ink-muted); font-size:13px; padding:30px 10px; line-height:1.5; }
+  .cc-card{ border:1px solid var(--border); border-radius:12px; padding:11px 12px; background:var(--surface); }
+  .cc-card.new{ border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-soft); }
+  .cc-card.resolved{ background:var(--surface-2); }
+  .cc-card.flash{ border-color:var(--cc); box-shadow:0 0 0 3px var(--cc-soft); }
+  .cc-top{ display:flex; align-items:flex-start; justify-content:space-between; gap:8px; margin-bottom:6px; }
+  .cc-anchor{ border:none; background:none; padding:0; text-align:left; cursor:pointer; font:inherit; font-size:12px; font-weight:700; color:var(--accent); line-height:1.35; }
+  .cc-anchor .cc-about{ display:block; color:var(--ink-muted); font-weight:600; }
+  .cc-anchor.off{ color:var(--ink-muted); cursor:default; }
+  .cc-resolve{ flex:none; border:1px solid var(--border); background:var(--surface); color:var(--good); border-radius:8px; padding:4px 8px; font-size:12px; font-weight:700; cursor:pointer; display:inline-flex; align-items:center; gap:4px; }
+  .cc-resolve:hover{ background:var(--good-soft); border-color:var(--good-soft); }
+  .cc-resolve.reopen{ color:var(--ink-muted); }
+  .cc-resolve.reopen:hover{ background:var(--surface-2); border-color:var(--border); color:var(--ink); }
+  .cc-resolve svg{ width:13px; height:13px; }
+  .cc-msg{ padding:7px 0; border-top:1px solid var(--border); }
+  .cc-msg:first-of-type{ border-top:none; padding-top:2px; }
+  .cc-meta{ display:flex; align-items:baseline; gap:6px; flex-wrap:wrap; font-size:12px; }
+  .cc-author{ font-weight:700; color:var(--ink); }
+  .cc-when{ color:var(--ink-faint); }
+  .cc-acts{ margin-left:auto; display:flex; gap:8px; }
+  .cc-acts button{ border:none; background:none; color:var(--ink-muted); font:inherit; font-size:11.5px; font-weight:600; cursor:pointer; padding:0; }
+  .cc-acts button:hover{ color:var(--ink); text-decoration:underline; }
+  .cc-text{ font-size:13px; color:var(--ink); white-space:pre-wrap; word-break:break-word; margin-top:2px; line-height:1.45; }
+  .cc-resolved-note{ font-size:11.5px; color:var(--good); font-weight:600; margin-top:6px; }
+  .cc-panel textarea{ width:100%; font:inherit; font-size:13px; padding:8px 10px; border-radius:8px; border:1px solid var(--border); background:var(--surface); color:var(--ink); resize:vertical; min-height:38px; }
+  .cc-panel textarea:focus{ outline:none; border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-soft); }
+  .cc-panel select{ font-size:12.5px; padding:6px 8px; }
+  .cc-reply{ margin-top:8px; }
+  .cc-btns{ display:flex; justify-content:flex-end; gap:6px; margin-top:6px; }
+  .cc-err{ font-size:12px; color:var(--bad); font-weight:600; margin-top:6px; }
+  .cc-new-label{ font-size:12px; font-weight:700; color:var(--ink-muted); margin-bottom:6px; }
+  .cc-new-label b{ color:var(--ink); }
+  .cc-new .field{ margin-bottom:8px; }
+  @media (max-width:860px){ .cc-panel{ width:100%; } }
+
   [hidden]{ display:none !important; }
 
   @media (max-width: 860px){
@@ -290,6 +361,10 @@
         <h1>Calendar</h1>
         <div class="page-sub" id="pageSub">Your students' regular week, at a glance.</div>
       </div>
+      <button type="button" class="btn cc-toggle" id="ccToggle" data-cc="toggle" aria-controls="ccPanel" aria-expanded="false" title="Comments on the calendar">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/></svg>
+        Comments <span class="cc-count" id="ccCount" hidden>0</span>
+      </button>
     </div>
 
     <div class="cal-toolbar" id="calToolbar">
@@ -321,6 +396,19 @@
       <div class="noshow-list" id="noShowList"></div>
     </div>
   </main>
+
+  <aside class="cc-panel" id="ccPanel" hidden aria-label="Comments">
+    <div class="cc-head">
+      <h2>Comments</h2>
+      <button type="button" class="cc-x" data-cc="close" aria-label="Close comments" title="Close">&times;</button>
+    </div>
+    <div class="cc-tabs" role="tablist">
+      <button type="button" class="cc-tab active" data-cc="tab" data-tab="open" role="tab">Open</button>
+      <button type="button" class="cc-tab" data-cc="tab" data-tab="resolved" role="tab">Resolved</button>
+    </div>
+    <div id="ccScope"></div>
+    <div class="cc-body" id="ccBody"></div>
+  </aside>
 </div>
 
 <script>
@@ -457,6 +545,7 @@
     const reportsLink = $("#navReportsLink");
     if(reportsLink) reportsLink.hidden = currentRole !== "superadmin";
     applyRoleGate();
+    ccRenderCount();
   }
 
   function applyRoleGate(){
@@ -510,9 +599,16 @@
   async function startApp(){
     if(started) return;
     started = true;
-    await Promise.all([loadSchedules(), loadEnrollments(), loadSettings(), loadAttendance()]);
+    await Promise.all([loadSchedules(), loadEnrollments(), loadSettings(), loadAttendance(), ccLoad()]);
     populateFilters();
     renderCalendar();
+    ccRenderCount();
+
+    if(ccCanUse()){
+      sbClient.channel("realtime:calendar-comments")
+        .on("postgres_changes", { event:"*", schema:"public", table:"calendar_comments" }, async ()=>{ await ccLoad(); renderCalendar(); ccRenderCount(); ccRenderPanel(); })
+        .subscribe();
+    }
 
     sbClient.channel("realtime:calendar-schedules")
       .on("postgres_changes", { event:"*", schema:"public", table:"schedules" }, async ()=>{ await loadSchedules(); renderCalendar(); })
@@ -765,12 +861,18 @@
     for(const d of days) html += `<div class="cal-cell cal-head">${d}</div>`;
 
     const today = todayDow();
+    const ccCells = ccOpenByCell();
+    const canComment = ccCanUse();
     for(const t of times){
       html += `<div class="cal-cell cal-time-label">${fmtTime(t)}</div>`;
       for(const d of days){
         const isToday = d === today;
         const items = (byCell[d+"|"+t] || []).slice().sort((a,b) => lastNameSortKey(a.studentName).localeCompare(lastNameSortKey(b.studentName)));
-        html += `<div class="cal-cell">${items.map(it => {
+        const ck = d + "|" + t, nOpen = (ccCells.cells[ck] || 0);
+        const ccBits = !canComment ? "" :
+          (nOpen ? `<button type="button" class="cc-flag" data-cc="show-cell" data-cell="${esc(ck)}" title="${nOpen} open comment${nOpen===1?"":"s"} — click to read" aria-label="${nOpen} open comments"></button>` : "") +
+          `<button type="button" class="cc-add" data-cc="new" data-cell="${esc(ck)}" title="Add a comment on ${esc(d)} ${esc(fmtTime(t))}" aria-label="Add comment"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></button>`;
+        html += `<div class="cal-cell${nOpen ? " has-cc" : ""}" data-cell="${esc(ck)}">${ccBits}${items.map(it => {
           const cls = it.subject === "Reading" ? "subj-reading" : "subj-math";
           const teacherLine = showTeacherLabel && it.teacher ? `<span class="teacher-sub">${esc(it.teacher)}</span>` : "";
           const titleBits = [it.studentName, it.subject, it.level ? "Level " + it.level : "", it.teacher].filter(Boolean).join(" — ");
@@ -784,7 +886,7 @@
             ? `<input type="checkbox" data-action="toggle-arrived" data-schedule="${esc(it.scheduleId)}" data-day="${esc(it.day)}" ${arrived?"checked":""}>`
             : "";
           return `<div class="cal-chip ${cls} ${isToday && arrived?"arrived":""}" title="${esc(titleBits)}">
-            <label class="chip-row">${checkbox}<span class="chip-name">${esc(chipDisplayName(it.studentName))}${lvlTag} ${modeTag}</span></label>
+            <label class="chip-row">${checkbox}<span class="chip-name">${esc(chipDisplayName(it.studentName))}${lvlTag} ${modeTag}${ccCells.chips.has(ccChipKey(it.scheduleId, it.day, it.time, it.subject)) ? `<span class="cc-chip-dot" title="Has an open comment"></span>` : ""}</span></label>
             ${teacherLine}
           </div>`;
         }).join("")}</div>`;
@@ -792,6 +894,7 @@
     }
     grid.style.gridTemplateColumns = `84px repeat(${days.length}, minmax(150px, 1fr))`;
     grid.innerHTML = html;
+    if(cc.focusCell){ const el = grid.querySelector(`.cal-cell[data-cell="${CSS.escape(cc.focusCell)}"]`); if(el) el.classList.add("cc-focus"); }
 
     renderNoShowList(entries, today, showTeacherLabel);
   }
@@ -819,6 +922,337 @@
       return `<span class="noshow-item">${esc(chipDisplayName(it.studentName))}${teacherLine}</span>`;
     }).join("");
   }
+
+  /* ===================== Comments (phase92: calendar_comments) =====================
+     A thread sits on one Calendar cell (weekday + start time) and may name one student's class in it.
+     Everyone approved can read, add, reply, resolve and reopen; only the writer edits their words;
+     the writer (or a superadmin) deletes. The grid shows a yellow corner flag on cells with open
+     threads; the side panel lists Open / Resolved threads. */
+  const cc = {
+    rows: [],              // every comment row
+    open: false,           // panel visible
+    tab: "open",           // "open" | "resolved"
+    cellFilter: null,      // "Mon|17:30" when opened from a cell's flag
+    focusCell: null,       // cell outlined on the grid
+    composer: null,        // { cell } while writing a new thread
+    editing: null,         // comment id being edited
+    flashId: null,         // thread to highlight after opening
+    drafts: {},            // unsent text, keyed by box, so live updates don't wipe typing
+    errors: {},
+    busy: false,
+  };
+  function ccCanUse(){ return !!currentUser && !!currentRole && currentRole !== "pending"; }
+  function ccChipKey(scheduleId, day, time, subject){ return [scheduleId || "", day, time, subject || ""].join("|"); }
+  function ccRoots(){ return cc.rows.filter(r => !r.thread_id); }
+  function ccReplies(id){ return cc.rows.filter(r => r.thread_id === id).sort((a,b) => a.created_at.localeCompare(b.created_at)); }
+  function ccOpenByCell(){
+    const cells = {}, chips = new Set();
+    for(const r of ccRoots()){
+      if(r.resolved_at) continue;
+      const k = r.day + "|" + r.time;
+      cells[k] = (cells[k] || 0) + 1;
+      if(r.schedule_id) chips.add(ccChipKey(r.schedule_id, r.day, r.time, r.subject));
+    }
+    return { cells, chips };
+  }
+  function ccMyName(){
+    if(currentTeacherName) return currentTeacherName;
+    const em = (currentUser && currentUser.email) || "";
+    return em || "Someone";
+  }
+  function ccCellLabel(k){ const [d, t] = String(k).split("|"); return `${d} ${fmtTime(t)}`; }
+  function ccWhen(iso){
+    if(!iso) return "";
+    const d = new Date(iso), now = new Date();
+    const mins = Math.round((now - d) / 60000);
+    if(mins < 1) return "just now";
+    if(mins < 60) return mins + " min ago";
+    const sameDay = d.toDateString() === now.toDateString();
+    const time = d.toLocaleTimeString(undefined, { hour:"numeric", minute:"2-digit" });
+    if(sameDay) return "today " + time;
+    return d.toLocaleDateString(undefined, { month:"short", day:"numeric", year: d.getFullYear() === now.getFullYear() ? undefined : "numeric" }) + ", " + time;
+  }
+  function ccAboutText(r){
+    if(!r.student_name) return "Whole time slot";
+    return [chipDisplayName(r.student_name), r.subject, r.teacher].filter(Boolean).join(" · ");
+  }
+  function ccCellVisible(k){ return !!document.querySelector(`#calGrid .cal-cell[data-cell="${CSS.escape(k)}"]`); }
+  // Students in a cell right now (what the "About" picker offers) — from the unfiltered week, so
+  // you can still name a student another filter is hiding.
+  function ccStudentsIn(k){
+    const [d, t] = k.split("|");
+    const seen = new Set(), out = [];
+    for(const en of buildEntries()){
+      if(en.day !== d || en.time !== t || !en.scheduleId) continue;
+      if(isTeacherScoped() === false && filters.teachers.size && !filters.teachers.has(en.teacher)) continue;
+      const key = ccChipKey(en.scheduleId, d, t, en.subject);
+      if(seen.has(key)) continue; seen.add(key);
+      out.push(en);
+    }
+    return out.sort((a,b) => lastNameSortKey(a.studentName).localeCompare(lastNameSortKey(b.studentName)) || a.subject.localeCompare(b.subject));
+  }
+
+  async function ccLoad(){
+    if(!ccCanUse()){ cc.rows = []; return; }
+    const { data, error } = await sbClient.from("calendar_comments").select("*").order("created_at", { ascending:true });
+    if(error){
+      console.warn("comments:", error);
+      cc.rows = [];
+      cc.loadError = /does not exist|schema cache/i.test(error.message || "") ? "Comments aren't switched on yet — run phase92 in Supabase." : "Couldn't load comments: " + error.message;
+      return;
+    }
+    cc.loadError = null;
+    cc.rows = data || [];
+  }
+  function ccRenderCount(){
+    const n = ccRoots().filter(r => !r.resolved_at).length;
+    const el = $("#ccCount");
+    if(el){ el.textContent = n; el.hidden = n === 0; }
+    const t = $("#ccToggle");
+    if(t){ t.hidden = !ccCanUse(); t.classList.toggle("on", cc.open); t.setAttribute("aria-expanded", String(cc.open)); }
+  }
+  function ccSetOpen(open){
+    cc.open = open;
+    $("#ccPanel").hidden = !open;
+    document.body.classList.toggle("cc-open", open);
+    if(!open){ cc.cellFilter = null; cc.composer = null; cc.editing = null; cc.focusCell = null; renderCalendar(); }
+    ccRenderCount();
+    if(open) ccRenderPanel();
+  }
+
+  // Keep what people are typing when the panel redraws (live updates from other people).
+  function ccRememberInputs(){
+    const active = document.activeElement;
+    cc.focusKey = active && active.dataset && active.dataset.draft ? active.dataset.draft : null;
+    $$("#ccPanel [data-draft]").forEach(el => { cc.drafts[el.dataset.draft] = el.value; });
+  }
+  function ccRestoreInputs(){
+    $$("#ccPanel [data-draft]").forEach(el => {
+      if(cc.drafts[el.dataset.draft] != null && el.tagName === "TEXTAREA") el.value = cc.drafts[el.dataset.draft];
+      if(el.tagName === "SELECT" && cc.drafts[el.dataset.draft] != null && [...el.options].some(o => o.value === cc.drafts[el.dataset.draft])) el.value = cc.drafts[el.dataset.draft];
+    });
+    if(cc.focusKey){
+      const el = document.querySelector(`#ccPanel [data-draft="${CSS.escape(cc.focusKey)}"]`);
+      if(el){ el.focus(); if(el.setSelectionRange && el.value != null){ const n = el.value.length; try{ el.setSelectionRange(n, n); }catch(_){} } }
+    }
+  }
+
+  function ccRenderPanel(){
+    if(!cc.open) return;
+    ccRememberInputs();
+    $$("#ccPanel .cc-tab").forEach(b => b.classList.toggle("active", b.dataset.tab === cc.tab));
+    const roots = ccRoots();
+    const nOpen = roots.filter(r => !r.resolved_at).length, nRes = roots.length - nOpen;
+    $$("#ccPanel .cc-tab").forEach(b => { b.textContent = b.dataset.tab === "open" ? `Open (${nOpen})` : `Resolved (${nRes})`; });
+
+    $("#ccScope").innerHTML = cc.cellFilter
+      ? `<div class="cc-scope"><span>Showing ${esc(ccCellLabel(cc.cellFilter))} only</span><button type="button" data-cc="all">Show all</button></div>` : "";
+
+    let html = "";
+    if(cc.loadError) html += `<div class="banner">${esc(cc.loadError)}</div>`;
+
+    if(cc.composer){
+      const k = cc.composer.cell, kids = ccStudentsIn(k);
+      const opts = [`<option value="">The whole time slot</option>`].concat(kids.map(en => {
+        const v = ccChipKey(en.scheduleId, en.day, en.time, en.subject);
+        return `<option value="${esc(v)}">${esc([chipDisplayName(en.studentName), en.subject, en.teacher].filter(Boolean).join(" · "))}</option>`;
+      })).join("");
+      html += `<div class="cc-card new cc-new">
+        <div class="cc-new-label">New comment on <b>${esc(ccCellLabel(k))}</b></div>
+        ${kids.length ? `<label class="field">About<select data-draft="new-about">${opts}</select></label>` : ""}
+        <textarea rows="3" data-draft="new-body" placeholder="Write a comment…" aria-label="Comment"></textarea>
+        ${cc.errors.new ? `<div class="cc-err">${esc(cc.errors.new)}</div>` : ""}
+        <div class="cc-btns"><button type="button" class="btn sm ghost" data-cc="cancel-new">Cancel</button><button type="button" class="btn sm primary" data-cc="post-new" ${cc.busy?"disabled":""}>Comment</button></div>
+      </div>`;
+    }
+
+    let list = roots.filter(r => cc.tab === "open" ? !r.resolved_at : !!r.resolved_at);
+    if(cc.cellFilter) list = list.filter(r => (r.day + "|" + r.time) === cc.cellFilter);
+    const lastActivity = r => { const rs = ccReplies(r.id); return (rs.length ? rs[rs.length-1].created_at : r.created_at); };
+    list.sort((a,b) => cc.tab === "open" ? lastActivity(b).localeCompare(lastActivity(a)) : String(b.resolved_at).localeCompare(String(a.resolved_at)));
+
+    if(!list.length && !cc.composer){
+      html += `<div class="cc-empty">${cc.tab === "open"
+        ? (cc.cellFilter ? "No open comments on this time slot." : "No open comments.<br>Hover over any cell on the calendar and click <b>+</b> to add one.")
+        : "Nothing resolved yet."}</div>`;
+    }
+    html += list.map(ccThreadHtml).join("");
+    $("#ccBody").innerHTML = html;
+    ccRestoreInputs();
+    if(cc.composer && !cc.focusKey){ const t = document.querySelector('#ccPanel [data-draft="new-body"]'); if(t) t.focus(); }
+    if(cc.flashId){
+      const card = document.querySelector(`#ccPanel .cc-card[data-thread="${CSS.escape(cc.flashId)}"]`);
+      if(card){ card.classList.add("flash"); card.scrollIntoView({ block:"nearest" }); }
+      cc.flashId = null;
+    }
+  }
+
+  function ccMsgHtml(m){
+    const mine = currentUser && m.author_id === currentUser.id;
+    const canDelete = mine || currentRole === "superadmin";
+    const isRoot = !m.thread_id;
+    const acts = [
+      mine ? `<button type="button" data-cc="edit" data-id="${esc(m.id)}">Edit</button>` : "",
+      canDelete ? `<button type="button" data-cc="delete" data-id="${esc(m.id)}">${isRoot ? "Delete thread" : "Delete"}</button>` : ""
+    ].join("");
+    const body = cc.editing === m.id
+      ? `<textarea rows="3" data-draft="edit-${esc(m.id)}">${esc(m.body)}</textarea>
+         ${cc.errors["edit-"+m.id] ? `<div class="cc-err">${esc(cc.errors["edit-"+m.id])}</div>` : ""}
+         <div class="cc-btns"><button type="button" class="btn sm ghost" data-cc="cancel-edit">Cancel</button><button type="button" class="btn sm primary" data-cc="save-edit" data-id="${esc(m.id)}">Save</button></div>`
+      : `<div class="cc-text">${esc(m.body)}</div>`;
+    return `<div class="cc-msg">
+      <div class="cc-meta"><span class="cc-author">${esc(m.author_name || "Someone")}</span><span class="cc-when" title="${esc(new Date(m.created_at).toLocaleString())}">${esc(ccWhen(m.created_at))}${m.edited_at ? " · edited" : ""}</span>${cc.editing === m.id ? "" : `<span class="cc-acts">${acts}</span>`}</div>
+      ${body}
+    </div>`;
+  }
+  function ccThreadHtml(r){
+    const k = r.day + "|" + r.time;
+    const visible = ccCellVisible(k);
+    const anchor = `<button type="button" class="cc-anchor${visible ? "" : " off"}" data-cc="goto" data-cell="${esc(k)}" title="${visible ? "Show this cell on the calendar" : "Not in the current calendar view (check the filters)"}">${esc(ccCellLabel(k))}<span class="cc-about">${esc(ccAboutText(r))}</span></button>`;
+    const resolveBtn = r.resolved_at
+      ? `<button type="button" class="cc-resolve reopen" data-cc="reopen" data-id="${esc(r.id)}" title="Reopen this thread">Reopen</button>`
+      : `<button type="button" class="cc-resolve" data-cc="resolve" data-id="${esc(r.id)}" title="Mark as resolved and hide this thread"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>Resolve</button>`;
+    const msgs = [r].concat(ccReplies(r.id)).map(ccMsgHtml).join("");
+    const reply = r.resolved_at ? `<div class="cc-resolved-note">Resolved by ${esc(r.resolved_by || "someone")} · ${esc(ccWhen(r.resolved_at))}</div>` :
+      `<div class="cc-reply">
+        <textarea rows="1" data-draft="reply-${esc(r.id)}" placeholder="Reply…" aria-label="Reply"></textarea>
+        ${cc.errors["reply-"+r.id] ? `<div class="cc-err">${esc(cc.errors["reply-"+r.id])}</div>` : ""}
+        <div class="cc-btns" data-reply-btns="${esc(r.id)}" ${cc.drafts["reply-"+r.id] ? "" : "hidden"}><button type="button" class="btn sm primary" data-cc="post-reply" data-id="${esc(r.id)}">Reply</button></div>
+      </div>`;
+    return `<div class="cc-card${r.resolved_at ? " resolved" : ""}" data-thread="${esc(r.id)}">
+      <div class="cc-top">${anchor}${resolveBtn}</div>
+      ${msgs}
+      ${reply}
+    </div>`;
+  }
+
+  function ccGotoCell(k){
+    const el = document.querySelector(`#calGrid .cal-cell[data-cell="${CSS.escape(k)}"]`);
+    if(!el) return false;
+    $$("#calGrid .cc-focus").forEach(x => x.classList.remove("cc-focus"));
+    cc.focusCell = k;
+    el.classList.add("cc-focus");
+    el.scrollIntoView({ block:"center", inline:"center", behavior:"smooth" });
+    return true;
+  }
+
+  async function ccPostNew(){
+    const body = (cc.drafts["new-body"] || "").trim();
+    if(!body){ cc.errors.new = "Write something first."; ccRenderPanel(); return; }
+    const k = cc.composer.cell, [day, time] = k.split("|");
+    const about = cc.drafts["new-about"] || "";
+    let extra = { schedule_id:null, student_name:null, subject:null, teacher:null };
+    if(about){
+      const en = ccStudentsIn(k).find(x => ccChipKey(x.scheduleId, x.day, x.time, x.subject) === about);
+      if(en) extra = { schedule_id: en.scheduleId, student_name: en.studentName, subject: en.subject, teacher: en.teacher || null };
+    }
+    cc.busy = true; ccRenderPanel();
+    const { data, error } = await sbClient.from("calendar_comments")
+      .insert(Object.assign({ day, time, body, author_name: ccMyName() }, extra)).select().single();
+    cc.busy = false;
+    if(error){ cc.errors.new = "Couldn't save: " + error.message; ccRenderPanel(); return; }
+    delete cc.errors.new; delete cc.drafts["new-body"]; delete cc.drafts["new-about"];
+    cc.composer = null; cc.tab = "open"; cc.flashId = data.id;
+    logHistory("comment_add", `Commented on ${ccCellLabel(k)}${extra.student_name ? " (" + extra.student_name + ", " + extra.subject + ")" : ""}`, "calendar_comment", data.id, { body });
+    await ccRefresh();
+  }
+  async function ccPostReply(id){
+    const key = "reply-" + id, body = (cc.drafts[key] || "").trim();
+    if(!body) return;
+    const root = cc.rows.find(r => r.id === id); if(!root) return;
+    const { error } = await sbClient.from("calendar_comments")
+      .insert({ thread_id: id, day: root.day, time: root.time, body, author_name: ccMyName() });
+    if(error){ cc.errors[key] = "Couldn't send: " + error.message; ccRenderPanel(); return; }
+    delete cc.errors[key]; delete cc.drafts[key]; cc.focusKey = null;
+    logHistory("comment_reply", `Replied on ${ccCellLabel(root.day + "|" + root.time)}`, "calendar_comment", id, { body });
+    await ccRefresh();
+  }
+  async function ccSetResolved(id, resolved){
+    const root = cc.rows.find(r => r.id === id); if(!root) return;
+    const patch = resolved ? { resolved_at: new Date().toISOString(), resolved_by: ccMyName() } : { resolved_at: null, resolved_by: null };
+    const { error } = await sbClient.from("calendar_comments").update(patch).eq("id", id);
+    if(error){ alert("Couldn't update: " + error.message); return; }
+    logHistory(resolved ? "comment_resolve" : "comment_reopen", `${resolved ? "Resolved" : "Reopened"} a comment on ${ccCellLabel(root.day + "|" + root.time)}`, "calendar_comment", id);
+    await ccRefresh();
+  }
+  async function ccSaveEdit(id){
+    const key = "edit-" + id, body = (cc.drafts[key] || "").trim();
+    if(!body){ cc.errors[key] = "A comment can't be empty — use Delete instead."; ccRenderPanel(); return; }
+    const { error } = await sbClient.from("calendar_comments").update({ body }).eq("id", id);
+    if(error){ cc.errors[key] = "Couldn't save: " + error.message; ccRenderPanel(); return; }
+    delete cc.errors[key]; delete cc.drafts[key]; cc.editing = null;
+    await ccRefresh();
+  }
+  async function ccDelete(id){
+    const m = cc.rows.find(r => r.id === id); if(!m) return;
+    const isRoot = !m.thread_id, n = isRoot ? ccReplies(id).length : 0;
+    if(!confirm(isRoot ? `Delete this whole thread${n ? " and its " + n + " repl" + (n===1?"y":"ies") : ""}? This can't be undone.` : "Delete this reply? This can't be undone.")) return;
+    const { error } = await sbClient.from("calendar_comments").delete().eq("id", id);
+    if(error){ alert("Couldn't delete: " + error.message); return; }
+    logHistory("comment_delete", `Deleted a ${isRoot ? "comment thread" : "reply"} on ${ccCellLabel(m.day + "|" + m.time)}`, "calendar_comment", id, { body: m.body });
+    await ccRefresh();
+  }
+  async function ccRefresh(){ await ccLoad(); renderCalendar(); ccRenderCount(); ccRenderPanel(); }
+
+  document.addEventListener("input", e => {
+    const k = e.target.dataset && e.target.dataset.draft;
+    if(!k || !e.target.closest("#ccPanel")) return;
+    cc.drafts[k] = e.target.value;
+    if(k.startsWith("reply-")){
+      const btns = document.querySelector(`[data-reply-btns="${CSS.escape(k.slice(6))}"]`);
+      if(btns) btns.hidden = !e.target.value.trim();
+      e.target.style.height = "auto"; e.target.style.height = Math.min(e.target.scrollHeight + 2, 200) + "px";
+    }
+  });
+  document.addEventListener("change", e => {
+    const k = e.target.dataset && e.target.dataset.draft;
+    if(k && e.target.tagName === "SELECT" && e.target.closest("#ccPanel")) cc.drafts[k] = e.target.value;
+  });
+  document.addEventListener("keydown", e => {
+    if(!(e.key === "Enter" && (e.metaKey || e.ctrlKey))) {
+      if(e.key === "Escape" && cc.open && !document.querySelector(".mp-menu:not([hidden])")){
+        if(cc.composer){ cc.composer = null; ccRenderPanel(); } else if(cc.editing){ cc.editing = null; ccRenderPanel(); } else ccSetOpen(false);
+      }
+      return;
+    }
+    const k = e.target.dataset && e.target.dataset.draft; if(!k) return;
+    e.preventDefault();
+    if(k === "new-body") ccPostNew();
+    else if(k.startsWith("reply-")) ccPostReply(k.slice(6));
+    else if(k.startsWith("edit-")) ccSaveEdit(k.slice(5));
+  });
+  document.addEventListener("click", e => {
+    const b = e.target.closest("[data-cc]");
+    if(!b) return;
+    const a = b.dataset.cc, id = b.dataset.id, cell = b.dataset.cell;
+    if(a === "toggle"){ ccSetOpen(!cc.open); return; }
+    if(a === "close"){ ccSetOpen(false); return; }
+    if(a === "tab"){ cc.tab = b.dataset.tab; ccRenderPanel(); return; }
+    if(a === "all"){ cc.cellFilter = null; ccRenderPanel(); return; }
+    if(a === "new"){
+      e.preventDefault(); e.stopPropagation();
+      if(!cc.composer || cc.composer.cell !== cell){ delete cc.drafts["new-body"]; delete cc.drafts["new-about"]; delete cc.errors.new; }
+      cc.composer = { cell }; cc.cellFilter = cell; cc.tab = "open"; cc.focusKey = null;
+      if(!cc.open) ccSetOpen(true); else ccRenderPanel();
+      ccGotoCell(cell); return;
+    }
+    if(a === "show-cell"){
+      e.preventDefault(); e.stopPropagation();
+      cc.cellFilter = cell; cc.tab = "open"; cc.composer = null;
+      if(!cc.open) ccSetOpen(true); else ccRenderPanel();
+      ccGotoCell(cell); return;
+    }
+    if(a === "cancel-new"){ cc.composer = null; delete cc.drafts["new-body"]; delete cc.errors.new; ccRenderPanel(); return; }
+    if(a === "post-new"){ ccPostNew(); return; }
+    if(a === "post-reply"){ ccPostReply(id); return; }
+    if(a === "resolve"){ ccSetResolved(id, true); return; }
+    if(a === "reopen"){ ccSetResolved(id, false); return; }
+    if(a === "edit"){ cc.editing = id; const m = cc.rows.find(r => r.id === id); cc.drafts["edit-" + id] = m ? m.body : ""; cc.focusKey = "edit-" + id; ccRenderPanel(); return; }
+    if(a === "cancel-edit"){ cc.editing = null; ccRenderPanel(); return; }
+    if(a === "save-edit"){ ccSaveEdit(id); return; }
+    if(a === "delete"){ ccDelete(id); return; }
+    if(a === "goto"){ if(!ccGotoCell(cell)) b.title = "Not in the current calendar view (check the filters)"; return; }
+  });
 
   document.addEventListener("submit", async (e)=>{
     if(e.target.id === "loginForm"){
