@@ -1,0 +1,1779 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Kumon Hub — PTC</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700&family=Inter:wght@400;500;600;700;800&display=swap">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  :root{
+    --bg:#F5F6FA; --surface:#FFFFFF; --surface-2:#FBFBFE; --border:#E1E4EB;
+    --ink:#1B1F27; --ink-muted:#636C7C; --ink-faint:#9AA1AF;
+    --accent:#3454D1; --accent-ink:#FFFFFF; --accent-soft:#E9EDFC; --accent-soft-ink:#2A41A8;
+    --good:#1E8E5A; --good-soft:#E4F5EC; --warn:#C2831F; --warn-soft:#FBF0E1; --bad:#C23B2B; --bad-soft:#FBE8E5;
+    --shadow: 0 1px 2px rgba(16,20,30,.04), 0 2px 8px rgba(16,20,30,.06), 0 20px 40px -20px rgba(16,20,30,.25);
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#14161C; --surface:#1C1F27; --surface-2:#20232C; --border:#2C303B;
+      --ink:#EDEFF4; --ink-muted:#9BA3B2; --ink-faint:#6B7280;
+      --accent:#6C86F0; --accent-ink:#0E1220; --accent-soft:#232A47; --accent-soft-ink:#B7C3FA;
+      --good:#4FC48A; --good-soft:#173226; --warn:#E0A23F; --warn-soft:#332711; --bad:#F0796A; --bad-soft:#3A1F1C;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#14161C; --surface:#1C1F27; --surface-2:#20232C; --border:#2C303B;
+    --ink:#EDEFF4; --ink-muted:#9BA3B2; --ink-faint:#6B7280;
+    --accent:#6C86F0; --accent-ink:#0E1220; --accent-soft:#232A47; --accent-soft-ink:#B7C3FA;
+    --good:#4FC48A; --good-soft:#173226; --warn:#E0A23F; --warn-soft:#332711; --bad:#F0796A; --bad-soft:#3A1F1C;
+    color-scheme: dark;
+  }
+
+  *{box-sizing:border-box;}
+  body{
+    background:var(--bg); color:var(--ink); margin:0;
+    font-family:"Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  h1,h2,h3,.brand{ font-family:"Sora", system-ui, sans-serif; }
+  h1,h2,h3{ text-wrap:balance; margin:0; }
+  button{ font-family:inherit; }
+  a{ color:var(--accent); }
+
+  .app{ display:grid; grid-template-columns: 216px 1fr; min-height:100vh; min-height:100dvh; }
+  .rail{
+    background:var(--surface); border-right:1px solid var(--border);
+    padding:20px 12px; display:flex; flex-direction:column; gap:4px;
+    position:sticky; top:0; align-self:start; height:100vh; height:100dvh;
+  }
+  .brand{ font-weight:700; font-size:16px; padding:6px 10px 18px; display:flex; align-items:center; gap:8px; color:var(--ink); }
+  .brand .dot{ width:9px;height:9px;border-radius:50%;background:var(--accent); flex:none; }
+  .navbtn{
+    display:flex; align-items:center; gap:10px; padding:9px 10px; border-radius:9px;
+    border:none; background:transparent; color:var(--ink-muted); font-size:14px; font-weight:600;
+    cursor:pointer; text-align:left; width:100%; text-decoration:none;
+    transition: background-color .15s ease, color .15s ease, box-shadow .15s ease;
+  }
+  .navbtn:focus-visible{ outline:none; box-shadow: 0 0 0 3px var(--accent-soft); }
+  .navbtn:hover{ background:var(--surface-2); color:var(--ink); }
+  .navbtn svg{ width:17px; height:17px; flex:none; }
+  .navbtn.active{ background:var(--accent-soft); color:var(--accent-soft-ink); box-shadow: inset 3px 0 0 var(--accent); }
+  .rail-pages{ display:flex; flex-direction:column; gap:4px; margin-bottom:8px; }
+  .rail-divider{ height:1px; background:var(--border); margin:4px 10px 10px; }
+  .rail-account{ padding:0 10px 10px; }
+  .account-row{ display:flex; align-items:center; justify-content:space-between; gap:8px; padding:8px 8px; border-top:1px solid var(--border); font-size:12px; color:var(--ink-muted); }
+  .account-email{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .rail-foot{ margin-top:auto; padding:10px; font-size:12px; color:var(--ink-faint); line-height:1.5; }
+
+  .main{ padding:26px 30px 60px; max-width:1100px; width:100%; min-width:0; }
+  .page-head{ display:flex; align-items:flex-end; justify-content:space-between; gap:16px; margin-bottom:18px; flex-wrap:wrap; }
+  .page-head h1{ font-size:22px; font-weight:700; }
+  .page-sub{ color:var(--ink-muted); font-size:13.5px; margin-top:4px; }
+
+  .btn{
+    display:inline-flex; align-items:center; gap:7px; padding:9px 14px; border-radius:9px;
+    font-size:13.5px; font-weight:600; border:1px solid var(--border); background:var(--surface);
+    color:var(--ink); cursor:pointer; white-space:nowrap;
+    transition: background-color .15s ease, border-color .15s ease, color .15s ease, box-shadow .15s ease, transform .08s ease;
+  }
+  .btn:hover{ background:var(--surface-2); }
+  .btn:active{ transform:scale(.96); }
+  .btn:focus-visible{ outline:none; box-shadow: 0 0 0 3px var(--accent-soft); }
+  .btn.primary{ background:var(--accent); color:var(--accent-ink); border-color:var(--accent); box-shadow: 0 1px 2px rgba(0,0,0,.08); }
+  .btn.good{ color:var(--good); border-color:var(--good-soft); }
+  .btn.good:hover{ background:var(--good-soft); }
+  .btn.ghost{ border-color:transparent; background:transparent; }
+  .btn.sm{ padding:6px 10px; font-size:12.5px; border-radius:7px; }
+  .btn:disabled{ opacity:.5; cursor:not-allowed; }
+
+  .card{ background:var(--surface); border:1px solid var(--border); border-radius:14px; margin-bottom:18px; }
+  .card-head{ display:flex; align-items:center; justify-content:space-between; padding:14px 16px; border-bottom:1px solid var(--border); gap:10px; flex-wrap:wrap; }
+  .card-head h3{ font-size:14.5px; font-weight:700; }
+  .empty{ padding:30px 16px; text-align:center; color:var(--ink-muted); font-size:13.5px; }
+
+  .stats{ display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin-bottom:12px; }
+  .stat{ background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:13px 14px; display:flex; flex-direction:column; gap:6px; }
+  .stat .n{ font-size:22px; font-weight:700; font-family:"Sora",sans-serif; }
+  .stat .l{ font-size:12px; color:var(--ink-muted); font-weight:600; }
+  .stat.warn .n{ color:var(--warn); }
+  .stat.bad .n{ color:var(--bad); }
+  button.stat{ cursor:pointer; text-align:left; font:inherit; transition: border-color .15s ease, box-shadow .15s ease, background-color .15s ease; }
+  button.stat:hover{ border-color:var(--accent); }
+  button.stat.selected{ border-color:var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); background:var(--accent-soft); }
+  button.stat.selected .l{ color:var(--accent-soft-ink); }
+  .filter-note{ display:flex; align-items:center; gap:8px; font-size:12.5px; color:var(--ink-muted); margin:-6px 0 12px; }
+  .filter-note button{ border:none; background:transparent; color:var(--accent); font-weight:600; cursor:pointer; padding:0; font-size:12.5px; }
+
+  .cal-toolbar{ display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; flex-wrap:wrap; gap:10px; }
+  .cal-nav{ display:flex; align-items:center; gap:8px; }
+  .cal-nav h2{ font-size:16px; font-weight:700; min-width:160px; text-align:center; }
+  .month-head{ display:flex; flex-direction:column; align-items:center; }
+  .month-head h2{ margin:0; }
+  .month-range{ font-size:11px; color:var(--ink-muted); margin-top:1px; }
+  @media (max-width: 640px){ .cal-nav h2{ font-size:14px; min-width:0; flex:1; } }
+
+  .seg{ display:inline-flex; background:var(--surface-2); border:1px solid var(--border); border-radius:9px; padding:2px; }
+  .seg button{ border:none; background:transparent; padding:6px 11px; border-radius:7px; font-size:12.5px; font-weight:600; color:var(--ink-muted); cursor:pointer; }
+  .seg button:active{ transform:scale(.94); }
+  .seg button.active{ background:var(--surface); color:var(--ink); box-shadow:var(--shadow); }
+
+  .search-row{ display:flex; gap:8px; margin-bottom:14px; flex-wrap:wrap; align-items:center; }
+  .search-row input, .search-row select{ font-size:13.5px; width:auto; flex:0 0 auto; }
+  .search-row select{ min-width:132px; }
+  .table-scroll{ overflow-x:auto; }
+  .stable{ min-width:100%; width:auto; border-collapse:collapse; }
+  .stable th{ text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--ink-muted); padding:8px 16px; border-bottom:1px solid var(--border); white-space:nowrap; }
+  .stable td{ padding:10px 16px; border-bottom:1px solid var(--border); font-size:13px; vertical-align:middle; white-space:nowrap; }
+  .stable .empty{ white-space:normal; }
+  .stable tr:last-child td{ border-bottom:none; }
+  .stable tbody tr td{ transition: background-color .12s ease; }
+  .stable tbody tr:hover td{ background:var(--surface-2); }
+  .stable tr.clickrow{ cursor:pointer; }
+  .stable tr.clickrow:hover{ background:var(--surface-2); }
+  .muted{ color:var(--ink-muted); }
+  .hint{ font-size:12px; color:var(--ink-muted); font-weight:500; }
+  .faint{ color:var(--ink-faint); }
+  .money{ font-variant-numeric:tabular-nums; font-weight:600; }
+  .money.good{ color:var(--good); }
+  .pill{ display:inline-flex; align-items:center; gap:5px; padding:3px 9px; border-radius:99px; font-size:11.5px; font-weight:700; white-space:nowrap; transition: background-color .15s ease, color .15s ease; }
+  .pill.subj-math{ background:var(--accent-soft); color:var(--accent-soft-ink); }
+  .pill.subj-reading{ background:var(--bad-soft); color:var(--bad); }
+  .pill.m1, .pill.m2{ background:var(--warn-soft); color:var(--warn); }
+  .pill.m3, .pill.m4{ background:var(--bad-soft); color:var(--bad); }
+  .pill.resumed{ background:var(--good-soft); color:var(--good); }
+  .pill.pending{ background:var(--accent-soft); color:var(--accent-soft-ink); }
+  .pill.flagged{ background:var(--warn-soft); color:var(--warn); }
+  .pill.verified{ background:var(--good-soft); color:var(--good); }
+  .pill.rejected{ background:var(--surface-2); color:var(--ink-faint); }
+  .field-row{ display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  .lvl.empty-lvl{ color:var(--ink-faint); }
+  .pill.beyond{ background:var(--surface-2); color:var(--ink-faint); }
+  .name-subj-pill{ margin-left:6px; vertical-align:middle; padding:2px 7px; }
+  .row-actions{ display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end; }
+
+  select, input[type=text], input[type=search], textarea{
+    font-family:inherit; font-size:13.5px; padding:8px 10px; border-radius:8px; border:1px solid var(--border);
+    background:var(--surface); color:var(--ink); width:100%;
+  }
+  select, input, textarea{ transition: border-color .15s ease, box-shadow .15s ease; }
+  select:focus, input:focus, textarea:focus{ outline:none; border-color:var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+  label.field{ display:flex; flex-direction:column; gap:5px; font-size:12.5px; font-weight:600; color:var(--ink-muted); }
+
+  .modal-backdrop{ position:fixed; inset:0; background:rgba(10,12,18,.5); display:flex; align-items:flex-start; justify-content:center; padding:5vh 16px; overflow-y:auto; z-index:50; }
+  .modal{ background:var(--surface); border-radius:16px; width:100%; max-width:460px; box-shadow:var(--shadow); }
+  .modal-head{ display:flex; align-items:center; justify-content:space-between; padding:16px 18px; border-bottom:1px solid var(--border); }
+  .modal-head h3{ font-size:15.5px; font-weight:700; }
+  .modal-body{ padding:16px 18px; display:flex; flex-direction:column; gap:12px; max-height:66vh; overflow-y:auto; }
+  .modal-foot{ display:flex; justify-content:flex-end; gap:8px; padding:14px 18px; border-top:1px solid var(--border); }
+  .iconbtn{ border:none; background:transparent; cursor:pointer; color:var(--ink-muted); padding:4px; border-radius:6px; transition: background-color .15s ease, color .15s ease, transform .08s ease; }
+  .iconbtn:hover{ background:var(--surface-2); color:var(--ink); }
+  .iconbtn:active{ transform:scale(.9); }
+
+  .note-item{ border:1px solid var(--border); border-radius:10px; padding:10px 12px; background:var(--surface-2); }
+  .note-item .note-meta{ font-size:11px; color:var(--ink-muted); margin-bottom:4px; }
+  .note-item .note-text{ font-size:13px; white-space:pre-wrap; }
+  .note-form{ display:flex; flex-direction:column; gap:8px; }
+
+  .banner{ background:var(--warn-soft); color:var(--warn); border-radius:11px; padding:11px 14px; font-size:13px; font-weight:600; margin-bottom:16px; }
+  .banner.info{ background:var(--accent-soft); color:var(--accent-soft-ink); }
+
+  .toast{ position:fixed; left:50%; bottom:22px; transform:translateX(-50%); background:var(--ink); color:var(--bg); font-size:13px; font-weight:600; padding:10px 16px; border-radius:10px; z-index:95; box-shadow:var(--shadow); }
+
+  .login-screen{ position:fixed; inset:0; display:flex; align-items:center; justify-content:center; background:var(--bg); z-index:100; padding:20px; }
+  .login-card{ width:100%; max-width:360px; background:var(--surface); border:1px solid var(--border); border-radius:16px; padding:28px 26px; box-shadow:var(--shadow); display:flex; flex-direction:column; gap:14px; }
+  .login-brand{ font-family:"Sora", system-ui, sans-serif; font-weight:700; font-size:18px; display:flex; align-items:center; gap:8px; color:var(--ink); }
+  .login-brand .dot{ width:9px; height:9px; border-radius:50%; background:var(--accent); flex:none; }
+  .login-sub{ font-size:13px; color:var(--ink-muted); margin:-6px 0 4px; }
+  .login-error{ background:var(--bad-soft); color:var(--bad); border-radius:9px; padding:9px 12px; font-size:12.5px; font-weight:600; }
+
+  [hidden]{ display:none !important; }
+
+  @media (max-width: 860px){
+    .app{ grid-template-columns:1fr; }
+    .rail{ position:fixed; bottom:0; left:0; right:0; top:auto; height:auto; flex-direction:row; padding:8px; border-right:none; border-top:1px solid var(--border); z-index:40; }
+    .brand, .rail-foot, .rail-account{ display:none; }
+    .rail-pages{ flex-direction:row; flex:1; margin-bottom:0; }
+    .rail-divider{ display:none; }
+    .navbtn{ text-align:center; justify-content:center; }
+    .main{ padding:16px 14px calc(70px + env(safe-area-inset-bottom)); }
+    .stats{ grid-template-columns:repeat(2,1fr); }
+    .stable th, .stable td{ padding:9px 8px; font-size:12.5px; }
+    .modal-backdrop{ padding:0; align-items:flex-end; }
+    .modal{ max-width:none; border-radius:16px 16px 0 0; max-height:92vh; }
+    .field-row{ grid-template-columns:1fr; }
+  }
+
+  /* ===== Shared across pages: collapsible sidebar + fit-to-screen ===== */
+  :root{ --rail-w:216px; --z:1; }
+  html.rail-collapsed{ --rail-w:68px; }
+  .rail-toggle{ display:none; }
+  .rail-pipeline .rail-section-label{ font-size:10.5px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:var(--ink-faint); padding:2px 10px 6px; }
+  .rail-pipeline{ display:flex; flex-direction:column; gap:4px; margin-bottom:8px; }
+  @media (min-width:1600px){ :root{ --z:1.1; } }
+  @media (min-width:1900px){ :root{ --z:1.2; } }
+  @media (min-width:2300px){ :root{ --z:1.4; } }
+  @media (min-width:2800px){ :root{ --z:1.7; } }
+  @media (min-width:3400px){ :root{ --z:2; } }
+  @media (min-width:861px){
+    /* Big screens: the page fills the window and everything scales up together (steps above), instead of
+       sitting in a narrow column with tiny text and empty space on the right. */
+    body{ zoom:var(--z); }
+    .app{ grid-template-columns:var(--rail-w) minmax(0,1fr); min-height:calc(100dvh / var(--z)); transition:grid-template-columns .18s ease; }
+    .rail{ height:calc(100dvh / var(--z)); overflow-y:auto; overflow-x:hidden; }
+    .main{ max-width:none; }
+    .rail-pipeline-mobile{ display:none !important; }
+    .rail-toggle{ display:inline-flex; position:absolute; top:20px; right:10px; width:28px; height:28px; align-items:center; justify-content:center; border:1px solid var(--border); background:var(--surface); color:var(--ink-muted); border-radius:8px; cursor:pointer; padding:0; }
+    .rail-toggle:hover{ background:var(--surface-2); color:var(--ink); }
+    .rail-toggle svg{ width:15px; height:15px; transition:transform .18s ease; }
+    html.rail-collapsed .rail-toggle svg{ transform:rotate(180deg); }
+    html.rail-collapsed .rail{ padding:20px 8px; }
+    html.rail-collapsed .rail-toggle{ position:static; align-self:center; margin-bottom:12px; }
+    html.rail-collapsed .brand{ display:none; }
+    html.rail-collapsed .navbtn{ font-size:0; justify-content:center; padding:10px 0; position:relative; gap:0; }
+    html.rail-collapsed .navbtn svg{ width:19px; height:19px; }
+    html.rail-collapsed .navbtn .badge{ position:absolute; top:3px; right:8px; font-size:10px; margin:0; padding:0 4px; min-width:15px; line-height:15px; }
+    html.rail-collapsed .rail-section-label, html.rail-collapsed .rail-account, html.rail-collapsed .rail-foot{ display:none; }
+    html.rail-collapsed .rail-divider{ margin:6px 8px; }
+  }
+  @media (max-width:860px){ .rail-pipeline{ display:none !important; } }
+
+  /* ===== PTC page ===== */
+  .tabs-row{ display:flex; align-items:center; gap:10px; margin-bottom:16px; flex-wrap:wrap; }
+  .seg.big button{ padding:8px 14px; font-size:13.5px; }
+  .seg .count{ display:inline-block; margin-left:6px; background:var(--bad); color:#fff; border-radius:99px; font-size:11px; padding:0 6px; line-height:16px; min-width:18px; text-align:center; }
+  .seg .count.soft{ background:var(--surface-2); color:var(--ink-muted); border:1px solid var(--border); }
+  .toolbar{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:12px; }
+  .toolbar .grow{ flex:1; }
+  .toolbar select, .toolbar input[type=text]{ width:auto; min-width:150px; }
+  .stats.six{ grid-template-columns:repeat(6,1fr); }
+  .pill.st-draft{ background:var(--surface-2); color:var(--ink-muted); border:1px solid var(--border); }
+  .pill.st-moved{ background:var(--warn-soft); color:var(--warn); }
+  .pill.st-invited{ background:var(--accent-soft); color:var(--accent-soft-ink); }
+  .pill.st-confirmed{ background:var(--good-soft); color:var(--good); }
+  .pill.st-cant{ background:var(--bad-soft); color:var(--bad); }
+  .pill.st-done{ background:var(--good); color:#fff; }
+  .pill.st-no_show{ background:var(--warn-soft); color:var(--warn); }
+  .pill.due-over{ background:var(--bad-soft); color:var(--bad); }
+  .pill.due-today{ background:var(--warn-soft); color:var(--warn); }
+  .pill.due-soon{ background:var(--accent-soft); color:var(--accent-soft-ink); }
+  .pill.mo{ background:var(--surface-2); color:var(--ink); border:1px solid var(--border); }
+  .pill.booked{ background:var(--good-soft); color:var(--good); font-weight:600; }
+  .day-head{ font-family:"Sora",sans-serif; font-weight:700; font-size:13.5px; padding:12px 16px 8px; border-bottom:1px solid var(--border); background:var(--surface-2); display:flex; justify-content:space-between; gap:8px; }
+  .day-head .muted{ font-family:"Inter",sans-serif; font-weight:500; font-size:12px; }
+  .sib{ font-size:12px; color:var(--ink-muted); white-space:normal; }
+  .sib b{ color:var(--ink); font-weight:600; }
+  .status-sel{ width:auto !important; padding:5px 8px !important; font-size:12.5px !important; }
+  .tnum{ font-variant-numeric:tabular-nums; }
+  .problems{ border:1px solid var(--warn-soft); background:var(--surface); border-radius:12px; margin-bottom:14px; }
+  .problems summary{ cursor:pointer; padding:11px 14px; font-weight:700; font-size:13px; color:var(--warn); list-style:none; display:flex; gap:8px; align-items:center; }
+  .problems summary::-webkit-details-marker{ display:none; }
+  .problems ul{ margin:0; padding:0 14px 12px 32px; font-size:12.5px; display:flex; flex-direction:column; gap:5px; }
+  .problems li button{ margin-left:6px; }
+  .fam{ border-bottom:1px solid var(--border); padding:12px 16px; display:grid; grid-template-columns: minmax(180px, 240px) 1fr auto; gap:12px; align-items:start; }
+  .fam:last-child{ border-bottom:none; }
+  .fam-name{ font-weight:700; font-size:13.5px; }
+  .fam-sub{ font-size:12px; color:var(--ink-muted); margin-top:3px; }
+  .fam-lines{ display:flex; flex-direction:column; gap:5px; font-size:13px; }
+  .fam-line{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+  .fam-line .t{ min-width:118px; font-variant-numeric:tabular-nums; color:var(--ink-muted); font-weight:600; }
+  .fam-actions{ display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end; max-width:300px; }
+  .slot-grid{ display:grid; grid-template-columns:repeat(auto-fill, minmax(92px,1fr)); gap:6px; }
+  .slot{ border:1px solid var(--border); background:var(--surface); border-radius:8px; padding:7px 6px; font-size:12.5px; font-weight:600; cursor:pointer; text-align:center; color:var(--ink); line-height:1.25; }
+  .slot small{ display:block; font-weight:500; font-size:10.5px; color:var(--ink-muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .slot:hover{ border-color:var(--accent); }
+  .slot.near{ border-color:var(--good); background:var(--good-soft); }
+  .slot.current{ border-color:var(--accent); background:var(--accent-soft); color:var(--accent-soft-ink); cursor:default; }
+  .slot:disabled{ cursor:not-allowed; opacity:.55; background:var(--surface-2); }
+  .chips{ display:flex; gap:6px; flex-wrap:wrap; }
+  .chip{ border:1px solid var(--border); background:var(--surface); border-radius:99px; padding:5px 11px; font-size:12.5px; font-weight:600; cursor:pointer; color:var(--ink-muted); }
+  .chip.active{ background:var(--accent-soft); color:var(--accent-soft-ink); border-color:var(--accent); }
+  .opt-list{ display:flex; flex-direction:column; gap:6px; }
+  .opt{ border:1px solid var(--border); border-radius:10px; padding:9px 12px; display:flex; justify-content:space-between; align-items:center; gap:10px; background:var(--surface); cursor:pointer; text-align:left; font:inherit; color:var(--ink); }
+  .opt:hover{ border-color:var(--accent); }
+  .opt .when{ font-weight:700; font-size:13px; }
+  .opt .what{ font-size:12px; color:var(--ink-muted); }
+  .day-rows{ display:flex; flex-direction:column; gap:6px; }
+  .day-row{ display:grid; grid-template-columns: 22px 110px repeat(4, minmax(0,1fr)); gap:6px; align-items:center; font-size:12.5px; }
+  .day-row input[type=time]{ font-family:inherit; font-size:12.5px; padding:6px 6px; border-radius:7px; border:1px solid var(--border); background:var(--surface); color:var(--ink); width:100%; }
+  .day-row.head{ font-size:10.5px; font-weight:700; text-transform:uppercase; color:var(--ink-muted); letter-spacing:.04em; }
+  .modal.wide{ max-width:640px; }
+  .modal.xwide{ max-width:820px; }
+  input[type=date], input[type=time]{ font-family:inherit; font-size:13.5px; padding:8px 10px; border-radius:8px; border:1px solid var(--border); background:var(--surface); color:var(--ink); }
+  .cap-table td, .cap-table th{ padding:5px 10px !important; font-size:12.5px !important; }
+  .cap-bad{ color:var(--bad); font-weight:700; }
+  .sib-group{ border:1px solid var(--border); border-radius:10px; padding:10px 12px; display:flex; flex-direction:column; gap:6px; }
+  .sib-group label{ display:flex; gap:8px; align-items:center; font-size:13px; }
+  .sib-group .row-actions{ justify-content:flex-start; }
+  .note-chip{ font-size:11.5px; color:var(--ink-muted); white-space:normal; max-width:260px; display:inline-block; }
+  .readonly-note{ font-size:11.5px; color:var(--ink-faint); }
+  @media (max-width: 860px){
+    .stats.six{ grid-template-columns:repeat(3,1fr); }
+    .fam{ grid-template-columns:1fr; }
+    .fam-actions{ justify-content:flex-start; max-width:none; }
+    .day-row{ grid-template-columns: 22px 90px repeat(4, minmax(0,1fr)); }
+  }
+</style>
+<script>try{if(localStorage.getItem("kumonRailCollapsed")==="1")document.documentElement.classList.add("rail-collapsed")}catch(e){}</script>
+<script>
+/* PTC menu link + "due" number (phase97). Each page calls kumonPtcNav(sbClient, role) once the role is known. */
+window.kumonPtcNav = function(client, role){
+  var link = document.getElementById("navPtcLink"); if(!link) return;
+  var ok = ["admin","superadmin","teacher","trainer_teacher"].indexOf(role) >= 0;
+  link.hidden = !ok; if(!ok || !client) return;
+  if(!document.getElementById("ptcBadgeStyle")){
+    var st = document.createElement("style"); st.id = "ptcBadgeStyle";
+    st.textContent = ".navbtn .ptc-badge{margin-left:auto;background:var(--bad);color:#fff;font-size:11px;font-weight:700;border-radius:99px;padding:1px 6px;min-width:18px;text-align:center;line-height:16px;}";
+    document.head.appendChild(st);
+  }
+  var refresh = function(){
+    client.rpc("ptc_due_count").then(function(r){
+      var b = document.getElementById("navPtcBadge"); if(!b) return;
+      var n = (r && !r.error && typeof r.data === "number") ? r.data : 0;
+      b.textContent = n > 99 ? "99+" : String(n); b.hidden = !n;
+      link.title = n ? ("PTC — " + n + " due") : "PTC";
+    }, function(){});
+  };
+  refresh();
+  window.kumonPtcNavRefresh = refresh;
+  if(!window.__ptcNavTimer) window.__ptcNavTimer = setInterval(refresh, 5 * 60 * 1000);
+};
+</script>
+</head>
+<body>
+
+<!-- While the page checks who's signed in: a quiet loading screen instead of flashing the login form. -->
+<div class="login-screen" id="bootSplash" aria-live="polite">
+  <div class="login-brand" style="opacity:.85"><span class="dot"></span>Kumon Hub</div>
+</div>
+<div class="login-screen" id="loginScreen" hidden>
+  <form class="login-card" id="loginForm">
+    <div class="login-brand"><span class="dot"></span>Kumon Hub</div>
+    <div class="login-sub">Sign in with your team account.</div>
+    <div class="login-error" id="loginError" hidden></div>
+    <label class="field">Email<input type="email" name="email" required autocomplete="username" autofocus></label>
+    <label class="field">Password<input type="password" name="password" required autocomplete="current-password"></label>
+    <button class="btn primary" type="submit" style="justify-content:center;">Log in</button>
+  </form>
+</div>
+
+<script>
+  // No saved sign-in on this browser at all → show the login form right away (no splash).
+  (function(){ try{ var has = Object.keys(localStorage).some(function(k){ return /^sb-.*-auth-token$/.test(k); });
+    if(!has){ document.getElementById("bootSplash").hidden = true; document.getElementById("loginScreen").hidden = false; } }catch(e){} })();
+</script>
+<div class="app" id="appRoot" hidden>
+  <nav class="rail">
+    <button type="button" class="rail-toggle" id="railToggle" aria-label="Collapse sidebar" title="Collapse sidebar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg></button>
+    <div class="brand"><span class="dot"></span>Kumon Hub</div>
+    <div class="rail-pages">
+      <a class="navbtn rail-pipeline-mobile" href="index.html" id="navPipelineLink" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16l-6.5 8.5V19l-3 1.5v-8L4 4z"/></svg>Pipeline</a>
+      <a class="navbtn" href="roster.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3L2 8l10 5 10-5-10-5z"/><path d="M6 10.5V15c0 1.5 2.5 3 6 3s6-1.5 6-3v-4.5"/></svg>Student roster</a>
+      <a class="navbtn" href="calendar.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>Calendar</a>
+      <a class="navbtn active" href="ptc.html" id="navPtcLink" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="7.5" r="3.2"/><circle cx="17" cy="9.5" r="2.4"/><path d="M3 20c0-3.6 2.7-6.3 6-6.3s6 2.7 6 6.3"/><path d="M15.2 14.4c.6-.2 1.2-.3 1.8-.3 2.5 0 4.4 1.9 4.4 4.6"/></svg>PTC<span class="badge ptc-badge" id="navPtcBadge" hidden></span></a>
+      <a class="navbtn" href="payments.html" id="navPaymentsLink" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20M6 15h4"/></svg>Payments</a>
+      <a class="navbtn" href="absent.html" id="navAbsentLink" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.5-7 8-7s8 3 8 7"/><path d="M2 2l20 20" stroke="currentColor"/></svg>Retention</a>
+      <a class="navbtn" href="admin.html" id="navAdminLink" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v6c0 5-3.5 8-7 9-3.5-1-7-4-7-9V6l7-3z"/></svg>Admin</a>
+      <a class="navbtn" href="activity.html" id="navActivityLink" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></svg>Activity</a>
+      <a class="navbtn" href="reports.html" id="navReportsLink" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a9 9 0 1 0 9 9h-9z"/><path d="M15 3.5A9 9 0 0 1 20.5 9H15z"/></svg>Reports</a>
+    </div>
+    <div class="rail-divider"></div>
+    <div class="rail-pipeline" id="navPipelineGroup" hidden>
+      <div class="rail-section-label">Pipeline views</div>
+      <a class="navbtn" href="index.html#calendar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 3v3h6V3"/><path d="M9 12l2 2 4-4"/></svg>DT &amp; Training</a>
+      <a class="navbtn" href="index.html#enrollment"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 12l2 2 4-4"/><circle cx="12" cy="12" r="9"/></svg>Enrollment</a>
+      <a class="navbtn" href="index.html#students"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-7 8-7s8 3 8 7"/></svg>New students</a>
+      <a class="navbtn" href="index.html#settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M19 5l-2 2M7 17l-2 2"/></svg>Settings</a>
+    </div>
+    <div class="rail-account" id="railAccount"></div>
+    <div class="rail-foot">Due PTCs for new students, and the PTC week schedule.</div>
+  </nav>
+
+  <main class="main">
+    <div id="pendingGate" hidden></div>
+
+    <div class="page-head" id="pageHead">
+      <div>
+        <h1>Parent-teacher conferences</h1>
+        <div class="page-sub">New students' PTCs (1st, 2nd, 3rd, 6th, 9th and 12th month after their first day) and the PTC week schedule.</div>
+      </div>
+    </div>
+
+    <div class="tabs-row" id="tabsRow">
+      <div class="seg big">
+        <button data-action="tab" data-tab="due" id="tabDueBtn">Due PTCs</button>
+        <button data-action="tab" data-tab="week" id="tabWeekBtn">PTC week</button>
+      </div>
+    </div>
+
+    <section id="dueSection" hidden></section>
+    <section id="weekSection" hidden></section>
+  </main>
+</div>
+
+<div class="modal-backdrop" id="modalBackdrop" hidden>
+  <div class="modal" id="modal"></div>
+</div>
+
+<div class="toast" id="toast" hidden></div>
+
+<script>
+(function(){
+  "use strict";
+
+  const SUPABASE_URL = "https://bcnmsryahczapnxbpkve.supabase.co";
+  const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJjbm1zcnlhaGN6YXBueGJwa3ZlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTAyMDQ4NzksImV4cCI6MjEwNTc4MDg3OX0.VgCX3CR7YCJxR9-vwD8HlYcCx0MxlY7atgD_0h3F3to";
+
+  const $ = (sel, el) => (el||document).querySelector(sel);
+  const $$ = (sel, el) => Array.from((el||document).querySelectorAll(sel));
+  function esc(s){ return String(s==null?"":s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+
+  let sbClient = null, currentUser = null, currentRole = null, currentTeacherName = null;
+
+  /* ---------------- data ---------------- */
+  let staffTeachers = [];
+  let students = [];                 // id, name, first_name, last_name, parent_name, parent_phone, billing_group_id, status, first_day
+  let studentById = new Map();
+  let enrollments = [];              // active subject_enrollments (RLS: teachers get their group's)
+  let schedules = [];                // active schedules (class days/times — used to place a family near its usual class time)
+  let weeks = [];                    // ptc_weeks
+  let sessions = [];                 // ptc_sessions of every week that's still open + the one being viewed
+  let families = new Map();          // student_id -> family_id (ptc_families)
+  let notSiblings = new Set();       // "a|b" (a < b)
+  let due = [];                      // rpc ptc_due(30)
+  let milestones = [];               // ptc_milestones (done / skipped)
+
+  /* ---------------- view state ---------------- */
+  const LS = "kumonPtc.";
+  function lsGet(k, d){ try{ const v = localStorage.getItem(LS + k); return v == null ? d : v; }catch(e){ return d; } }
+  function lsSet(k, v){ try{ localStorage.setItem(LS + k, v); }catch(e){} }
+  const ui = {
+    tab: lsGet("tab", "due"),
+    dueView: "now",                 // now | soon | done
+    dueTeacher: "all", dueSearch: "",
+    weekId: null,
+    weekView: lsGet("weekView", "teacher"),   // teacher | family
+    weekTeacher: "all", weekDay: "all", weekStatus: "all", weekSearch: ""
+  };
+  let modalState = null;            // { kind, ... } — move modals re-render on live updates
+
+  const MILESTONES = [1,2,3,6,9,12];
+  const STATUS = {
+    draft:     { label:"Not invited",    cls:"st-draft" },
+    invited:   { label:"Invited",        cls:"st-invited" },
+    confirmed: { label:"Confirmed",      cls:"st-confirmed" },
+    cant:      { label:"Can't make it",  cls:"st-cant" },
+    done:      { label:"Done",           cls:"st-done" },
+    no_show:   { label:"No-show",        cls:"st-no_show" }
+  };
+  const STATUS_ORDER = ["draft","invited","confirmed","cant","done","no_show"];
+
+  /* ---------------- small helpers ---------------- */
+  function isAdmin(){ return currentRole === "admin" || currentRole === "superadmin"; }
+  function isTeacherScoped(){ return currentRole === "teacher" || currentRole === "trainer_teacher"; }
+  function isAuthorized(){ return isAdmin() || isTeacherScoped(); }
+  function todayISO(){ return new Date(Date.now() + 8*3600e3).toISOString().slice(0,10); }   // Philippine date
+  function addDaysISO(iso, n){ const d = new Date(iso + "T00:00:00Z"); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0,10); }
+  function daysBetween(a, b){ return Math.round((new Date(b + "T00:00:00Z") - new Date(a + "T00:00:00Z")) / 86400e3); }
+  const WD = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+  function weekdayOf(iso){ return WD[new Date(iso + "T00:00:00Z").getUTCDay()]; }
+  function fmtDate(iso, opts){ if(!iso) return "—"; return new Date(iso + "T00:00:00Z").toLocaleDateString("en-US", Object.assign({ timeZone:"UTC", weekday:"short", month:"short", day:"numeric" }, opts||{})); }
+  function fmtDateLong(iso){ return fmtDate(iso, { weekday:"long", month:"long" }); }
+  function toMin(t){ if(!t) return null; const m = String(t).match(/^(\d{1,2}):(\d{2})/); return m ? (+m[1])*60 + (+m[2]) : null; }
+  function fromMin(m){ return String(Math.floor(m/60)).padStart(2,"0") + ":" + String(m%60).padStart(2,"0"); }
+  function fmt12(t){ const m = typeof t === "number" ? t : toMin(t); if(m == null) return "—"; let h = Math.floor(m/60), mm = m%60; const ap = h >= 12 ? "PM" : "AM"; h = h % 12 || 12; return `${h}:${String(mm).padStart(2,"0")} ${ap}`; }
+  function ordinal(n){ return n + (n === 1 ? "st" : n === 2 ? "nd" : n === 3 ? "rd" : "th"); }
+  function studentName(id){ const s = studentById.get(id); if(!s) return ""; return s.name || [s.first_name, s.last_name].filter(Boolean).join(" "); }
+  function sessName(x){ return x.student_name || studentName(x.student_id) || "(student)"; }
+  function lastNameOf(s){
+    if(!s) return "";
+    if(s.last_name) return String(s.last_name).trim().toLowerCase();
+    const n = String(s.name || "").trim();
+    if(n.includes(",")) return n.split(",")[0].trim().toLowerCase();
+    const parts = n.split(/\s+/); return (parts[parts.length-1] || "").toLowerCase();
+  }
+  function normPhone(p){ const d = String(p || "").replace(/\D/g, ""); return d.length >= 7 ? d.slice(-10) : ""; }
+  function uuid(){ return (crypto && crypto.randomUUID) ? crypto.randomUUID() : "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, c => { const r = Math.random()*16|0; return (c === "x" ? r : (r&3|8)).toString(16); }); }
+  function myName(){ return currentTeacherName || (currentUser && currentUser.email) || ""; }
+
+  let toastTimer = null;
+  function toast(msg){ const el = $("#toast"); if(!el) return; el.textContent = msg; el.hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(()=>{ el.hidden = true; }, 3400); }
+
+  function logHistory(action, summary, entityType, entityId, details){
+    if(!sbClient || !currentUser) return;
+    sbClient.from("edit_history").insert({
+      actor_email: currentUser.email || null, actor_role: currentRole || null, page: "ptc", action, summary,
+      entity_type: entityType || null, entity_id: entityId != null ? String(entityId) : null, details: details || null
+    }).then(({ error }) => { if(error) console.warn("Couldn't log history:", error); });
+  }
+
+  /* ---------------- teacher groups (phase95), same as the other pages ---------------- */
+  const DEFAULT_TEACHER_GROUPS = [
+    { key:"g1", name:"Group 1 (7A–3A61)", teachers:["Sir GB","Miss Mira","Miss Frixie","Miss Queenie","Miss Jess","Miss Sugar","Miss KC"] },
+    { key:"g2", name:"Group 2 (BCD)", teachers:["Sir Hamid","Miss Kath","Miss Kristine","Miss Nazel","Miss Rona"] },
+    { key:"g3", name:"Group 3 (E–O)", teachers:["Sir Mark","Sir Francis","Sir Erickson","Miss Shaina","Miss Kate"] }
+  ];
+  let teacherGroups = DEFAULT_TEACHER_GROUPS;
+  async function loadTeacherGroups(){
+    try{
+      const { data } = await sbClient.from("settings").select("value").eq("id","teacher_groups").maybeSingle();
+      const g = data && data.value && Array.isArray(data.value.groups) ? data.value.groups.filter(x => x && x.key && Array.isArray(x.teachers)) : null;
+      if(g && g.length) teacherGroups = g;
+    }catch(e){ console.warn("couldn't load teacher groups", e); }
+  }
+  function groupShortName(g){ return String(g.name || g.key).replace(/\s*\(.*\)\s*$/, ""); }
+  function myGroupTeachers(){
+    if(!currentTeacherName) return [];
+    const set = new Set([currentTeacherName]);
+    teacherGroups.forEach(g => { if(g.teachers.includes(currentTeacherName)) g.teachers.forEach(t => set.add(t)); });
+    return [...set];
+  }
+  function teacherInFilter(teacher, value){
+    if(!value || value === "all") return true;
+    if(value.startsWith("group:")){ const g = teacherGroups.find(x => "group:" + x.key === value); return !!g && g.teachers.includes(teacher); }
+    return teacher === value;
+  }
+  function groupedTeacherOptions(names, selected, opts){
+    opts = opts || {};
+    const pool = [...new Set((names || []).filter(Boolean))];
+    const sel = v => v === selected ? " selected" : "";
+    const me = currentTeacherName;
+    const label = t => esc(t) + (opts.scoped && t === me ? " (you)" : "");
+    let html = "";
+    if(opts.withAll && !opts.scoped) html += `<option value="all"${sel("all")}>All teachers</option>`;
+    const used = new Set();
+    for(const g of teacherGroups){
+      if(opts.scoped && !g.teachers.includes(me)) continue;
+      g.teachers.forEach(t => used.add(t));
+      html += `<optgroup label="${esc(g.name)}">`
+        + (opts.withGroups ? `<option value="group:${esc(g.key)}"${sel("group:" + g.key)}>All of ${esc(groupShortName(g))}</option>` : "")
+        + g.teachers.map(t => `<option value="${esc(t)}"${sel(t)}>${label(t)}</option>`).join("")
+        + `</optgroup>`;
+    }
+    if(opts.scoped){ if(me && !used.has(me)) html += `<option value="${esc(me)}"${sel(me)}>${esc(me)} (you)</option>`; return html; }
+    const others = pool.filter(t => !used.has(t)).sort((a,b) => a.localeCompare(b));
+    if(others.length) html += `<optgroup label="Not in a group">` + others.map(t => `<option value="${esc(t)}"${sel(t)}>${esc(t)}</option>`).join("") + `</optgroup>`;
+    if(selected && selected !== "all" && !selected.startsWith("group:") && !used.has(selected) && !others.includes(selected))
+      html += `<option value="${esc(selected)}" selected>${esc(selected)}</option>`;
+    return html;
+  }
+  function teacherPickerHtml(id, value){
+    if(isTeacherScoped()) return `<select id="${id}">${groupedTeacherOptions(myGroupTeachers(), value, { scoped:true, withGroups:true })}</select>`;
+    const names = [...new Set([...staffTeachers, ...enrollments.map(e => e.teacher), ...sessions.map(s => s.teacher)].filter(Boolean))];
+    return `<select id="${id}">${groupedTeacherOptions(names, value, { withAll:true, withGroups:true })}</select>`;
+  }
+  // Teachers can change sessions / mark PTCs only for their own group (the database enforces the same).
+  function canEditTeacher(t){ return isAdmin() || myGroupTeachers().includes(t); }
+
+  /* ---------------- login / boot (same as the other pages) ---------------- */
+  function showLogin(errMsg){ { const sp = document.getElementById("bootSplash"); if(sp) sp.hidden = true; }
+    $("#loginScreen").hidden = false; $("#appRoot").hidden = true;
+    const err = $("#loginError"); if(errMsg){ err.textContent = errMsg; err.hidden = false; } else { err.hidden = true; }
+  }
+  function showApp(){ { const sp = document.getElementById("bootSplash"); if(sp) sp.hidden = true; } $("#loginScreen").hidden = true; $("#appRoot").hidden = false; }
+  function renderAccount(){
+    if(window.kumonPtcNav) window.kumonPtcNav(sbClient, currentRole);
+    const el = $("#railAccount");
+    if(el) el.innerHTML = currentUser ? `<div class="account-row"><span class="account-email">${esc(currentUser.email)}</span><button class="btn sm ghost" data-action="logout">Log out</button></div>` : "";
+    const show = (id, on) => { const a = document.getElementById(id); if(a) a.hidden = !on; };
+    const r = currentRole;
+    show("navPipelineLink", !(r === "teacher" || r === "pending"));
+    show("navPaymentsLink", ["admin","superadmin","teacher","trainer_teacher"].includes(r));
+    show("navAbsentLink", ["admin","superadmin","teacher","trainer_teacher"].includes(r));
+    show("navAdminLink", r === "superadmin");
+    show("navActivityLink", r === "admin" || r === "superadmin");
+    show("navReportsLink", r === "superadmin");
+    applyRoleGate();
+  }
+  function applyRoleGate(){
+    const blocked = !isAuthorized();
+    const gate = $("#pendingGate");
+    if(gate){
+      gate.hidden = !blocked;
+      gate.innerHTML = blocked
+        ? (currentRole === "pending"
+            ? `<div class="banner">Your account is waiting for approval. Ask a superadmin to set your role in <a href="admin.html">Admin</a> — until then there's nothing here for you to see.</div>`
+            : `<div class="banner">The PTC page isn't available for your account role.</div>`)
+        : "";
+    }
+    $$("#pageHead, #tabsRow, #dueSection, #weekSection").forEach(el => { el.style.display = blocked ? "none" : ""; });
+  }
+  async function loadRole(){
+    if(!sbClient || !currentUser){ currentRole = null; currentTeacherName = null; return; }
+    try{
+      const { data, error } = await sbClient.from("profiles").select("role,teacher_name").eq("id", currentUser.id).maybeSingle();
+      if(error) throw error;
+      currentRole = data ? data.role : "pending";
+      currentTeacherName = data ? data.teacher_name : null;
+    }catch(e){ console.warn("couldn't load role", e); currentRole = "pending"; currentTeacherName = null; }
+  }
+  let shownUserId = null;
+  async function boot(){
+    if(!window.supabase){ showLogin("Couldn't load Supabase."); return; }
+    try{ sbClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY); }
+    catch(e){ showLogin("Couldn't connect to Supabase."); return; }
+    const { data:{ session } } = await sbClient.auth.getSession();
+    if(session){ currentUser = session.user; shownUserId = session.user.id; await loadRole(); showApp(); renderAccount(); startApp(); }
+    else{ showLogin(); }
+    sbClient.auth.onAuthStateChange(async (event, session)=>{
+      if(session){
+        if(shownUserId === session.user.id) return;
+        if(shownUserId){ location.reload(); return; }
+        currentUser = session.user; shownUserId = session.user.id;
+        await loadRole(); showApp(); renderAccount(); startApp();
+      }else{
+        if(shownUserId){ location.reload(); return; }
+        currentUser = null; currentRole = null; showLogin();
+      }
+    });
+  }
+
+  let started = false;
+  async function startApp(){
+    if(started || !isAuthorized()) return;
+    started = true;
+    if(isTeacherScoped() && currentTeacherName){ ui.dueTeacher = currentTeacherName; ui.weekTeacher = currentTeacherName; }
+    const h = (location.hash || "").replace("#","");
+    if(h === "due" || h === "week") ui.tab = h;
+    $("#dueSection").innerHTML = `<div class="empty">Loading…</div>`;
+    await Promise.all([loadStaff(), loadStudents(), loadEnrollments(), loadSchedules(), loadWeeks(), loadFamilies(), loadDue(), loadMilestones()]);
+    pickDefaultWeek();
+    await loadSessions();
+    render();
+    const reload = debounce(async (what) => {
+      if(what.has("weeks")) await loadWeeks();
+      if(what.has("sessions") || what.has("weeks")) await loadSessions();
+      if(what.has("families")) await loadFamilies();
+      if(what.has("milestones")){ await Promise.all([loadMilestones(), loadDue()]); if(window.kumonPtcNavRefresh) window.kumonPtcNavRefresh(); }
+      render(); if(modalState && modalState.live) renderModal();
+    }, 500);
+    const ch = sbClient.channel("realtime:ptc-page");
+    [["ptc_weeks","weeks"],["ptc_sessions","sessions"],["ptc_families","families"],["ptc_milestones","milestones"]].forEach(([t,k]) =>
+      ch.on("postgres_changes", { event:"*", schema:"public", table:t }, () => reload(k)));
+    ch.subscribe();
+  }
+  function debounce(fn, ms){
+    let t = null, keys = new Set();
+    return (k) => { keys.add(k); clearTimeout(t); t = setTimeout(() => { const s = keys; keys = new Set(); fn(s); }, ms); };
+  }
+
+  async function selectAll(table, cols, build){
+    // Supabase returns at most 1000 rows per request — page through.
+    let out = [], from = 0;
+    for(;;){
+      let q = sbClient.from(table).select(cols).range(from, from + 999);
+      if(build) q = build(q);
+      const { data, error } = await q;
+      if(error){ console.warn(table, error); return out; }
+      out = out.concat(data || []);
+      if(!data || data.length < 1000) return out;
+      from += 1000;
+    }
+  }
+  async function loadStaff(){
+    try{
+      const { data } = await sbClient.from("settings").select("value").eq("id","staff").maybeSingle();
+      const v = data ? data.value : {};
+      staffTeachers = Array.isArray(v.teachers) ? v.teachers : (Array.isArray(v.trainers) ? v.trainers : []);
+    }catch(e){ staffTeachers = []; }
+    await loadTeacherGroups();
+  }
+  async function loadStudents(){
+    students = await selectAll("students", "id,name,first_name,last_name,parent_name,parent_phone,billing_group_id,status,first_day", q => q.order("id"));
+    studentById = new Map(students.map(s => [s.id, s]));
+  }
+  async function loadEnrollments(){
+    enrollments = await selectAll("subject_enrollments", "id,student_id,subject,teacher,status", q => q.eq("status","active").order("id"));
+  }
+  async function loadSchedules(){
+    schedules = await selectAll("schedules", "id,student_id,subject_enrollment_id,slots,status", q => q.eq("status","active").order("id"));
+  }
+  async function loadWeeks(){
+    const { data, error } = await sbClient.from("ptc_weeks").select("*").order("created_at", { ascending:false });
+    if(error){ console.warn(error); weeks = []; return; }
+    weeks = (data || []).map(w => Object.assign(w, { days: Array.isArray(w.days) ? w.days.slice().sort((a,b) => a.date < b.date ? -1 : 1) : [] }));
+  }
+  function pickDefaultWeek(){
+    const keep = weeks.find(w => w.id === (ui.weekId || lsGet("weekId", "")));
+    const open = weeks.filter(w => !w.closed_at);
+    ui.weekId = keep ? keep.id : (open[0] || weeks[0] || {}).id || null;
+  }
+  async function loadSessions(){
+    const ids = new Set(weeks.filter(w => !w.closed_at).map(w => w.id));
+    if(ui.weekId) ids.add(ui.weekId);
+    if(!ids.size){ sessions = []; return; }
+    sessions = await selectAll("ptc_sessions", "*", q => q.in("week_id", [...ids]).order("id"));
+  }
+  async function loadFamilies(){
+    const [f, n] = await Promise.all([selectAll("ptc_families", "student_id,family_id"), selectAll("ptc_not_siblings", "a,b")]);
+    families = new Map(f.map(r => [r.student_id, r.family_id]));
+    notSiblings = new Set(n.map(r => r.a < r.b ? r.a + "|" + r.b : r.b + "|" + r.a));
+  }
+  async function loadDue(){
+    const { data, error } = await sbClient.rpc("ptc_due", { p_days_ahead: 30 });
+    if(error){ console.warn(error); due = []; return; }
+    due = data || [];
+  }
+  async function loadMilestones(){
+    milestones = await selectAll("ptc_milestones", "*", q => q.order("created_at", { ascending:false }));
+  }
+
+  /* ---------------- families ---------------- */
+  // Same rule as the database (ptc_family_of): a PTC sibling link, else the billing group, else the child alone.
+  function familyKeyOf(studentId){
+    const f = families.get(studentId); if(f) return "pf:" + f;
+    const s = studentById.get(studentId); if(s && s.billing_group_id) return "bg:" + s.billing_group_id;
+    return "st:" + studentId;
+  }
+  function sessFamily(x){ return x.family_key || familyKeyOf(x.student_id); }
+  function familyMembers(key){
+    if(key.startsWith("st:")) return [key.slice(3)];
+    return students.filter(s => familyKeyOf(s.id) === key).map(s => s.id);
+  }
+  function parentOf(studentIds){
+    for(const id of studentIds){ const s = studentById.get(id); if(s && (s.parent_name || s.parent_phone)) return { name: s.parent_name || "", phone: s.parent_phone || "" }; }
+    return { name:"", phone:"" };
+  }
+
+  /* ---------------- PTC week: slots ---------------- */
+  function currentWeek(){ return weeks.find(w => w.id === ui.weekId) || null; }
+  function weekSessions(){ return sessions.filter(x => x.week_id === ui.weekId); }
+  function daySlots(day, slotMin){
+    const from = toMin(day.from), to = toMin(day.to), bf = toMin(day.break_from), bt = toMin(day.break_to);
+    const out = [];
+    if(from == null || to == null) return out;
+    for(let m = from; m + slotMin <= to; m += slotMin){
+      if(bf != null && bt != null && bt > bf && m < bt && m + slotMin > bf) continue;
+      out.push(m);
+    }
+    return out;
+  }
+  function slotKey(date, min){ return date + "|" + min; }
+  function inHours(week, x){
+    if(!x.date || !x.time) return true;
+    const day = week.days.find(d => d.date === x.date); if(!day) return false;
+    return daySlots(day, week.slot_minutes || 15).includes(toMin(x.time));
+  }
+
+  // Busy maps for a set of sessions (optionally leaving some out — the ones being moved).
+  function occupancy(list, skipIds){
+    const teacher = new Map(), family = new Map();
+    for(const x of list){
+      if(!x.date || !x.time || (skipIds && skipIds.has(x.id))) continue;
+      const k = slotKey(x.date, toMin(x.time));
+      if(!teacher.has(k)) teacher.set(k, new Map()); teacher.get(k).set(x.teacher, x);
+      const fk = sessFamily(x);
+      if(!family.has(k)) family.set(k, new Map()); family.get(k).set(fk, x);
+    }
+    return {
+      teacherAt: (date, min, t) => { const m = teacher.get(slotKey(date, min)); return m ? m.get(t) || null : null; },
+      familyAt: (date, min, f) => { const m = family.get(slotKey(date, min)); return m ? m.get(f) || null : null; },
+      put: (x) => {
+        const k = slotKey(x.date, toMin(x.time));
+        if(!teacher.has(k)) teacher.set(k, new Map()); teacher.get(k).set(x.teacher, x);
+        if(!family.has(k)) family.set(k, new Map()); family.get(k).set(x.family, x);
+      }
+    };
+  }
+
+  // Where each family usually comes to class: weekday -> [minutes].
+  function classTimesOf(studentIds){
+    const out = {};
+    for(const sc of schedules){
+      if(!studentIds.includes(sc.student_id) || !Array.isArray(sc.slots)) continue;
+      for(const sl of sc.slots){
+        const m = toMin(sl && sl.time); if(m == null || !sl.day) continue;
+        const d = String(sl.day).slice(0,3);
+        (out[d] = out[d] || []).push(m);
+      }
+    }
+    return out;
+  }
+  function prefScore(date, min, ct, dayLoad){
+    const wd = weekdayOf(date);
+    const all = Object.values(ct).flat();
+    if(ct[wd] && ct[wd].length) return Math.min(...ct[wd].map(t => Math.abs(t - min))) / 15;
+    if(all.length){ const avg = all.reduce((a,b) => a+b, 0) / all.length; return 60 + Math.abs(avg - min) / 15; }
+    return 120 + (dayLoad[date] || 0) / 25;     // no class times known: spread out over the week
+  }
+
+  // The draft: one 15-minute session per child per teacher. A family's sessions go back to back
+  // (never at the same time), on their usual class day near their usual class time when possible.
+  // items: [{student_id, student_name, teacher, subjects, family}] — existing: sessions already booked (kept as they are).
+  function planPlacement(week, items, existing){
+    const slotMin = week.slot_minutes || 15;
+    const days = week.days.map(d => ({ date:d.date, slots: daySlots(d, slotMin) })).filter(d => d.slots.length);
+    const occ = occupancy(existing.map(x => Object.assign({}, x, { family: sessFamily(x) })), null);
+    const famExisting = new Map();
+    existing.forEach(x => { if(x.date && x.time){ const f = sessFamily(x); (famExisting.get(f) || famExisting.set(f, []).get(f)).push({ date:x.date, min:toMin(x.time) }); } });
+    const dayLoad = {}; existing.forEach(x => { if(x.date) dayLoad[x.date] = (dayLoad[x.date] || 0) + 1; });
+    const teacherLoad = {}; items.forEach(i => { teacherLoad[i.teacher] = (teacherLoad[i.teacher] || 0) + 1; });
+
+    const byFam = new Map();
+    items.forEach(i => { (byFam.get(i.family) || byFam.set(i.family, []).get(i.family)).push(i); });
+    const fams = [...byFam.entries()].map(([key, list]) => ({ key, list, busiest: Math.max(...list.map(i => teacherLoad[i.teacher] || 0)) }));
+    fams.sort((a,b) => b.list.length - a.list.length || b.busiest - a.busiest || a.key.localeCompare(b.key));
+
+    const placed = [], unplaced = []; let split = 0;
+    const freeFor = (date, min, i) => !occ.teacherAt(date, min, i.teacher) && !occ.familyAt(date, min, i.family);
+    const adjacentBonus = (fk, date, start, end) => {
+      const ex = famExisting.get(fk) || []; if(!ex.length) return 0;
+      return ex.some(e => e.date === date && (e.min === end || e.min + slotMin === start)) ? -500 : (ex.some(e => e.date === date) ? -200 : 300);
+    };
+    const book = (i, date, min) => {
+      const x = Object.assign({}, i, { date, time: fromMin(min) });
+      placed.push(x); occ.put(x); dayLoad[date] = (dayLoad[date] || 0) + 1;
+      (famExisting.get(i.family) || famExisting.set(i.family, []).get(i.family)).push({ date, min });
+    };
+
+    for(const fam of fams){
+      const L = fam.list.length;
+      const ct = classTimesOf([...new Set(fam.list.map(i => i.student_id))]);
+      // 1) the whole family in one block of back-to-back slots
+      const cands = [];
+      for(const d of days){
+        for(let s = 0; s + L <= d.slots.length; s++){
+          if(d.slots[s + L - 1] !== d.slots[s] + (L - 1) * slotMin) continue;   // a break in the middle
+          cands.push({ date:d.date, idx:s, slots:d.slots, score: prefScore(d.date, d.slots[s], ct, dayLoad) + adjacentBonus(fam.key, d.date, d.slots[s], d.slots[s] + L*slotMin) });
+        }
+      }
+      cands.sort((a,b) => a.score - b.score);
+      let done = false;
+      for(const c of cands){
+        const times = c.slots.slice(c.idx, c.idx + L);
+        const order = assignBlock(fam.list, times, (i, m) => freeFor(c.date, m, i));
+        if(order){ order.forEach((i, k) => book(i, c.date, times[k])); done = true; break; }
+      }
+      if(done) continue;
+      // 2) can't keep them together: each session at its own best free time, as close to the others as possible
+      split++;
+      for(const i of fam.list){
+        let best = null;
+        for(const d of days) for(const m of d.slots){
+          if(!freeFor(d.date, m, i)) continue;
+          const sc = prefScore(d.date, m, ct, dayLoad) + adjacentBonus(fam.key, d.date, m, m + slotMin);
+          if(!best || sc < best.sc) best = { date:d.date, m, sc };
+        }
+        if(best) book(i, best.date, best.m); else unplaced.push(i);
+      }
+    }
+    return { placed, unplaced, split };
+  }
+  // Give each of the times one session so every teacher is free at hers (small backtracking — families are small).
+  function assignBlock(list, times, ok){
+    const used = new Array(list.length).fill(false), out = [];
+    const go = (k) => {
+      if(k === times.length) return true;
+      const seen = new Set();
+      for(let j = 0; j < list.length; j++){
+        if(used[j]) continue;
+        const sig = list[j].teacher + "|" + list[j].student_id;
+        if(seen.has(sig)) continue; seen.add(sig);
+        if(!ok(list[j], times[k])) continue;
+        used[j] = true; out.push(list[j]);
+        if(go(k + 1)) return true;
+        used[j] = false; out.pop();
+      }
+      return false;
+    };
+    return go(0) ? out : null;
+  }
+
+  // Every child + teacher pair that should have a PTC-week session (active subjects; Math + Reading with the same teacher = one).
+  function neededPairs(){
+    const map = new Map();
+    for(const e of enrollments){
+      if(!e.teacher || !e.student_id) continue;
+      const s = studentById.get(e.student_id);
+      if(s && s.status === "not_enrolled") continue;
+      const k = e.student_id + "|" + e.teacher;
+      if(!map.has(k)) map.set(k, { student_id:e.student_id, student_name: studentName(e.student_id), teacher:e.teacher, subj:new Set(), family: familyKeyOf(e.student_id) });
+      if(e.subject) map.get(k).subj.add(e.subject);
+    }
+    return [...map.values()].map(p => Object.assign(p, { subjects: [...p.subj].sort().join(", ") }));
+  }
+  function missingPairs(){
+    const have = new Set(weekSessions().map(x => x.student_id + "|" + x.teacher));
+    return neededPairs().filter(p => !have.has(p.student_id + "|" + p.teacher) && (isAdmin() || myGroupTeachers().includes(p.teacher)));
+  }
+
+  /* ---------------- problems in a PTC week ---------------- */
+  function weekProblems(week, list){
+    const out = { teacherClash:[], familyClash:[], split:[], unplaced:[], outside:[], cant:[] };
+    const tmap = new Map(), fmap = new Map(), fam = new Map();
+    for(const x of list){
+      if(!x.date || !x.time){ out.unplaced.push(x); continue; }
+      if(!inHours(week, x)) out.outside.push(x);
+      if(x.status === "cant") out.cant.push(x);
+      const tk = x.date + "|" + x.time + "|" + x.teacher; (tmap.get(tk) || tmap.set(tk, []).get(tk)).push(x);
+      const f = sessFamily(x);
+      const fk = x.date + "|" + x.time + "|" + f; (fmap.get(fk) || fmap.set(fk, []).get(fk)).push(x);
+      (fam.get(f) || fam.set(f, []).get(f)).push(x);
+    }
+    tmap.forEach(v => { if(v.length > 1) out.teacherClash.push(v); });
+    fmap.forEach(v => { if(v.length > 1) out.familyClash.push(v); });
+    const slotMin = week.slot_minutes || 15;
+    fam.forEach((v, f) => {
+      if(v.length < 2) return;
+      const dates = new Set(v.map(x => x.date));
+      const mins = [...new Set(v.map(x => toMin(x.time)))].sort((a,b) => a-b);
+      if(dates.size > 1 || mins[mins.length-1] - mins[0] > (mins.length - 1) * slotMin) out.split.push({ family:f, list:v });
+    });
+    return out;
+  }
+
+  /* ---------------- render ---------------- */
+  function render(){
+    if(!isAuthorized()) return;
+    $("#tabDueBtn").classList.toggle("active", ui.tab === "due");
+    $("#tabWeekBtn").classList.toggle("active", ui.tab === "week");
+    const dueNow = dueRows("now").length;
+    $("#tabDueBtn").innerHTML = `Due PTCs${dueNow ? `<span class="count">${dueNow}</span>` : ""}`;
+    $("#dueSection").hidden = ui.tab !== "due";
+    $("#weekSection").hidden = ui.tab !== "week";
+    if(ui.tab === "due") renderDue(); else renderWeek();
+  }
+
+  /* ----- Due PTCs ----- */
+  function dueRows(view){
+    const t = todayISO();
+    const q = ui.dueSearch.trim().toLowerCase();
+    return due
+      .filter(d => view === "now" ? d.due_date <= t : d.due_date > t)
+      .filter(d => (d.teachers || []).some(x => teacherInFilter(x, ui.dueTeacher)) || (!(d.teachers||[]).length && ui.dueTeacher === "all"))
+      .filter(d => !q || String(d.student_name || "").toLowerCase().includes(q))
+      .sort((a,b) => a.due_date < b.due_date ? -1 : a.due_date > b.due_date ? 1 : String(a.student_name).localeCompare(String(b.student_name)));
+  }
+  function bookedFor(studentId){
+    const open = new Set(weeks.filter(w => !w.closed_at).map(w => w.id));
+    return sessions.filter(x => x.student_id === studentId && open.has(x.week_id) && x.date && x.status !== "done" && x.status !== "no_show")
+      .sort((a,b) => (a.date + a.time) < (b.date + b.time) ? -1 : 1)[0] || null;
+  }
+  function renderDue(){
+    const nowRows = dueRows("now"), soonRows = dueRows("soon");
+    const t = todayISO();
+    const doneRows = milestones
+      .filter(m => { const s = studentById.get(m.student_id); const q = ui.dueSearch.trim().toLowerCase(); return !q || studentName(m.student_id).toLowerCase().includes(q) || !s; })
+      .filter(m => ui.dueTeacher === "all" || enrollments.some(e => e.student_id === m.student_id && teacherInFilter(e.teacher, ui.dueTeacher)));
+    const counts = { now: nowRows.length, soon: soonRows.length };
+    let body = "";
+    if(ui.dueView === "done"){
+      body = doneRows.length ? `<table class="stable"><thead><tr><th>Student</th><th>PTC</th><th>Was due</th><th>Result</th><th>On</th><th>Note</th><th>By</th><th></th></tr></thead><tbody>${
+        doneRows.slice(0, 300).map(m => `<tr>
+          <td><b>${esc(studentName(m.student_id) || "(student)")}</b></td>
+          <td><span class="pill mo">${ordinal(m.month_no)} month</span></td>
+          <td class="tnum">${esc(fmtDate(m.due_date))}</td>
+          <td>${m.status === "done" ? `<span class="pill st-confirmed">Done</span>` : `<span class="pill st-draft">Skipped</span>`}</td>
+          <td class="tnum">${esc(fmtDate(m.done_on))}</td>
+          <td><span class="note-chip">${esc(m.note || "")}</span></td>
+          <td class="muted">${esc(m.by_name || "")}</td>
+          <td><button class="btn sm ghost" data-action="ms-undo" data-id="${esc(m.id)}" title="Put it back on the due list">Undo</button></td>
+        </tr>`).join("")}</tbody></table>` : `<div class="empty">Nothing marked done or skipped yet.</div>`;
+    }else{
+      const rows = ui.dueView === "now" ? nowRows : soonRows;
+      body = rows.length ? `<table class="stable"><thead><tr><th>Student</th><th>PTC</th><th>Due</th><th></th><th>Teacher</th><th>First day</th><th></th><th></th></tr></thead><tbody>${
+        rows.map(d => {
+          const late = daysBetween(d.due_date, t);
+          const when = ui.dueView === "now"
+            ? (late === 0 ? `<span class="pill due-today">Due today</span>` : `<span class="pill due-over">${late} day${late === 1 ? "" : "s"} overdue</span>`)
+            : `<span class="pill due-soon">in ${-late} day${late === -1 ? "" : "s"}</span>`;
+          const b = bookedFor(d.student_id);
+          const canMark = isAdmin() || (d.teachers || []).some(x => myGroupTeachers().includes(x));
+          return `<tr>
+            <td><b>${esc(d.student_name || "")}</b> ${(d.subjects || []).map(s => `<span class="pill ${s === "Reading" ? "subj-reading" : "subj-math"} name-subj-pill">${s === "Reading" ? "R" : "M"}</span>`).join("")}</td>
+            <td><span class="pill mo">${ordinal(d.month_no)} month</span></td>
+            <td class="tnum">${esc(fmtDate(d.due_date))}</td>
+            <td>${when}</td>
+            <td>${esc((d.teachers || []).join(", ") || "—")}</td>
+            <td class="tnum muted" title="${d.first_day_set_by_hand ? "Set by hand on the student card" : "From their first training session"}">${esc(fmtDate(d.first_day, { weekday: undefined, year:"numeric" }))}</td>
+            <td>${b ? `<span class="pill booked" title="Booked in a PTC week — marking that session Done also marks this PTC done">PTC week: ${esc(fmtDate(b.date))}, ${esc(fmt12(b.time))}</span>` : ""}</td>
+            <td><div class="row-actions">${canMark ? `<button class="btn sm good" data-action="ms-done" data-student="${esc(d.student_id)}" data-month="${d.month_no}">Done</button><button class="btn sm ghost" data-action="ms-skip" data-student="${esc(d.student_id)}" data-month="${d.month_no}">Skip</button>` : ""}</div></td>
+          </tr>`;
+        }).join("")}</tbody></table>`
+        : `<div class="empty">${ui.dueView === "now" ? "No PTCs due right now. 🎉" : "Nothing coming up in the next 30 days."}</div>`;
+    }
+    $("#dueSection").innerHTML = `
+      <div class="toolbar">
+        <div class="seg">
+          <button data-action="due-view" data-view="now" class="${ui.dueView === "now" ? "active" : ""}">Due now${counts.now ? `<span class="count">${counts.now}</span>` : ""}</button>
+          <button data-action="due-view" data-view="soon" class="${ui.dueView === "soon" ? "active" : ""}">Coming up${counts.soon ? `<span class="count soft">${counts.soon}</span>` : ""}</button>
+          <button data-action="due-view" data-view="done" class="${ui.dueView === "done" ? "active" : ""}">Done</button>
+        </div>
+        <input type="text" id="dueSearch" placeholder="Search student…" value="${esc(ui.dueSearch)}" style="max-width:200px;">
+        ${teacherPickerHtml("dueTeacher", ui.dueTeacher)}
+      </div>
+      <div class="card">
+        <div class="card-head"><h3>${ui.dueView === "now" ? "Due now" : ui.dueView === "soon" ? "Coming up (next 30 days)" : "Done and skipped"}</h3>
+          <span class="hint">PTCs are due 1, 2, 3, 6, 9 and 12 months after a student's first day.</span></div>
+        <div class="table-scroll">${body}</div>
+      </div>
+      <p class="hint">Students without a first day don't get automatic PTCs — set it on the student card in Pipeline (it fills in from their first training session).</p>`;
+    restoreFocus();
+  }
+
+  /* ----- PTC week ----- */
+  function renderWeek(){
+    const w = currentWeek();
+    const weekSel = weeks.length ? `<select id="weekPick">${weeks.map(x => `<option value="${esc(x.id)}"${x.id === ui.weekId ? " selected" : ""}>${esc(x.name)}${x.closed_at ? " (closed)" : ""}</option>`).join("")}</select>` : "";
+    const adminBtns = isAdmin() ? `
+        <button class="btn sm" data-action="week-new">New PTC week</button>
+        ${w ? `<button class="btn sm" data-action="week-edit">Days &amp; hours</button>
+        <button class="btn sm" data-action="siblings">Siblings</button>
+        <button class="btn sm primary" data-action="draft">${weekSessions().length ? "Add missing students" : "Make draft"}</button>` : ""}` : "";
+    if(!w){
+      $("#weekSection").innerHTML = `<div class="toolbar">${weekSel}${adminBtns}</div>
+        <div class="card"><div class="empty">${isAdmin() ? "No PTC week yet. Click <b>New PTC week</b>, pick the dates and hours, then <b>Make draft</b> — the Hub books every child with each of their teachers, siblings back to back." : "No PTC week has been set up yet."}</div></div>`;
+      return;
+    }
+    const list = weekSessions();
+    // Counts and things-to-fix follow the teacher picker (a teacher starts on her own sessions).
+    const inT = x => teacherInFilter(x.teacher, ui.weekTeacher);
+    const scoped = list.filter(inT);
+    const allProbs = weekProblems(w, list);
+    const probs = {
+      unplaced: allProbs.unplaced.filter(inT), outside: allProbs.outside.filter(inT), cant: allProbs.cant.filter(inT),
+      teacherClash: allProbs.teacherClash.filter(v => inT(v[0])), familyClash: allProbs.familyClash.filter(v => v.some(inT)),
+      split: allProbs.split.filter(p => p.list.some(inT))
+    };
+    const missing = missingPairs().filter(p => teacherInFilter(p.teacher, ui.weekTeacher));
+    const st = {}; STATUS_ORDER.forEach(k => st[k] = 0); scoped.forEach(x => st[x.status] = (st[x.status] || 0) + 1);
+    const famCount = new Set(scoped.map(sessFamily)).size;
+
+    const statTile = (key, label, n, cls) => `<button class="stat ${cls||""}${ui.weekStatus === key ? " selected" : ""}" data-action="week-status" data-status="${key}"><span class="n">${n}</span><span class="l">${label}</span></button>`;
+    const stats = `<div class="stats six">
+      ${statTile("all", `Sessions · ${famCount} famil${famCount === 1 ? "y" : "ies"}`, scoped.length)}
+      ${statTile("draft", "Not invited yet", st.draft)}
+      ${statTile("invited", "Invited, waiting", st.invited, st.invited ? "warn" : "")}
+      ${statTile("confirmed", "Confirmed", st.confirmed)}
+      ${statTile("cant", "Can't make it", st.cant, st.cant ? "bad" : "")}
+      ${statTile("done", "Done", st.done + st.no_show)}
+    </div>`;
+
+    const items = [];
+    const nm = x => `<b>${esc(sessName(x))}</b>`;
+    probs.unplaced.forEach(x => items.push(`${nm(x)} with ${esc(x.teacher)} has no time yet${canEditTeacher(x.teacher) ? `<button class="btn sm" data-action="move" data-id="${esc(x.id)}">Pick a time</button>` : ""}`));
+    probs.teacherClash.forEach(v => items.push(`${esc(v[0].teacher)} has ${v.length} sessions at ${esc(fmtDate(v[0].date))} ${esc(fmt12(v[0].time))}: ${v.map(nm).join(", ")}${canEditTeacher(v[0].teacher) ? `<button class="btn sm" data-action="move" data-id="${esc(v[1].id)}">Move one</button>` : ""}`));
+    probs.familyClash.forEach(v => items.push(`Same family at the same time (${esc(fmtDate(v[0].date))} ${esc(fmt12(v[0].time))}): ${v.map(x => `${nm(x)} with ${esc(x.teacher)}`).join(" and ")}${v.some(x => canEditTeacher(x.teacher)) ? `<button class="btn sm" data-action="move" data-id="${esc((v.find(x => canEditTeacher(x.teacher)) || v[0]).id)}">Move one</button>` : ""}`));
+    probs.outside.forEach(x => items.push(`${nm(x)} with ${esc(x.teacher)} is outside the PTC hours (${esc(fmtDate(x.date))} ${esc(fmt12(x.time))})${canEditTeacher(x.teacher) ? `<button class="btn sm" data-action="move" data-id="${esc(x.id)}">Move</button>` : ""}`));
+    if(missing.length) items.push(`${missing.length} child${missing.length === 1 ? "" : "ren"} + teacher pair${missing.length === 1 ? " has" : "s have"} no session yet (new students or new subjects)<button class="btn sm" data-action="show-missing">See list</button>`);
+    probs.split.forEach(p => items.push(`Siblings not back to back: ${[...new Set(p.list.map(x => sessName(x)))].map(n => `<b>${esc(n)}</b>`).join(", ")}${p.list.every(x => canEditTeacher(x.teacher)) ? `<button class="btn sm" data-action="move-family" data-family="${esc(p.family)}">Find a time together</button>` : ""}`));
+    const problems = items.length ? `<details class="problems"${items.length <= 6 ? " open" : ""}><summary>⚠ ${items.length} thing${items.length === 1 ? "" : "s"} to fix</summary><ul>${items.slice(0, 80).map(i => `<li>${i}</li>`).join("")}${items.length > 80 ? `<li>…and ${items.length - 80} more</li>` : ""}</ul></details>` : "";
+
+    const dayChips = `<div class="chips"><button class="chip${ui.weekDay === "all" ? " active" : ""}" data-action="week-day" data-day="all">All days</button>${w.days.map(d => `<button class="chip${ui.weekDay === d.date ? " active" : ""}" data-action="week-day" data-day="${esc(d.date)}">${esc(fmtDate(d.date))}</button>`).join("")}</div>`;
+
+    $("#weekSection").innerHTML = `
+      <div class="toolbar">${weekSel}${adminBtns}<span class="grow"></span>
+        ${w.closed_at ? `<span class="pill st-draft">Closed</span>` : ""}
+      </div>
+      <p class="hint" style="margin:-4px 0 12px;">${esc(w.days.length ? `${fmtDateLong(w.days[0].date)} – ${fmtDateLong(w.days[w.days.length-1].date)}` : "No days set yet")} · ${w.slot_minutes || 15}-minute sessions · one per child per teacher, siblings back to back.</p>
+      ${stats}
+      ${problems}
+      <div class="toolbar">
+        <div class="seg">
+          <button data-action="week-view" data-view="teacher" class="${ui.weekView === "teacher" ? "active" : ""}">By teacher</button>
+          <button data-action="week-view" data-view="family" class="${ui.weekView === "family" ? "active" : ""}">By family</button>
+        </div>
+        ${teacherPickerHtml("weekTeacher", ui.weekTeacher)}
+        <input type="text" id="weekSearch" placeholder="Search student or parent…" value="${esc(ui.weekSearch)}" style="max-width:220px;">
+        ${ui.weekStatus !== "all" ? `<span class="filter-note" style="margin:0;">Showing: ${esc(STATUS[ui.weekStatus] ? STATUS[ui.weekStatus].label : ui.weekStatus)} <button data-action="week-status" data-status="all">Show all</button></span>` : ""}
+      </div>
+      <div style="margin-bottom:12px;">${dayChips}</div>
+      ${ui.weekView === "family" ? renderFamilyView(w, list) : renderTeacherView(w, list)}`;
+    restoreFocus();
+  }
+  function statusMatch(x){
+    if(ui.weekStatus === "all") return true;
+    if(ui.weekStatus === "done") return x.status === "done" || x.status === "no_show";
+    return x.status === ui.weekStatus;
+  }
+  function searchMatch(x){
+    const q = ui.weekSearch.trim().toLowerCase(); if(!q) return true;
+    const s = studentById.get(x.student_id) || {};
+    return [sessName(x), s.parent_name, s.parent_phone].some(v => String(v || "").toLowerCase().includes(q));
+  }
+  function statusPill(x){
+    if(x.status === "draft" && x.moved_at) return `<span class="pill st-moved" title="The time changed — send the parent the new time">Moved · re-invite</span>`;
+    const s = STATUS[x.status] || STATUS.draft; return `<span class="pill ${s.cls}">${s.label}</span>`;
+  }
+  function statusControl(x){
+    if(!canEditTeacher(x.teacher)) return statusPill(x);
+    const label = (k) => (k === "draft" && x.moved_at) ? "Moved · re-invite" : STATUS[k].label;
+    return `<select class="status-sel" data-status-for="${esc(x.id)}">${STATUS_ORDER.map(k => `<option value="${k}"${x.status === k ? " selected" : ""}>${label(k)}</option>`).join("")}</select>`;
+  }
+  function siblingsLine(x, list){
+    const f = sessFamily(x);
+    const others = list.filter(o => o.id !== x.id && sessFamily(o) === f);
+    if(!others.length) return "";
+    return `<div class="sib">${others.sort(bySlot).map(o => `${o.student_id === x.student_id ? "also" : `<b>${esc(sessName(o))}</b>`} · ${o.date ? `${o.date !== x.date ? esc(fmtDate(o.date)) + " " : ""}${esc(fmt12(o.time))}` : "no time"} · ${esc(o.teacher)}`).join("<br>")}</div>`;
+  }
+  function bySlot(a, b){ const ka = (a.date || "9999") + (a.time || "99"), kb = (b.date || "9999") + (b.time || "99"); return ka < kb ? -1 : ka > kb ? 1 : 0; }
+
+  function renderTeacherView(w, list){
+    const rows = list.filter(x => teacherInFilter(x.teacher, ui.weekTeacher) && (ui.weekDay === "all" || x.date === ui.weekDay || (!x.date && ui.weekDay === "all")) && statusMatch(x) && searchMatch(x)).sort(bySlot);
+    if(!rows.length) return `<div class="card"><div class="empty">${list.length ? "No sessions match these filters." : (isAdmin() ? "No sessions yet — click <b>Make draft</b>." : "No sessions yet. An admin makes the draft.")}</div></div>`;
+    const oneTeacher = ui.weekTeacher !== "all" && !ui.weekTeacher.startsWith("group:");
+    const byDate = new Map();
+    rows.forEach(x => { const k = x.date || ""; (byDate.get(k) || byDate.set(k, []).get(k)).push(x); });
+    return `<div class="card"><div class="table-scroll">${[...byDate.entries()].map(([date, rs]) => {
+      const head = `<div class="day-head"><span>${date ? esc(fmtDateLong(date)) : "No time yet"}</span><span class="muted">${rs.length} session${rs.length === 1 ? "" : "s"}</span></div>`;
+      return head + `<table class="stable"><thead><tr><th>Time</th><th>Student</th>${oneTeacher ? "" : "<th>Teacher</th>"}<th>Siblings / other teachers</th><th>Status</th><th>Note</th><th></th></tr></thead><tbody>${rs.map(x => `
+        <tr>
+          <td class="tnum"><b>${x.time ? esc(fmt12(x.time)) : "—"}</b></td>
+          <td><b>${esc(sessName(x))}</b> <span class="muted">${esc(x.subjects || "")}</span></td>
+          ${oneTeacher ? "" : `<td>${esc(x.teacher)}</td>`}
+          <td>${siblingsLine(x, list) || `<span class="faint">—</span>`}</td>
+          <td>${statusControl(x)}</td>
+          <td>${x.note ? `<span class="note-chip">${esc(x.note)}</span>` : ""}</td>
+          <td><div class="row-actions">${canEditTeacher(x.teacher) ? `<button class="btn sm" data-action="move" data-id="${esc(x.id)}">Move</button><button class="btn sm ghost" data-action="note" data-id="${esc(x.id)}" title="Add a note">✎</button>` : `<span class="readonly-note">other group</span>`}<button class="btn sm ghost" data-action="invite" data-family="${esc(sessFamily(x))}" title="Copy the parent's invite (all their children's times)">Invite</button></div></td>
+        </tr>`).join("")}</tbody></table>`;
+    }).join("")}</div></div>`;
+  }
+
+  function renderFamilyView(w, list){
+    const fams = new Map();
+    list.forEach(x => { const f = sessFamily(x); (fams.get(f) || fams.set(f, []).get(f)).push(x); });
+    const shown = [...fams.entries()].filter(([f, v]) =>
+      v.some(x => teacherInFilter(x.teacher, ui.weekTeacher) && (ui.weekDay === "all" || x.date === ui.weekDay) && statusMatch(x)) && v.some(searchMatch))
+      .map(([f, v]) => [f, v.sort(bySlot)])
+      .sort((a, b) => bySlot(a[1][0], b[1][0]));
+    if(!shown.length) return `<div class="card"><div class="empty">${list.length ? "No families match these filters." : "No sessions yet."}</div></div>`;
+    return `<div class="card"><div class="card-head"><h3>${shown.length} famil${shown.length === 1 ? "y" : "ies"}</h3><span class="hint">Copy the invite, send it to the parent, then mark them invited / confirmed.</span></div>${shown.slice(0, 400).map(([f, v]) => {
+      const kids = [...new Set(v.map(x => x.student_id))];
+      const p = parentOf(kids);
+      const editable = v.filter(x => canEditTeacher(x.teacher));
+      const allMine = editable.length === v.length;
+      const sum = {}; v.forEach(x => sum[x.status] = (sum[x.status] || 0) + 1);
+      return `<div class="fam">
+        <div><div class="fam-name">${esc(p.name || ("Parent of " + kids.map(studentName).filter(Boolean)[0]))}</div>
+          <div class="fam-sub">${p.phone ? esc(p.phone) + " · " : ""}${kids.length} child${kids.length === 1 ? "" : "ren"} · ${v.length} session${v.length === 1 ? "" : "s"}</div></div>
+        <div class="fam-lines">${v.map(x => `<div class="fam-line"><span class="t">${x.date ? esc(fmtDate(x.date)) + " · " + esc(fmt12(x.time)) : "No time yet"}</span><b>${esc(sessName(x))}</b><span class="muted">${esc(x.subjects || "")} · ${esc(x.teacher)}</span>${statusPill(x)}${x.note ? `<span class="note-chip">${esc(x.note)}</span>` : ""}</div>`).join("")}</div>
+        <div class="fam-actions">
+          <button class="btn sm" data-action="invite" data-family="${esc(f)}">Copy invite</button>
+          ${editable.length ? `
+          <button class="btn sm" data-action="fam-status" data-family="${esc(f)}" data-status="invited">Invited</button>
+          <button class="btn sm good" data-action="fam-status" data-family="${esc(f)}" data-status="confirmed">Confirmed</button>
+          <button class="btn sm danger" data-action="fam-status" data-family="${esc(f)}" data-status="cant">Can't make it</button>
+          ${allMine ? `<button class="btn sm" data-action="move-family" data-family="${esc(f)}">Move family</button>` : ""}
+          ${!allMine ? `<span class="readonly-note">Some sessions are another group's — only yours change.</span>` : ""}` : `<span class="readonly-note">Another group's family</span>`}
+        </div>
+      </div>`;
+    }).join("")}${shown.length > 400 ? `<div class="empty">Showing the first 400 families — narrow it with the filters.</div>` : ""}</div>`;
+  }
+
+  // Keep typing focus in search boxes across re-renders.
+  let focusId = null, focusPos = null;
+  function rememberFocus(){ const a = document.activeElement; if(a && a.id && (a.id === "dueSearch" || a.id === "weekSearch")){ focusId = a.id; focusPos = a.selectionStart; } else focusId = null; }
+  function restoreFocus(){ if(!focusId) return; const el = document.getElementById(focusId); if(el){ el.focus(); try{ el.setSelectionRange(focusPos, focusPos); }catch(e){} } focusId = null; }
+
+  /* ---------------- modals ---------------- */
+  function openModal(state){ modalState = state; renderModal(); $("#modalBackdrop").hidden = false; }
+  function closeModal(){ modalState = null; $("#modalBackdrop").hidden = true; $("#modal").innerHTML = ""; $("#modal").className = "modal"; }
+  function renderModal(){
+    if(!modalState) return;
+    const m = $("#modal");
+    const r = MODALS[modalState.kind](modalState);
+    m.className = "modal" + (r.size ? " " + r.size : "");
+    m.innerHTML = `<div class="modal-head"><h3>${r.title}</h3><button class="iconbtn" data-action="close-modal" aria-label="Close">✕</button></div>
+      <div class="modal-body">${r.body}</div>${r.foot ? `<div class="modal-foot">${r.foot}</div>` : ""}`;
+    if(r.after) r.after(m);
+  }
+  const MODALS = {};
+
+  /* --- milestone done / skip --- */
+  MODALS.milestone = (s) => {
+    const d = due.find(x => x.student_id === s.studentId && x.month_no === s.month);
+    const name = d ? d.student_name : studentName(s.studentId);
+    const earlier = due.filter(x => x.student_id === s.studentId && x.month_no < s.month && x.due_date <= todayISO());
+    return {
+      title: `${s.skip ? "Skip" : "PTC done"} — ${esc(name)}`,
+      body: `<div class="hint">${ordinal(s.month)}-month PTC, due ${esc(fmtDate(d && d.due_date))}.</div>
+        ${s.skip ? "" : `<label class="field">Date of the PTC<input type="date" id="msDate" value="${esc(todayISO())}"></label>`}
+        <label class="field">${s.skip ? "Why skip? (optional)" : "Note (optional)"}<textarea id="msNote" rows="3" placeholder="${s.skip ? "e.g. parent said no need, moved away…" : "What was discussed, follow-ups…"}"></textarea></label>
+        ${earlier.length ? `<label style="display:flex;gap:8px;align-items:center;font-size:13px;"><input type="checkbox" id="msEarlier"> Also mark the earlier overdue one${earlier.length === 1 ? "" : "s"} (${earlier.map(x => ordinal(x.month_no)).join(", ")} month) as ${s.skip ? "skipped" : "done"}</label>` : ""}`,
+      foot: `<button class="btn" data-action="close-modal">Cancel</button><button class="btn primary" data-action="ms-save">${s.skip ? "Skip it" : "Mark done"}</button>`
+    };
+  };
+  async function saveMilestone(){
+    const s = modalState;
+    const note = ($("#msNote") || {}).value || "";
+    const doneOn = s.skip ? todayISO() : (($("#msDate") || {}).value || todayISO());
+    const months = [s.month];
+    if($("#msEarlier") && $("#msEarlier").checked) due.filter(x => x.student_id === s.studentId && x.month_no < s.month && x.due_date <= todayISO()).forEach(x => months.push(x.month_no));
+    const rows = months.map(mn => {
+      const d = due.find(x => x.student_id === s.studentId && x.month_no === mn);
+      return { student_id: s.studentId, month_no: mn, due_date: d ? d.due_date : null, status: s.skip ? "skipped" : "done", done_on: doneOn, note: note.trim() || null, by_name: myName() };
+    });
+    const { error } = await sbClient.from("ptc_milestones").upsert(rows, { onConflict: "student_id,month_no" });
+    if(error){ alert("Couldn't save: " + error.message); return; }
+    logHistory(s.skip ? "ptc_skipped" : "ptc_done", `${s.skip ? "Skipped" : "Done"}: ${studentName(s.studentId)} — ${months.map(ordinal).join(", ")} month PTC`, "student", s.studentId, { months, note });
+    closeModal();
+    await Promise.all([loadMilestones(), loadDue()]);
+    if(window.kumonPtcNavRefresh) window.kumonPtcNavRefresh();
+    render(); toast(s.skip ? "Skipped." : "Marked done.");
+  }
+
+  /* --- new / edit PTC week (admins) --- */
+  MODALS.week = (s) => {
+    const rows = s.days.map((d, i) => `<div class="day-row">
+        <input type="checkbox" data-day-on="${i}"${d.on ? " checked" : ""}>
+        <span>${esc(fmtDate(d.date))}</span>
+        <input type="time" data-day-f="from" data-i="${i}" value="${esc(d.from)}"${d.on ? "" : " disabled"}>
+        <input type="time" data-day-f="to" data-i="${i}" value="${esc(d.to)}"${d.on ? "" : " disabled"}>
+        <input type="time" data-day-f="break_from" data-i="${i}" value="${esc(d.break_from || "")}"${d.on ? "" : " disabled"}>
+        <input type="time" data-day-f="break_to" data-i="${i}" value="${esc(d.break_to || "")}"${d.on ? "" : " disabled"}>
+      </div>`).join("");
+    const slotsTotal = s.days.filter(d => d.on).reduce((n, d) => n + daySlots(d, 15).length, 0);
+    return {
+      size: "wide",
+      title: s.id ? "PTC week — days & hours" : "New PTC week",
+      body: `<label class="field">Name<input type="text" id="wkName" value="${esc(s.name)}"></label>
+        <div class="field-row">
+          <label class="field">First day<input type="date" id="wkStart" value="${esc(s.start)}"></label>
+          <label class="field">Last day<input type="date" id="wkEnd" value="${esc(s.end)}"></label>
+        </div>
+        <div class="day-rows">
+          <div class="day-row head"><span></span><span>Day</span><span>From</span><span>To</span><span>Break from</span><span>Break to</span></div>
+          ${rows || `<div class="hint">Pick the first and last day.</div>`}
+        </div>
+        <div class="hint">15-minute sessions: <b>${slotsTotal}</b> per teacher across the week. Leave the break blank for none.</div>
+        ${s.id ? `<div class="hint">Changing the hours doesn't move anyone — sessions now outside the hours show under “things to fix”.</div>` : ""}`,
+      foot: (s.id ? `<button class="btn danger" data-action="week-delete" style="margin-right:auto;">Delete week</button><button class="btn" data-action="week-close">${s.closed ? "Reopen week" : "Close week"}</button>` : "")
+        + `<button class="btn" data-action="close-modal">Cancel</button><button class="btn primary" data-action="week-save">${s.id ? "Save" : "Create"}</button>`
+    };
+  };
+  function weekDaysFor(start, end, prev){
+    const out = [];
+    if(!start || !end || end < start) return out;
+    for(let d = start, n = 0; d <= end && n < 21; d = addDaysISO(d, 1), n++){
+      const p = (prev || []).find(x => x.date === d);
+      const wd = weekdayOf(d);
+      out.push(p || { date:d, on: wd !== "Sun", from: "09:00", to: "18:00", break_from: "12:00", break_to: "13:00" });
+    }
+    return out;
+  }
+  function openWeekModal(w){
+    if(w){
+      const start = w.days.length ? w.days[0].date : todayISO(), end = w.days.length ? w.days[w.days.length-1].date : start;
+      const prev = weekDaysFor(start, end, []).map(d => { const x = w.days.find(y => y.date === d.date); return x ? Object.assign({ on:true }, x) : Object.assign(d, { on:false }); });
+      openModal({ kind:"week", id:w.id, closed: !!w.closed_at, name:w.name, start, end, days: prev });
+    }else{
+      // next Monday → Saturday
+      let start = todayISO(); while(weekdayOf(start) !== "Mon") start = addDaysISO(start, 1);
+      const end = addDaysISO(start, 5);
+      const label = new Date(start + "T00:00:00Z").toLocaleDateString("en-US", { timeZone:"UTC", month:"long", year:"numeric" });
+      openModal({ kind:"week", id:null, name:`PTC week — ${label}`, start, end, days: weekDaysFor(start, end, []) });
+    }
+  }
+  function readWeekModal(){
+    const s = modalState;
+    s.name = $("#wkName").value;
+    $$("[data-day-f]").forEach(inp => { const d = s.days[+inp.dataset.i]; if(d) d[inp.dataset.dayF] = inp.value; });
+    $$("[data-day-on]").forEach(inp => { const d = s.days[+inp.dataset.dayOn]; if(d) d.on = inp.checked; });
+  }
+  async function saveWeek(){
+    readWeekModal();
+    const s = modalState;
+    const days = s.days.filter(d => d.on).map(d => ({ date:d.date, from:d.from, to:d.to, break_from:d.break_from || null, break_to:d.break_to || null }));
+    if(!s.name.trim()){ alert("Give the week a name."); return; }
+    if(!days.length){ alert("Pick at least one day."); return; }
+    const bad = days.find(d => toMin(d.from) == null || toMin(d.to) == null || toMin(d.to) <= toMin(d.from));
+    if(bad){ alert(`Check the hours on ${fmtDate(bad.date)}.`); return; }
+    const row = { name: s.name.trim(), days, slot_minutes: 15 };
+    const res = s.id ? await sbClient.from("ptc_weeks").update(row).eq("id", s.id).select().maybeSingle()
+                     : await sbClient.from("ptc_weeks").insert(row).select().maybeSingle();
+    if(res.error){ alert("Couldn't save: " + res.error.message); return; }
+    logHistory(s.id ? "ptc_week_edit" : "ptc_week_new", `${s.id ? "Edited" : "Created"} ${row.name}`, "ptc_week", res.data && res.data.id, row);
+    closeModal();
+    await loadWeeks(); if(res.data) ui.weekId = res.data.id; lsSet("weekId", ui.weekId);
+    await loadSessions(); render();
+    toast(s.id ? "Saved." : "PTC week created — now click Make draft.");
+  }
+
+  /* --- draft (admins) --- */
+  MODALS.draft = (s) => {
+    const w = currentWeek();
+    const totalSlots = w.days.reduce((n, d) => n + daySlots(d, w.slot_minutes || 15).length, 0);
+    const need = {}; s.pairs.forEach(p => need[p.teacher] = (need[p.teacher] || 0) + 1);
+    const have = {}; weekSessions().forEach(x => have[x.teacher] = (have[x.teacher] || 0) + 1);
+    const teachers = Object.keys(need).sort((a,b) => (need[b] + (have[b]||0)) - (need[a] + (have[a]||0)));
+    const over = teachers.filter(t => need[t] + (have[t] || 0) > totalSlots);
+    const famN = new Set(s.pairs.map(p => p.family)).size;
+    return {
+      size: "wide",
+      title: s.adding ? "Add missing students" : "Make the draft",
+      body: `<div>${s.adding ? `<b>${s.pairs.length}</b> session${s.pairs.length === 1 ? "" : "s"} to add (${famN} famil${famN === 1 ? "y" : "ies"}). Sessions already booked stay where they are; siblings who already have a time get the slot next to it when possible.`
+          : `<b>${s.pairs.length}</b> sessions for <b>${famN}</b> families — one per child per teacher. Each family's sessions go back to back on their usual class day, near their usual class time, when there's room.`}</div>
+        ${over.length ? `<div class="banner">Not enough time for ${over.map(esc).join(", ")} — ${totalSlots} sessions fit in the week's hours. Add hours in <b>Days &amp; hours</b>, or the extra sessions stay without a time.</div>` : ""}
+        <div class="table-scroll"><table class="stable cap-table"><thead><tr><th>Teacher</th><th>Sessions</th><th>Fits in the week</th></tr></thead><tbody>${teachers.map(t => {
+          const n = need[t] + (have[t] || 0);
+          return `<tr><td>${esc(t)}</td><td class="tnum">${n}${have[t] ? ` <span class="muted">(${need[t]} new)</span>` : ""}</td><td class="tnum ${n > totalSlots ? "cap-bad" : ""}">${n} of ${totalSlots}</td></tr>`;
+        }).join("")}</tbody></table></div>
+        <div class="hint">Families come from billing groups and the links in <b>Siblings</b> — link siblings first so they're kept together.</div>
+        ${s.busy ? `<div class="banner info">Working… ${esc(s.busy)}</div>` : ""}`,
+      foot: `<button class="btn" data-action="close-modal">Cancel</button><button class="btn primary" data-action="draft-go"${s.busy ? " disabled" : ""}>${s.adding ? "Add them" : "Make draft"}</button>`
+    };
+  };
+  async function runDraft(pairs, quiet){
+    const w = currentWeek(); if(!w) return null;
+    const plan = planPlacement(w, pairs, weekSessions());
+    const by = myName();
+    const rows = plan.placed.concat(plan.unplaced.map(i => Object.assign({}, i, { date:null, time:null }))).map(i => ({
+      week_id: w.id, student_id: i.student_id, student_name: i.student_name || studentName(i.student_id), teacher: i.teacher,
+      subjects: i.subjects || null, date: i.date || null, time: i.time || null, status: "draft", updated_by_name: by
+    }));
+    for(let k = 0; k < rows.length; k += 300){
+      if(modalState && modalState.kind === "draft"){ modalState.busy = `saving ${Math.min(k + 300, rows.length)} of ${rows.length}`; renderModal(); }
+      const { error } = await sbClient.from("ptc_sessions").upsert(rows.slice(k, k + 300), { onConflict: "week_id,student_id,teacher", ignoreDuplicates: true });
+      if(error){ alert("Couldn't save the draft: " + error.message); await loadSessions(); render(); return null; }
+    }
+    if(!quiet) logHistory("ptc_draft", `${w.name}: drafted ${rows.length} sessions`, "ptc_week", w.id, { placed: plan.placed.length, unplaced: plan.unplaced.length, split: plan.split });
+    await loadSessions(); render();
+    return plan;
+  }
+
+  /* --- missing list --- */
+  MODALS.missing = () => {
+    const m = missingPairs().filter(p => teacherInFilter(p.teacher, ui.weekTeacher)).sort((a,b) => a.teacher.localeCompare(b.teacher) || a.student_name.localeCompare(b.student_name));
+    return {
+      size: "wide",
+      title: "No session yet",
+      body: m.length ? `<div class="hint">Active students (or subjects) added after the draft. “Book” finds the best free time — next to a sibling's session when there is one.</div>
+        <table class="stable"><thead><tr><th>Student</th><th>Teacher</th><th></th></tr></thead><tbody>${m.map(p => `<tr><td><b>${esc(p.student_name)}</b> <span class="muted">${esc(p.subjects)}</span></td><td>${esc(p.teacher)}</td><td><button class="btn sm" data-action="book-missing" data-student="${esc(p.student_id)}" data-teacher="${esc(p.teacher)}">Book</button></td></tr>`).join("")}</tbody></table>`
+        : `<div class="empty">Everyone has a session.</div>`,
+      foot: m.length ? `<button class="btn" data-action="close-modal">Close</button><button class="btn primary" data-action="book-all-missing">Book all ${m.length}</button>` : `<button class="btn" data-action="close-modal">Close</button>`
+    };
+  };
+
+  /* --- move one session --- */
+  MODALS.move = (s) => {
+    const w = currentWeek(); const x = sessions.find(y => y.id === s.id);
+    if(!w || !x) return { title:"Session", body:`<div class="empty">This session was removed.</div>` };
+    const list = weekSessions();
+    const occ = occupancy(list, new Set([x.id]));
+    const fam = sessFamily(x);
+    const famOthers = list.filter(o => o.id !== x.id && sessFamily(o) === fam && o.date);
+    if(!s.day) s.day = x.date || (famOthers[0] && famOthers[0].date) || (w.days[0] && w.days[0].date);
+    const day = w.days.find(d => d.date === s.day);
+    const slots = day ? daySlots(day, w.slot_minutes || 15) : [];
+    const slotMin = w.slot_minutes || 15;
+    const cells = slots.map(m => {
+      const cur = x.date === s.day && toMin(x.time) === m;
+      const tb = occ.teacherAt(s.day, m, x.teacher);
+      const fb = occ.familyAt(s.day, m, fam);
+      const near = famOthers.some(o => o.date === s.day && (toMin(o.time) === m + slotMin || toMin(o.time) + slotMin === m));
+      if(cur) return `<button class="slot current" disabled>${fmt12(m)}<small>now</small></button>`;
+      if(fb) return `<button class="slot" disabled title="${esc(sessName(fb))} with ${esc(fb.teacher)}">${fmt12(m)}<small>sibling: ${esc(sessName(fb))}</small></button>`;
+      if(tb) return `<button class="slot" disabled title="${esc(sessName(tb))}">${fmt12(m)}<small>${esc(sessName(tb))}</small></button>`;
+      return `<button class="slot${near ? " near" : ""}" data-action="move-to" data-time="${fromMin(m)}"${near ? ` title="Right next to a sibling's session"` : ""}>${fmt12(m)}<small>${near ? "next to sibling" : "free"}</small></button>`;
+    }).join("");
+    const famLine = famOthers.length ? `<div class="hint">Same family: ${famOthers.sort(bySlot).map(o => `<b>${esc(sessName(o))}</b> ${esc(fmtDate(o.date))} ${esc(fmt12(o.time))} (${esc(o.teacher)})`).join(" · ")}. Green = right next to a sibling.</div>` : "";
+    const famEditable = list.filter(o => sessFamily(o) === fam).every(o => canEditTeacher(o.teacher));
+    return {
+      size: "wide",
+      title: `Move — ${esc(sessName(x))} with ${esc(x.teacher)}`,
+      body: `<div class="hint">Now: ${x.date ? `${esc(fmtDateLong(x.date))}, ${esc(fmt12(x.time))}` : "no time yet"} · ${statusPill(x)}</div>
+        ${famLine}
+        <div class="chips">${w.days.map(d => `<button class="chip${d.date === s.day ? " active" : ""}" data-action="move-day" data-day="${esc(d.date)}">${esc(fmtDate(d.date))}</button>`).join("")}</div>
+        <div class="slot-grid">${cells || `<div class="hint">No hours set for this day.</div>`}</div>
+        ${x.status !== "draft" && x.status !== "done" && x.status !== "no_show" ? `<div class="hint">Moving it sets it back to <b>Moved · re-invite</b> so the parent gets the new time.</div>` : ""}`,
+      foot: `<button class="btn danger" data-action="session-delete" style="margin-right:auto;">Remove session</button>`
+        + (famOthers.length && famEditable ? `<button class="btn" data-action="move-family" data-family="${esc(fam)}">Move whole family</button>` : "")
+        + `<button class="btn" data-action="close-modal">Close</button>`
+    };
+  };
+  function movedPatch(x){
+    const p = { updated_by_name: myName() };
+    if(x.status === "invited" || x.status === "confirmed" || x.status === "cant"){ p.status = "draft"; p.moved_at = new Date().toISOString(); }
+    return p;
+  }
+  async function moveSession(id, date, time){
+    const x = sessions.find(y => y.id === id); if(!x) return;
+    const patch = Object.assign({ date, time }, movedPatch(x));
+    const { data, error } = await sbClient.from("ptc_sessions").update(patch).eq("id", id).select();
+    if(error || !data || !data.length){ alert("Couldn't move it" + (error ? ": " + error.message : " — it belongs to another group.")); return false; }
+    logHistory("ptc_move", `${sessName(x)} (${x.teacher}) → ${fmtDate(date)} ${fmt12(time)}`, "ptc_session", id, { from: [x.date, x.time], to: [date, time] });
+    Object.assign(x, data[0]);
+    return true;
+  }
+
+  /* --- move a whole family: every back-to-back time that fits --- */
+  MODALS.moveFamily = (s) => {
+    const w = currentWeek(); const list = weekSessions();
+    const fam = list.filter(o => sessFamily(o) === s.family);
+    if(!w || !fam.length) return { title:"Move family", body:`<div class="empty">Nothing to move.</div>` };
+    const occ = occupancy(list, new Set(fam.map(o => o.id)));
+    const slotMin = w.slot_minutes || 15, L = fam.length;
+    const ct = classTimesOf([...new Set(fam.map(o => o.student_id))]);
+    const opts = [];
+    for(const d of w.days){
+      if(s.day && s.day !== "all" && d.date !== s.day) continue;
+      const sl = daySlots(d, slotMin);
+      for(let i = 0; i + L <= sl.length; i++){
+        if(sl[i + L - 1] !== sl[i] + (L - 1) * slotMin) continue;
+        const times = sl.slice(i, i + L);
+        const order = assignBlock(fam.map(o => Object.assign({}, o)), times, (o, m) => !occ.teacherAt(d.date, m, o.teacher));
+        if(order) opts.push({ date:d.date, times, order, score: prefScore(d.date, times[0], ct, {}) });
+      }
+    }
+    opts.sort((a,b) => s.day && s.day !== "all" ? (a.times[0] - b.times[0]) : (a.score - b.score));
+    s.opts = opts;
+    const names = [...new Set(fam.map(sessName))];
+    return {
+      size: "wide",
+      title: `Move family — ${names.map(esc).join(", ")}`,
+      body: `<div class="hint">Every time this family's ${L} session${L === 1 ? "" : "s"} fit back to back with all their teachers free. ${s.day && s.day !== "all" ? "" : "Best matches for their usual class day/time first."}</div>
+        <div class="chips"><button class="chip${!s.day || s.day === "all" ? " active" : ""}" data-action="mf-day" data-day="all">Best matches</button>${w.days.map(d => `<button class="chip${s.day === d.date ? " active" : ""}" data-action="mf-day" data-day="${esc(d.date)}">${esc(fmtDate(d.date))}</button>`).join("")}</div>
+        <div class="opt-list">${opts.slice(0, s.day && s.day !== "all" ? 60 : 12).map((o, k) => `<button class="opt" data-action="mf-pick" data-k="${k}">
+            <span><span class="when">${esc(fmtDate(o.date))} · ${esc(fmt12(o.times[0]))} – ${esc(fmt12(o.times[o.times.length-1] + slotMin))}</span><br>
+            <span class="what">${o.order.map((x, j) => `${fmt12(o.times[j])} ${esc(sessName(x))} (${esc(x.teacher)})`).join(" · ")}</span></span><span class="btn sm">Use</span></button>`).join("") || `<div class="empty">No back-to-back time fits${s.day && s.day !== "all" ? " on this day" : ""}. Try another day or move sessions one by one.</div>`}</div>`,
+      foot: `<button class="btn" data-action="close-modal">Close</button>`
+    };
+  };
+  async function pickFamilyOption(k){
+    const o = modalState.opts && modalState.opts[k]; if(!o) return;
+    let ok = true;
+    for(let j = 0; j < o.order.length; j++){
+      const x = sessions.find(y => y.id === o.order[j].id);
+      const r = await sbClient.from("ptc_sessions").update(Object.assign({ date:o.date, time: fromMin(o.times[j]) }, movedPatch(x))).eq("id", x.id).select();
+      if(r.error || !r.data || !r.data.length){ ok = false; alert("Couldn't move " + sessName(x) + (r.error ? ": " + r.error.message : " — it belongs to another group.")); break; }
+    }
+    logHistory("ptc_move_family", `Moved family (${o.order.map(sessName).join(", ")}) → ${fmtDate(o.date)} ${fmt12(o.times[0])}`, "ptc_week", ui.weekId, null);
+    closeModal(); await loadSessions(); render(); if(ok) toast("Family moved — send them the new time.");
+  }
+
+  /* --- note --- */
+  MODALS.note = (s) => {
+    const x = sessions.find(y => y.id === s.id) || {};
+    return { title:`Note — ${esc(sessName(x))}`, body:`<textarea id="noteText" rows="4" placeholder="e.g. parent asked for after 5 PM, mom comes with all 3 kids…">${esc(x.note || "")}</textarea>`,
+      foot:`<button class="btn" data-action="close-modal">Cancel</button><button class="btn primary" data-action="note-save">Save</button>` };
+  };
+
+  /* --- invite text --- */
+  function inviteText(familyKey){
+    const w = currentWeek();
+    const list = weekSessions().filter(x => sessFamily(x) === familyKey && x.date).sort(bySlot);
+    const kids = [...new Set(list.map(x => x.student_id))];
+    const p = parentOf(kids);
+    const slotMin = (w && w.slot_minutes) || 15;
+    const byDate = new Map(); list.forEach(x => { (byDate.get(x.date) || byDate.set(x.date, []).get(x.date)).push(x); });
+    const lines = [];
+    lines.push(`Good day${p.name ? ", " + p.name : ""}! 😊`);
+    lines.push(`Here is your Parent-Teacher Conference schedule at Kumon Iligan City:`);
+    byDate.forEach((v, d) => {
+      lines.push(""); lines.push(fmtDateLong(d));
+      v.forEach(x => lines.push(`• ${fmt12(x.time)} – ${fmt12(toMin(x.time) + slotMin)}: ${sessName(x)}${x.subjects ? " (" + x.subjects + ")" : ""} with ${x.teacher}`));
+    });
+    lines.push(""); lines.push(`Each conference is ${slotMin} minutes. Please reply to confirm if you can make it, or let us know if you need a different time. Thank you!`);
+    return lines.join("\n");
+  }
+  MODALS.invite = (s) => {
+    const txt = inviteText(s.family);
+    const v = weekSessions().filter(x => sessFamily(x) === s.family);
+    const canMark = v.some(x => canEditTeacher(x.teacher) && x.status === "draft");
+    return {
+      size:"wide",
+      title:"Invite for the parent",
+      body:`<textarea id="inviteText" rows="12" style="font-size:13px;">${esc(txt)}</textarea>
+        <div class="hint">Edit if you like, copy it, and send it by text or Messenger.${v.some(x => !x.date) ? " Some sessions don't have a time yet, so they're not in the message." : ""}</div>`,
+      foot:`<button class="btn" data-action="close-modal">Close</button>${canMark ? `<button class="btn" data-action="invite-copy" data-mark="1">Copy &amp; mark invited</button>` : ""}<button class="btn primary" data-action="invite-copy">Copy</button>`
+    };
+  };
+  async function copyText(t){
+    try{ await navigator.clipboard.writeText(t); return true; }
+    catch(e){ const ta = $("#inviteText"); if(ta){ ta.select(); try{ return document.execCommand("copy"); }catch(e2){} } return false; }
+  }
+  async function setStatus(list, status){
+    const mine = list.filter(x => canEditTeacher(x.teacher) && x.status !== status);
+    if(!mine.length) return 0;
+    const patch = { status, updated_by_name: myName() };
+    if(status !== "draft") patch.moved_at = null;
+    const { data, error } = await sbClient.from("ptc_sessions").update(patch).in("id", mine.map(x => x.id)).select();
+    if(error){ alert("Couldn't update: " + error.message); return 0; }
+    (data || []).forEach(r => { const x = sessions.find(y => y.id === r.id); if(x) Object.assign(x, r); });
+    logHistory("ptc_status", `${mine.map(sessName).join(", ")} → ${STATUS[status].label}`, "ptc_week", ui.weekId, { ids: mine.map(x => x.id), status });
+    if(status === "done") await coverMilestones(mine);
+    return (data || []).length;
+  }
+  // A PTC-week session marked Done also counts for the student's new-student PTC that's due by then (or within 2 weeks after).
+  async function coverMilestones(done){
+    const w = currentWeek();
+    const rows = [];
+    for(const x of done){
+      const limit = addDaysISO(x.date || todayISO(), 14);
+      due.filter(d => d.student_id === x.student_id && d.due_date <= limit).forEach(d => {
+        if(!rows.some(r => r.student_id === d.student_id && r.month_no === d.month_no))
+          rows.push({ student_id:d.student_id, month_no:d.month_no, due_date:d.due_date, status:"done", done_on: x.date || todayISO(), note: `PTC week: ${w ? w.name : ""}`, by_name: myName(), ptc_session_id: x.id });
+      });
+    }
+    if(!rows.length) return;
+    const { error } = await sbClient.from("ptc_milestones").upsert(rows, { onConflict:"student_id,month_no", ignoreDuplicates:true });
+    if(error){ console.warn(error); return; }
+    await Promise.all([loadMilestones(), loadDue()]);
+    if(window.kumonPtcNavRefresh) window.kumonPtcNavRefresh();
+    toast(`Also marked ${rows.length} new-student PTC${rows.length === 1 ? "" : "s"} done.`);
+  }
+
+  /* --- siblings (admins) --- */
+  function siblingSuggestions(){
+    const active = new Set(enrollments.map(e => e.student_id));
+    const pool = students.filter(s => active.has(s.id) && s.status !== "not_enrolled");
+    const groups = new Map();
+    pool.forEach(s => {
+      const keys = [];
+      const ln = lastNameOf(s); if(ln && ln.length > 1) keys.push("ln:" + ln);
+      const ph = normPhone(s.parent_phone); if(ph) keys.push("ph:" + ph);
+      keys.forEach(k => (groups.get(k) || groups.set(k, []).get(k)).push(s));
+    });
+    const out = [], seen = new Set();
+    groups.forEach((list, key) => {
+      if(list.length < 2) return;
+      // leave out pairs already in one family or marked "not siblings"
+      const fam = new Set(list.map(s => familyKeyOf(s.id)));
+      if(fam.size < 2) return;
+      const ids = list.map(s => s.id).sort();
+      const anyOpen = ids.some((a, i) => ids.slice(i + 1).some(b => familyKeyOf(a) !== familyKeyOf(b) && !notSiblings.has(a < b ? a + "|" + b : b + "|" + a)));
+      if(!anyOpen) return;
+      const sig = ids.join(",");
+      if(seen.has(sig)) return; seen.add(sig);
+      out.push({ key, list: list.slice().sort((a,b) => studentName(a.id).localeCompare(studentName(b.id))) });
+    });
+    return out.sort((a,b) => (a.key.startsWith("ph:") ? 0 : 1) - (b.key.startsWith("ph:") ? 0 : 1) || a.list.length - b.list.length);
+  }
+  MODALS.siblings = (s) => {
+    const sugg = siblingSuggestions();
+    const teach = id => [...new Set(enrollments.filter(e => e.student_id === id).map(e => e.teacher))].join(", ");
+    const q = (s.q || "").trim().toLowerCase();
+    const found = q.length >= 2 ? students.filter(x => studentName(x.id).toLowerCase().includes(q) && enrollments.some(e => e.student_id === x.id)).slice(0, 12) : [];
+    const pickedHtml = (s.picked || []).map(id => `<label><input type="checkbox" checked data-sib-picked="${esc(id)}"> <b>${esc(studentName(id))}</b> <span class="muted">${esc(teach(id))}</span></label>`).join("");
+    const shownSugg = sugg.slice(0, s.more ? 200 : 25);
+    return {
+      size:"xwide",
+      title:"Siblings",
+      body:`<div class="hint">Siblings get back-to-back PTC times. Billing groups already count as one family. Below: children who share a parent phone number or a last name — tick the real siblings and link them. This only affects PTC scheduling, not billing.</div>
+        <div class="sib-group"><b>Link by hand</b>
+          <input type="text" id="sibSearch" placeholder="Type a student's name…" value="${esc(s.q || "")}">
+          ${found.length ? `<div class="chips">${found.map(x => `<button class="chip" data-action="sib-add" data-id="${esc(x.id)}">+ ${esc(studentName(x.id))}</button>`).join("")}</div>` : ""}
+          ${pickedHtml}
+          ${(s.picked || []).length >= 2 ? `<div class="row-actions"><button class="btn sm primary" data-action="sib-link-picked">Link these as siblings</button></div>` : `<div class="hint">Add two or more children.</div>`}
+        </div>
+        <b style="font-size:13px;">Possible siblings (${sugg.length})</b>
+        ${shownSugg.map((g, gi) => `<div class="sib-group">
+          <div class="hint">${g.key.startsWith("ph:") ? "Same parent phone" : "Same last name"}</div>
+          ${g.list.map(x => `<label><input type="checkbox" checked data-sib-g="${gi}" data-id="${esc(x.id)}"> <b>${esc(studentName(x.id))}</b> <span class="muted">${esc(teach(x.id))}${x.parent_name ? " · parent: " + esc(x.parent_name) : ""}${familyKeyOf(x.id).startsWith("st:") ? "" : " · already in a family"}</span></label>`).join("")}
+          <div class="row-actions"><button class="btn sm primary" data-action="sib-link" data-g="${gi}">Link ticked as siblings</button><button class="btn sm ghost" data-action="sib-dismiss" data-g="${gi}">Not siblings</button></div>
+        </div>`).join("") || `<div class="empty">No suggestions.</div>`}
+        ${sugg.length > shownSugg.length ? `<button class="btn sm" data-action="sib-more">Show all ${sugg.length}</button>` : ""}`,
+      foot:`<button class="btn" data-action="close-modal">Done</button>`
+    };
+  };
+  async function linkSiblings(ids){
+    ids = [...new Set(ids)];
+    if(ids.length < 2){ alert("Tick at least two children."); return; }
+    // Keep whole existing families together: everyone already in the same family as a ticked child comes along.
+    const keys = new Set(ids.map(familyKeyOf));
+    const all = new Set(ids);
+    students.forEach(s => { if(keys.has(familyKeyOf(s.id)) && !familyKeyOf(s.id).startsWith("st:")) all.add(s.id); });
+    const existing = [...all].map(id => families.get(id)).find(Boolean);
+    const fid = existing || uuid();
+    const rows = [...all].map(id => ({ student_id:id, family_id:fid }));
+    const { error } = await sbClient.from("ptc_families").upsert(rows, { onConflict:"student_id" });
+    if(error){ alert("Couldn't link: " + error.message); return; }
+    const r = await sbClient.rpc("ptc_refresh_families");
+    if(r.error) console.warn(r.error);
+    logHistory("ptc_siblings", `Linked siblings: ${[...all].map(studentName).join(", ")}`, "ptc_family", fid, { students:[...all] });
+    await Promise.all([loadFamilies(), loadSessions()]);
+    render(); renderModal();
+    const w = currentWeek();
+    const famSess = w ? weekSessions().filter(x => all.has(x.student_id)) : [];
+    toast(famSess.length > 1 ? "Linked. If their times aren't together, use “Find a time together” under things to fix." : "Linked as siblings.");
+  }
+  async function dismissSiblings(ids){
+    const rows = [];
+    ids.forEach((a, i) => ids.slice(i + 1).forEach(b => rows.push(a < b ? { a, b } : { a:b, b:a })));
+    const { error } = await sbClient.from("ptc_not_siblings").upsert(rows, { onConflict:"a,b", ignoreDuplicates:true });
+    if(error){ alert("Couldn't save: " + error.message); return; }
+    await loadFamilies(); renderModal();
+  }
+
+  /* ---------------- events ---------------- */
+  document.addEventListener("submit", async (e)=>{
+    if(e.target.id === "loginForm"){
+      e.preventDefault();
+      const fd = new FormData(e.target);
+      const { error } = await sbClient.auth.signInWithPassword({ email: fd.get("email"), password: fd.get("password") });
+      if(error) showLogin(error.message);
+    }
+  });
+  document.addEventListener("input", (e)=>{
+    if(e.target.id === "dueSearch"){ ui.dueSearch = e.target.value; rememberFocus(); renderDue(); }
+    else if(e.target.id === "weekSearch"){ ui.weekSearch = e.target.value; rememberFocus(); renderWeek(); }
+    else if(e.target.id === "sibSearch"){ modalState.q = e.target.value; const pos = e.target.selectionStart; renderModal(); const el = $("#sibSearch"); if(el){ el.focus(); el.setSelectionRange(pos, pos); } }
+  });
+  document.addEventListener("change", async (e)=>{
+    const t = e.target;
+    if(t.id === "dueTeacher"){ ui.dueTeacher = t.value; renderDue(); }
+    else if(t.id === "weekTeacher"){ ui.weekTeacher = t.value; renderWeek(); }
+    else if(t.id === "weekPick"){ ui.weekId = t.value; lsSet("weekId", ui.weekId); ui.weekDay = "all"; await loadSessions(); renderWeek(); }
+    else if(t.dataset.statusFor){
+      const x = sessions.find(y => y.id === t.dataset.statusFor); if(!x) return;
+      await setStatus([x], t.value); render();
+    }
+    else if(t.id === "wkStart" || t.id === "wkEnd"){
+      readWeekModal();
+      modalState.start = $("#wkStart").value; modalState.end = $("#wkEnd").value;
+      modalState.days = weekDaysFor(modalState.start, modalState.end, modalState.days);
+      renderModal();
+    }
+    else if(t.dataset.dayOn != null || t.dataset.dayF){ readWeekModal(); renderModal(); }
+  });
+
+  document.addEventListener("click", async (e)=>{
+    if(e.target.id === "modalBackdrop"){ closeModal(); return; }
+    const btn = e.target.closest("[data-action]");
+    if(!btn) return;
+    const a = btn.dataset.action;
+    if(a === "logout"){ await sbClient.auth.signOut(); return; }
+    if(a === "close-modal"){ closeModal(); return; }
+    if(a === "tab"){ ui.tab = btn.dataset.tab; lsSet("tab", ui.tab); history.replaceState(null, "", "#" + ui.tab); render(); return; }
+    if(a === "due-view"){ ui.dueView = btn.dataset.view; renderDue(); return; }
+    if(a === "ms-done" || a === "ms-skip"){ openModal({ kind:"milestone", studentId: btn.dataset.student, month: +btn.dataset.month, skip: a === "ms-skip" }); return; }
+    if(a === "ms-save"){ btn.disabled = true; await saveMilestone(); return; }
+    if(a === "ms-undo"){
+      const m = milestones.find(x => x.id === btn.dataset.id); if(!m) return;
+      if(!confirm(`Put ${studentName(m.student_id)}'s ${ordinal(m.month_no)}-month PTC back on the due list?`)) return;
+      const { error } = await sbClient.from("ptc_milestones").delete().eq("id", m.id);
+      if(error){ alert("Couldn't undo: " + error.message); return; }
+      logHistory("ptc_undo", `Undid ${studentName(m.student_id)} — ${ordinal(m.month_no)} month PTC`, "student", m.student_id, null);
+      await Promise.all([loadMilestones(), loadDue()]); if(window.kumonPtcNavRefresh) window.kumonPtcNavRefresh(); render(); return;
+    }
+    if(a === "week-new"){ openWeekModal(null); return; }
+    if(a === "week-edit"){ openWeekModal(currentWeek()); return; }
+    if(a === "week-save"){ await saveWeek(); return; }
+    if(a === "week-close"){
+      const w = currentWeek(); if(!w) return;
+      const { error } = await sbClient.from("ptc_weeks").update({ closed_at: w.closed_at ? null : new Date().toISOString() }).eq("id", w.id);
+      if(error){ alert(error.message); return; }
+      logHistory("ptc_week_close", `${w.closed_at ? "Reopened" : "Closed"} ${w.name}`, "ptc_week", w.id, null);
+      closeModal(); await loadWeeks(); await loadSessions(); render(); return;
+    }
+    if(a === "week-delete"){
+      const w = currentWeek(); if(!w) return;
+      const n = weekSessions().length;
+      if(!confirm(`Delete “${w.name}”${n ? ` and its ${n} sessions` : ""}? This can't be undone.`)) return;
+      const { error } = await sbClient.from("ptc_weeks").delete().eq("id", w.id);
+      if(error){ alert(error.message); return; }
+      logHistory("ptc_week_delete", `Deleted ${w.name} (${n} sessions)`, "ptc_week", w.id, null);
+      closeModal(); ui.weekId = null; await loadWeeks(); pickDefaultWeek(); await loadSessions(); render(); return;
+    }
+    if(a === "week-view"){ ui.weekView = btn.dataset.view; lsSet("weekView", ui.weekView); renderWeek(); return; }
+    if(a === "week-day"){ ui.weekDay = btn.dataset.day; renderWeek(); return; }
+    if(a === "week-status"){ ui.weekStatus = ui.weekStatus === btn.dataset.status ? "all" : btn.dataset.status; renderWeek(); return; }
+    if(a === "draft"){
+      const w = currentWeek(); if(!w) return;
+      if(!w.days.length){ alert("Set the days and hours first."); return; }
+      const adding = weekSessions().length > 0;
+      const pairs = adding ? missingPairs() : neededPairs();
+      if(!pairs.length){ toast("Everyone already has a session."); return; }
+      openModal({ kind:"draft", pairs, adding }); return;
+    }
+    if(a === "draft-go"){
+      modalState.busy = "placing sessions…"; renderModal();
+      await new Promise(r => setTimeout(r, 30));
+      const plan = await runDraft(modalState.pairs);
+      closeModal();
+      if(plan) toast(`Booked ${plan.placed.length} session${plan.placed.length === 1 ? "" : "s"}` + (plan.unplaced.length ? ` · ${plan.unplaced.length} without a time (teacher full)` : "") + (plan.split ? ` · ${plan.split} famil${plan.split === 1 ? "y" : "ies"} couldn't be kept back to back` : "") + ".");
+      return;
+    }
+    if(a === "show-missing"){ openModal({ kind:"missing" }); return; }
+    if(a === "book-missing" || a === "book-all-missing"){
+      const list = a === "book-all-missing" ? missingPairs().filter(p => teacherInFilter(p.teacher, ui.weekTeacher)) : missingPairs().filter(p => p.student_id === btn.dataset.student && p.teacher === btn.dataset.teacher);
+      btn.disabled = true;
+      const plan = await runDraft(list, list.length === 1);
+      if(plan) toast(plan.placed.length ? `Booked ${plan.placed.length}.` : "No free time — it's listed under things to fix.");
+      if(modalState) renderModal();
+      return;
+    }
+    if(a === "move"){ openModal({ kind:"move", id: btn.dataset.id, live:true }); return; }
+    if(a === "move-day"){ modalState.day = btn.dataset.day; renderModal(); return; }
+    if(a === "move-to"){
+      const id = modalState.id;
+      if(await moveSession(id, modalState.day, btn.dataset.time)){ closeModal(); render(); toast("Moved."); }
+      return;
+    }
+    if(a === "session-delete"){
+      const x = sessions.find(y => y.id === modalState.id); if(!x) return;
+      if(!confirm(`Remove ${sessName(x)}'s session with ${x.teacher} from this PTC week?`)) return;
+      const { error } = await sbClient.from("ptc_sessions").delete().eq("id", x.id);
+      if(error){ alert(error.message); return; }
+      logHistory("ptc_remove", `Removed ${sessName(x)} (${x.teacher}) from the PTC week`, "ptc_session", x.id, null);
+      closeModal(); await loadSessions(); render(); return;
+    }
+    if(a === "move-family"){ openModal({ kind:"moveFamily", family: btn.dataset.family, day:"all", live:true }); return; }
+    if(a === "mf-day"){ modalState.day = btn.dataset.day; renderModal(); return; }
+    if(a === "mf-pick"){ btn.disabled = true; await pickFamilyOption(+btn.dataset.k); return; }
+    if(a === "note"){ openModal({ kind:"note", id: btn.dataset.id }); return; }
+    if(a === "note-save"){
+      const x = sessions.find(y => y.id === modalState.id); if(!x) return;
+      const note = $("#noteText").value.trim() || null;
+      const { data, error } = await sbClient.from("ptc_sessions").update({ note, updated_by_name: myName() }).eq("id", x.id).select();
+      if(error){ alert(error.message); return; }
+      if(data && data[0]) Object.assign(x, data[0]);
+      closeModal(); render(); return;
+    }
+    if(a === "invite"){ openModal({ kind:"invite", family: btn.dataset.family }); return; }
+    if(a === "invite-copy"){
+      const ok = await copyText($("#inviteText").value);
+      if(btn.dataset.mark){ await setStatus(weekSessions().filter(x => sessFamily(x) === modalState.family && x.status === "draft" && x.date), "invited"); closeModal(); render(); }
+      toast(ok ? (btn.dataset.mark ? "Copied — marked invited." : "Copied.") : "Select the text and copy it.");
+      return;
+    }
+    if(a === "fam-status"){
+      const list = weekSessions().filter(x => sessFamily(x) === btn.dataset.family);
+      const n = await setStatus(list, btn.dataset.status);
+      render(); if(n) toast(`${n} session${n === 1 ? "" : "s"} → ${STATUS[btn.dataset.status].label}`);
+      return;
+    }
+    if(a === "siblings"){ openModal({ kind:"siblings", picked:[], q:"" }); return; }
+    if(a === "sib-more"){ modalState.more = true; renderModal(); return; }
+    if(a === "sib-add"){ modalState.picked = [...new Set([...(modalState.picked || []), btn.dataset.id])]; modalState.q = ""; renderModal(); return; }
+    if(a === "sib-link-picked"){ const ids = $$("[data-sib-picked]").filter(c => c.checked).map(c => c.dataset.sibPicked); await linkSiblings(ids); modalState.picked = []; renderModal(); return; }
+    if(a === "sib-link"){ const ids = $$(`[data-sib-g="${btn.dataset.g}"]`).filter(c => c.checked).map(c => c.dataset.id); await linkSiblings(ids); return; }
+    if(a === "sib-dismiss"){ const ids = $$(`[data-sib-g="${btn.dataset.g}"]`).map(c => c.dataset.id); await dismissSiblings(ids); return; }
+  });
+  document.addEventListener("keydown", (e) => { if(e.key === "Escape" && modalState) closeModal(); });
+
+  boot();
+})();
+</script>
+<script>
+(function(){
+  var KEY = "kumonRailCollapsed", root = document.documentElement;
+  function apply(c){
+    root.classList.toggle("rail-collapsed", c);
+    var b = document.getElementById("railToggle");
+    if(b){ var t = c ? "Expand sidebar" : "Collapse sidebar"; b.title = t; b.setAttribute("aria-label", t); b.setAttribute("aria-expanded", String(!c)); }
+  }
+  apply(root.classList.contains("rail-collapsed"));
+  var b = document.getElementById("railToggle");
+  if(b) b.addEventListener("click", function(){
+    var c = !root.classList.contains("rail-collapsed"); apply(c);
+    try{ localStorage.setItem(KEY, c ? "1" : "0"); }catch(e){}
+  });
+  // Collapsed rail is icons only, so every link gets a tooltip with its name.
+  document.querySelectorAll(".rail .navbtn").forEach(function(a){
+    if(a.title) return;
+    var t = (a.textContent || "").replace(/\s+/g, " ").trim().replace(/\s*\d+$/, "");
+    if(t) a.title = t;
+  });
+  // The Pipeline views group follows the same who-can-see-Pipeline flag as the single Pipeline link.
+  var link = document.getElementById("navPipelineLink"), grp = document.getElementById("navPipelineGroup");
+  if(link && grp){
+    var sync = function(){ grp.hidden = link.hidden; };
+    sync(); new MutationObserver(sync).observe(link, { attributes:true, attributeFilter:["hidden"] });
+  }
+})();
+</script>
+</body>
+</html>

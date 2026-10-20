@@ -280,6 +280,30 @@
   .mp-item .n{ margin-left:auto; font-size:12px; color:var(--ink-muted); }
 </style>
 <script>try{if(localStorage.getItem("kumonRailCollapsed")==="1")document.documentElement.classList.add("rail-collapsed")}catch(e){}</script>
+<script>
+/* PTC menu link + "due" number (phase97). Each page calls kumonPtcNav(sbClient, role) once the role is known. */
+window.kumonPtcNav = function(client, role){
+  var link = document.getElementById("navPtcLink"); if(!link) return;
+  var ok = ["admin","superadmin","teacher","trainer_teacher"].indexOf(role) >= 0;
+  link.hidden = !ok; if(!ok || !client) return;
+  if(!document.getElementById("ptcBadgeStyle")){
+    var st = document.createElement("style"); st.id = "ptcBadgeStyle";
+    st.textContent = ".navbtn .ptc-badge{margin-left:auto;background:var(--bad);color:#fff;font-size:11px;font-weight:700;border-radius:99px;padding:1px 6px;min-width:18px;text-align:center;line-height:16px;}";
+    document.head.appendChild(st);
+  }
+  var refresh = function(){
+    client.rpc("ptc_due_count").then(function(r){
+      var b = document.getElementById("navPtcBadge"); if(!b) return;
+      var n = (r && !r.error && typeof r.data === "number") ? r.data : 0;
+      b.textContent = n > 99 ? "99+" : String(n); b.hidden = !n;
+      link.title = n ? ("PTC — " + n + " due") : "PTC";
+    }, function(){});
+  };
+  refresh();
+  window.kumonPtcNavRefresh = refresh;
+  if(!window.__ptcNavTimer) window.__ptcNavTimer = setInterval(refresh, 5 * 60 * 1000);
+};
+</script>
 </head>
 <body>
 
@@ -311,6 +335,7 @@
       <a class="navbtn rail-pipeline-mobile" href="index.html" id="navPipelineLink" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16l-6.5 8.5V19l-3 1.5v-8L4 4z"/></svg>Pipeline</a>
       <a class="navbtn" href="roster.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3L2 8l10 5 10-5-10-5z"/><path d="M6 10.5V15c0 1.5 2.5 3 6 3s6-1.5 6-3v-4.5"/></svg>Student roster</a>
       <a class="navbtn" href="calendar.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>Calendar</a>
+      <a class="navbtn" href="ptc.html" id="navPtcLink" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="7.5" r="3.2"/><circle cx="17" cy="9.5" r="2.4"/><path d="M3 20c0-3.6 2.7-6.3 6-6.3s6 2.7 6 6.3"/><path d="M15.2 14.4c.6-.2 1.2-.3 1.8-.3 2.5 0 4.4 1.9 4.4 4.6"/></svg>PTC<span class="badge ptc-badge" id="navPtcBadge" hidden></span></a>
       <a class="navbtn" href="payments.html" id="navPaymentsLink" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20M6 15h4"/></svg>Payments</a>
       <a class="navbtn" href="absent.html" id="navAbsentLink" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.5-7 8-7s8 3 8 7"/><path d="M2 2l20 20"/></svg>Retention</a>
       <a class="navbtn" href="admin.html" id="navAdminLink" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v6c0 5-3.5 8-7 9-3.5-1-7-4-7-9V6l7-3z"/></svg>Admin</a>
@@ -469,6 +494,7 @@
   }
   function showApp(){ { const sp = document.getElementById("bootSplash"); if(sp) sp.hidden = true; } $("#loginScreen").hidden = true; $("#appRoot").hidden = false; }
   function renderAccount(){
+    if(window.kumonPtcNav) window.kumonPtcNav(sbClient, currentRole);
     const el = $("#railAccount");
     if(el) el.innerHTML = currentUser ? `<div class="account-row"><span class="account-email">${esc(currentUser.email)}</span><button class="btn sm ghost" data-action="logout">Log out</button></div>` : "";
     const show = (id, on) => { const a = document.getElementById(id); if(a) a.hidden = !on; };
@@ -551,7 +577,7 @@
       body.innerHTML = `<div class="banner">Couldn't load the numbers: ${esc(err.message || err)}</div>`;
       return;
     }
-    F.teachers = loadPick("teachers"); F.groups = loadPick("groups");
+    F.teachers = loadPick("teachers"); F.groups = new Set();   // level-group filter removed (Nina)
     const teacherNames = new Set(rows.map(r => r.teacher));
     F.teachers = new Set([...F.teachers].filter(t => teacherNames.has(t)));
     render();
@@ -669,7 +695,7 @@
       + ` · active students on Student Roster, monitor students included.`;
 
     // Donut data
-    const groupParts = GROUPS.map(g => ({ key:g.key, label:g.label, value: b.filter(r => r.group === g.key).length, color:g.color, clickGroup:g.key }));
+    const groupParts = GROUPS.map(g => ({ key:g.key, label:g.label, value: b.filter(r => r.group === g.key).length, color:g.color }));
     const subjParts = [{ label:"Math", value:math, color:"var(--math)" }, { label:"Reading", value:reading, color:"var(--reading)" }];
     const modeParts = [{ label:"Paper", value: v.filter(r => r.mode === "Paper").length, color:"var(--paper)" },
                        { label:"KC", value: v.filter(r => r.mode === "KC").length, color:"var(--kc)" }];
@@ -733,7 +759,6 @@
       <div class="viz">
         <div class="rep-filters">
           ${mpHtml("mpRepTeachers", "Teachers")}
-          ${mpHtml("mpRepGroups", "Level groups")}
           <div class="fld">Subject<div class="seg">${["all","Math","Reading"].map(s => `<button data-action="subject" data-v="${s}" class="${F.subject===s?"on":""}">${s === "all" ? "Both" : s}</button>`).join("")}</div></div>
           <label class="fld">Mode<select id="repMode"><option value="all">All modes</option><option value="Paper" ${F.mode==="Paper"?"selected":""}>Paper</option><option value="KC" ${F.mode==="KC"?"selected":""}>KC</option></select></label>
           ${(F.teachers.size || F.groups.size || F.subject !== "all" || F.mode !== "all") ? `<button class="btn sm" data-action="reset">Clear filters</button>` : ""}
@@ -751,7 +776,7 @@
         </div>
 
         <div class="grid3">
-          <div class="card"><div class="card-head"><h3>Level groups</h3><span class="hint">${F.groups.size ? "faded = not selected · click to change" : "click a group to filter"}</span></div><div class="card-body ${F.groups.size ? "" : ""}">${donut(groupParts, "subjects", { selected:F.groups })}</div></div>
+          <div class="card"><div class="card-head"><h3>Level groups</h3></div><div class="card-body ${F.groups.size ? "" : ""}">${donut(groupParts, "subjects", { selected:F.groups })}</div></div>
           <div class="card"><div class="card-head"><h3>Math vs Reading</h3></div><div class="card-body">${donut(subjParts, "subjects")}</div></div>
           <div class="card"><div class="card-head"><h3>Paper vs KC</h3></div><div class="card-body">${donut(modeParts, "subjects")}</div></div>
         </div>
@@ -776,10 +801,7 @@
       onChange: s => { F.teachers = s; savePick("teachers"); render(); },
       options: () => teachersAll.map(t => ({ value:t, label:t, count: tCounts[t] || 0 })) };
     const gCounts = {}; b.forEach(r => gCounts[r.group] = (gCounts[r.group] || 0) + 1);
-    MP.mpRepGroups = { allText:"All groups", noun:"groups", selected:F.groups,
-      onChange: s => { F.groups = s; savePick("groups"); render(); },
-      options: () => GROUPS.map(g => ({ value:g.key, label:g.label, count: gCounts[g.key] || 0 })) };
-    mpRender("mpRepTeachers"); mpRender("mpRepGroups");
+    mpRender("mpRepTeachers");
     if(openId){ const r = document.getElementById(openId); if(r){ r.querySelector(".mp-menu").hidden = false; r.querySelector(".mp-btn").setAttribute("aria-expanded","true"); } }
     window.scrollTo(0, scrollY);
   }
@@ -791,7 +813,7 @@
     if(a === "logout"){ await sbClient.auth.signOut(); return; }
     if(a === "subject"){ F.subject = btn.dataset.v; render(); }
     else if(a === "reset"){ F.teachers = new Set(); F.groups = new Set(); F.subject = "all"; F.mode = "all"; savePick("teachers"); savePick("groups"); render(); }
-    else if(a === "toggle-group"){ const s = new Set(F.groups); s.has(btn.dataset.key) ? s.delete(btn.dataset.key) : s.add(btn.dataset.key); F.groups = s; savePick("groups"); tip.hidden = true; render(); }
+    else if(a === "toggle-group"){ /* level-group filter removed — the chart is display only */ }
     else if(a === "toggle-teacher"){ const s = new Set(F.teachers); s.has(btn.dataset.name) ? s.delete(btn.dataset.name) : s.add(btn.dataset.name); F.teachers = s; savePick("teachers"); render(); }
     else if(a === "issue-tab"){ issueTab = btn.dataset.tab; render(); }
   });

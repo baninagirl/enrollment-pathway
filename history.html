@@ -145,6 +145,30 @@
     .cal-filters select{ flex:1; min-width:0; }
   }
 </style>
+<script>
+/* PTC menu link + "due" number (phase97). Each page calls kumonPtcNav(sbClient, role) once the role is known. */
+window.kumonPtcNav = function(client, role){
+  var link = document.getElementById("navPtcLink"); if(!link) return;
+  var ok = ["admin","superadmin","teacher","trainer_teacher"].indexOf(role) >= 0;
+  link.hidden = !ok; if(!ok || !client) return;
+  if(!document.getElementById("ptcBadgeStyle")){
+    var st = document.createElement("style"); st.id = "ptcBadgeStyle";
+    st.textContent = ".navbtn .ptc-badge{margin-left:auto;background:var(--bad);color:#fff;font-size:11px;font-weight:700;border-radius:99px;padding:1px 6px;min-width:18px;text-align:center;line-height:16px;}";
+    document.head.appendChild(st);
+  }
+  var refresh = function(){
+    client.rpc("ptc_due_count").then(function(r){
+      var b = document.getElementById("navPtcBadge"); if(!b) return;
+      var n = (r && !r.error && typeof r.data === "number") ? r.data : 0;
+      b.textContent = n > 99 ? "99+" : String(n); b.hidden = !n;
+      link.title = n ? ("PTC — " + n + " due") : "PTC";
+    }, function(){});
+  };
+  refresh();
+  window.kumonPtcNavRefresh = refresh;
+  if(!window.__ptcNavTimer) window.__ptcNavTimer = setInterval(refresh, 5 * 60 * 1000);
+};
+</script>
 </head>
 <body>
 
@@ -175,6 +199,7 @@
       <a class="navbtn" href="index.html" id="navPipelineLink">Pipeline</a>
       <a class="navbtn" href="roster.html">Student roster</a>
       <a class="navbtn" href="calendar.html">Calendar</a>
+      <a class="navbtn" href="ptc.html" id="navPtcLink" hidden>PTC<span class="badge ptc-badge" id="navPtcBadge" hidden></span></a>
       <a class="navbtn active" href="history.html">Monthly history</a>
       <a class="navbtn" href="admin.html" id="navAdminLink" hidden>Admin</a>
     </div>
@@ -270,6 +295,7 @@
   }
   function showApp(){ { const sp = document.getElementById("bootSplash"); if(sp) sp.hidden = true; } $("#loginScreen").hidden = true; $("#appRoot").hidden = false; }
   function renderAccount(){
+    if(window.kumonPtcNav) window.kumonPtcNav(sbClient, currentRole);
     const el = $("#railAccount");
     if(el) el.innerHTML = currentUser ? `<div class="account-row"><span class="account-email">${esc(currentUser.email)}</span><button class="btn sm ghost" data-action="logout">Log out</button></div>` : "";
     const adminLink = $("#navAdminLink");
