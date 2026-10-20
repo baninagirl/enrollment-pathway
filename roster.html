@@ -1127,6 +1127,7 @@
     const v = data ? data.value : {};
     // Teacher pickers/filters use the Teachers list (Pipeline → Settings → Staff); before it existed, Trainers did double duty.
     trainers = Array.isArray(v.teachers) ? v.teachers : (Array.isArray(v.trainers) ? v.trainers : []);
+    await loadTeacherGroups();
     await loadOpenMonth();
     if(canCloseOut()) await loadNotDuplicates();
   }
@@ -1295,14 +1296,72 @@
     return out;
   }
 
+  /* ---------- Teacher groups (phase95: settings row "teacher_groups") ----------
+     Teacher pickers are grouped (Group 1 / 2 / 3 in Nina's order, then anyone not in a group), and each
+     group has an "All of Group N" choice. A teacher (or trainer_teacher) can open anyone in her own group,
+     one at a time or the whole group; she starts on her own students. */
+  const DEFAULT_TEACHER_GROUPS = [
+    { key:"g1", name:"Group 1 (7A–3A61)", teachers:["Sir GB","Miss Mira","Miss Frixie","Miss Queenie","Miss Jess","Miss Sugar","Miss KC"] },
+    { key:"g2", name:"Group 2 (BCD)", teachers:["Sir Hamid","Miss Kath","Miss Kristine","Miss Nazel","Miss Rona"] },
+    { key:"g3", name:"Group 3 (E–O)", teachers:["Sir Mark","Sir Francis","Sir Erickson","Miss Shaina","Miss Kate"] }
+  ];
+  let teacherGroups = DEFAULT_TEACHER_GROUPS;
+  async function loadTeacherGroups(){
+    try{
+      const { data } = await sbClient.from("settings").select("value").eq("id","teacher_groups").maybeSingle();
+      const g = data && data.value && Array.isArray(data.value.groups) ? data.value.groups.filter(x => x && x.key && Array.isArray(x.teachers)) : null;
+      if(g && g.length) teacherGroups = g;
+    }catch(e){ console.warn("couldn't load teacher groups", e); }
+  }
+  function groupShortName(g){ return String(g.name || g.key).replace(/\s*\(.*\)\s*$/, ""); }
+  function myGroupTeachers(){
+    if(!currentTeacherName) return [];
+    const set = new Set([currentTeacherName]);
+    teacherGroups.forEach(g => { if(g.teachers.includes(currentTeacherName)) g.teachers.forEach(t => set.add(t)); });
+    return [...set];
+  }
+  // value: "all", "group:<key>", or one teacher's name
+  function teacherInFilter(teacher, value){
+    if(!value || value === "all") return true;
+    if(value.startsWith("group:")){ const g = teacherGroups.find(x => "group:" + x.key === value); return !!g && g.teachers.includes(teacher); }
+    return teacher === value;
+  }
+  // <option>s for a teacher picker. opts.scoped: only the signed-in teacher's own group(s).
+  // opts.withAll: an "All teachers" choice; opts.withGroups: "All of Group N" choices; opts.blank: a "—" first option.
+  function groupedTeacherOptions(names, selected, opts){
+    opts = opts || {};
+    const pool = [...new Set((names || []).filter(Boolean))];
+    const sel = v => v === selected ? " selected" : "";
+    const me = currentTeacherName;
+    const label = t => esc(t) + (opts.scoped && t === me ? " (you)" : "");
+    let html = opts.blank ? `<option value=""${sel("")}>—</option>` : "";
+    if(opts.withAll && !opts.scoped) html += `<option value="all"${sel("all")}>All teachers</option>`;
+    const used = new Set();
+    for(const g of teacherGroups){
+      if(opts.scoped && !g.teachers.includes(me)) continue;
+      const members = g.teachers;
+      members.forEach(t => used.add(t));
+      html += `<optgroup label="${esc(g.name)}">`
+        + (opts.withGroups ? `<option value="group:${esc(g.key)}"${sel("group:" + g.key)}>All of ${esc(groupShortName(g))}</option>` : "")
+        + members.map(t => `<option value="${esc(t)}"${sel(t)}>${label(t)}</option>`).join("")
+        + `</optgroup>`;
+    }
+    if(opts.scoped){ if(me && !used.has(me)) html += `<option value="${esc(me)}"${sel(me)}>${esc(me)} (you)</option>`; return html; }
+    const others = pool.filter(t => !used.has(t)).sort((a,b) => a.localeCompare(b));
+    if(others.length) html += `<optgroup label="Not in a group">` + others.map(t => `<option value="${esc(t)}"${sel(t)}>${esc(t)}</option>`).join("") + `</optgroup>`;
+    if(selected && selected !== "all" && !selected.startsWith("group:") && !used.has(selected) && !others.includes(selected))
+      html += `<option value="${esc(selected)}" selected>${esc(selected)}</option>`;
+    return html;
+  }
+
   function populateTeacherFilter(){
     const sel = $("#teacherFilter");
+    sel.disabled = false;
     if(isTeacherScoped()){
-      sel.innerHTML = `<option value="${esc(currentTeacherName||"")}">${esc(currentTeacherName||"You")}</option>`;
-      sel.disabled = true;
+      if(!filters.teacher || filters.teacher === "all") filters.teacher = currentTeacherName || "";
+      sel.innerHTML = groupedTeacherOptions(myGroupTeachers(), filters.teacher, { scoped:true, withGroups:true });
     }else{
-      sel.disabled = false;
-      sel.innerHTML = `<option value="all">All teachers</option>` + trainers.map(t=>`<option value="${esc(t)}">${esc(t)}</option>`).join("");
+      sel.innerHTML = groupedTeacherOptions(trainers, filters.teacher || "all", { withAll:true, withGroups:true });
     }
   }
 
@@ -1383,8 +1442,8 @@
     return `<select name="${name||"enrollment_type"}"><option value="">${esc(firstLabel||"— (no tag)")}</option>${REPORT_TAGS.map(t=>`<option value="${t.value}" ${current===t.value?"selected":""}>${esc(t.label)}</option>`).join("")}</select>`;
   }
   function monitorRowsInScope(){
-    const locked = isTeacherScoped() ? currentTeacherName : null;
-    return enrollments.filter(e => isMonitorRow(e) && (locked === null || e.teacher === locked));
+    const scope = isTeacherScoped() ? new Set(myGroupTeachers()) : null;
+    return enrollments.filter(e => isMonitorRow(e) && (scope === null || (scope.has(e.teacher) && teacherInFilter(e.teacher, filters.teacher))));
   }
   function monthLabel(date){ return date.toLocaleDateString(undefined,{ month:"long", year:"numeric" }); }
   function monthRangeLabel(date){
@@ -1402,8 +1461,18 @@
   function populateReportTeacherFilter(){
     const sel = $("#repTeacherFilter");
     if(!sel) return;
-    sel.innerHTML = `<option value="all">All teachers</option>` + trainers.map(t=>`<option value="${esc(t)}">${esc(t)}</option>`).join("");
-    if(isTeacherScoped()){ sel.value = currentTeacherName || "all"; sel.disabled = true; }
+    sel.disabled = false;
+    if(isTeacherScoped()){
+      if(!reportFilters.teacher || reportFilters.teacher === "all") reportFilters.teacher = currentTeacherName || "";
+      sel.innerHTML = groupedTeacherOptions(myGroupTeachers(), reportFilters.teacher, { scoped:true, withGroups:true });
+    }else{
+      sel.innerHTML = groupedTeacherOptions(trainers, reportFilters.teacher || "all", { withAll:true, withGroups:true });
+    }
+  }
+  // Report rows a teacher may see: her group only (the database enforces the same), then the picker.
+  function reportTeacherOk(t){
+    if(isTeacherScoped() && !myGroupTeachers().includes(t)) return false;
+    return teacherInFilter(t, reportFilters.teacher);
   }
   // Same fixed grade order Student Roster uses (K/PK before P1..P14, not plain alphabetical),
   // narrowed to only the grades that actually show up right now.
@@ -1431,7 +1500,7 @@
         .filter(e => !joinsLaterMonth(e))
         .filter(e => reportFilters.status === "all" || (e.status||"active") === reportFilters.status)
         .filter(e => reportFilters.subject === "all" || e.subject === reportFilters.subject)
-        .filter(e => reportFilters.teacher === "all" || e.teacher === reportFilters.teacher)
+        .filter(e => reportTeacherOk(e.teacher))
         .filter(e => reportFilters.mode === "all" || e.mode === reportFilters.mode)
         .filter(e => reportFilters.grade === "all" || gradeFor(e.student_id) === reportFilters.grade)
         .filter(e => lvOk(e.current_level))
@@ -1448,7 +1517,7 @@
       // effectively "active" — filtering to "inactive" correctly shows none of them.
       .filter(h => reportFilters.status === "all" || reportFilters.status === "active")
       .filter(h => reportFilters.subject === "all" || h.subject === reportFilters.subject)
-      .filter(h => reportFilters.teacher === "all" || h.teacher === reportFilters.teacher)
+      .filter(h => reportTeacherOk(h.teacher))
       .filter(h => reportFilters.mode === "all" || h.mode === reportFilters.mode)
       .filter(h => reportFilters.grade === "all" || gradeFor(h.student_id) === reportFilters.grade)
       .filter(h => lvOk(h.current_level))
@@ -1743,13 +1812,14 @@
   function filtered(skipLevel){
     // A teacher (and a trainer_teacher, like Queenie) only ever sees their own students,
     // no matter what the filter says.
-    const lockedTeacher = isTeacherScoped() ? currentTeacherName : null;
+    // …and since phase95, anyone in her group (picked from the Teacher dropdown; she starts on her own).
+    const scope = isTeacherScoped() ? new Set(myGroupTeachers()) : null;
     return rosterSourceRows().filter(e=>{
       // Monitor students live in their own view; the regular roster leaves them out.
       if(viewMode === "monitor" ? !isMonitorRow(e) : isMonitorRow(e)) return false;
-      if(lockedTeacher !== null && e.teacher !== lockedTeacher) return false;
+      if(scope !== null && !scope.has(e.teacher)) return false;
       if(filters.subject !== "all" && e.subject !== filters.subject) return false;
-      if(lockedTeacher === null && filters.teacher !== "all" && e.teacher !== filters.teacher) return false;
+      if(!teacherInFilter(e.teacher, filters.teacher)) return false;
       if(filters.mode !== "all" && e.mode !== filters.mode) return false;
       if(filters.grade !== "all" && gradeFor(e.student_id) !== filters.grade) return false;
       if(filters.status !== "all" && (e.status || "active") !== filters.status) return false;
@@ -1876,7 +1946,7 @@
     return `<option value="">Choose a student…</option>` + students.map(s=>`<option value="${s.id}" ${s.id===selectedId?"selected":""}>${esc(s.name)}</option>`).join("");
   }
   function teacherOptions(selected){
-    return `<option value="">—</option>` + trainers.map(t=>`<option value="${esc(t)}" ${t===selected?"selected":""}>${esc(t)}</option>`).join("");
+    return groupedTeacherOptions(trainers, selected || "", { blank:true });
   }
 
   // Schedule editor — a variable-length list of day/time/mode rows inside the enrollment
@@ -2029,7 +2099,7 @@
           <p class="hint" style="font-size:12px; color:var(--ink-muted); margin:0;">Only the fields you touch get applied to all ${n} selected — leave the rest as "No change".</p>
           <label class="field">Teacher<select name="teacher" ${isTeacherScoped()?"disabled":""}>
             <option value="__nochange__" selected>No change</option>
-            ${trainers.map(t=>`<option value="${esc(t)}">${esc(t)}</option>`).join("")}
+            ${groupedTeacherOptions(trainers, "__nochange__", {})}
           </select></label>
           <label class="field">Subject<select name="subject" ${isTeacherScoped()?"disabled":""}>
             <option value="__nochange__" selected>No change</option>
@@ -2157,7 +2227,8 @@
           }
         }
         const patch = {
-          teacher: isTeacherScoped() ? currentTeacherName : (fd.get("teacher") || null),
+          // A teacher editing a group-mate's student leaves the teacher as it was (the picker is locked for her).
+          teacher: isTeacherScoped() ? (editingEnrollment.teacher || currentTeacherName) : (fd.get("teacher") || null),
           current_level: fd.get("current_level") || null,
           current_page: fd.get("current_page") || null,
           mode: fd.get("mode") || null,
