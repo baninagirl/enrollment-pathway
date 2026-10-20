@@ -2533,7 +2533,11 @@
           <option value="">Subject: not set</option>
           ${SUBJECT_OPTIONS.map(o=>`<option value="${esc(o)}" ${s.subject===o?"selected":""}>${esc(o)}</option>`).join("")}
         </select>
-        ${s.mode ? fmtModePill(s.mode) : `<span class="hint">Mode not set</span>`}
+        <select data-action="card-mode" data-id="${id}" aria-label="Mode">
+          <option value="" ${!s.mode?"selected":""}>Mode: not set</option>
+          <option value="KC" ${s.mode==="KC"?"selected":""}>KC</option>
+          <option value="Paper" ${s.mode==="Paper"?"selected":""}>Paper</option>
+        </select>
         ${s.ageGrade ? `<span class="pill muted">${esc(s.ageGrade)}</span>` : ""}
         ${enr.length && missingSubjects(s).length ? `<button class="btn sm" data-action="open-add-subject" data-id="${id}">+ Add ${esc(missingSubjects(s).join(" / "))}</button>` : ""}
       </div>`;
@@ -2641,6 +2645,19 @@
       }
       logHistory("set_trainings_needed", `Set ${s.name} to ${n} training session${n===1?"":"s"}`, "student", id);
       toast(`${n} training session${n===1?"":"s"} needed.`);
+    });
+    renderAll();
+  }
+  // Same field Edit details saves (students.mode) — the Mode column on New Students.
+  async function setCardMode(id, value){
+    const s = studentById(id); if(!s) return;
+    const v = value === "KC" || value === "Paper" ? value : "";
+    if((s.mode || "") === v) return;
+    await guardWrite(async ()=>{
+      await db.collection("students").doc(id).update({ mode: v });
+      s.mode = v;
+      logHistory("set_mode", `Set ${s.name}'s mode to ${v || "not set"}`, "student", id);
+      toast(v ? `Mode set to ${v}.` : "Mode cleared.");
     });
     renderAll();
   }
@@ -4598,6 +4615,7 @@
       slotTool.prefs.days = [...set]; saveSlotPrefs(); renderSlotTool();
     }
     else if(e.target.matches('[data-action="set-subject"]')){ if(e.target.closest(".jcard")) e.target.blur(); setStudentSubject(e.target.dataset.id, e.target.value); }
+    else if(e.target.matches('[data-action="card-mode"]')){ e.target.blur(); setCardMode(e.target.dataset.id, e.target.value); }
     else if(e.target.matches('[data-action="card-first-day"]')){ e.target.blur(); setCardFirstDay(e.target.dataset.id, e.target.value); }
     else if(e.target.matches('[data-action="toggle-subject-block"]')){
       const box = $("#" + e.target.dataset.target);
