@@ -507,10 +507,6 @@
       Enrollment
       <span class="badge" id="badgeEnrollment" hidden>0</span>
     </button>
-    <button class="navbtn" data-action="switch-tab" data-tab="roster">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h10"/></svg>
-      Weekly view
-    </button>
     <button class="navbtn" data-action="switch-tab" data-tab="students">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-7 8-7s8 3 8 7"/></svg>
       New students
@@ -756,7 +752,7 @@
     students: [], diagnostics: [], trainings: [], schedules: [], enrollments: [],
     settings: { examiners: [], trainers: [], teachers: [] },
     loaded: { students:false, diagnostics:false, trainings:false, schedules:false, settings:false, enrollments:false },
-    activeTab: (()=>{ const h = (location.hash || "").slice(1); return ["calendar","enrollment","roster","students","settings"].includes(h) ? h : "calendar"; })(),
+    activeTab: (()=>{ const h = (location.hash || "").slice(1); if(h === "roster") return "students"; return ["calendar","enrollment","students","settings"].includes(h) ? h : "calendar"; })(),
     calMonth: (()=>{ const d=new Date(); return new Date(d.getFullYear(), d.getMonth(), 1); })(),
     calWeekStart: (()=>{ const d=new Date(); d.setHours(0,0,0,0); d.setDate(d.getDate()-d.getDay()); return d; })(),
     calDay: (()=>{ const d=new Date(); d.setHours(0,0,0,0); return d; })(),
@@ -2268,7 +2264,8 @@
                 <td>${row.subj ? fmtSubjectPill(row.subj) : "—"}</td>
                 <td>${fmtEnrollmentTagPill(s.id, row.subj)}</td>
                 <td>${fmtFirstDay(s)}</td>
-                <td>${pipelineScheduleLabel(s.id)}${s.status === "enrolled_pending_training" && subjectsNeedingSchedule(s).length ? ` <button type="button" class="btn sm ghost" data-action="open-new-schedule" data-kind="early" data-student="${s.id}" title="Set their schedule now, before training is done (goes on the monitor list)">Set schedule</button>` : ""}</td>
+                <td>${pipelineScheduleLabel(s.id)}${s.status === "enrolled_pending_training" && subjectsNeedingSchedule(s).length ? ` <button type="button" class="btn sm ghost" data-action="open-new-schedule" data-kind="early" data-student="${s.id}" title="Set their schedule now, before training is done (goes on the monitor list)">Set schedule</button>`
+                  : !scheduleFor(s.id) && canUseStudentCard() && activeEnrollmentsOf(s.id).length ? ` <button type="button" class="btn sm ghost" data-action="open-set-days" data-student="${s.id}" title="Set their 2 days a week">Set schedule</button>` : ""}</td>
                 <td>${fmtModePill(s.mode)}</td>
                 <td><span class="pill ${st[1]}">${st[0]}</span></td>
               </tr>`;
@@ -2387,6 +2384,74 @@
       </div>
     `);
   }
+  /* ---------------- Set regular schedule (days & times) for subjects a student already has ----------------
+     For a student already on a roster (monitor or a teacher) whose days were never set, or to change them.
+     Saves one schedule per subject, the same way Student Roster does (linked by subject_enrollment_id), so
+     the roster, Calendar and New Students list all pick it up. Doesn't touch teacher, status or tags. */
+  function activeEnrollmentsOf(studentId){ return STATE.enrollments.filter(e => e.studentId === studentId && !e.archived && (e.status || "active") === "active"); }
+  function linkedScheduleOf(enrollmentId){ return STATE.schedules.find(x => x.status === "active" && x.subjectEnrollmentId === enrollmentId); }
+  function openSetDays(studentId){
+    const s = studentById(studentId);
+    const enr = s ? activeEnrollmentsOf(studentId) : [];
+    if(!s) return;
+    if(!enr.length){ openNewSchedule(studentId, completedTrainings(studentId) >= trainingsNeeded(s) ? (s.status === "ready_for_schedule" ? "regular" : "monitor") : "early"); return; }
+    const withSched = enr.map(e => linkedScheduleOf(e.id)).find(Boolean) || scheduleFor(studentId);
+    const cur = withSched && Array.isArray(withSched.slots) ? withSched.slots.filter(x => x && x.day) : [];
+    const d1 = cur[0] || { day:"Tue", time:"16:00" }, d2 = cur[1] || { day:"Thu", time:"16:00" };
+    const missing = enr.filter(e => !linkedScheduleOf(e.id));
+    openModal(`
+      <div class="modal-head"><h3>Set regular schedule — ${esc(displayName(s))}</h3><button class="iconbtn" data-action="close-modal">✕</button></div>
+      <form data-form="set-days" data-student="${studentId}">
+        <div class="modal-body">
+          <div class="hint">Two days a week — each can have its own time. Their teacher, tags and status stay as they are.</div>
+          <div class="field-row">
+            <label class="field">Day 1<select name="day1" required>${daySelectOptions(d1.day)}</select></label>
+            <label class="field">Time<input type="time" name="time1" required value="${esc(d1.time || "16:00")}"></label>
+          </div>
+          <div class="field-row">
+            <label class="field">Day 2<select name="day2" required>${daySelectOptions(d2.day)}</select></label>
+            <label class="field">Time<input type="time" name="time2" required value="${esc(d2.time || "16:00")}"></label>
+          </div>
+          <label class="field">Start date<input type="date" name="startDate" required value="${esc((withSched && withSched.startDate) || todayISO())}"></label>
+          <div class="hint" style="font-size:11px; text-transform:uppercase; letter-spacing:.04em; margin-top:4px;">Use these days for</div>
+          ${enr.map(e => { const has = linkedScheduleOf(e.id); return `<label class="check-row" style="display:flex; gap:8px; align-items:center; font-size:13.5px;">
+              <input type="checkbox" name="enr_${e.id}" ${!missing.length || !has ? "checked" : ""}>
+              ${fmtSubjectPill(e.subject)} <span>${esc(e.teacher || "No teacher")}${isMonitorEnrollment(e) ? " · on monitor" : ""}</span>
+              <span class="hint">${has ? "now " + esc(cardScheduleText(has.slots)) : "no days yet"}</span>
+            </label>`; }).join("")}
+          <div class="hint">Math and Reading on different days? Save one, then open this again for the other.</div>
+        </div>
+        <div class="modal-foot">
+          <button type="button" class="btn ghost" data-action="close-modal">Cancel</button>
+          <button type="submit" class="btn primary">Save schedule</button>
+        </div>
+      </form>
+    `);
+  }
+  async function submitSetDays(form){
+    const studentId = form.dataset.student;
+    const s = studentById(studentId); if(!s) return;
+    const fd = new FormData(form);
+    const day1 = fd.get("day1"), time1 = fd.get("time1"), day2 = fd.get("day2"), time2 = fd.get("time2"), startDate = fd.get("startDate");
+    if(!day1 || !time1 || !day2 || !time2 || !startDate) return false;
+    if(day1 === day2){ toast("Pick two different days."); return false; }
+    const picked = activeEnrollmentsOf(studentId).filter(e => fd.get("enr_" + e.id) === "on");
+    if(!picked.length){ toast("Tick at least one subject."); return false; }
+    await guardWrite(async ()=>{
+      for(const e of picked){
+        const row = linkedScheduleOf(e.id);
+        // keep a day's In-center / Remote mode if that same day was already on their schedule
+        const modeOf = day => { const old = row && (row.slots || []).find(x => x && x.day === day); return old && old.mode === "RI" ? "RI" : "IC"; };
+        const slots = [{ day: day1, time: time1, mode: modeOf(day1) }, { day: day2, time: time2, mode: modeOf(day2) }];
+        if(row) await db.collection("schedules").doc(row.id).update({ slots, startDate, status: "active" });
+        else await db.collection("schedules").add({ studentId, studentName: s.name, subjectEnrollmentId: e.id, slots, startDate, status: "active", createdAt: new Date().toISOString() });
+      }
+      const when = `${day1} ${fmtTime(time1)} & ${day2} ${fmtTime(time2)}`;
+      logHistory("set_regular_schedule", `Set ${s.name}'s schedule — ${picked.map(e => e.subject).join(" + ")}: ${when}`, "student", studentId);
+      toast(`Schedule saved — ${when}.`);
+    });
+  }
+
   /* ---------------- Student card (whole pathway in one place) ----------------
      DT → Subjects → Training (1–3 sessions, First day) → Monitoring → Regular roster. Every button here
      runs the same save code as the Enrollment tab / booking forms, so the New Students list, DT Results
@@ -2395,7 +2460,7 @@
   let cardReturnTo = null;   // student whose card a step form should return to on save / cancel
   // Actions that open another form; when started from a card, closing that form reopens the card.
   const CARD_SUBFORM_ACTIONS = new Set(["open-new-training","edit-training","open-new-schedule","open-monitor-promote",
-    "open-add-subject","open-edit-student","edit-diagnostic","open-new-diagnostic"]);
+    "open-add-subject","open-edit-student","edit-diagnostic","open-new-diagnostic","open-set-days"]);
   function cardScheduleText(slots){
     const xs = (slots || []).filter(x => x && x.day);
     return xs.length ? xs.map(x => `${x.day}${x.time ? " " + fmtTime(x.time) : ""}${x.mode === "RI" ? " (RI)" : ""}`).join(", ") : "";
@@ -2410,7 +2475,8 @@
     if(!studentSubject(s)) return "Pick their <b>subject</b>.";
     if(live.length < need) return `Book <b>training session ${live.length + 1}</b>${need > 1 ? ` of ${need}` : ""}.`;
     if(done < need){ const nx = live.filter(t => t.status !== "completed").sort((a,b)=> (a.date||"").localeCompare(b.date||""))[0]; return `Mark <b>training session ${nx ? nx.sessionNumber : done + 1}</b> done${nx && nx.date ? ` (${fmtDateShort(nx.date)})` : ""}.`; }
-    if(!enr.length) return s.status === "ready_for_schedule" ? "Set their <b>regular schedule</b> and teacher." : "Set their <b>monitor schedule</b> (or skip monitoring and assign a teacher).";
+    if(!enr.length) return "Set their <b>regular schedule</b>.";
+    if(enr.some(e => !linkedScheduleOf(e.id) && !scheduleFor(s.id))) return "Set their <b>regular schedule</b> — no days saved yet.";
     if(enr.some(isMonitorEnrollment)) return "On monitor — <b>move to the regular roster</b> when they're ready.";
     if(subjectsNeedingSchedule(s).length) return `Set a schedule for <b>${subjectsNeedingSchedule(s).join(" + ")}</b>.`;
     return null;
@@ -2504,29 +2570,38 @@
         ${s.firstDay ? `<button class="btn sm ghost" data-action="card-first-day-auto" data-id="${id}">Use first training</button>` : ""}
       </div>`;
 
-    // 4 — Monitoring (separate stage: schedule with a monitoring trainer)
     const schedFor = e => { const sc = STATE.schedules.find(x => x.status === "active" && x.subjectEnrollmentId === e.id) || scheduleFor(id); return sc ? cardScheduleText(sc.slots) : ""; };
+    // 4 — Regular schedule (their 2 days a week). Before they're on any roster, setting it also puts them on
+    // monitor (or straight on a teacher's roster); after that it just sets / changes the days.
+    const enrNoDays = enr.filter(e => !schedFor(e));
+    const schedDone = enr.length > 0 && !enrNoDays.length;
+    const schedInner = enr.length
+      ? enr.map(e => `<div class="jc-subj">${fmtSubjectPill(e.subject)} <span>${schedFor(e) ? esc(schedFor(e)) : `<span class="muted-t">No days set yet</span>`}</span></div>`).join("")
+        + `<div class="jc-acts"><button class="btn sm ${enrNoDays.length ? "primary" : ""}" data-action="open-set-days" data-student="${id}">${enrNoDays.length ? "Set regular schedule" : "Change days / times"}</button></div>`
+      : `<div class="jc-line muted-t">Not set yet — their 2 days a week.</div>
+         <div class="jc-acts">
+           <button class="btn sm primary" data-action="open-new-schedule" data-kind="${done >= need ? "monitor" : "early"}" data-student="${id}">Set regular schedule (on monitor)</button>
+           <button class="btn sm" data-action="open-new-schedule" data-kind="regular" data-student="${id}" title="Skip monitoring and put them straight on a teacher's roster">Set schedule & assign a teacher (skip monitoring)</button>
+         </div>
+         ${done < need ? `<div class="hint" style="margin-top:6px;">You can set this now — they stay under Awaiting training until their trainings are done.</div>` : ""}`;
+
+    // 5 — Monitoring (separate stage: with a monitoring trainer)
     const monDone = regEnr.length > 0 && !monEnr.length;
     const monInner = monEnr.length
       ? monEnr.map(e => `<div class="jc-subj">${fmtSubjectPill(e.subject)} <span>Monitoring with <b>${esc(e.teacher || "—")}</b></span>
-            <span class="hint">${esc(schedFor(e) || "no days set")}${(e.monitorSince || e.monitorCycle) ? " · since " + esc(monitorCycleLabel(e.monitorSince || e.monitorCycle)) : ""}</span></div>`).join("")
+            <span class="hint">${(e.monitorSince || e.monitorCycle) ? "since " + esc(monitorCycleLabel(e.monitorSince || e.monitorCycle)) : ""}</span></div>`).join("")
         + `<div class="jc-acts"><button class="btn sm primary" data-action="open-monitor-promote" data-student="${id}">Move to regular roster</button></div>`
       : regEnr.length
         ? `<div class="jc-line muted-t">Done — they're on a teacher's roster.</div>`
-        : `<div class="jc-line muted-t">Not set yet — their 2 days a week with a monitoring trainer.</div>
-           <div class="jc-acts">
-             <button class="btn sm primary" data-action="open-new-schedule" data-kind="${done >= need ? "monitor" : "early"}" data-student="${id}">Set monitor schedule</button>
-             <button class="btn sm" data-action="open-new-schedule" data-kind="regular" data-student="${id}" title="Skip monitoring and put them straight on a teacher's roster">Skip monitoring — assign a teacher</button>
-           </div>
-           ${done < need ? `<div class="hint" style="margin-top:6px;">You can set this now — they stay under Awaiting training until their trainings are done.</div>` : ""}`;
+        : `<div class="jc-line muted-t">Starts when you set their regular schedule above.</div>`;
 
-    // 5 — Regular roster (teacher)
+    // 6 — Regular roster (teacher)
     const rosterInner = regEnr.length
-      ? regEnr.map(e => `<div class="jc-subj">${fmtSubjectPill(e.subject)} <span><b>${esc(e.teacher || "No teacher yet")}</b></span><span class="hint">${esc(schedFor(e) || "no days set")}</span></div>`).join("")
+      ? regEnr.map(e => `<div class="jc-subj">${fmtSubjectPill(e.subject)} <span><b>${esc(e.teacher || "No teacher yet")}</b></span></div>`).join("")
         + `<div class="jc-acts"><a class="btn sm ghost" href="roster.html" title="Change days, times, level or teacher on Student Roster">Change on Student roster ›</a></div>`
       : `<div class="jc-line muted-t">${monEnr.length ? "After monitoring — use Move to regular roster above." : "Not on a teacher's roster yet."}</div>`;
 
-    const states = [dtDone, subjDone, trDone, monDone || regEnr.length > 0, regEnr.length > 0 && !monEnr.length];
+    const states = [dtDone, subjDone, trDone, schedDone, monDone || regEnr.length > 0, regEnr.length > 0 && !monEnr.length];
     const firstOpen = states.indexOf(false);
     const stateOf = i => states[i] ? "done" : i === firstOpen ? "now" : "";
 
@@ -2541,8 +2616,9 @@
         ${step(1, stateOf(0), "Diagnostic test", dtInner)}
         ${step(2, stateOf(1), "Subject", subjInner)}
         ${step(3, stateOf(2), "Student training", trInner)}
-        ${step(4, stateOf(3), "Monitoring", monInner)}
-        ${step(5, stateOf(4), "Regular roster", rosterInner)}
+        ${step(4, stateOf(3), "Regular schedule", schedInner)}
+        ${step(5, stateOf(4), "Monitoring", monInner)}
+        ${step(6, stateOf(5), "Regular roster", rosterInner)}
         ${s.status === "not_enrolled" ? `<div class="jc-step"><div class="jc-dot">!</div><div><div class="jc-title">Follow-up</div><div class="jc-line">${esc(s.followUpNotes || "No notes yet.")}</div></div></div>` : ""}
         ${s.notes ? `<div class="jc-step"><div class="jc-dot">i</div><div><div class="jc-title">Notes</div><div class="jc-line">${esc(s.notes)}</div></div></div>` : ""}
       </div>
@@ -4398,6 +4474,7 @@
     if(a === "switch-tab"){ STATE.activeTab = el.dataset.tab; renderAll(); }
     else if(a === "card-trainings-needed"){ setTrainingsNeeded(el.dataset.id, Number(el.dataset.n)); }
     else if(a === "card-first-day-auto"){ setCardFirstDay(el.dataset.id, null); }
+    else if(a === "open-set-days"){ e.stopPropagation(); openSetDays(el.dataset.student); }
     else if(a === "toggle-enrollment-view"){ STATE.enrollmentShowAll = !STATE.enrollmentShowAll; renderView(); }
     else if(a === "toggle-section-collapse"){
       const key = el.dataset.key;
@@ -4544,7 +4621,7 @@
 
   window.addEventListener("hashchange", () => {
     const h = (location.hash || "").slice(1);
-    if(["calendar","enrollment","roster","students","settings"].includes(h) && h !== STATE.activeTab){ STATE.activeTab = h; renderAll(); }
+    if(["calendar","enrollment","students","settings"].includes(h) && h !== STATE.activeTab){ STATE.activeTab = h; renderAll(); }
     if(/^slots-(dt|st)$/.test(h)){ slotHashHandled = false; openSlotToolFromHash(); }
   });
   const FORM_HANDLERS = {
@@ -4563,7 +4640,8 @@
     "edit-student": submitEditStudent,
     "new-schedule": submitNewSchedule,
     "monitor-promote": submitMonitorPromote,
-    "add-subject": submitAddSubject
+    "add-subject": submitAddSubject,
+    "set-days": submitSetDays
   };
   document.addEventListener("submit", e => {
     const form = e.target;
