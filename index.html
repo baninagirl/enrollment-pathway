@@ -904,6 +904,14 @@
     // submitNewSchedule() below, and by the Resume action in Payments' Absent tab / Retention).
     subscribe(db.collection("subject_enrollments"), rows => { STATE.enrollments = rows; STATE.loaded.enrollments = true; onData(); });
 
+    db.doc("settings/slot_prefs").onSnapshot(snap => {
+      STATE.slotShared = snap.exists ? (snap.data() || {}) : {};
+      // Someone else changed the shared finder settings: refresh an open finder (unless typing in it).
+      const modalOpen = !$("#modalBackdrop").hidden && slotTool.prefs && $("#modal [data-action='slot-pref']");
+      const typing = document.activeElement && document.activeElement.matches && document.activeElement.matches("[data-action='slot-pref']");
+      if(modalOpen && !typing){ slotTool.prefs = loadSlotPrefs(slotTool.kind); renderSlotTool(); }
+    }, err => console.warn("slot settings sub error", err));
+
     db.doc("settings/staff").onSnapshot(snap => {
       const d = snap.exists ? snap.data() : {};
       STATE.settings.examiners = Array.isArray(d.examiners) ? d.examiners : [];
@@ -1543,18 +1551,33 @@
   // run through the 12:00-1:30 PM break. Training slots are about people (who's free).
   const SLOT_PREFS_KEY = "kumonSlotPrefs";
   const SLOT_DEFAULTS_BY_KIND = {
-    dt: { start:"10:30", end:"18:00", len:60, days:[1,2,3,4,5,6], breakFrom:"12:00", breakTo:"13:30", perSlot:1, satTimes:"9:30 AM, 10:30 AM, 1:30 PM" },
+    dt: { start:"10:00", end:"18:30", len:60, days:[1,2,3,4,5,6], breakFrom:"12:00", breakTo:"13:30", perSlot:2, satTimes:"9:30 AM, 10:30 AM, 1:30 PM" },
     // Training slots are only offered for these trainers (by core name); change under "Trainers" in the finder.
     st: { start:"09:00", end:"18:00", len:60, days:[1,2,3,4,5,6], breakFrom:"", breakTo:"", trainers:["queenie","frixie","mira"] }
   };
   const slotTool = { kind:"dt", weekStart:null, prefs:null };
+  // The finder's settings are SHARED by everyone (one row in Supabase: settings "slot_prefs"), so the
+  // grid and the saved image look the same on every computer. Admins/superadmins/trainers can change
+  // them; everyone else just uses them. (They used to be saved per browser, which is why two people
+  // could get different pictures.)
   function loadSlotPrefs(kind){
     const def = SLOT_DEFAULTS_BY_KIND[kind] || SLOT_DEFAULTS_BY_KIND.st;
-    let p = {};
-    try{ p = JSON.parse(localStorage.getItem(SLOT_PREFS_KEY + "_" + kind) || "{}") || {}; }catch(e){ p = {}; }
+    const shared = (STATE.slotShared && STATE.slotShared[kind]) || {};
+    const p = Object.keys(shared).length ? shared : {};
     return { ...def, ...p, days: Array.isArray(p.days) && p.days.length ? p.days : def.days };
   }
-  function saveSlotPrefs(){ try{ localStorage.setItem(SLOT_PREFS_KEY + "_" + slotTool.kind, JSON.stringify(slotTool.prefs)); }catch(e){} }
+  let slotSaveTimer = null;
+  function canEditSlotPrefs(){ return ["admin","superadmin","trainer_teacher"].includes(currentRole); }
+  function saveSlotPrefs(){
+    const kind = slotTool.kind, prefs = { ...slotTool.prefs };
+    STATE.slotShared = { ...(STATE.slotShared || {}), [kind]: prefs };
+    if(!canEditSlotPrefs() || !sbClient) return;
+    clearTimeout(slotSaveTimer);
+    slotSaveTimer = setTimeout(async () => {
+      const { error } = await sbClient.from("settings").upsert({ id: "slot_prefs", value: STATE.slotShared });
+      if(error){ console.warn("couldn't save slot settings", error); toast("Couldn't save these settings for everyone."); }
+    }, 400);
+  }
   // Compare people by their core name, so "Miss Mira", "Ms. Mira" and "mira" are the same person
   // whether the name came from Settings, a training, or a roster enrollment's teacher.
   const slotKey = s => String(s||"").trim().toLowerCase().replace(/^(miss|ms\.?|mrs\.?|sir|mr\.?|teacher|coach)\s+/, "").replace(/\s+/g, " ");
@@ -4219,7 +4242,12 @@
     else if(e.target.matches('[data-action="slot-pref"]')){
       const k = e.target.dataset.key;
       slotTool.prefs[k] = k === "len" ? Number(e.target.value) : k === "perSlot" ? Math.max(1, Math.floor(Number(e.target.value)) || 1) : e.target.value;
-      saveSlotPrefs(); renderSlotTool();
+      saveSlotPrefs();
+      // A time box fires "change" mid-typing (typing "10:30" passes through 10:03). Redrawing then
+      // would lock in the half-typed time, so wait until the person leaves the box.
+      if(e.target.type === "time"){
+        if(!e.target.dataset.waitBlur){ e.target.dataset.waitBlur = "1"; e.target.addEventListener("blur", () => renderSlotTool(), { once:true }); }
+      } else renderSlotTool();
     }
     else if(e.target.matches('[data-action="slot-trainer"]')){
       const k = e.target.dataset.name, set = new Set(slotTool.prefs.trainers || []);
