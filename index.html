@@ -261,6 +261,38 @@
   .rowi.flash .pill.good{ animation:pillPop .45s ease-out; }
   .btn.saving{ opacity:.65; pointer-events:none; }
   .modal.modal-wide{ max-width:min(980px,100%); }
+  /* ---- Student card: the whole pathway for one student, every step editable in place ---- */
+  .modal.modal-card{ max-width:min(720px,100%); }
+  .jcard .modal-body{ gap:0; max-height:72vh; }
+  .jc-head{ display:flex; flex-direction:column; gap:6px; }
+  .jc-headrow{ display:flex; gap:6px; flex-wrap:wrap; align-items:center; }
+  .jc-parent{ font-size:12.5px; color:var(--ink-muted); }
+  .jc-next{ margin:12px 0 4px; padding:10px 12px; border-radius:10px; background:var(--accent-soft); color:var(--accent-soft-ink); font-size:13px; font-weight:600; line-height:1.45; }
+  .jc-next.done{ background:var(--good-soft); color:var(--good); }
+  .jc-next b{ font-weight:800; }
+  .jc-step{ display:grid; grid-template-columns:26px 1fr; gap:12px; padding:14px 0; border-top:1px solid var(--border); }
+  .jc-step:first-of-type{ margin-top:8px; }
+  .jc-dot{ width:24px; height:24px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:800; border:2px solid var(--border); color:var(--ink-faint); background:var(--surface); }
+  .jc-step.done .jc-dot{ background:var(--good); border-color:var(--good); color:#fff; }
+  .jc-step.now .jc-dot{ border-color:var(--accent); color:var(--accent); box-shadow:0 0 0 3px var(--accent-soft); }
+  .jc-title{ font-size:13.5px; font-weight:700; color:var(--ink); display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+  .jc-title .hint{ font-weight:600; }
+  .jc-line{ font-size:13px; color:var(--ink); margin-top:5px; display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+  .jc-line .muted-t{ color:var(--ink-muted); }
+  .jc-acts{ display:flex; gap:6px; flex-wrap:wrap; margin-top:8px; align-items:center; }
+  .jc-acts select, .jc-acts input[type=date]{ width:auto; padding:6px 8px; font-size:12.5px; }
+  .jc-note{ font-size:12px; color:var(--warn); font-weight:600; margin-top:6px; }
+  .jc-sess{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; padding:6px 0; font-size:13px; }
+  .jc-sess + .jc-sess{ border-top:1px dashed var(--border); }
+  .jc-sess .n{ font-weight:700; min-width:70px; }
+  .jc-sess .acts{ margin-left:auto; display:flex; gap:6px; flex-wrap:wrap; }
+  .jc-seg{ display:inline-flex; gap:2px; background:var(--surface-2); border:1px solid var(--border); border-radius:8px; padding:2px; }
+  .jc-seg button{ border:none; background:transparent; padding:4px 10px; border-radius:6px; font:inherit; font-size:12.5px; font-weight:700; color:var(--ink-muted); cursor:pointer; }
+  .jc-seg button.active{ background:var(--surface); color:var(--ink); box-shadow:var(--shadow); }
+  .jc-subj{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; padding:6px 0; font-size:13px; }
+  .jc-subj + .jc-subj{ border-top:1px dashed var(--border); }
+  .rowi .who b[data-action="open-student"]{ cursor:pointer; }
+  .rowi .who b[data-action="open-student"]:hover{ text-decoration:underline; }
   .slot-ctrls{ display:flex; flex-wrap:wrap; gap:10px 14px; align-items:flex-end; }
   .slot-ctrls label{ display:flex; flex-direction:column; gap:3px; font-size:11.5px; color:var(--ink-muted); }
   .slot-ctrls input[type=time], .slot-ctrls select{ padding:6px 8px; font-size:13px; }
@@ -996,7 +1028,7 @@
       }
       if(s.status !== "enrolled_pending_training" || reconciling[s.id]) return;
       const completed = trainingsFor(s.id).filter(t => t.status === "completed").length;
-      if(completed >= 2){
+      if(completed >= trainingsNeeded(s)){
         reconciling[s.id] = true;
         // Finishing both trainings doesn't drop a student straight onto the regular schedule —
         // they go on monitor schedule first. A trainer promotes them from there once ready.
@@ -1045,6 +1077,14 @@
   }
   function canEditFirstDay(){ return currentRole === "admin" || currentRole === "superadmin"; }
   function trainingsFor(studentId){ return STATE.trainings.filter(t => t.studentId === studentId).sort((a,b)=> a.sessionNumber - b.sessionNumber); }
+  // How many student trainings this student needs (phase94: students.trainings_needed, 1–3). Anything
+  // missing/odd (column not there yet, old rows) counts as 2 — the original rule.
+  function trainingsNeeded(sOrId){
+    const s = typeof sOrId === "string" ? studentById(sOrId) : sOrId;
+    const n = s ? Number(s.trainingsNeeded) : NaN;
+    return n === 1 || n === 2 || n === 3 ? n : 2;
+  }
+  function completedTrainings(studentId){ return trainingsFor(studentId).filter(t => t.status === "completed").length; }
   function activeDiagnosticFor(studentId){
     return STATE.diagnostics.filter(d => d.studentId === studentId).sort((a,b)=> (b.date||"").localeCompare(a.date||""))[0];
   }
@@ -1132,6 +1172,7 @@
     renderView();
     renderStudentDatalist();
     refreshDayModal(null); // keep an open day popup in step with live changes
+    refreshStudentCard();   // …and an open student card
   }
 
   function renderNav(){
@@ -1848,7 +1889,7 @@
     return `<div class="rowi">
       <div class="who">
         <span class="pill diag" style="align-self:flex-start;">Diagnostic test</span>
-        <b>${esc(displayName(s) || d.studentName)}${d.ageGrade?` <span class="pill muted">${esc(d.ageGrade)}</span>`:""}${d.subject?` ${fmtSubjectPill(d.subject)}`:""}</b>
+        <b data-action="open-student" data-id="${d.studentId}" title="Open their card">${esc(displayName(s) || d.studentName)}${d.ageGrade?` <span class="pill muted">${esc(d.ageGrade)}</span>`:""}${d.subject?` ${fmtSubjectPill(d.subject)}`:""}</b>
         <span>${esc(d.parentName||"")}${d.contact?" · "+esc(d.contact):""}</span>
       </div>
       <div class="when tnum">${fmtDateShort(d.date)} · ${fmtTime(d.time)}${d.examiner?" · "+esc(d.examiner):""}</div>
@@ -1869,7 +1910,7 @@
       <div class="who">
         <span class="pill train" style="align-self:flex-start;">Student training</span>
         <b>${esc(displayName(s) || t.studentName)}</b>
-        <span>Session ${t.sessionNumber} of 2${t.trainer?" · "+esc(t.trainer):""}</span>
+        <span>Session ${t.sessionNumber} of ${trainingsNeeded(t.studentId)}${t.trainer?" · "+esc(t.trainer):""}</span>
       </div>
       <div class="when tnum">${fmtDateShort(t.date)} · ${fmtTime(t.time)}</div>
       <div class="acts">
@@ -1886,7 +1927,7 @@
       <div class="who">
         <span class="pill bad" style="align-self:flex-start;">Missed training</span>
         <b>${esc(displayName(s) || t.studentName)}</b>
-        <span>Session ${t.sessionNumber} of 2${t.trainer?" · "+esc(t.trainer):""} · was ${fmtDateShort(t.date)}</span>
+        <span>Session ${t.sessionNumber} of ${trainingsNeeded(t.studentId)}${t.trainer?" · "+esc(t.trainer):""} · was ${fmtDateShort(t.date)}</span>
       </div>
       <div class="when tnum">${fmtDateShort(t.date)} · ${fmtTime(t.time)}</div>
       <div class="acts">
@@ -1946,15 +1987,15 @@
       const scheduledSessions = done.filter(t=>t.status==="scheduled");
       const totalCount = doneCount + scheduledSessions.length;
       return `<div class="rowi">
-        <div class="who"><b>${esc(displayName(s))}</b><span>${esc(s.parentName||"")}</span></div>
-        <div class="when">${doneCount} of 2 completed${scheduledSessions.length?`, ${scheduledSessions.length} scheduled`:""}</div>
+        <div class="who"><b data-action="open-student" data-id="${s.id}" title="Open their card">${esc(displayName(s))}</b><span>${esc(s.parentName||"")}</span></div>
+        <div class="when">${doneCount} of ${trainingsNeeded(s)} completed${scheduledSessions.length?`, ${scheduledSessions.length} scheduled`:""}</div>
         <select data-action="set-subject" data-id="${s.id}" style="width:auto; min-width:130px;">
           <option value="">Subject: not set</option>
           ${SUBJECT_OPTIONS.map(o=>`<option value="${esc(o)}" ${s.subject===o?"selected":""}>${esc(o)}</option>`).join("")}
         </select>
         <div class="acts">
           ${scheduledSessions.map(t => `<button class="btn sm" data-action="mark-training-complete" data-id="${t.id}">Mark session ${t.sessionNumber} complete</button><button class="btn sm ghost" data-action="edit-training" data-id="${t.id}">Edit</button>`).join("")}
-          ${totalCount < 2 ? `<button class="btn sm primary" data-action="open-new-training" data-student="${s.id}">Schedule session ${totalCount+1}</button>` : ""}
+          ${totalCount < trainingsNeeded(s) ? `<button class="btn sm primary" data-action="open-new-training" data-student="${s.id}">Schedule session ${totalCount+1}</button>` : ""}
         </div>
       </div>`;
     }).join("");
@@ -1962,8 +2003,8 @@
       const enr = monitorEnrollmentsFor(s.id);
       if(!enr.length){
         return `<div class="rowi">
-          <div class="who"><b>${esc(displayName(s))}</b><span>${esc(s.parentName||"")}</span></div>
-          <div class="when">Both trainings completed · no monitor schedule yet</div>
+          <div class="who"><b data-action="open-student" data-id="${s.id}" title="Open their card">${esc(displayName(s))}</b><span>${esc(s.parentName||"")}</span></div>
+          <div class="when">Training completed · no monitor schedule yet</div>
           <div class="acts">
             <button class="btn sm primary" data-action="open-new-schedule" data-kind="monitor" data-student="${s.id}">Set monitor schedule</button>
             <button class="btn sm ghost" data-action="mark-ready-for-schedule" data-id="${s.id}" title="Skip monitoring and go straight to setting a regular schedule">Skip monitoring</button>
@@ -1975,27 +2016,27 @@
       const when = sched && sched.slots ? sched.slots.map(sl => `${sl.day} ${fmtTime(sl.time)}`).join(", ") : "";
       const cycle = monitorCycleLabel(enr[0].monitorSince || enr[0].monitorCycle);
       return `<div class="rowi">
-        <div class="who"><b>${esc(displayName(s))}</b><span>${esc(s.parentName||"")}</span></div>
+        <div class="who"><b data-action="open-student" data-id="${s.id}" title="Open their card">${esc(displayName(s))}</b><span>${esc(s.parentName||"")}</span></div>
         <div class="when">Monitoring with ${esc(trainers || "—")}${when ? " · " + esc(when) : ""}${cycle ? " · Monitor since " + esc(cycle) : ""}</div>
         <div class="acts"><button class="btn sm primary" data-action="open-monitor-promote" data-student="${s.id}">Move to regular roster</button></div>
       </div>`;
     }).join("");
     const readyBody = ready.map(s => `<div class="rowi">
-      <div class="who"><b>${esc(displayName(s))}</b><span>${esc(s.parentName||"")}</span></div>
-      <div class="when">Both trainings completed</div>
+      <div class="who"><b data-action="open-student" data-id="${s.id}" title="Open their card">${esc(displayName(s))}</b><span>${esc(s.parentName||"")}</span></div>
+      <div class="when">Training completed</div>
       <div class="acts"><button class="btn sm primary" data-action="open-new-schedule" data-student="${s.id}">Set schedule</button></div>
     </div>`).join("");
     const followUpBody = followUp.map(s => followUpRow(s)).join("");
     const upcomingBody = upcoming.slice(0,8).map(d => `<div class="rowi">
-      <div class="who"><b>${esc(displayName(studentById(d.studentId)) || d.studentName)}</b><span>${esc(d.parentName||"")}</span></div>
+      <div class="who"><b data-action="open-student" data-id="${d.studentId}" title="Open their card">${esc(displayName(studentById(d.studentId)) || d.studentName)}</b><span>${esc(d.parentName||"")}</span></div>
       <div class="when tnum">${fmtDateShort(d.date)} · ${fmtTime(d.time)}${d.examiner?" · "+esc(d.examiner):""}</div>
     </div>`).join("");
 
     el.innerHTML = `
       ${enrollmentSection("outcome", "Needs an outcome", outcome.length, outcomeBody, "Nothing overdue. Diagnostics show up here once their date has passed and no outcome is tagged.")}
       ${enrollmentSection("missed", "Missed a training — needs follow-up", missed.length, missedBody, "No missed sessions. This fills in when a scheduled training's date passes without being marked complete.")}
-      ${enrollmentSection("training", "Enrolled — schedule their 2 trainings", training.length, trainingBody, "No one's waiting on trainings right now.")}
-      ${enrollmentSection("monitor", "On monitor schedule", monitor.length, monitorBody, "No one's on monitor schedule right now. Students land here automatically once both trainings are complete.")}
+      ${enrollmentSection("training", "Enrolled — schedule their trainings", training.length, trainingBody, "No one's waiting on trainings right now.")}
+      ${enrollmentSection("monitor", "On monitor schedule", monitor.length, monitorBody, "No one's on monitor schedule right now. Students land here automatically once their trainings are complete.")}
       ${enrollmentSection("ready", "Trained — set their regular schedule", ready.length, readyBody, "No one's ready for a regular schedule yet.")}
       ${enrollmentSection("followUp", "Not enrolled — follow up", followUp.length, followUpBody, "No open follow-ups.")}
       ${enrollmentSection("upcoming", "Upcoming diagnostics", upcoming.length, upcomingBody, "Nothing booked ahead yet.")}
@@ -2006,7 +2047,7 @@
     const status = s.followUpStatus || "needs_follow_up";
     const d = activeDiagnosticFor(s.id);
     return `<div class="rowi" style="align-items:flex-start;">
-      <div class="who"><b>${esc(displayName(s))}</b><span>${esc(s.parentName||"")}${s.parentPhone?" · "+esc(s.parentPhone):""}${d?" · diagnostic "+fmtDateShort(d.date):""}</span></div>
+      <div class="who"><b data-action="open-student" data-id="${s.id}" title="Open their card">${esc(displayName(s))}</b><span>${esc(s.parentName||"")}${s.parentPhone?" · "+esc(s.parentPhone):""}${d?" · diagnostic "+fmtDateShort(d.date):""}</span></div>
       <div style="flex:2 1 260px; display:flex; flex-direction:column; gap:6px;">
         <textarea rows="2" placeholder="Follow-up notes…" data-action="followup-notes" data-id="${s.id}">${esc(s.followUpNotes||"")}</textarea>
         <div class="seg">
@@ -2026,7 +2067,7 @@
     const el = $("#view-roster");
     const active = activeScheduleStudents();
     if(!active.length){
-      el.innerHTML = `<div class="card"><div class="empty">No one's on a regular schedule yet. Once a student finishes both trainings, set their 2 days a week from the Enrollment tab.</div></div>`;
+      el.innerHTML = `<div class="card"><div class="empty">No one's on a regular schedule yet. Once a student finishes their trainings, set their 2 days a week from the Enrollment tab.</div></div>`;
       return;
     }
     const cols = DOW_FULL.map((full, i) => {
@@ -2307,7 +2348,14 @@
     positionStatsRow();
   }
 
+  // Admins / superadmin get the student card (whole pathway, every step editable in one place);
+  // everyone else keeps the simple popup below, unchanged.
+  function canUseStudentCard(){ return currentRole === "admin" || currentRole === "superadmin"; }
   function openStudentModal(id){
+    if(canUseStudentCard()){ openStudentCard(id); return; }
+    openStudentModalBasic(id);
+  }
+  function openStudentModalBasic(id){
     const s = studentById(id);
     if(!s) return;
     const d = activeDiagnosticFor(id);
@@ -2339,6 +2387,199 @@
       </div>
     `);
   }
+  /* ---------------- Student card (whole pathway in one place) ----------------
+     DT → Subjects → Training (1–3 sessions, First day) → Monitoring → Regular roster. Every button here
+     runs the same save code as the Enrollment tab / booking forms, so the New Students list, DT Results
+     and Student Roster are written exactly as before. Steps can be done in any order — nothing is locked;
+     the status pill just shows where they are. */
+  let cardReturnTo = null;   // student whose card a step form should return to on save / cancel
+  // Actions that open another form; when started from a card, closing that form reopens the card.
+  const CARD_SUBFORM_ACTIONS = new Set(["open-new-training","edit-training","open-new-schedule","open-monitor-promote",
+    "open-add-subject","open-edit-student","edit-diagnostic","open-new-diagnostic"]);
+  function cardScheduleText(slots){
+    const xs = (slots || []).filter(x => x && x.day);
+    return xs.length ? xs.map(x => `${x.day}${x.time ? " " + fmtTime(x.time) : ""}${x.mode === "RI" ? " (RI)" : ""}`).join(", ") : "";
+  }
+  function cardNextStep(s){
+    const d = activeDiagnosticFor(s.id);
+    const done = completedTrainings(s.id), need = trainingsNeeded(s);
+    const live = STATE.trainings.filter(t => t.studentId === s.id && t.status !== "cancelled");
+    const enr = STATE.enrollments.filter(e => e.studentId === s.id && !e.archived);
+    if(s.status === "not_enrolled") return "Not enrolled — follow up with the family, or tag them Enrolled below if they changed their mind.";
+    if(d && d.outcome === "pending") return d.date > todayISO() ? `Diagnostic test on <b>${fmtDateShort(d.date)}</b> — tag the outcome after.` : "Tag the <b>diagnostic outcome</b>.";
+    if(!studentSubject(s)) return "Pick their <b>subject</b>.";
+    if(live.length < need) return `Book <b>training session ${live.length + 1}</b>${need > 1 ? ` of ${need}` : ""}.`;
+    if(done < need){ const nx = live.filter(t => t.status !== "completed").sort((a,b)=> (a.date||"").localeCompare(b.date||""))[0]; return `Mark <b>training session ${nx ? nx.sessionNumber : done + 1}</b> done${nx && nx.date ? ` (${fmtDateShort(nx.date)})` : ""}.`; }
+    if(!enr.length) return s.status === "ready_for_schedule" ? "Set their <b>regular schedule</b> and teacher." : "Set their <b>monitor schedule</b> (or skip monitoring and assign a teacher).";
+    if(enr.some(isMonitorEnrollment)) return "On monitor — <b>move to the regular roster</b> when they're ready.";
+    if(subjectsNeedingSchedule(s).length) return `Set a schedule for <b>${subjectsNeedingSchedule(s).join(" + ")}</b>.`;
+    return null;
+  }
+  function openStudentCard(id){
+    const s = studentById(id);
+    if(!s) return;
+    const body = studentCardHtml(s);
+    const keepScroll = $("#modal .jcard .modal-body") ? $("#modal .jcard .modal-body").scrollTop : 0;
+    const wasCard = !!$("#modal .jcard") && $("#modal .jcard").dataset.student === id;
+    openModal(body);
+    $("#modal").classList.add("modal-card");
+    if(wasCard){ const b = $("#modal .jcard .modal-body"); if(b) b.scrollTop = keepScroll; }
+  }
+  // Keep an open card in step with live changes (a save here, or someone else's on another computer).
+  function refreshStudentCard(){
+    const c = $("#modal .jcard");
+    if(!c || $("#modalBackdrop").hidden) return;
+    const id = c.dataset.student;
+    if(!studentById(id)){ cardReturnTo = null; closeModal(); return; }
+    if(c.contains(document.activeElement) && document.activeElement.matches("input, select, textarea")) return; // don't yank a field mid-edit
+    openStudentCard(id);
+  }
+  function studentCardHtml(s){
+    const id = s.id;
+    const st = STATUS_LABEL[s.status] || ["—","muted"];
+    const d = activeDiagnosticFor(id);
+    const subj = studentSubject(s);
+    const need = trainingsNeeded(s);
+    const trs = trainingsFor(id).filter(t => t.status !== "cancelled");
+    const done = trs.filter(t => t.status === "completed").length;
+    const enr = STATE.enrollments.filter(e => e.studentId === id && !e.archived);
+    const monEnr = enr.filter(isMonitorEnrollment);
+    const regEnr = enr.filter(e => !isMonitorEnrollment(e));
+    const next = cardNextStep(s);
+    const step = (n, state, title, inner) => `<div class="jc-step ${state}"><div class="jc-dot">${state === "done" ? "✓" : n}</div><div><div class="jc-title">${title}</div>${inner}</div></div>`;
+
+    // 1 — Diagnostic test
+    const dtDone = d ? d.outcome === "enrolled" : s.status !== "diagnostic_scheduled";
+    const dtInner = d
+      ? `<div class="jc-line">${fmtDateLong(d.date)} at ${fmtTime(d.time)}${d.examiner ? ` <span class="muted-t">with ${esc(d.examiner)}</span>` : ""}
+           <span class="pill ${d.outcome==='enrolled'?'good':d.outcome==='not_enrolled'?'bad':'muted'}">${d.outcome==='pending'?'Awaiting outcome':d.outcome==='enrolled'?'Enrolled':'Not enrolled'}</span></div>
+         <div class="jc-acts">
+           ${d.outcome !== "enrolled" ? `${d.outcome === "not_enrolled" ? `<span class="hint">Changed their mind?</span>` : ""}${enrollButtons(d)}` : ""}
+           ${d.outcome === "pending" ? `<button class="btn sm danger" data-action="mark-outcome" data-id="${d.id}" data-outcome="not_enrolled">Not enrolled</button>` : ""}
+           <button class="btn sm ghost" data-action="edit-diagnostic" data-id="${d.id}">Edit DT</button>
+         </div>`
+      : `<div class="jc-line muted-t">No diagnostic on file — added straight to the list.</div>`;
+
+    // 2 — Subjects & mode
+    const subjDone = !!subj;
+    const subjInner = `<div class="jc-acts">
+        <select data-action="set-subject" data-id="${id}" aria-label="Subject">
+          <option value="">Subject: not set</option>
+          ${SUBJECT_OPTIONS.map(o=>`<option value="${esc(o)}" ${s.subject===o?"selected":""}>${esc(o)}</option>`).join("")}
+        </select>
+        ${s.mode ? fmtModePill(s.mode) : `<span class="hint">Mode not set</span>`}
+        ${s.ageGrade ? `<span class="pill muted">${esc(s.ageGrade)}</span>` : ""}
+        ${enr.length && missingSubjects(s).length ? `<button class="btn sm" data-action="open-add-subject" data-id="${id}">+ Add ${esc(missingSubjects(s).join(" / "))}</button>` : ""}
+      </div>`;
+
+    // 3 — Student training (1–3 sessions) + First day
+    const trDone = done >= need;
+    const sessRows = trs.map(t => `<div class="jc-sess">
+        <span class="n">Session ${t.sessionNumber}</span>
+        <span class="tnum">${t.date ? fmtDateShort(t.date) : "—"}${t.time ? " · " + fmtTime(t.time) : ""}</span>
+        ${t.trainer ? `<span class="hint">${esc(t.trainer)}</span>` : ""}
+        <span class="pill ${t.status==='completed'?'good':t.date && t.date < todayISO()?'warn':'muted'}">${t.status==='completed'?'Done':t.date && t.date < todayISO()?'Missed?':'Booked'}</span>
+        <span class="acts">
+          ${t.status === "completed"
+            ? `<button class="btn sm ghost" data-action="mark-training-incomplete" data-id="${t.id}" title="Put back to booked">Undo</button>`
+            : `<button class="btn sm primary" data-action="mark-training-complete" data-id="${t.id}">Mark done</button>`}
+          <button class="btn sm ghost" data-action="edit-training" data-id="${t.id}">Edit</button>
+          ${t.status !== "completed" ? `<button class="btn sm ghost" data-action="cancel-training" data-id="${t.id}">Cancel</button>` : ""}
+        </span>
+      </div>`).join("");
+    const firstAuto = autoFirstDay(id);
+    const trInner = `
+      <div class="jc-acts"><span class="hint">Trainings needed</span>
+        <span class="jc-seg">${[1,2,3].map(n => `<button type="button" class="${n===need?"active":""}" data-action="card-trainings-needed" data-id="${id}" data-n="${n}">${n}</button>`).join("")}</span>
+        <span class="hint">${done} of ${need} done</span>
+      </div>
+      <div style="margin-top:6px;">${sessRows || `<div class="jc-line muted-t">No trainings booked yet.</div>`}</div>
+      <div class="jc-acts">
+        ${trs.length < need ? `<button class="btn sm primary" data-action="open-new-training" data-student="${id}">Book session ${trs.length + 1}</button>` : ""}
+        ${trs.length > need ? `<span class="jc-note">${trs.length} sessions booked but only ${need} needed.</span>` : ""}
+      </div>
+      <div class="jc-acts"><span class="hint">First day</span>
+        <input type="date" data-action="card-first-day" data-id="${id}" value="${esc(s.firstDay || firstAuto || "")}" aria-label="First day">
+        <span class="hint">${s.firstDay ? `Set by hand${firstAuto && firstAuto !== s.firstDay ? ` (first training is ${fmtDateShort(firstAuto)})` : ""}` : firstAuto ? "From their first training" : "Fills in from their first training"}</span>
+        ${s.firstDay ? `<button class="btn sm ghost" data-action="card-first-day-auto" data-id="${id}">Use first training</button>` : ""}
+      </div>`;
+
+    // 4 — Monitoring (separate stage: schedule with a monitoring trainer)
+    const schedFor = e => { const sc = STATE.schedules.find(x => x.status === "active" && x.subjectEnrollmentId === e.id) || scheduleFor(id); return sc ? cardScheduleText(sc.slots) : ""; };
+    const monDone = regEnr.length > 0 && !monEnr.length;
+    const monInner = monEnr.length
+      ? monEnr.map(e => `<div class="jc-subj">${fmtSubjectPill(e.subject)} <span>Monitoring with <b>${esc(e.teacher || "—")}</b></span>
+            <span class="hint">${esc(schedFor(e) || "no days set")}${(e.monitorSince || e.monitorCycle) ? " · since " + esc(monitorCycleLabel(e.monitorSince || e.monitorCycle)) : ""}</span></div>`).join("")
+        + `<div class="jc-acts"><button class="btn sm primary" data-action="open-monitor-promote" data-student="${id}">Move to regular roster</button></div>`
+      : regEnr.length
+        ? `<div class="jc-line muted-t">Done — they're on a teacher's roster.</div>`
+        : `<div class="jc-line muted-t">Not set yet — their 2 days a week with a monitoring trainer.</div>
+           <div class="jc-acts">
+             <button class="btn sm primary" data-action="open-new-schedule" data-kind="${done >= need ? "monitor" : "early"}" data-student="${id}">Set monitor schedule</button>
+             <button class="btn sm" data-action="open-new-schedule" data-kind="regular" data-student="${id}" title="Skip monitoring and put them straight on a teacher's roster">Skip monitoring — assign a teacher</button>
+           </div>
+           ${done < need ? `<div class="hint" style="margin-top:6px;">You can set this now — they stay under Awaiting training until their trainings are done.</div>` : ""}`;
+
+    // 5 — Regular roster (teacher)
+    const rosterInner = regEnr.length
+      ? regEnr.map(e => `<div class="jc-subj">${fmtSubjectPill(e.subject)} <span><b>${esc(e.teacher || "No teacher yet")}</b></span><span class="hint">${esc(schedFor(e) || "no days set")}</span></div>`).join("")
+        + `<div class="jc-acts"><a class="btn sm ghost" href="roster.html" title="Change days, times, level or teacher on Student Roster">Change on Student roster ›</a></div>`
+      : `<div class="jc-line muted-t">${monEnr.length ? "After monitoring — use Move to regular roster above." : "Not on a teacher's roster yet."}</div>`;
+
+    const states = [dtDone, subjDone, trDone, monDone || regEnr.length > 0, regEnr.length > 0 && !monEnr.length];
+    const firstOpen = states.indexOf(false);
+    const stateOf = i => states[i] ? "done" : i === firstOpen ? "now" : "";
+
+    return `<div class="jcard" data-student="${id}">
+      <div class="modal-head"><h3>${esc(displayName(s))}</h3><button class="iconbtn" data-action="close-modal" aria-label="Close">✕</button></div>
+      <div class="modal-body">
+        <div class="jc-head">
+          <div class="jc-headrow"><span class="pill ${st[1]}">${st[0]}</span>${fmtEnrollmentTagPill(id, subj === "Both" ? "Math" : subj)}</div>
+          <div class="jc-parent">${esc(s.parentName || "No parent on file")}${s.parentPhone ? " · " + esc(s.parentPhone) : ""}${s.parentEmail ? " · " + esc(s.parentEmail) : ""}</div>
+        </div>
+        <div class="jc-next ${next ? "" : "done"}">${next ? `Next: ${next}` : "All set — on their teacher's regular roster."}</div>
+        ${step(1, stateOf(0), "Diagnostic test", dtInner)}
+        ${step(2, stateOf(1), "Subject", subjInner)}
+        ${step(3, stateOf(2), "Student training", trInner)}
+        ${step(4, stateOf(3), "Monitoring", monInner)}
+        ${step(5, stateOf(4), "Regular roster", rosterInner)}
+        ${s.status === "not_enrolled" ? `<div class="jc-step"><div class="jc-dot">!</div><div><div class="jc-title">Follow-up</div><div class="jc-line">${esc(s.followUpNotes || "No notes yet.")}</div></div></div>` : ""}
+        ${s.notes ? `<div class="jc-step"><div class="jc-dot">i</div><div><div class="jc-title">Notes</div><div class="jc-line">${esc(s.notes)}</div></div></div>` : ""}
+      </div>
+      <div class="modal-foot">
+        <button class="btn danger" data-action="delete-student" data-id="${id}" style="margin-right:auto;">Delete student</button>
+        <button class="btn" data-action="open-edit-student" data-id="${id}">Edit details</button>
+        <button class="btn primary" data-action="close-modal">Done</button>
+      </div>
+    </div>`;
+  }
+  async function setTrainingsNeeded(id, n){
+    const s = studentById(id); if(!s || ![1,2,3].includes(n) || trainingsNeeded(s) === n) return;
+    await guardWrite(async ()=>{
+      await db.collection("students").doc(id).update({ trainingsNeeded: n });
+      s.trainingsNeeded = n;
+      // Already done that many? Move them on now, same as marking the last training done would.
+      if(s.status === "enrolled_pending_training" && completedTrainings(id) >= n){
+        await db.collection("students").doc(id).update({ status: "monitor_schedule" });
+        s.status = "monitor_schedule";
+      }
+      logHistory("set_trainings_needed", `Set ${s.name} to ${n} training session${n===1?"":"s"}`, "student", id);
+      toast(`${n} training session${n===1?"":"s"} needed.`);
+    });
+    renderAll();
+  }
+  async function setCardFirstDay(id, value){
+    const s = studentById(id); if(!s || !canEditFirstDay()) return;
+    const v = value || null;
+    await guardWrite(async ()=>{
+      await db.collection("students").doc(id).update({ firstDay: v });
+      s.firstDay = v;
+      logHistory("set_first_day", v ? `Set ${s.name}'s first day to ${v}` : `${s.name}'s first day now follows their first training`, "student", id);
+      toast(v ? "First day saved." : "First day now follows their first training.");
+    });
+    renderAll();
+  }
+
   // ---- Add subject (phase50): a second subject for a student, tagged NEW for this month ----
   function missingSubjects(s){
     const have = new Set(STATE.enrollments.filter(e => e.studentId === s.id && !e.archived).map(e => e.subject));
@@ -3165,15 +3406,18 @@
   let dayModalIso = null; // set by openDayModal so it can refresh itself in place after an action
   function openModal(html){
     dayModalIso = null;
-    $("#modal").classList.remove("modal-wide");
+    $("#modal").classList.remove("modal-wide", "modal-card");
     $("#modal").innerHTML = html;
     $("#modalBackdrop").hidden = false;
   }
   function closeModal(){
     dayModalIso = null;
     $("#modalBackdrop").hidden = true;
-    $("#modal").classList.remove("modal-wide");
+    $("#modal").classList.remove("modal-wide", "modal-card");
     $("#modal").innerHTML = "";
+    // A step started from a student card (book a training, set a schedule, edit…) goes back to that card
+    // when its form is saved or cancelled, so the whole pathway stays in one place.
+    if(cardReturnTo){ const id = cardReturnTo; cardReturnTo = null; if(studentById(id)) openStudentCard(id); }
   }
 
   // Best-effort split for a legacy student who doesn't have firstName/lastName yet — last
@@ -3365,6 +3609,9 @@
       return;
     }
     const pool = awaitingTraining();
+    // No locks from the student card: the student you started from is always offered, whatever their status.
+    const presetStu = presetStudentId ? studentById(presetStudentId) : null;
+    if(presetStu && !pool.some(x => x.id === presetStu.id)) pool.unshift(presetStu);
     if(!pool.length){
       openModal(`
         <div class="modal-head"><h3>New training</h3><button class="iconbtn" data-action="close-modal">✕</button></div>
@@ -3405,7 +3652,7 @@
       <div class="modal-head"><h3>Edit training session</h3><button class="iconbtn" data-action="close-modal">✕</button></div>
       <form data-form="edit-training" data-id="${t.id}">
         <div class="modal-body">
-          <div class="hint">${esc(displayName(s) || t.studentName)} — session ${t.sessionNumber} of 2</div>
+          <div class="hint">${esc(displayName(s) || t.studentName)} — session ${t.sessionNumber} of ${trainingsNeeded(t.studentId)}</div>
           <div class="field-row">
             <label class="field">Date<input type="date" name="date" required value="${t.date||todayISO()}"></label>
             <label class="field">Time<input type="time" name="time" required value="${t.time||"10:00"}"></label>
@@ -3453,10 +3700,14 @@
     const modalTitle = earlyMode ? "Set schedule (before training)" : monitorMode ? "New monitor schedule" : "New regular schedule";
     const pool = earlyMode ? earlyScheduleCandidates()
       : monitorMode ? onMonitorSchedule().filter(s => !monitorEnrollmentsFor(s.id).length) : readyForSchedule();
+    // No locks from the student card: the student you started from is always offered (an early schedule
+    // still needs a subject that isn't on the roster yet, or there'd be nothing to add).
+    { const ps = presetStudentId ? studentById(presetStudentId) : null;
+      if(ps && !pool.some(x => x.id === ps.id) && (!earlyMode || subjectsNeedingSchedule(ps).length)) pool.unshift(ps); }
     if(!pool.length){
       openModal(`
         <div class="modal-head"><h3>${modalTitle}</h3><button class="iconbtn" data-action="close-modal">✕</button></div>
-        <div class="modal-body"><div class="empty">${monitorMode ? "No one needs a monitor schedule right now. A student appears here once both trainings are marked complete." : earlyMode ? "Everyone awaiting training already has their schedule set." : "No students are ready yet. A student appears here once both trainings are marked complete."}</div></div>
+        <div class="modal-body"><div class="empty">${monitorMode ? "No one needs a monitor schedule right now. A student appears here once their trainings are marked complete." : earlyMode ? "Everyone awaiting training already has their schedule set." : "No students are ready yet. A student appears here once their trainings are marked complete."}</div></div>
       `);
       return;
     }
@@ -3487,7 +3738,7 @@
               ${pool.map(s => `<option value="${s.id}" ${presetStudentId===s.id?"selected":""}>${esc(displayName(s))}</option>`).join("")}
             </select>
           </label>
-          <div class="hint">Two days a week — each can have its own time.${earlyMode ? " They stay under Awaiting training until both trainings are done." : ""}</div>
+          <div class="hint">Two days a week — each can have its own time.${earlyMode ? " They stay under Awaiting training until their trainings are done." : ""}</div>
           <div class="field-row">
             <label class="field">Day 1
               <select name="day1" required>${daySelectOptions("Tue")}</select>
@@ -3564,7 +3815,7 @@
     return `
       <div class="modal-head"><h3>Delete ${esc(name || "this student")}?</h3><button class="iconbtn" data-action="close-modal">✕</button></div>
       <div class="modal-body">
-        <div style="font-size:13.5px;">This removes <b>${esc(name || "this student")}</b> everywhere — their diagnostic booking, both trainings, and their regular schedule, wherever they show up. This can't be undone.</div>
+        <div style="font-size:13.5px;">This removes <b>${esc(name || "this student")}</b> everywhere — their diagnostic booking, their trainings, and their regular schedule, wherever they show up. This can't be undone.</div>
       </div>
       <div class="modal-foot">
         <button class="btn ghost" data-action="close-modal">Cancel</button>
@@ -3790,7 +4041,8 @@
     if(!s) return;
     const existing = trainingsFor(studentId).filter(t=>t.status!=="cancelled");
     const sessionNumber = existing.length + 1;
-    if(sessionNumber > 2){ toast("Both trainings are already scheduled."); return; }
+    const needed = trainingsNeeded(s);
+    if(sessionNumber > needed){ toast(needed === 1 ? "Their training is already scheduled." : `All ${needed} trainings are already scheduled.`); return; }
 
     await guardWrite(async ()=>{
       const training = await db.collection("trainings").add({
@@ -3908,7 +4160,10 @@
       // A monitor student stays "On monitor schedule" in Pipeline until they're moved to the regular roster.
       // An early schedule leaves the status alone — they're still Awaiting training; the normal
       // training-complete flow moves them on and the roster rows already exist.
-      await db.collection("students").doc(studentId).update(monitorMode || earlyMode ? { mode } : { status: "active", mode });
+      // A regular schedule set before their trainings are all done (from the student card) leaves them
+      // under Awaiting training too; finishing training then moves them on as usual.
+      const trainingOpen = s.status === "enrolled_pending_training" && completedTrainings(studentId) < trainingsNeeded(s);
+      await db.collection("students").doc(studentId).update(monitorMode || earlyMode || trainingOpen ? { mode } : { status: "active", mode });
       // Each subject enrollment gets its own linked schedule row (subjectEnrollmentId) —
       // that's what Student Roster's Schedule column actually reads (scheduleFor(enrollment.id),
       // see roster.html), so the days/times just picked above show up there immediately
@@ -4030,7 +4285,7 @@
       t.status = "completed"; // show it straight away; the live sync confirms it
       const others = trainingsFor(t.studentId).filter(x=>x.id!==id);
       const completedCount = others.filter(x=>x.status==="completed").length + 1;
-      if(completedCount >= 2){
+      if(completedCount >= trainingsNeeded(t.studentId)){
         await db.collection("students").doc(t.studentId).update({ status: "monitor_schedule" });
         const stu = studentById(t.studentId); if(stu) stu.status = "monitor_schedule";
       }
@@ -4062,7 +4317,7 @@
       const stu = studentById(t.studentId);
       const completedLeft = trainingsFor(t.studentId).filter(x => x.id !== id && x.status === "completed").length;
       const hasEnrollments = STATE.enrollments.some(e => e.studentId === t.studentId);
-      if(stu && stu.status === "monitor_schedule" && completedLeft < 2 && !hasEnrollments){
+      if(stu && stu.status === "monitor_schedule" && completedLeft < trainingsNeeded(t.studentId) && !hasEnrollments){
         await db.collection("students").doc(t.studentId).update({ status: "enrolled_pending_training" });
         stu.status = "enrolled_pending_training";
       }
@@ -4136,8 +4391,13 @@
     const el = e.target.closest("[data-action]");
     if(!el) return;
     const a = el.dataset.action;
+    // A step form opened from a student card comes back to that card when it's saved or cancelled.
+    const fromCard = el.closest("#modal .jcard");
+    if(fromCard && (CARD_SUBFORM_ACTIONS.has(a) || a === "delete-student")) cardReturnTo = fromCard.dataset.student;
 
     if(a === "switch-tab"){ STATE.activeTab = el.dataset.tab; renderAll(); }
+    else if(a === "card-trainings-needed"){ setTrainingsNeeded(el.dataset.id, Number(el.dataset.n)); }
+    else if(a === "card-first-day-auto"){ setCardFirstDay(el.dataset.id, null); }
     else if(a === "toggle-enrollment-view"){ STATE.enrollmentShowAll = !STATE.enrollmentShowAll; renderView(); }
     else if(a === "toggle-section-collapse"){
       const key = el.dataset.key;
@@ -4182,6 +4442,7 @@
     else if(a === "delete-training"){ openDeleteConfirm("training", el.dataset.id); }
     else if(a === "delete-schedule"){ openDeleteConfirm("schedule", el.dataset.id); }
     else if(a === "confirm-delete"){
+      if(cardReturnTo === el.dataset.studentId) cardReturnTo = null; // the student is gone — nothing to go back to
       deleteStudentEverywhere(el.dataset.studentId);
       closeModal();
     }
@@ -4259,7 +4520,8 @@
       if(e.target.checked) set.add(dw); else set.delete(dw);
       slotTool.prefs.days = [...set]; saveSlotPrefs(); renderSlotTool();
     }
-    else if(e.target.matches('[data-action="set-subject"]')){ setStudentSubject(e.target.dataset.id, e.target.value); }
+    else if(e.target.matches('[data-action="set-subject"]')){ if(e.target.closest(".jcard")) e.target.blur(); setStudentSubject(e.target.dataset.id, e.target.value); }
+    else if(e.target.matches('[data-action="card-first-day"]')){ e.target.blur(); setCardFirstDay(e.target.dataset.id, e.target.value); }
     else if(e.target.matches('[data-action="toggle-subject-block"]')){
       const box = $("#" + e.target.dataset.target);
       if(box) box.hidden = !e.target.checked;
