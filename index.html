@@ -2373,7 +2373,10 @@ window.kumonPtcNav = function(client, role){
 
   // Admins / superadmin get the student card (whole pathway, every step editable in one place);
   // everyone else keeps the simple popup below, unchanged.
-  function canUseStudentCard(){ return currentRole === "admin" || currentRole === "superadmin"; }
+  // The pathway card: everyone who can open the Pipeline gets it (plain teachers and pending accounts are sent to
+  // Student roster by renderAccount and never reach this page).
+  function hasPipelineAccess(){ return !!currentRole && currentRole !== "teacher" && currentRole !== "pending"; }
+  function canUseStudentCard(){ return hasPipelineAccess(); }
   function openStudentModal(id){
     if(canUseStudentCard()){ openStudentCard(id); return; }
     openStudentModalBasic(id);
@@ -2595,9 +2598,10 @@ window.kumonPtcNav = function(client, role){
         ${trs.length > need ? `<span class="jc-note">${trs.length} sessions booked but only ${need} needed.</span>` : ""}
       </div>
       <div class="jc-acts"><span class="hint">First day</span>
-        <input type="date" data-action="card-first-day" data-id="${id}" value="${esc(s.firstDay || firstAuto || "")}" aria-label="First day">
+        ${canEditFirstDay() ? `<input type="date" data-action="card-first-day" data-id="${id}" value="${esc(s.firstDay || firstAuto || "")}" aria-label="First day">`
+          : `<b class="tnum">${(s.firstDay || firstAuto) ? esc(fmtDateShort(s.firstDay || firstAuto)) : "—"}</b>`}
         <span class="hint">${s.firstDay ? `Set by hand${firstAuto && firstAuto !== s.firstDay ? ` (first training is ${fmtDateShort(firstAuto)})` : ""}` : firstAuto ? "From their first training" : "Fills in from their first training"}</span>
-        ${s.firstDay ? `<button class="btn sm ghost" data-action="card-first-day-auto" data-id="${id}">Use first training</button>` : ""}
+        ${s.firstDay && canEditFirstDay() ? `<button class="btn sm ghost" data-action="card-first-day-auto" data-id="${id}">Use first training</button>` : ""}
       </div>`;
 
     const schedFor = e => { const sc = STATE.schedules.find(x => x.status === "active" && x.subjectEnrollmentId === e.id) || scheduleFor(id); return sc ? cardScheduleText(sc.slots) : ""; };
