@@ -309,6 +309,7 @@
   .sib-group .row-actions{ justify-content:flex-start; }
   .note-chip{ font-size:11.5px; color:var(--ink-muted); white-space:normal; max-width:260px; display:inline-block; }
   .readonly-note{ font-size:11.5px; color:var(--ink-faint); }
+  .ms-note{ display:block; max-width:240px; white-space:pre-wrap; margin-bottom:3px; }
   @media (max-width: 860px){
     .stats.six{ grid-template-columns:repeat(3,1fr); }
     .fam{ grid-template-columns:1fr; }
@@ -452,7 +453,7 @@ window.kumonPtcNav = function(client, role){
   const ui = {
     tab: lsGet("tab", "due"),
     dueView: "now",                 // now | soon | done
-    dueTeacher: "all", dueSearch: "",
+    dueTeacher: "all", dueSearch: "", dueStatus: "all",
     weekId: null,
     weekView: lsGet("weekView", "teacher"),   // teacher | family
     weekTeacher: "all", weekDay: "all", weekStatus: "all", weekSearch: ""
@@ -469,6 +470,19 @@ window.kumonPtcNav = function(client, role){
     no_show:   { label:"No-show",        cls:"st-no_show" }
   };
   const STATUS_ORDER = ["draft","invited","confirmed","cant","done","no_show"];
+  // Status of a new-student PTC while it's still due (phase98). Done / Skipped take it off the list.
+  const MS_STATUS = {
+    open:      { label:"Not contacted",       cls:"st-draft" },
+    contacted: { label:"Contacted, waiting",  cls:"st-invited" },
+    scheduled: { label:"Scheduled",           cls:"st-confirmed" },
+    cant:      { label:"Can't make it",       cls:"st-cant" }
+  };
+  const MS_STATUS_ORDER = ["open","contacted","scheduled","cant"];
+  function msStatusControl(d, canEdit){
+    const cur = MS_STATUS[d.status] ? d.status : "open";
+    if(!canEdit) return `<span class="pill ${MS_STATUS[cur].cls}">${MS_STATUS[cur].label}</span>`;
+    return `<select class="status-sel ms-status-${cur}" data-ms-status="${esc(d.student_id)}|${d.month_no}">${MS_STATUS_ORDER.map(k => `<option value="${k}"${k === cur ? " selected" : ""}>${MS_STATUS[k].label}</option>`).join("")}</select>`;
+  }
 
   /* ---------------- small helpers ---------------- */
   function isAdmin(){ return currentRole === "admin" || currentRole === "superadmin"; }
@@ -944,6 +958,7 @@ window.kumonPtcNav = function(client, role){
       .filter(d => view === "now" ? d.due_date <= t : d.due_date > t)
       .filter(d => (d.teachers || []).some(x => teacherInFilter(x, ui.dueTeacher)) || (!(d.teachers||[]).length && ui.dueTeacher === "all"))
       .filter(d => !q || String(d.student_name || "").toLowerCase().includes(q))
+      .filter(d => ui.dueStatus === "all" || (d.status || "open") === ui.dueStatus)
       .sort((a,b) => a.due_date < b.due_date ? -1 : a.due_date > b.due_date ? 1 : String(a.student_name).localeCompare(String(b.student_name)));
   }
   function bookedFor(studentId){
@@ -955,6 +970,7 @@ window.kumonPtcNav = function(client, role){
     const nowRows = dueRows("now"), soonRows = dueRows("soon");
     const t = todayISO();
     const doneRows = milestones
+      .filter(m => m.status === "done" || m.status === "skipped")
       .filter(m => { const s = studentById.get(m.student_id); const q = ui.dueSearch.trim().toLowerCase(); return !q || studentName(m.student_id).toLowerCase().includes(q) || !s; })
       .filter(m => ui.dueTeacher === "all" || enrollments.some(e => e.student_id === m.student_id && teacherInFilter(e.teacher, ui.dueTeacher)));
     const counts = { now: nowRows.length, soon: soonRows.length };
@@ -969,11 +985,11 @@ window.kumonPtcNav = function(client, role){
           <td class="tnum">${esc(fmtDate(m.done_on))}</td>
           <td><span class="note-chip">${esc(m.note || "")}</span></td>
           <td class="muted">${esc(m.by_name || "")}</td>
-          <td><button class="btn sm ghost" data-action="ms-undo" data-id="${esc(m.id)}" title="Put it back on the due list">Undo</button></td>
+          <td><button class="btn sm ghost" data-action="ms-undo" data-id="${esc(m.id)}" title="Put it back on the due list (notes are kept)">Undo</button></td>
         </tr>`).join("")}</tbody></table>` : `<div class="empty">Nothing marked done or skipped yet.</div>`;
     }else{
       const rows = ui.dueView === "now" ? nowRows : soonRows;
-      body = rows.length ? `<table class="stable"><thead><tr><th>Student</th><th>PTC</th><th>Due</th><th></th><th>Teacher</th><th>First day</th><th></th><th></th></tr></thead><tbody>${
+      body = rows.length ? `<table class="stable"><thead><tr><th>Student</th><th>PTC</th><th>Due</th><th>Teacher</th><th>Status</th><th>Notes</th><th></th></tr></thead><tbody>${
         rows.map(d => {
           const late = daysBetween(d.due_date, t);
           const when = ui.dueView === "now"
@@ -982,14 +998,15 @@ window.kumonPtcNav = function(client, role){
           const b = bookedFor(d.student_id);
           const canMark = isAdmin() || (d.teachers || []).some(x => myGroupTeachers().includes(x));
           return `<tr>
-            <td><b>${esc(d.student_name || "")}</b> ${(d.subjects || []).map(s => `<span class="pill ${s === "Reading" ? "subj-reading" : "subj-math"} name-subj-pill">${s === "Reading" ? "R" : "M"}</span>`).join("")}</td>
+            <td><b>${esc(d.student_name || "")}</b> ${(d.subjects || []).map(s => `<span class="pill ${s === "Reading" ? "subj-reading" : "subj-math"} name-subj-pill">${s === "Reading" ? "R" : "M"}</span>`).join("")}
+              <div class="readonly-note" title="${d.first_day_set_by_hand ? "Set by hand on the student card" : "From their first training session"}">First day ${esc(fmtDate(d.first_day, { weekday: undefined, year:"numeric" }))}</div></td>
             <td><span class="pill mo">${ordinal(d.month_no)} month</span></td>
-            <td class="tnum">${esc(fmtDate(d.due_date))}</td>
-            <td>${when}</td>
-            <td>${esc((d.teachers || []).join(", ") || "—")}</td>
-            <td class="tnum muted" title="${d.first_day_set_by_hand ? "Set by hand on the student card" : "From their first training session"}">${esc(fmtDate(d.first_day, { weekday: undefined, year:"numeric" }))}</td>
-            <td>${b ? `<span class="pill booked" title="Booked in a PTC week — marking that session Done also marks this PTC done">PTC week: ${esc(fmtDate(b.date))}, ${esc(fmt12(b.time))}</span>` : ""}</td>
-            <td><div class="row-actions">${canMark ? `<button class="btn sm good" data-action="ms-done" data-student="${esc(d.student_id)}" data-month="${d.month_no}">Done</button><button class="btn sm ghost" data-action="ms-skip" data-student="${esc(d.student_id)}" data-month="${d.month_no}">Skip</button>` : ""}</div></td>
+            <td class="tnum">${esc(fmtDate(d.due_date, d.due_date.slice(0,4) !== t.slice(0,4) ? { year:"numeric" } : {}))}<div style="margin-top:4px;">${when}</div></td>
+            <td style="white-space:normal; max-width:160px;">${esc((d.teachers || []).join(", ") || "—")}</td>
+            <td>${msStatusControl(d, canMark)}${d.status === "scheduled" && d.scheduled_on ? `<div class="sib">${esc(fmtDate(d.scheduled_on))}${d.scheduled_time ? ", " + esc(fmt12(d.scheduled_time)) : ""}</div>` : ""}${b ? `<div style="margin-top:4px;"><span class="pill booked" title="Booked in a PTC week — marking that session Done also marks this PTC done">PTC week: ${esc(fmtDate(b.date))}, ${esc(fmt12(b.time))}</span></div>` : ""}</td>
+            <td>${d.note ? `<span class="note-chip ms-note">${esc(d.note)}</span>${d.updated_by ? `<div class="readonly-note">${esc(d.updated_by)}${d.updated_at ? " · " + esc(fmtDate(new Date(new Date(d.updated_at).getTime() + 8*3600e3).toISOString().slice(0,10))) : ""}</div>` : ""}` : ""}
+              ${canMark ? `<button class="btn sm ghost" data-action="ms-note" data-student="${esc(d.student_id)}" data-month="${d.month_no}">${d.note ? "Edit note" : "+ Note"}</button>` : ""}</td>
+            <td><div class="row-actions" style="flex-wrap:nowrap;">${canMark ? `<button class="btn sm good" data-action="ms-done" data-student="${esc(d.student_id)}" data-month="${d.month_no}">Done</button><button class="btn sm ghost" data-action="ms-skip" data-student="${esc(d.student_id)}" data-month="${d.month_no}">Skip</button>` : ""}</div></td>
           </tr>`;
         }).join("")}</tbody></table>`
         : `<div class="empty">${ui.dueView === "now" ? "No PTCs due right now. 🎉" : "Nothing coming up in the next 30 days."}</div>`;
@@ -1003,6 +1020,7 @@ window.kumonPtcNav = function(client, role){
         </div>
         <input type="text" id="dueSearch" placeholder="Search student…" value="${esc(ui.dueSearch)}" style="max-width:200px;">
         ${teacherPickerHtml("dueTeacher", ui.dueTeacher)}
+        ${ui.dueView !== "done" ? `<select id="dueStatus">${[["all","All statuses"]].concat(MS_STATUS_ORDER.map(k => [k, MS_STATUS[k].label])).map(([k,l]) => `<option value="${k}"${ui.dueStatus === k ? " selected" : ""}>${esc(l)}</option>`).join("")}</select>` : ""}
       </div>
       <div class="card">
         <div class="card-head"><h3>${ui.dueView === "now" ? "Due now" : ui.dueView === "soon" ? "Coming up (next 30 days)" : "Done and skipped"}</h3>
@@ -1189,8 +1207,8 @@ window.kumonPtcNav = function(client, role){
     return {
       title: `${s.skip ? "Skip" : "PTC done"} — ${esc(name)}`,
       body: `<div class="hint">${ordinal(s.month)}-month PTC, due ${esc(fmtDate(d && d.due_date))}.</div>
-        ${s.skip ? "" : `<label class="field">Date of the PTC<input type="date" id="msDate" value="${esc(todayISO())}"></label>`}
-        <label class="field">${s.skip ? "Why skip? (optional)" : "Note (optional)"}<textarea id="msNote" rows="3" placeholder="${s.skip ? "e.g. parent said no need, moved away…" : "What was discussed, follow-ups…"}"></textarea></label>
+        ${s.skip ? "" : `<label class="field">Date of the PTC<input type="date" id="msDate" value="${esc(d && d.status === "scheduled" && d.scheduled_on && d.scheduled_on <= todayISO() ? d.scheduled_on : todayISO())}"></label>`}
+        <label class="field">${s.skip ? "Why skip? (optional)" : "Notes (optional)"}<textarea id="msNote" rows="4" placeholder="${s.skip ? "e.g. parent said no need, moved away…" : "What was discussed, follow-ups…"}">${esc(d && d.note || "")}</textarea></label>
         ${earlier.length ? `<label style="display:flex;gap:8px;align-items:center;font-size:13px;"><input type="checkbox" id="msEarlier"> Also mark the earlier overdue one${earlier.length === 1 ? "" : "s"} (${earlier.map(x => ordinal(x.month_no)).join(", ")} month) as ${s.skip ? "skipped" : "done"}</label>` : ""}`,
       foot: `<button class="btn" data-action="close-modal">Cancel</button><button class="btn primary" data-action="ms-save">${s.skip ? "Skip it" : "Mark done"}</button>`
     };
@@ -1201,11 +1219,15 @@ window.kumonPtcNav = function(client, role){
     const doneOn = s.skip ? todayISO() : (($("#msDate") || {}).value || todayISO());
     const months = [s.month];
     if($("#msEarlier") && $("#msEarlier").checked) due.filter(x => x.student_id === s.studentId && x.month_no < s.month && x.due_date <= todayISO()).forEach(x => months.push(x.month_no));
-    const rows = months.map(mn => {
+    // The PTC itself gets the notes from the box; earlier ones ticked along keep their own notes.
+    const rowFor = (mn, withNote) => {
       const d = due.find(x => x.student_id === s.studentId && x.month_no === mn);
-      return { student_id: s.studentId, month_no: mn, due_date: d ? d.due_date : null, status: s.skip ? "skipped" : "done", done_on: doneOn, note: note.trim() || null, by_name: myName() };
-    });
-    const { error } = await sbClient.from("ptc_milestones").upsert(rows, { onConflict: "student_id,month_no" });
+      const r = { student_id: s.studentId, month_no: mn, due_date: d ? d.due_date : null, status: s.skip ? "skipped" : "done", done_on: doneOn, by_name: myName(), updated_at: new Date().toISOString() };
+      if(withNote) r.note = note.trim() || null;
+      return r;
+    };
+    let { error } = await sbClient.from("ptc_milestones").upsert([rowFor(s.month, true)], { onConflict: "student_id,month_no" });
+    if(!error && months.length > 1) ({ error } = await sbClient.from("ptc_milestones").upsert(months.slice(1).map(mn => rowFor(mn, false)), { onConflict: "student_id,month_no" }));
     if(error){ alert("Couldn't save: " + error.message); return; }
     logHistory(s.skip ? "ptc_skipped" : "ptc_done", `${s.skip ? "Skipped" : "Done"}: ${studentName(s.studentId)} — ${months.map(ordinal).join(", ")} month PTC`, "student", s.studentId, { months, note });
     closeModal();
@@ -1213,6 +1235,41 @@ window.kumonPtcNav = function(client, role){
     if(window.kumonPtcNavRefresh) window.kumonPtcNavRefresh();
     render(); toast(s.skip ? "Skipped." : "Marked done.");
   }
+
+  /* --- status + notes while a PTC is still due (phase98) --- */
+  async function saveMsFields(studentId, month, fields, logText){
+    const d = due.find(x => x.student_id === studentId && x.month_no === month);
+    const row = Object.assign({ student_id: studentId, month_no: month, due_date: d ? d.due_date : null, by_name: myName(), updated_at: new Date().toISOString() }, fields);
+    if(!row.status) row.status = (d && d.status) || "open";
+    const { error } = await sbClient.from("ptc_milestones").upsert([row], { onConflict: "student_id,month_no" });
+    if(error){ alert("Couldn't save: " + error.message); return false; }
+    logHistory("ptc_status", `${studentName(studentId) || (d && d.student_name)} — ${ordinal(month)} month PTC: ${logText}`, "student", studentId, fields);
+    await Promise.all([loadMilestones(), loadDue()]);
+    render();
+    return true;
+  }
+  MODALS.msSchedule = (s) => {
+    const d = due.find(x => x.student_id === s.studentId && x.month_no === s.month) || {};
+    const b = bookedFor(s.studentId);
+    const date = d.scheduled_on || (b && b.date) || todayISO();
+    const time = d.scheduled_time || (b && b.time) || "";
+    return {
+      title: `Scheduled — ${esc(d.student_name || studentName(s.studentId))}`,
+      body: `<div class="hint">${ordinal(s.month)}-month PTC, due ${esc(fmtDate(d.due_date))}. When is it?</div>
+        <div class="field-row"><label class="field">Date<input type="date" id="msSchedDate" value="${esc(date)}"></label>
+        <label class="field">Time (optional)<input type="time" id="msSchedTime" value="${esc(time)}"></label></div>`,
+      foot: `<button class="btn" data-action="close-modal">Cancel</button><button class="btn primary" data-action="ms-sched-save">Save</button>`
+    };
+  };
+  MODALS.msNote = (s) => {
+    const d = due.find(x => x.student_id === s.studentId && x.month_no === s.month) || {};
+    return {
+      title: `Notes — ${esc(d.student_name || studentName(s.studentId))}`,
+      body: `<div class="hint">${ordinal(s.month)}-month PTC, due ${esc(fmtDate(d.due_date))}.</div>
+        <textarea id="msNoteText" rows="5" placeholder="e.g. called mom Oct 21, no answer · dad prefers Saturdays…">${esc(d.note || "")}</textarea>`,
+      foot: `<button class="btn" data-action="close-modal">Cancel</button><button class="btn primary" data-action="ms-note-save">Save</button>`
+    };
+  };
 
   /* --- new / edit PTC week (admins) --- */
   MODALS.week = (s) => {
@@ -1504,11 +1561,11 @@ window.kumonPtcNav = function(client, role){
       const limit = addDaysISO(x.date || todayISO(), 14);
       due.filter(d => d.student_id === x.student_id && d.due_date <= limit).forEach(d => {
         if(!rows.some(r => r.student_id === d.student_id && r.month_no === d.month_no))
-          rows.push({ student_id:d.student_id, month_no:d.month_no, due_date:d.due_date, status:"done", done_on: x.date || todayISO(), note: `PTC week: ${w ? w.name : ""}`, by_name: myName(), ptc_session_id: x.id });
+          rows.push({ student_id:d.student_id, month_no:d.month_no, due_date:d.due_date, status:"done", done_on: x.date || todayISO(), note: [d.note, `PTC week: ${w ? w.name : ""}`].filter(Boolean).join("\n"), by_name: myName(), ptc_session_id: x.id, updated_at: new Date().toISOString() });
       });
     }
     if(!rows.length) return;
-    const { error } = await sbClient.from("ptc_milestones").upsert(rows, { onConflict:"student_id,month_no", ignoreDuplicates:true });
+    const { error } = await sbClient.from("ptc_milestones").upsert(rows, { onConflict:"student_id,month_no" });
     if(error){ console.warn(error); return; }
     await Promise.all([loadMilestones(), loadDue()]);
     if(window.kumonPtcNavRefresh) window.kumonPtcNavRefresh();
@@ -1616,6 +1673,12 @@ window.kumonPtcNav = function(client, role){
     if(t.id === "dueTeacher"){ ui.dueTeacher = t.value; renderDue(); }
     else if(t.id === "weekTeacher"){ ui.weekTeacher = t.value; renderWeek(); }
     else if(t.id === "weekPick"){ ui.weekId = t.value; lsSet("weekId", ui.weekId); ui.weekDay = "all"; await loadSessions(); renderWeek(); }
+    else if(t.dataset.msStatus){
+      const [sid, mn] = t.dataset.msStatus.split("|");
+      if(t.value === "scheduled"){ openModal({ kind:"msSchedule", studentId: sid, month: +mn }); render(); return; }
+      await saveMsFields(sid, +mn, { status: t.value }, MS_STATUS[t.value].label);
+    }
+    else if(t.id === "dueStatus"){ ui.dueStatus = t.value; renderDue(); }
     else if(t.dataset.statusFor){
       const x = sessions.find(y => y.id === t.dataset.statusFor); if(!x) return;
       await setStatus([x], t.value); render();
@@ -1640,10 +1703,25 @@ window.kumonPtcNav = function(client, role){
     if(a === "due-view"){ ui.dueView = btn.dataset.view; renderDue(); return; }
     if(a === "ms-done" || a === "ms-skip"){ openModal({ kind:"milestone", studentId: btn.dataset.student, month: +btn.dataset.month, skip: a === "ms-skip" }); return; }
     if(a === "ms-save"){ btn.disabled = true; await saveMilestone(); return; }
+    if(a === "ms-note"){ openModal({ kind:"msNote", studentId: btn.dataset.student, month: +btn.dataset.month }); return; }
+    if(a === "ms-note-save"){
+      const st = modalState; btn.disabled = true;
+      if(await saveMsFields(st.studentId, st.month, { note: $("#msNoteText").value.trim() || null }, "notes updated")){ closeModal(); toast("Notes saved."); }
+      else btn.disabled = false;
+      return;
+    }
+    if(a === "ms-sched-save"){
+      const st = modalState; const date = $("#msSchedDate").value; const time = $("#msSchedTime").value || null;
+      if(!date){ alert("Pick the date."); return; }
+      btn.disabled = true;
+      if(await saveMsFields(st.studentId, st.month, { status:"scheduled", scheduled_on: date, scheduled_time: time }, `scheduled ${fmtDate(date)}${time ? " " + fmt12(time) : ""}`)){ closeModal(); toast("Scheduled."); }
+      else btn.disabled = false;
+      return;
+    }
     if(a === "ms-undo"){
       const m = milestones.find(x => x.id === btn.dataset.id); if(!m) return;
       if(!confirm(`Put ${studentName(m.student_id)}'s ${ordinal(m.month_no)}-month PTC back on the due list?`)) return;
-      const { error } = await sbClient.from("ptc_milestones").delete().eq("id", m.id);
+      const { error } = await sbClient.from("ptc_milestones").update({ status:"open", done_on:null, updated_at: new Date().toISOString(), by_name: myName() }).eq("id", m.id);
       if(error){ alert("Couldn't undo: " + error.message); return; }
       logHistory("ptc_undo", `Undid ${studentName(m.student_id)} — ${ordinal(m.month_no)} month PTC`, "student", m.student_id, null);
       await Promise.all([loadMilestones(), loadDue()]); if(window.kumonPtcNavRefresh) window.kumonPtcNavRefresh(); render(); return;
