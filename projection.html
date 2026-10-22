@@ -1,0 +1,1166 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Kumon Hub — Projection</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700&family=Inter:wght@400;500;600;700;800&display=swap">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  :root{
+    --bg:#F5F6FA; --surface:#FFFFFF; --surface-2:#FBFBFE; --border:#E1E4EB;
+    --ink:#1B1F27; --ink-muted:#636C7C; --ink-faint:#9AA1AF;
+    --accent:#3454D1; --accent-ink:#FFFFFF; --accent-soft:#E9EDFC; --accent-soft-ink:#2A41A8;
+    --good:#1E8E5A; --good-soft:#E4F5EC; --warn:#C2831F; --warn-soft:#FBF0E1; --bad:#C23B2B; --bad-soft:#FBE8E5;
+    --shadow: 0 1px 2px rgba(16,20,30,.04), 0 2px 8px rgba(16,20,30,.06), 0 20px 40px -20px rgba(16,20,30,.25);
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#14161C; --surface:#1C1F27; --surface-2:#20232C; --border:#2C303B;
+      --ink:#EDEFF4; --ink-muted:#9BA3B2; --ink-faint:#6B7280;
+      --accent:#6C86F0; --accent-ink:#0E1220; --accent-soft:#232A47; --accent-soft-ink:#B7C3FA;
+      --good:#4FC48A; --good-soft:#173226; --warn:#E0A23F; --warn-soft:#332711; --bad:#F0796A; --bad-soft:#3A1F1C;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#14161C; --surface:#1C1F27; --surface-2:#20232C; --border:#2C303B;
+    --ink:#EDEFF4; --ink-muted:#9BA3B2; --ink-faint:#6B7280;
+    --accent:#6C86F0; --accent-ink:#0E1220; --accent-soft:#232A47; --accent-soft-ink:#B7C3FA;
+    --good:#4FC48A; --good-soft:#173226; --warn:#E0A23F; --warn-soft:#332711; --bad:#F0796A; --bad-soft:#3A1F1C;
+    color-scheme: dark;
+  }
+
+  *{box-sizing:border-box;}
+  body{
+    background:var(--bg); color:var(--ink); margin:0;
+    font-family:"Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  h1,h2,h3,.brand{ font-family:"Sora", system-ui, sans-serif; }
+  h1,h2,h3{ text-wrap:balance; margin:0; }
+  button{ font-family:inherit; }
+  a{ color:var(--accent); }
+
+  .app{ display:grid; grid-template-columns: 216px 1fr; min-height:100vh; min-height:100dvh; }
+  .rail{
+    background:var(--surface); border-right:1px solid var(--border);
+    padding:20px 12px; display:flex; flex-direction:column; gap:4px;
+    position:sticky; top:0; align-self:start; height:100vh; height:100dvh;
+  }
+  .brand{ font-weight:700; font-size:16px; padding:6px 10px 18px; display:flex; align-items:center; gap:8px; color:var(--ink); }
+  .brand .dot{ width:9px;height:9px;border-radius:50%;background:var(--accent); flex:none; }
+  .navbtn{
+    display:flex; align-items:center; gap:10px; padding:9px 10px; border-radius:9px;
+    border:none; background:transparent; color:var(--ink-muted); font-size:14px; font-weight:600;
+    cursor:pointer; text-align:left; width:100%; text-decoration:none;
+    transition: background-color .15s ease, color .15s ease, box-shadow .15s ease;
+  }
+  .navbtn:focus-visible{ outline:none; box-shadow: 0 0 0 3px var(--accent-soft); }
+  .navbtn:hover{ background:var(--surface-2); color:var(--ink); }
+  .navbtn svg{ width:17px; height:17px; flex:none; }
+  .navbtn.active{ background:var(--accent-soft); color:var(--accent-soft-ink); box-shadow: inset 3px 0 0 var(--accent); }
+  .rail-pages{ display:flex; flex-direction:column; gap:4px; margin-bottom:8px; }
+  .rail-divider{ height:1px; background:var(--border); margin:4px 10px 10px; }
+  .rail-account{ padding:0 10px 10px; }
+  .account-row{ display:flex; align-items:center; justify-content:space-between; gap:8px; padding:8px 8px; border-top:1px solid var(--border); font-size:12px; color:var(--ink-muted); }
+  .account-email{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .rail-foot{ margin-top:auto; padding:10px; font-size:12px; color:var(--ink-faint); line-height:1.5; }
+
+  .main{ padding:26px 30px 60px; max-width:1100px; width:100%; min-width:0; }
+  .page-head{ display:flex; align-items:flex-end; justify-content:space-between; gap:16px; margin-bottom:18px; flex-wrap:wrap; }
+  .page-head h1{ font-size:22px; font-weight:700; }
+  .page-sub{ color:var(--ink-muted); font-size:13.5px; margin-top:4px; }
+
+  .btn{
+    display:inline-flex; align-items:center; gap:7px; padding:9px 14px; border-radius:9px;
+    font-size:13.5px; font-weight:600; border:1px solid var(--border); background:var(--surface);
+    color:var(--ink); cursor:pointer; white-space:nowrap;
+    transition: background-color .15s ease, border-color .15s ease, color .15s ease, box-shadow .15s ease, transform .08s ease;
+  }
+  .btn:hover{ background:var(--surface-2); }
+  .btn:active{ transform:scale(.96); }
+  .btn:focus-visible{ outline:none; box-shadow: 0 0 0 3px var(--accent-soft); }
+  .btn.primary{ background:var(--accent); color:var(--accent-ink); border-color:var(--accent); box-shadow: 0 1px 2px rgba(0,0,0,.08); }
+  .btn.good{ color:var(--good); border-color:var(--good-soft); }
+  .btn.good:hover{ background:var(--good-soft); }
+  .btn.ghost{ border-color:transparent; background:transparent; }
+  .btn.sm{ padding:6px 10px; font-size:12.5px; border-radius:7px; }
+  .btn:disabled{ opacity:.5; cursor:not-allowed; }
+
+  .card{ background:var(--surface); border:1px solid var(--border); border-radius:14px; margin-bottom:18px; }
+  .card-head{ display:flex; align-items:center; justify-content:space-between; padding:14px 16px; border-bottom:1px solid var(--border); gap:10px; flex-wrap:wrap; }
+  .card-head h3{ font-size:14.5px; font-weight:700; }
+  .empty{ padding:30px 16px; text-align:center; color:var(--ink-muted); font-size:13.5px; }
+
+  .stats{ display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin-bottom:12px; }
+  .stat{ background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:13px 14px; display:flex; flex-direction:column; gap:6px; }
+  .stat .n{ font-size:22px; font-weight:700; font-family:"Sora",sans-serif; }
+  .stat .l{ font-size:12px; color:var(--ink-muted); font-weight:600; }
+  .stat.warn .n{ color:var(--warn); }
+  .stat.bad .n{ color:var(--bad); }
+  button.stat{ cursor:pointer; text-align:left; font:inherit; transition: border-color .15s ease, box-shadow .15s ease, background-color .15s ease; }
+  button.stat:hover{ border-color:var(--accent); }
+  button.stat.selected{ border-color:var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); background:var(--accent-soft); }
+  button.stat.selected .l{ color:var(--accent-soft-ink); }
+  .filter-note{ display:flex; align-items:center; gap:8px; font-size:12.5px; color:var(--ink-muted); margin:-6px 0 12px; }
+  .filter-note button{ border:none; background:transparent; color:var(--accent); font-weight:600; cursor:pointer; padding:0; font-size:12.5px; }
+
+  .cal-toolbar{ display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; flex-wrap:wrap; gap:10px; }
+  .cal-nav{ display:flex; align-items:center; gap:8px; }
+  .cal-nav h2{ font-size:16px; font-weight:700; min-width:160px; text-align:center; }
+  .month-head{ display:flex; flex-direction:column; align-items:center; }
+  .month-head h2{ margin:0; }
+  .month-range{ font-size:11px; color:var(--ink-muted); margin-top:1px; }
+  @media (max-width: 640px){ .cal-nav h2{ font-size:14px; min-width:0; flex:1; } }
+
+  .seg{ display:inline-flex; background:var(--surface-2); border:1px solid var(--border); border-radius:9px; padding:2px; }
+  .seg button{ border:none; background:transparent; padding:6px 11px; border-radius:7px; font-size:12.5px; font-weight:600; color:var(--ink-muted); cursor:pointer; }
+  .seg button:active{ transform:scale(.94); }
+  .seg button.active{ background:var(--surface); color:var(--ink); box-shadow:var(--shadow); }
+
+  .search-row{ display:flex; gap:8px; margin-bottom:14px; flex-wrap:wrap; align-items:center; }
+  .search-row input, .search-row select{ font-size:13.5px; width:auto; flex:0 0 auto; }
+  .search-row select{ min-width:132px; }
+  .table-scroll{ overflow-x:auto; }
+  .stable{ min-width:100%; width:auto; border-collapse:collapse; }
+  .stable th{ text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--ink-muted); padding:8px 16px; border-bottom:1px solid var(--border); white-space:nowrap; }
+  .stable td{ padding:10px 16px; border-bottom:1px solid var(--border); font-size:13px; vertical-align:middle; white-space:nowrap; }
+  .stable .empty{ white-space:normal; }
+  .stable tr:last-child td{ border-bottom:none; }
+  .stable tbody tr td{ transition: background-color .12s ease; }
+  .stable tbody tr:hover td{ background:var(--surface-2); }
+  .stable tr.clickrow{ cursor:pointer; }
+  .stable tr.clickrow:hover{ background:var(--surface-2); }
+  .muted{ color:var(--ink-muted); }
+  .hint{ font-size:12px; color:var(--ink-muted); font-weight:500; }
+  .faint{ color:var(--ink-faint); }
+  .money{ font-variant-numeric:tabular-nums; font-weight:600; }
+  .money.good{ color:var(--good); }
+  .pill{ display:inline-flex; align-items:center; gap:5px; padding:3px 9px; border-radius:99px; font-size:11.5px; font-weight:700; white-space:nowrap; transition: background-color .15s ease, color .15s ease; }
+  .pill.subj-math{ background:var(--accent-soft); color:var(--accent-soft-ink); }
+  .pill.subj-reading{ background:var(--bad-soft); color:var(--bad); }
+  .pill.m1, .pill.m2{ background:var(--warn-soft); color:var(--warn); }
+  .pill.m3, .pill.m4{ background:var(--bad-soft); color:var(--bad); }
+  .pill.resumed{ background:var(--good-soft); color:var(--good); }
+  .pill.pending{ background:var(--accent-soft); color:var(--accent-soft-ink); }
+  .pill.flagged{ background:var(--warn-soft); color:var(--warn); }
+  .pill.verified{ background:var(--good-soft); color:var(--good); }
+  .pill.rejected{ background:var(--surface-2); color:var(--ink-faint); }
+  .field-row{ display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  .lvl.empty-lvl{ color:var(--ink-faint); }
+  .pill.beyond{ background:var(--surface-2); color:var(--ink-faint); }
+  .name-subj-pill{ margin-left:6px; vertical-align:middle; padding:2px 7px; }
+  .row-actions{ display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end; }
+
+  select, input[type=text], input[type=search], textarea{
+    font-family:inherit; font-size:13.5px; padding:8px 10px; border-radius:8px; border:1px solid var(--border);
+    background:var(--surface); color:var(--ink); width:100%;
+  }
+  select, input, textarea{ transition: border-color .15s ease, box-shadow .15s ease; }
+  select:focus, input:focus, textarea:focus{ outline:none; border-color:var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+  label.field{ display:flex; flex-direction:column; gap:5px; font-size:12.5px; font-weight:600; color:var(--ink-muted); }
+
+  .modal-backdrop{ position:fixed; inset:0; background:rgba(10,12,18,.5); display:flex; align-items:flex-start; justify-content:center; padding:5vh 16px; overflow-y:auto; z-index:50; }
+  .modal{ background:var(--surface); border-radius:16px; width:100%; max-width:460px; box-shadow:var(--shadow); }
+  .modal-head{ display:flex; align-items:center; justify-content:space-between; padding:16px 18px; border-bottom:1px solid var(--border); }
+  .modal-head h3{ font-size:15.5px; font-weight:700; }
+  .modal-body{ padding:16px 18px; display:flex; flex-direction:column; gap:12px; max-height:66vh; overflow-y:auto; }
+  .modal-foot{ display:flex; justify-content:flex-end; gap:8px; padding:14px 18px; border-top:1px solid var(--border); }
+  .iconbtn{ border:none; background:transparent; cursor:pointer; color:var(--ink-muted); padding:4px; border-radius:6px; transition: background-color .15s ease, color .15s ease, transform .08s ease; }
+  .iconbtn:hover{ background:var(--surface-2); color:var(--ink); }
+  .iconbtn:active{ transform:scale(.9); }
+
+  .note-item{ border:1px solid var(--border); border-radius:10px; padding:10px 12px; background:var(--surface-2); }
+  .note-item .note-meta{ font-size:11px; color:var(--ink-muted); margin-bottom:4px; }
+  .note-item .note-text{ font-size:13px; white-space:pre-wrap; }
+  .note-form{ display:flex; flex-direction:column; gap:8px; }
+
+  .banner{ background:var(--warn-soft); color:var(--warn); border-radius:11px; padding:11px 14px; font-size:13px; font-weight:600; margin-bottom:16px; }
+  .banner.info{ background:var(--accent-soft); color:var(--accent-soft-ink); }
+
+  .toast{ position:fixed; left:50%; bottom:22px; transform:translateX(-50%); background:var(--ink); color:var(--bg); font-size:13px; font-weight:600; padding:10px 16px; border-radius:10px; z-index:95; box-shadow:var(--shadow); }
+
+  .login-screen{ position:fixed; inset:0; display:flex; align-items:center; justify-content:center; background:var(--bg); z-index:100; padding:20px; }
+  .login-card{ width:100%; max-width:360px; background:var(--surface); border:1px solid var(--border); border-radius:16px; padding:28px 26px; box-shadow:var(--shadow); display:flex; flex-direction:column; gap:14px; }
+  .login-brand{ font-family:"Sora", system-ui, sans-serif; font-weight:700; font-size:18px; display:flex; align-items:center; gap:8px; color:var(--ink); }
+  .login-brand .dot{ width:9px; height:9px; border-radius:50%; background:var(--accent); flex:none; }
+  .login-sub{ font-size:13px; color:var(--ink-muted); margin:-6px 0 4px; }
+  .login-error{ background:var(--bad-soft); color:var(--bad); border-radius:9px; padding:9px 12px; font-size:12.5px; font-weight:600; }
+
+  [hidden]{ display:none !important; }
+
+  @media (max-width: 860px){
+    .app{ grid-template-columns:1fr; }
+    .rail{ position:fixed; bottom:0; left:0; right:0; top:auto; height:auto; flex-direction:row; padding:8px; border-right:none; border-top:1px solid var(--border); z-index:40; }
+    .brand, .rail-foot, .rail-account{ display:none; }
+    .rail-pages{ flex-direction:row; flex:1; margin-bottom:0; }
+    .rail-divider{ display:none; }
+    .navbtn{ text-align:center; justify-content:center; }
+    .main{ padding:16px 14px calc(70px + env(safe-area-inset-bottom)); }
+    .stats{ grid-template-columns:repeat(2,1fr); }
+    .stable th, .stable td{ padding:9px 8px; font-size:12.5px; }
+    .modal-backdrop{ padding:0; align-items:flex-end; }
+    .modal{ max-width:none; border-radius:16px 16px 0 0; max-height:92vh; }
+    .field-row{ grid-template-columns:1fr; }
+  }
+
+  /* ===== Shared across pages: collapsible sidebar + fit-to-screen ===== */
+  :root{ --rail-w:216px; --z:1; }
+  html.rail-collapsed{ --rail-w:68px; }
+  .rail-toggle{ display:none; }
+  .rail-pipeline .rail-section-label{ font-size:10.5px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:var(--ink-faint); padding:2px 10px 6px; }
+  .rail-pipeline{ display:flex; flex-direction:column; gap:4px; margin-bottom:8px; }
+  @media (min-width:1600px){ :root{ --z:1.1; } }
+  @media (min-width:1900px){ :root{ --z:1.2; } }
+  @media (min-width:2300px){ :root{ --z:1.4; } }
+  @media (min-width:2800px){ :root{ --z:1.7; } }
+  @media (min-width:3400px){ :root{ --z:2; } }
+  @media (min-width:861px){
+    /* Big screens: the page fills the window and everything scales up together (steps above), instead of
+       sitting in a narrow column with tiny text and empty space on the right. */
+    body{ zoom:var(--z); }
+    .app{ grid-template-columns:var(--rail-w) minmax(0,1fr); min-height:calc(100dvh / var(--z)); transition:grid-template-columns .18s ease; }
+    .rail{ height:calc(100dvh / var(--z)); overflow-y:auto; overflow-x:hidden; }
+    .main{ max-width:none; }
+    .rail-pipeline-mobile{ display:none !important; }
+    .rail-toggle{ display:inline-flex; position:absolute; top:20px; right:10px; width:28px; height:28px; align-items:center; justify-content:center; border:1px solid var(--border); background:var(--surface); color:var(--ink-muted); border-radius:8px; cursor:pointer; padding:0; }
+    .rail-toggle:hover{ background:var(--surface-2); color:var(--ink); }
+    .rail-toggle svg{ width:15px; height:15px; transition:transform .18s ease; }
+    html.rail-collapsed .rail-toggle svg{ transform:rotate(180deg); }
+    html.rail-collapsed .rail{ padding:20px 8px; }
+    html.rail-collapsed .rail-toggle{ position:static; align-self:center; margin-bottom:12px; }
+    html.rail-collapsed .brand{ display:none; }
+    html.rail-collapsed .navbtn{ font-size:0; justify-content:center; padding:10px 0; position:relative; gap:0; }
+    html.rail-collapsed .navbtn svg{ width:19px; height:19px; }
+    html.rail-collapsed .navbtn .badge{ position:absolute; top:3px; right:8px; font-size:10px; margin:0; padding:0 4px; min-width:15px; line-height:15px; }
+    html.rail-collapsed .rail-section-label, html.rail-collapsed .rail-account, html.rail-collapsed .rail-foot{ display:none; }
+    html.rail-collapsed .rail-divider{ margin:6px 8px; }
+  }
+  @media (max-width:860px){ .rail-pipeline{ display:none !important; } }
+
+
+  /* ===== Projection page ===== */
+  :root{ --kis:#7A8394; --bronze:#B5703A; --silver:#8E98A8; --gold:#D4A21A; --proj:#3454D1; --actual:#1E8E5A; --grid:#E8EAF0; }
+  @media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){ --proj:#6C86F0; --actual:#4FC48A; --grid:#2C303B; --kis:#9BA3B2; } }
+  :root[data-theme="dark"]{ --proj:#6C86F0; --actual:#4FC48A; --grid:#2C303B; --kis:#9BA3B2; }
+  .stats{ grid-template-columns:repeat(5,1fr); }
+  .stat.good .n{ color:var(--good); }
+  .toolbar{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:12px; }
+  .toolbar select, .toolbar input[type=text]{ width:auto; min-width:150px; }
+  .grow{ flex:1; }
+  .pill.p-good{ background:var(--good-soft); color:var(--good); } .pill.p-bad{ background:var(--bad-soft); color:var(--bad); }
+  .pill.p-warn{ background:var(--warn-soft); color:var(--warn); } .pill.p-accent{ background:var(--accent-soft); color:var(--accent-soft-ink); }
+  .pill.p-muted{ background:var(--surface-2); color:var(--ink-muted); border:1px solid var(--border); }
+  a.btn{ text-decoration:none; }
+  .btn.danger{ color:var(--bad); border-color:var(--bad-soft); } .btn.danger:hover{ background:var(--bad-soft); }
+  .detail-top{ display:flex; gap:8px; align-items:center; margin-bottom:12px; flex-wrap:wrap; }
+  .sp-card{ overflow:hidden; }
+  .sp-head{ display:flex; justify-content:space-between; align-items:flex-start; gap:12px; padding:18px 20px; border-bottom:1px solid var(--border); flex-wrap:wrap; }
+  .sp-head h2{ font-size:19px; }
+  .sp-body{ padding:18px 20px; display:flex; flex-direction:column; gap:18px; }
+  .inputs{ display:grid; grid-template-columns:repeat(6, minmax(0,1fr)); gap:10px; }
+  .f{ display:flex; flex-direction:column; gap:5px; font-size:11px; font-weight:700; color:var(--ink-muted); text-transform:uppercase; letter-spacing:.03em; }
+  .f input, .f select{ text-transform:none; letter-spacing:0; font-size:14px; font-weight:600; padding:8px 9px; }
+  .f .pair{ display:flex; gap:6px; } .f .pair select{ flex:1; min-width:0; } .f .pair input{ width:72px; }
+  input[type=number], input[type=date]{ font-family:inherit; font-size:13.5px; padding:8px 10px; border-radius:8px; border:1px solid var(--border); background:var(--surface); color:var(--ink); width:100%; }
+  .insights{ display:grid; grid-template-columns:repeat(4,1fr); gap:10px; }
+  .ins{ border:1px solid var(--border); border-radius:12px; padding:12px 14px; background:var(--surface-2); }
+  .ins .k{ font-size:11.5px; color:var(--ink-muted); font-weight:600; }
+  .ins .n{ font-family:"Sora",sans-serif; font-weight:700; font-size:17px; margin-top:4px; }
+  .ins .n .pill{ font-family:"Inter",sans-serif; font-size:12.5px; }
+  .ins .d{ font-size:12px; color:var(--ink-muted); margin-top:3px; }
+  .sec h3{ font-size:14px; }
+  .sec-h{ display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:10px; }
+  .sec > h3{ margin-bottom:10px; }
+  .legend{ display:flex; gap:6px; flex-wrap:wrap; }
+  .lg{ display:inline-flex; align-items:center; gap:6px; border:1px solid var(--border); border-radius:99px; padding:4px 10px; font:600 12px "Inter",sans-serif; background:var(--surface); cursor:pointer; color:var(--ink); }
+  .lg i{ width:14px; height:3px; border-radius:2px; display:inline-block; } .lg.off{ opacity:.4; }
+  .chart{ border:1px solid var(--border); border-radius:12px; padding:8px 8px 4px; background:var(--surface); }
+  .chart svg{ display:block; width:100%; height:auto; }
+  .tip{ position:fixed; pointer-events:none; background:var(--ink); color:var(--bg); font-size:12px; padding:7px 9px; border-radius:8px; line-height:1.45; display:none; z-index:90; }
+  .tbl{ border:1px solid var(--border); border-radius:12px; overflow-x:auto; }
+  .stable.plan td{ vertical-align:top; white-space:normal; }
+  .topic{ color:var(--ink-muted); font-size:12px; margin-top:2px; max-width:420px; }
+  .cellin{ width:64px !important; padding:5px 7px !important; font-weight:700; border-style:dashed !important; }
+  .cellin.set{ border-style:solid !important; border-color:var(--accent) !important; background:var(--accent-soft) !important; }
+  .tnum{ font-variant-numeric:tabular-nums; white-space:nowrap; }
+  .cols{ display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+  .box{ border:1px solid var(--border); border-radius:12px; padding:12px 14px; display:flex; flex-direction:column; gap:8px; align-items:flex-start; }
+  .box textarea{ width:100%; font-family:inherit; font-size:13px; padding:8px 10px; border-radius:8px; border:1px solid var(--border); background:var(--surface); color:var(--ink); }
+  .box .t{ font-size:11.5px; font-weight:700; color:var(--ink-muted); text-transform:uppercase; letter-spacing:.03em; }
+  .slist{ margin:0; padding-left:18px; font-size:13px; line-height:1.5; }
+  .sig{ display:grid; grid-template-columns:repeat(4,1fr); gap:10px; }
+  .sigbox{ border:1px solid var(--border); border-radius:10px; padding:10px 12px; font-size:12px; display:flex; flex-direction:column; gap:5px; }
+  .sigbox b{ font-size:12.5px; } .sigline{ border-bottom:1px solid var(--ink-faint); height:26px; }
+  .skill-opt{ display:flex; gap:10px; align-items:flex-start; font-size:13px; line-height:1.45; padding:8px 10px; border:1px solid var(--border); border-radius:10px; cursor:pointer; }
+  .skill-opt input{ margin-top:3px; }
+  .modal.wide{ max-width:640px; }
+  .clickrow td{ cursor:pointer; }
+  .print-only{ display:none; }
+  .print-title{ font-family:"Sora",sans-serif; font-weight:700; font-size:12px; color:var(--ink-muted); letter-spacing:.06em; }
+  @media (max-width: 1100px){ .insights{ grid-template-columns:repeat(2,1fr); } .inputs{ grid-template-columns:repeat(3,minmax(0,1fr)); } }
+  @media (max-width: 860px){ .inputs{ grid-template-columns:repeat(2,minmax(0,1fr)); } .insights, .cols, .sig{ grid-template-columns:1fr; } .stats{ grid-template-columns:repeat(2,1fr); } }
+  @media print{
+    body{ zoom:1 !important; background:#fff; }
+    .rail, .no-print, .rail-toggle, #pageHead, .toast, .tip{ display:none !important; }
+    .app{ display:block !important; }
+    .main{ padding:0 !important; max-width:none !important; }
+    .card{ border:none; box-shadow:none; }
+    .print-only{ display:block; }
+    input, select, textarea{ border:none !important; background:transparent !important; padding:0 !important; -webkit-appearance:none; appearance:none; }
+    .cellin{ border:none !important; background:transparent !important; }
+    .sec, .sig, .cols{ break-inside:avoid; }
+    .inputs{ grid-template-columns:repeat(6,minmax(0,1fr)) !important; }
+    .insights, .sig{ grid-template-columns:repeat(4,1fr) !important; }
+    .cols{ grid-template-columns:1fr 1fr !important; }
+    .stats{ display:none !important; }
+    .lg{ border:none; padding:2px 6px; }
+    .lg.off{ display:none; }
+    input::-webkit-calendar-picker-indicator{ display:none; }
+    textarea::placeholder{ color:transparent; }
+    .sp-body{ gap:12px; padding:10px 0; } .sp-head{ padding:6px 0 10px; }
+  }
+</style>
+<script>try{if(localStorage.getItem("kumonRailCollapsed")==="1")document.documentElement.classList.add("rail-collapsed")}catch(e){}</script>
+<script>
+/* PTC menu link + "due" number (phase97). Each page calls kumonPtcNav(sbClient, role) once the role is known. */
+window.kumonPtcNav = function(client, role){
+  var link = document.getElementById("navPtcLink"); if(!link) return;
+  var ok = ["admin","superadmin","teacher","trainer_teacher"].indexOf(role) >= 0;
+  link.hidden = !ok;
+  var proj = document.getElementById("navProjLink"); if(proj) proj.hidden = !ok;
+  if(!ok || !client) return;
+  if(!document.getElementById("ptcBadgeStyle")){
+    var st = document.createElement("style"); st.id = "ptcBadgeStyle";
+    st.textContent = ".navbtn .ptc-badge{margin-left:auto;background:var(--bad);color:#fff;font-size:11px;font-weight:700;border-radius:99px;padding:1px 6px;min-width:18px;text-align:center;line-height:16px;}";
+    document.head.appendChild(st);
+  }
+  var refresh = function(){
+    client.rpc("ptc_due_count").then(function(r){
+      var b = document.getElementById("navPtcBadge"); if(!b) return;
+      var n = (r && !r.error && typeof r.data === "number") ? r.data : 0;
+      b.textContent = n > 99 ? "99+" : String(n); b.hidden = !n;
+      link.title = n ? ("PTC — " + n + " due") : "PTC";
+    }, function(){});
+  };
+  refresh();
+  window.kumonPtcNavRefresh = refresh;
+  if(!window.__ptcNavTimer) window.__ptcNavTimer = setInterval(refresh, 5 * 60 * 1000);
+};
+</script>
+</head>
+<body>
+
+<!-- While the page checks who's signed in: a quiet loading screen instead of flashing the login form. -->
+<div class="login-screen" id="bootSplash" aria-live="polite">
+  <div class="login-brand" style="opacity:.85"><span class="dot"></span>Kumon Hub</div>
+</div>
+<div class="login-screen" id="loginScreen" hidden>
+  <form class="login-card" id="loginForm">
+    <div class="login-brand"><span class="dot"></span>Kumon Hub</div>
+    <div class="login-sub">Sign in with your team account.</div>
+    <div class="login-error" id="loginError" hidden></div>
+    <label class="field">Email<input type="email" name="email" required autocomplete="username" autofocus></label>
+    <label class="field">Password<input type="password" name="password" required autocomplete="current-password"></label>
+    <button class="btn primary" type="submit" style="justify-content:center;">Log in</button>
+  </form>
+</div>
+
+<script>
+  // No saved sign-in on this browser at all → show the login form right away (no splash).
+  (function(){ try{ var has = Object.keys(localStorage).some(function(k){ return /^sb-.*-auth-token$/.test(k); });
+    if(!has){ document.getElementById("bootSplash").hidden = true; document.getElementById("loginScreen").hidden = false; } }catch(e){} })();
+</script>
+<div class="app" id="appRoot" hidden>
+  <nav class="rail">
+    <button type="button" class="rail-toggle" id="railToggle" aria-label="Collapse sidebar" title="Collapse sidebar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg></button>
+    <div class="brand"><span class="dot"></span>Kumon Hub</div>
+    <div class="rail-pages">
+      <a class="navbtn rail-pipeline-mobile" href="index.html" id="navPipelineLink" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16l-6.5 8.5V19l-3 1.5v-8L4 4z"/></svg>Pipeline</a>
+      <a class="navbtn" href="roster.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3L2 8l10 5 10-5-10-5z"/><path d="M6 10.5V15c0 1.5 2.5 3 6 3s6-1.5 6-3v-4.5"/></svg>Student roster</a>
+      <a class="navbtn" href="calendar.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>Calendar</a>
+      <a class="navbtn" href="ptc.html" id="navPtcLink" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="7.5" r="3.2"/><circle cx="17" cy="9.5" r="2.4"/><path d="M3 20c0-3.6 2.7-6.3 6-6.3s6 2.7 6 6.3"/><path d="M15.2 14.4c.6-.2 1.2-.3 1.8-.3 2.5 0 4.4 1.9 4.4 4.6"/></svg>PTC<span class="badge ptc-badge" id="navPtcBadge" hidden></span></a>
+      <a class="navbtn active" href="projection.html" id="navProjLink" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 20h18"/><path d="M4 16l5-5 4 3 7-8"/><path d="M15 6h5v5"/></svg>Projection</a>
+      <a class="navbtn" href="payments.html" id="navPaymentsLink" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20M6 15h4"/></svg>Payments</a>
+      <a class="navbtn" href="absent.html" id="navAbsentLink" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.5-7 8-7s8 3 8 7"/><path d="M2 2l20 20" stroke="currentColor"/></svg>Retention</a>
+      <a class="navbtn" href="admin.html" id="navAdminLink" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v6c0 5-3.5 8-7 9-3.5-1-7-4-7-9V6l7-3z"/></svg>Admin</a>
+      <a class="navbtn" href="activity.html" id="navActivityLink" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></svg>Activity</a>
+      <a class="navbtn" href="reports.html" id="navReportsLink" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a9 9 0 1 0 9 9h-9z"/><path d="M15 3.5A9 9 0 0 1 20.5 9H15z"/></svg>Reports</a>
+    </div>
+    <div class="rail-divider"></div>
+    <div class="rail-pipeline" id="navPipelineGroup" hidden>
+      <div class="rail-section-label">Pipeline views</div>
+      <a class="navbtn" href="index.html#calendar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 3v3h6V3"/><path d="M9 12l2 2 4-4"/></svg>DT &amp; Training</a>
+      <a class="navbtn" href="index.html#enrollment"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 12l2 2 4-4"/><circle cx="12" cy="12" r="9"/></svg>Enrollment</a>
+      <a class="navbtn" href="index.html#students"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-7 8-7s8 3 8 7"/></svg>New students</a>
+      <a class="navbtn" href="index.html#settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M19 5l-2 2M7 17l-2 2"/></svg>Settings</a>
+    </div>
+    <div class="rail-account" id="railAccount"></div>
+    <div class="rail-foot">Each student's study projection vs where they actually are.</div>
+  </nav>
+
+  <main class="main">
+    <div id="pendingGate" hidden></div>
+    <div class="page-head" id="pageHead">
+      <div>
+        <h1>Study projection</h1>
+        <div class="page-sub">Each subject's projected path through the levels, the KIS (grade level), Bronze, Silver and Gold lines, and where the child actually is.</div>
+      </div>
+    </div>
+    <div id="view"></div>
+  </main>
+</div>
+
+<div class="modal-backdrop" id="modalBackdrop" hidden>
+  <div class="modal" id="modal"></div>
+</div>
+<div class="tip" id="tip"></div>
+<div class="toast" id="toast" hidden></div>
+
+<script>
+(function(){
+  "use strict";
+
+  const SUPABASE_URL = "https://bcnmsryahczapnxbpkve.supabase.co";
+  const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJjbm1zcnlhaGN6YXBueGJwa3ZlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTAyMDQ4NzksImV4cCI6MjEwNTc4MDg3OX0.VgCX3CR7YCJxR9-vwD8HlYcCx0MxlY7atgD_0h3F3to";
+
+  const $ = (sel, el) => (el||document).querySelector(sel);
+  const $$ = (sel, el) => Array.from((el||document).querySelectorAll(sel));
+  function esc(s){ return String(s==null?"":s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+
+  /* ======================= Study projection rules (from the Digital Study Projection sheet) =======================
+     Chart scale: 1 notch = 10 worksheets, so one level (200 pages) = 20 notches. Level n (0-based on the ladder)
+     runs from n*20 to n*20+20. A starting point "3A 71" sits at 3A's start + floor((71-1)/10) = 60 + 7 = 67.
+     Each level: Total WS = 200 × repeats (first level: (200 − (start page − 1)) × repeats);
+     Months = ROUNDUP(Total ÷ pages a day ÷ 30, 1 decimal); Target = previous target + months × 30 days.
+     KIS (grade-level line) starts each school year (June) at a point set by the grade and climbs month by month;
+     Math: +5/3 a month (1 level a year), Bronze/Silver/Gold = KIS + 10 / + 40 / + 60.
+     Reading: its own month-by-month curves per grade for KIS, Bronze, Silver and Gold (copied from the sheet). */
+  const LADDER = {
+    Math: ["6A","5A","4A","3A","2A","A","B","C","D","E","F","G","H","I","J","K","L","M","N","O"],
+    Reading: ["7A","6A","5A","4A","3A","2A","AI","AII","BI","BII","CI","CII","DI","DII","EI","EII","FI","FII","GI","GII","HI","HII","I-I","I-II","J","K","L"]
+  };
+  const LEVEL_ALIAS = { Reading: { "G":"GI", "H":"HI", "II":"I-I", "III":"I-II", "I":"I-I", "I-1":"I-I", "I-2":"I-II" } };
+  const TOPICS = {
+    Math: { "6A":"Counting, Number Reading Exercises, Number of Dots", "5A":"Number Reading Exercises and Sequence of Numbers",
+      "4A":"Number Reading and Writing Exercises", "3A":"Number Reading and Writing Exercises, Introduction to Addition", "2A":"Addition",
+      "A":"Addition and Subtraction I", "B":"Addition and Subtraction II", "C":"Elementary Multiplication and Division",
+      "D":"Multiplication and Division, Introduction to Fractions", "E":"Operations on Fractions and Decimals", "F":"Order of Operations",
+      "G":"Positive and Negative Numbers, Elementary Algebraic Expressions", "H":"Simultaneous Linear Equations in Two, Three, or Four Variables, Linear Functions",
+      "I":"Factorization, Quadratic Equations", "J":"Advanced Factorization, Quadratic Equations" },
+    Reading: { "7A":"Connecting Words to familiar Objects, Saying Words with the same Sound, Putting Words Together",
+      "6A":"Recognizing Familiar Words, Saying Rhyming Words and Phrases", "5A":"Saying the Sounds of Letters, Putting Sounds Together",
+      "4A":"Consonant Combinations, Changing Letter Sounds", "3A":"Sound Patterns, Compound Words", "2A":"Word Puzzles, Function of Words",
+      "AI":"Simple Sentences, Basic Expressions, Sentence Topics, Thought Sequence", "AII":"Simple Sentences, Basic Expressions, Sentence Topics, Thought Sequence",
+      "BI":"Subject and Predicate, Expressions in the Past, Modifiers, Defining Words, Identifying Ideas, Comparing and Contrasting",
+      "BII":"Subject and Predicate, Expressions in the Past, Modifiers, Defining Words, Identifying Ideas, Comparing and Contrasting",
+      "CI":"Parts of a Sentence, Expressions of Language, Elements of Statements, Organizing Information, Synthesizing Ideas",
+      "CII":"Parts of a Sentence, Expressions of Language, Elements of Statements, Organizing Information, Synthesizing Ideas",
+      "DI":"Combining Sentences, Statements from Paragraphs, Topic, Main Idea, Understanding Paragraphs",
+      "DII":"Combining Sentences, Statements from Paragraphs, Topic, Main Idea, Understanding Paragraphs" }
+  };
+  const SKILLS = {"Math": [{"section": "WORK SKILLS", "obs": "Poor pencil grip", "skill": "Good Pencil Grip / Improved Pencil Skills", "plan": "Training through the Pencil Skills Program"}, {"section": "WORK SKILLS", "obs": "Counts from the beginning to know the next number", "skill": "Determine the next number automatically", "plan": "Number Board Activity, Number Recitation"}, {"section": "WORK SKILLS", "obs": "Not following instructions (performs wrong operation)", "skill": "Ability to follow instruction. To become observant in changes in questions/operation.", "plan": "Training students to always read instructions, examples and questions (including operation)."}, {"section": "WORK SKILLS", "obs": "Uses Finger Counting, Nagbabakod etc.", "skill": "To be able to add and subtract without using finger counting", "plan": "Oral Drills"}, {"section": "WORK SKILLS", "obs": "Adds without finger counting, but not automatic", "skill": "Automaticity in Mental Addition / Subtraction", "plan": "Oral Drills"}, {"section": "WORK SKILLS", "obs": "Add vertically but writes carry over", "skill": "Adding vertically without carry over", "plan": "Training addition without carry over in Level B"}, {"section": "STUDY ATTITUDE", "obs": "Easily distracted", "skill": "Improved concentration ability", "plan": "Pen Pacing. More number of pages to answer to develop endurance."}, {"section": "STUDY ATTITUDE", "obs": "Lacks motivation to answer the test", "skill": "Develop eagerness in answering worksheets", "plan": "Share target Monthly GOALS and Study Projection to the student."}, {"section": "STUDY ATTITUDE", "obs": "Poor confidence level. Too SHY.", "skill": "Develop confidence level.", "plan": "Start from easy starting point and ALWAYS PRAISE and Encourage the student. SPE!"}], "Reading": [{"section": "WORK SKILLS", "obs": "Poor pencil grip", "skill": "Good Pencil Grip / Improved Pencil Skills", "plan": "Training through the Pencil Skills Program"}, {"section": "WORK SKILLS", "obs": "Limited Vocabulary  in English", "skill": "Increase in Students Vocabulary", "plan": "Flashcard. Remind parent to use the vocabulary everyday."}, {"section": "WORK SKILLS", "obs": "Not following instructions.", "skill": "Ability to follow instruction well.", "plan": "Training students to always READ ALOUD instructions, examples and questions before starting to answer. Untimed reading."}, {"section": "WORK SKILLS", "obs": "Not familiar with Alphabet.", "skill": "Familiarization with Alphabet.", "plan": "Alphabet Flashcard both at the center & at home."}, {"section": "WORK SKILLS", "obs": "Not familiar with Phonics.", "skill": "Ability to sound out phonics (sounds of letters).", "plan": "Through Level 5A worksheets and CD listening of the sounds of phonics."}, {"section": "STUDY ATTITUDE", "obs": "Easily distracted", "skill": "", "plan": "Pen Pacing. More number of pages to answer to develop endurance."}, {"section": "STUDY ATTITUDE", "obs": "Lacks motivation to answer the test", "skill": "Develop eagerness in answering worksheets", "plan": "Share target Monthly GOALS and Study Projection to the student."}, {"section": "STUDY ATTITUDE", "obs": "Poor confidence level. Too SHY.", "skill": "Develop confidence level.", "plan": "Start from easy starting point and ALWAYS PRAISE and Encourage the student. SPE!"}]};
+  const READING_CURVES = {"kis":{"PK3":[40,41.67,43.33,45,46.67,48.33,50,51.67,53.33,55,56.67,58.33,60,61.67,63.33,65,66.67,68.33,70,71.67,73.33,75,76.67,78.33,80,81.67,83.33,85,86.67,88.33,90],"PK2":[60,61.67,63.33,65,66.67,68.33,70,71.67,73.33,75,76.67,78.33,80,81.67,83.33,85.0,86.67,88.33,90.0,91.67,93.33,95.0,96.67,98.33,100,101.67,103.33,105,106.67,108.33,110],"PK1":[80,81.67,83.33,85,86.67,88.33,90,91.67,93.33,95,96.67,98.33,100,101.67,103.33,105,106.67,108.33,110,111.67,113.33,115,116.67,118.33,120,121.67,123.33,125,126.67,128.33,130],"K":[100,101.67,103.33,105,106.67,108.33,110,111.67,113.33,115,116.67,118.33,120,121.67,123.33,125,126.67,128.33,130,131.67,133.33,135,136.67,138.33,140,141.67,143.33,145,146.67,148.33,150],"P1":[120,123.33,126.67,130,133.33,136.67,140,143.33,146.67,150,153.33,156.67,160,163.33,166.67,170,173.33,176.67,180,183.33,186.67,190,193.33,196.67,200,203.33,206.67,210,213.33,216.67,220],"P2":[160,163.33,166.67,170,173.33,176.67,180,183.33,186.67,190,193.33,196.67,200,203.33,206.67,210,213.33,216.67,220,223.33,226.67,230,233.33,236.67,240,243.33,246.67,250,253.33,256.67,260],"P3":[200,203.33,206.67,210,213.33,216.67,220,223.33,226.67,230,233.33,236.67,240,243.33,246.67,250,253.33,256.67,260,263.33,266.67,270,273.33,276.67,280,283.33,286.67,290,293.33,296.67,300],"P4":[240,243.33,246.67,250,253.33,256.67,260,263.33,266.67,270,273.33,276.67,280,283.33,286.67,290,293.33,296.67,300,303.33,306.67,310,313.33,316.67,320,323.33,326.67,330,333.33,336.67,340],"P5":[280,283.33,286.67,290,293.33,296.67,300,303.33,306.67,310,313.33,316.67,320,323.33,326.67,330,333.33,336.67,340,343.33,346.67,350,353.33,356.67,360,363.33,366.67,370,373.33,376.67,380.0],"P6":[320,323.33,326.67,330,333.33,336.67,340,343.33,346.67,350,353.33,356.67,360,363.33,366.67,370,373.33,376.67,380,383.33,386.67,390,393.33,396.67,400,403.33,406.67,410,413.33,416.67,420.0],"P7":[360,361.67,363.33,365,366.67,368.33,370,371.67,373.33,375,376.67,378.33,380,381.67,383.33,385,386.67,388.33,390,391.67,393.33,395,396.67,398.33,400,401.67,403.33,405.0,406.67,408.33,410.0],"P8":[380,381.67,383.33,385,386.67,388.33,390,391.67,393.33,395,396.67,398.33,400,401.67,403.33,405,406.67,408.33,410,411.67,413.33,415,416.67,418.33,420,421.67,423.33,425.0,426.67,428.33,430.0],"P9":[400,401.67,403.33,405,406.67,408.33,410,411.67,413.33,415,416.67,418.33,420,421.67,423.33,425,426.67,428.33,430,431.67,433.33,435,436.67,438.33,440,441.67,443.33,445.0,446.67,448.33,450.0]},"bronze":{"PK3":[50,51.67,53.33,55,56.67,58.33,60,61.67,63.33,65,66.67,68.33,70,71.67,73.33,75,76.67,78.33,80,81.67,83.33,85,86.67,88.33,90.0,91.67,93.33,95.0,96.67,98.33,100],"PK2":[70,71.67,73.33,75,76.67,78.33,80,81.67,83.33,85,86.67,88.33,90.0,91.67,93.33,95.0,96.67,98.33,100,101.67,103.33,105,106.67,108.33,110,111.67,113.33,115,116.67,118.33,120],"PK1":[90,91.67,93.33,95,96.67,98.33,100,101.67,103.33,105,106.67,108.33,110,111.67,113.33,115,116.67,118.33,120,123.33,126.67,130,133.33,136.67,140,143.33,146.67,150,153.33,156.67,160],"K":[110,111.67,113.33,115,116.67,118.33,120,123.33,126.67,130,133.33,136.67,140,143.33,146.67,150,153.33,156.67,160,163.33,166.67,170,173.33,176.67,180,183.33,186.67,190,193.33,196.67,200],"P1":[140,143.33,146.67,150,153.33,156.67,160,163.33,166.67,170,173.33,176.67,180,183.33,186.67,190,193.33,196.67,200,203.33,206.67,210,213.33,216.67,220,223.33,226.67,230,233.33,236.67,240],"P2":[180,183.33,186.67,190,193.33,196.67,200,203.33,206.67,210,213.33,216.67,220,223.33,226.67,230,233.33,236.67,240,243.33,246.67,250,253.33,256.67,260,263.33,266.67,270,273.33,276.67,280],"P3":[220,223.33,226.67,230,233.33,236.67,240,243.33,246.67,250,253.33,256.67,260,263.33,266.67,270,273.33,276.67,280,283.33,286.67,290,293.33,296.67,300,303.33,306.67,310,313.33,316.67,320],"P4":[260,263.33,266.67,270,273.33,276.67,280,283.33,286.67,290,293.33,296.67,300,303.33,306.67,310,313.33,316.67,320,323.33,326.67,330,333.33,336.67,340,343.33,346.67,350,353.33,356.67,360.0],"P5":[300,303.33,306.67,310,313.33,316.67,320,323.33,326.67,330,333.33,336.67,340,343.33,346.67,350,353.33,356.67,360,361.67,363.33,365,366.67,368.33,370,371.67,373.33,375,376.67,378.33,380],"P6":[340,343.33,346.67,350,353.33,356.67,360,361.67,363.33,365,366.67,368.33,370,371.67,373.33,375,376.67,378.33,380,381.67,383.33,385,386.67,388.33,390,391.67,393.33,395,396.67,398.33,400],"P7":[360,361.67,363.33,365,366.67,368.33,370,371.67,373.33,375,376.67,378.33,380,381.67,383.33,385,386.67,388.33,390,391.67,393.33,395,396.67,398.33,400,401.67,403.33,405.0,406.67,408.33,410.0],"P8":[380,381.67,383.33,385,386.67,388.33,390,391.67,393.33,395,396.67,398.33,400,401.67,403.33,405,406.67,408.33,410,411.67,413.33,415,416.67,418.33,420,421.67,423.33,425.0,426.67,428.33,430.0],"P9":[400,401.67,403.33,405,406.67,408.33,410,411.67,413.33,415,416.67,418.33,420,421.67,423.33,425,426.67,428.33,430,431.67,433.33,435,436.67,438.33,440,441.67,443.33,445.0,446.67,448.33,450.0]},"silver":{"PK3":[80,81.67,83.33,85,86.67,88.33,90,91.67,93.33,95,96.67,98.33,100,101.67,103.33,105,106.67,108.33,110,111.67,113.33,115,116.67,118.33,120,123.33,126.67,130,133.33,136.67,140],"PK2":[100,101.67,103.33,105,106.67,108.33,110,111.67,113.33,115,116.67,118.33,120,123.33,126.67,130,133.33,136.67,140,143.33,146.67,150,153.33,156.67,160,163.33,166.67,170,173.33,176.67,180],"PK1":[120,123.33,126.67,130,133.33,136.67,140,143.33,146.67,150,153.33,156.67,160,163.33,166.67,170,173.33,176.67,180,183.33,186.67,190,193.33,196.67,200,203.33,206.67,210,213.33,216.67,220],"K":[160,163.33,166.67,170,173.33,176.67,180,183.33,186.67,190,193.33,196.67,200,203.33,206.67,210,213.33,216.67,220,223.33,226.67,230,233.33,236.67,240,243.33,246.67,250,253.33,256.67,260],"P1":[200,203.33,206.67,210,213.33,216.67,220,223.33,226.67,230,233.33,236.67,240,243.33,246.67,250,253.33,256.67,260,263.33,266.67,270,273.33,276.67,280,283.33,286.67,290,293.33,296.67,300],"P2":[240,243.33,246.67,250,253.33,256.67,260,263.33,266.67,270,273.33,276.67,280,283.33,286.67,290,293.33,296.67,300,303.33,306.67,310,313.33,316.67,320,323.33,326.67,330,333.33,336.67,340],"P3":[280,283.33,286.67,290,293.33,296.67,300,303.33,306.67,310,313.33,316.67,320,323.33,326.67,330,333.33,336.67,340,343.33,346.67,350,353.33,356.67,360,361.67,363.33,365,366.67,368.33,370],"P4":[320,323.33,326.67,330,333.33,336.67,340,343.33,346.67,350,353.33,356.67,360,361.67,363.33,365,366.67,368.33,370,371.67,373.33,375,376.67,378.33,380,381.67,383.33,385,386.67,388.33,390],"P5":[360,361.67,363.33,365,366.67,368.33,370,371.67,373.33,375,376.67,378.33,380,381.67,383.33,385,386.67,388.33,390,391.67,393.33,395,396.67,398.33,400,401.67,403.33,405.0,406.67,408.33,410.0],"P6":[380,381.67,383.33,385,386.67,388.33,390,391.67,393.33,395,396.67,398.33,400,401.67,403.33,405,406.67,408.33,410,411.67,413.33,415,416.67,418.33,420,421.67,423.33,425.0,426.67,428.33,430.0],"P7":[380,381.67,383.33,385,386.67,388.33,390,391.67,393.33,395,396.67,398.33,400,401.67,403.33,405,406.67,408.33,410,411.67,413.33,415,416.67,418.33,420,421.67,423.33,425.0,426.67,428.33,430.0],"P8":[400,401.67,403.33,405,406.67,408.33,410,411.67,413.33,415,416.67,418.33,420,421.67,423.33,425,426.67,428.33,430,431.67,433.33,435,436.67,438.33,440,441.67,443.33,445.0,446.67,448.33,450.0],"P9":[420,421.67,423.33,425,426.67,428.33,430,431.67,433.33,435,436.67,438.33,440,441.67,443.33,445,446.67,448.33,450,451.67,453.33,455,456.67,458.33,460,461.67,463.33,465.0,466.67,468.33,470.0]},"gold":{"PK3":[100,101.67,103.33,105,106.67,108.33,110,111.67,113.33,115,116.67,118.33,120,123.33,126.67,130,133.33,136.67,140,143.33,146.67,150,153.33,156.67,160,163.33,166.67,170,173.33,176.67,180],"PK2":[120,123.33,126.67,130,133.33,136.67,140,143.33,146.67,150,153.33,156.67,160,163.33,166.67,170,173.33,176.67,180,183.33,186.67,190,193.33,196.67,200,203.33,206.67,210,213.33,216.67,220],"PK1":[160,163.33,166.67,170,173.33,176.67,180,183.33,186.67,190,193.33,196.67,200,203.33,206.67,210,213.33,216.67,220,223.33,226.67,230,233.33,236.67,240,243.33,246.67,250,253.33,256.67,260],"K":[200,203.33,206.67,210,213.33,216.67,220,223.33,226.67,230,233.33,236.67,240,243.33,246.67,250,253.33,256.67,260,263.33,266.67,270,273.33,276.67,280,283.33,286.67,290,293.33,296.67,300],"P1":[240,243.33,246.67,250,253.33,256.67,260,263.33,266.67,270,273.33,276.67,280,283.33,286.67,290,293.33,296.67,300,303.33,306.67,310,313.33,316.67,320,323.33,326.67,330,333.33,336.67,340],"P2":[280,283.33,286.67,290,293.33,296.67,300,303.33,306.67,310,313.33,316.67,320,323.33,326.67,330,333.33,336.67,340,343.33,346.67,350,353.33,356.67,360,361.67,363.33,365,366.67,368.33,370],"P3":[320,323.33,326.67,330,333.33,336.67,340,343.33,346.67,350,353.33,356.67,360,361.67,363.33,365,366.67,368.33,370,371.67,373.33,375,376.67,378.33,380,381.67,383.33,385,386.67,388.33,390],"P4":[360,361.67,363.33,365,366.67,368.33,370,371.67,373.33,375,376.67,378.33,380,381.67,383.33,385,386.67,388.33,390,391.67,393.33,395,396.67,398.33,400,401.67,403.33,405.0,406.67,408.33,410.0],"P5":[380,381.67,383.33,385,386.67,388.33,390,391.67,393.33,395,396.67,398.33,400,401.67,403.33,405,406.67,408.33,410,411.67,413.33,415,416.67,418.33,420,421.67,423.33,425.0,426.67,428.33,430.0],"P6":[400,401.67,403.33,405,406.67,408.33,410,411.67,413.33,415,416.67,418.33,420,421.67,423.33,425,426.67,428.33,430,431.67,433.33,435,436.67,438.33,440,441.67,443.33,445.0,446.67,448.33,450.0],"P7":[420,421.67,423.33,425,426.67,428.33,430,431.67,433.33,435,436.67,438.33,440,441.67,443.33,445,446.67,448.33,450,451.67,453.33,455,456.67,458.33,460,461.67,463.33,465.0,466.67,468.33,470.0],"P8":[440,441.67,443.33,445,446.67,448.33,450,451.67,453.33,455,456.67,458.33,460,461.67,463.33,465,466.67,468.33,470,471.67,473.33,475,476.67,478.33,480,481.67,483.33,485.0,486.67,488.33,490.0],"P9":[460,461.67,463.33,465,466.67,468.33,470,471.67,473.33,475,476.67,478.33,480,481.67,483.33,485,486.67,488.33,490,491.67,493.33,495,496.67,498.33,500,501.67,503.33,505.0,506.67,508.33,510.0]}};     // {kis|bronze|silver|gold: {grade: [31 monthly values from the school-year start]}}
+  // Grade order as the sheet has it (PK3 is the youngest there).
+  const GRADES = ["PK3","PK2","PK1","K","P1","P2","P3","P4","P5","P6","P7","P8","P9","P10","P11","P12"];
+  const gradeIdx = g => GRADES.indexOf(g) + 1;      // PK3 = 1 … P1 = 5 … P5 = 9
+  const DEFAULTS = { Math: { rate: 3, ppd: 10 }, Reading: { rate: 2, ppd: 10 } };
+  const MS_DAY = 86400e3;
+
+  function normGrade(g){
+    const t = String(g || "").trim().toUpperCase().replace(/\s+/g, " ");
+    if(!t) return "";
+    let m = t.match(/^(?:GRADE ?|GR\.? ?|G ?)?(\d{1,2})(?:ST|ND|RD|TH)?(?: GRADE)?$/); if(m) return "P" + Number(m[1]);
+    m = t.match(/^P ?(\d{1,2})$/); if(m) return "P" + Number(m[1]);
+    m = t.match(/^PK ?(\d)$/); if(m) return "PK" + m[1];
+    if(/^(K|KG|KINDER|KINDERGARTEN|KINDER ?\d?)$/.test(t)) return "K";
+    return t;
+  }
+  function normLevel(subject, lv){
+    let t = String(lv || "").trim().toUpperCase().replace(/\s+/g, "");
+    if(!t) return "";
+    const al = LEVEL_ALIAS[subject] || {};
+    if(al[t]) t = al[t];
+    return t;
+  }
+  function levelIndex(subject, lv){ return (LADDER[subject] || []).indexOf(normLevel(subject, lv)); }
+  function yOf(subject, lv, page){
+    const i = levelIndex(subject, lv); if(i < 0) return null;
+    const p = Math.max(0, Math.min(200, parseInt(page, 10) || 0));
+    return i * 20 + p / 10;
+  }
+  function bandName(subject, y){
+    const L = LADDER[subject] || [];
+    const i = Math.max(0, Math.min(L.length - 1, Math.floor((y + 1e-9) / 20)));
+    return L[i] || "";
+  }
+  function levelAndPage(subject, y){
+    const L = LADDER[subject] || [];
+    let i = Math.floor((y + 1e-9) / 20), p = Math.round((y - i * 20) * 10);
+    if(p === 0 && i > 0){ i -= 1; p = 200; }
+    if(i >= L.length) return (L[L.length-1] || "") + " 200";
+    return (L[Math.max(0,i)] || "") + " " + Math.max(1, p);
+  }
+
+  /* dates (ISO yyyy-mm-dd, worked out in UTC so nothing shifts by a day) */
+  const T = iso => Date.parse(iso + "T00:00:00Z");
+  const iso = t => new Date(t).toISOString().slice(0,10);
+  const addDays = (s, n) => iso(T(s) + Math.round(n) * MS_DAY);
+  function addMonths(s, n){ const d = new Date(T(s)); d.setUTCMonth(d.getUTCMonth() + n); return iso(d.getTime()); }
+  function todayISO(){ return new Date(Date.now() + 8*3600e3).toISOString().slice(0,10); }   // Philippine date
+  function fmtDate(s, o){ if(!s) return "—"; return new Date(T(s)).toLocaleDateString("en-US", Object.assign({ timeZone:"UTC", month:"short", day:"numeric", year:"numeric" }, o||{})); }
+  function fmtMonth(s){ return new Date(T(s)).toLocaleDateString("en-US", { timeZone:"UTC", month:"short", year:"numeric" }); }
+  const monthsBetween = (a, b) => (T(b) - T(a)) / (30.4375 * MS_DAY);
+  function syStartFor(date){ const y = Number(date.slice(0,4)); return (date.slice(5) >= "06-01" ? y : y - 1) + "-06-01"; }
+
+  /* the KIS / award lines for one projection: value at a date */
+  function standardLines(subject, grade, sy){
+    const gi = gradeIdx(grade);
+    if(!gi) return null;
+    if(subject === "Math"){
+      const base = 20 * gi;
+      const kis = d => base + monthsBetween(sy, d) * 5 / 3;
+      return { kis, bronze: d => kis(d) + 10, silver: d => kis(d) + 40, gold: d => kis(d) + 60 };
+    }
+    const curve = (key) => {
+      let arr = READING_CURVES[key][grade], shift = 0;
+      if(!arr){ arr = READING_CURVES[key]["P9"]; shift = 20 * (gi - gradeIdx("P9")); }   // the sheet stops at P9
+      return d => {
+        const m = monthsBetween(sy, d), n = arr.length - 1;
+        if(m <= 0) return arr[0] + (arr[1] - arr[0]) * m + shift;
+        if(m >= n) return arr[n] + (arr[n] - arr[n-1]) * (m - n) + shift;
+        const k = Math.floor(m); return arr[k] + (arr[k+1] - arr[k]) * (m - k) + shift;
+      };
+    };
+    return { kis: curve("kis"), bronze: curve("bronze"), silver: curve("silver"), gold: curve("gold") };
+  }
+
+  /* the whole projection, worked out */
+  function compute(p, enr){
+    const subject = p.subject, L = LADDER[subject] || [];
+    const si = levelIndex(subject, p.start_level);
+    const out = { ok: si >= 0, rows: [], proj: [], actual: [], lines: null, subject };
+    if(!out.ok) return out;
+    const startPage = Math.max(1, Math.min(200, parseInt(p.start_page, 10) || 1));
+    const over = new Map((p.levels || []).map(r => [r.level, r]));
+    let t = p.start_date;
+    out.proj.push({ d: p.start_date, y: si * 20 + Math.floor((startPage - 1) / 10) });
+    for(let k = 0; k < (p.level_count || 8) && si + k < L.length; k++){
+      const lv = L[si + k], o = over.get(lv) || {};
+      const rate = Number(o.rate) || Number(p.default_rate) || 1, ppd = Number(o.ppd) || Number(p.default_ppd) || 10;
+      const total = (k === 0 ? (200 - (startPage - 1)) : 200) * rate;
+      const months = Math.ceil(total / ppd / 30 * 10 - 1e-9) / 10;
+      t = addDays(t, months * 30);
+      out.rows.push({ level: lv, topic: (TOPICS[subject] || {})[lv] || "", rate, ppd, total, months, target: t, endY: (si + k + 1) * 20,
+                      rateSet: o.rate != null, ppdSet: o.ppd != null });
+      out.proj.push({ d: t, y: (si + k + 1) * 20 });
+    }
+    // Actual: the starting point, every closed-out month (Monthly History), then where they are today (roster).
+    out.actual.push({ d: p.start_date, y: out.proj[0].y, label: "Starting point" });
+    if(enr){
+      const hist = histRows.filter(h => h.subject_enrollment_id === enr.id && h.cycle_key).sort((a,b) => a.cycle_key < b.cycle_key ? -1 : 1);
+      for(const h of hist){
+        const y = yOf(subject, h.current_level, h.current_page); if(y == null) continue;
+        const d = h.cycle_key + "-20";
+        if(d <= p.start_date) continue;
+        out.actual.push({ d, y, label: (h.cycle_label || fmtMonth(d)) + " close-out" });
+      }
+      const yl = yOf(subject, enr.current_level, enr.current_page);
+      const td = todayISO();
+      if(yl != null && td > p.start_date && (!out.actual.length || out.actual[out.actual.length-1].d < td)) out.actual.push({ d: td, y: yl, label: "on the roster today" });
+    }
+    out.rows.forEach(r => { const a = out.actual.find(x => x.y >= r.endY - 1e-9 && x !== out.actual[0]); r.actual = a ? a.d : null; r.actualLabel = a ? a.label : ""; });
+    out.lines = standardLines(subject, p.grade, p.sy_start);
+    return out;
+  }
+  function projAt(c, d){
+    const P = c.proj; if(!P.length) return null;
+    if(d <= P[0].d) return P[0].y;
+    for(let i = 1; i < P.length; i++) if(d <= P[i].d){ const a = P[i-1], b = P[i]; return a.y + (b.y - a.y) * (T(d) - T(a.d)) / Math.max(1, T(b.d) - T(a.d)); }
+    return P[P.length-1].y;
+  }
+  function projDateFor(c, y){
+    const P = c.proj; if(P.length < 2) return null;
+    if(y <= P[0].y) return P[0].d;
+    for(let i = 1; i < P.length; i++) if(y <= P[i].y){ const a = P[i-1], b = P[i]; return iso(T(a.d) + (T(b.d) - T(a.d)) * (y - a.y) / Math.max(1e-9, b.y - a.y)); }
+    const a = P[P.length-2], b = P[P.length-1];
+    return iso(T(b.d) + (T(b.d) - T(a.d)) * (y - b.y) / Math.max(1e-9, b.y - a.y));
+  }
+  // Ahead / on track / behind: when the projection expected them to reach the level they're at now, vs when they got there.
+  function statusOf(c){
+    if(!c.ok) return { key:"bad", label:"Unknown starting level" };
+    const last = c.actual[c.actual.length - 1];
+    if(c.actual.length < 2) return { key:"new", label:"No progress recorded yet" };
+    const exp = projDateFor(c, last.y);
+    const diff = (T(last.d) - T(exp)) / MS_DAY;
+    const mo = Math.abs(diff) / 30.4375;
+    const txt = mo >= 1 ? `${mo.toFixed(1).replace(/\.0$/,"")} month${mo >= 1.05 ? "s" : ""}` : `${Math.round(Math.abs(diff))} days`;
+    if(diff <= -15) return { key:"ahead", label:`Ahead by ${txt}`, diff };
+    if(diff >= 15) return { key:"behind", label:`Behind by ${txt}`, diff };
+    return { key:"ontrack", label:"On track", diff };
+  }
+
+  /* ======================= data ======================= */
+  let sbClient = null, currentUser = null, currentRole = null, currentTeacherName = null;
+  let staffTeachers = [], students = [], studentById = new Map(), enrollments = [], histRows = [], projections = [], diagnostics = [], ptcDone = [], ptcDue = [];
+  const ui = { teacher:"all", subject:"all", search:"", status:"all", sort:"name" };
+  let draft = null, draftDirty = false, draftTouched = false, chartOff = new Set();
+
+  function isAdmin(){ return currentRole === "admin" || currentRole === "superadmin"; }
+  function isTeacherScoped(){ return currentRole === "teacher" || currentRole === "trainer_teacher"; }
+  function isAuthorized(){ return isAdmin() || isTeacherScoped(); }
+  function myName(){ return currentTeacherName || (currentUser && currentUser.email) || ""; }
+  function studentName(id){ const s = studentById.get(id); return s ? (s.name || [s.first_name, s.last_name].filter(Boolean).join(" ")) : ""; }
+  function displayName(id, fallback){
+    const s = studentById.get(id);
+    if(s && s.last_name && s.first_name) return `${s.last_name}, ${s.first_name}`;
+    return (s && s.name) || fallback || "";
+  }
+  let toastTimer = null;
+  function toast(msg){ const el = $("#toast"); if(!el) return; el.textContent = msg; el.hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(()=>{ el.hidden = true; }, 3200); }
+  function logHistory(action, summary, entityId, details){
+    if(!sbClient || !currentUser) return;
+    sbClient.from("edit_history").insert({ actor_email: currentUser.email || null, actor_role: currentRole || null, page: "projection", action, summary,
+      entity_type: "study_projection", entity_id: entityId != null ? String(entityId) : null, details: details || null })
+      .then(({ error }) => { if(error) console.warn("Couldn't log history:", error); });
+  }
+
+  /* teacher groups (phase95), same as the other pages */
+  const DEFAULT_TEACHER_GROUPS = [
+    { key:"g1", name:"Group 1 (7A–3A61)", teachers:["Sir GB","Miss Mira","Miss Frixie","Miss Queenie","Miss Jess","Miss Sugar","Miss KC"] },
+    { key:"g2", name:"Group 2 (BCD)", teachers:["Sir Hamid","Miss Kath","Miss Kristine","Miss Nazel","Miss Rona"] },
+    { key:"g3", name:"Group 3 (E–O)", teachers:["Sir Mark","Sir Francis","Sir Erickson","Miss Shaina","Miss Kate"] }
+  ];
+  let teacherGroups = DEFAULT_TEACHER_GROUPS;
+  async function loadTeacherGroups(){
+    try{
+      const { data } = await sbClient.from("settings").select("value").eq("id","teacher_groups").maybeSingle();
+      const g = data && data.value && Array.isArray(data.value.groups) ? data.value.groups.filter(x => x && x.key && Array.isArray(x.teachers)) : null;
+      if(g && g.length) teacherGroups = g;
+    }catch(e){ console.warn("couldn't load teacher groups", e); }
+  }
+  function groupShortName(g){ return String(g.name || g.key).replace(/\s*\(.*\)\s*$/, ""); }
+  function myGroupTeachers(){
+    if(!currentTeacherName) return [];
+    const set = new Set([currentTeacherName]);
+    teacherGroups.forEach(g => { if(g.teachers.includes(currentTeacherName)) g.teachers.forEach(t => set.add(t)); });
+    return [...set];
+  }
+  function teacherInFilter(teacher, value){
+    if(!value || value === "all") return true;
+    if(value.startsWith("group:")){ const g = teacherGroups.find(x => "group:" + x.key === value); return !!g && g.teachers.includes(teacher); }
+    return teacher === value;
+  }
+  function groupedTeacherOptions(names, selected, opts){
+    opts = opts || {};
+    const pool = [...new Set((names || []).filter(Boolean))];
+    const sel = v => v === selected ? " selected" : "";
+    const me = currentTeacherName;
+    const label = t => esc(t) + (opts.scoped && t === me ? " (you)" : "");
+    let html = "";
+    if(opts.withAll && !opts.scoped) html += `<option value="all"${sel("all")}>All teachers</option>`;
+    const used = new Set();
+    for(const g of teacherGroups){
+      if(opts.scoped && !g.teachers.includes(me)) continue;
+      g.teachers.forEach(t => used.add(t));
+      html += `<optgroup label="${esc(g.name)}">` + (opts.withGroups ? `<option value="group:${esc(g.key)}"${sel("group:" + g.key)}>All of ${esc(groupShortName(g))}</option>` : "")
+        + g.teachers.map(t => `<option value="${esc(t)}"${sel(t)}>${label(t)}</option>`).join("") + `</optgroup>`;
+    }
+    if(opts.scoped){ if(me && !used.has(me)) html += `<option value="${esc(me)}"${sel(me)}>${esc(me)} (you)</option>`; return html; }
+    const others = pool.filter(t => !used.has(t)).sort((a,b) => a.localeCompare(b));
+    if(others.length) html += `<optgroup label="Not in a group">` + others.map(t => `<option value="${esc(t)}"${sel(t)}>${esc(t)}</option>`).join("") + `</optgroup>`;
+    return html;
+  }
+
+  /* login / boot — same as the other pages */
+  function showLogin(errMsg){ { const sp = document.getElementById("bootSplash"); if(sp) sp.hidden = true; }
+    $("#loginScreen").hidden = false; $("#appRoot").hidden = true;
+    const err = $("#loginError"); if(errMsg){ err.textContent = errMsg; err.hidden = false; } else { err.hidden = true; } }
+  function showApp(){ { const sp = document.getElementById("bootSplash"); if(sp) sp.hidden = true; } $("#loginScreen").hidden = true; $("#appRoot").hidden = false; }
+  function renderAccount(){
+    if(window.kumonPtcNav) window.kumonPtcNav(sbClient, currentRole);
+    const el = $("#railAccount");
+    if(el) el.innerHTML = currentUser ? `<div class="account-row"><span class="account-email">${esc(currentUser.email)}</span><button class="btn sm ghost" data-action="logout">Log out</button></div>` : "";
+    const show = (id, on) => { const a = document.getElementById(id); if(a) a.hidden = !on; };
+    const r = currentRole;
+    show("navPipelineLink", !(r === "teacher" || r === "pending"));
+    show("navPaymentsLink", ["admin","superadmin","teacher","trainer_teacher"].includes(r));
+    show("navAbsentLink", ["admin","superadmin","teacher","trainer_teacher"].includes(r));
+    show("navAdminLink", r === "superadmin");
+    show("navActivityLink", r === "admin" || r === "superadmin");
+    show("navReportsLink", r === "superadmin");
+    const gate = $("#pendingGate"), blocked = !isAuthorized();
+    if(gate){ gate.hidden = !blocked; gate.innerHTML = blocked ? `<div class="banner">${currentRole === "pending" ? `Your account is waiting for approval. Ask a superadmin to set your role in <a href="admin.html">Admin</a>.` : "The Projection page isn't available for your account role."}</div>` : ""; }
+    $$("#pageHead, #view").forEach(x => { x.style.display = blocked ? "none" : ""; });
+  }
+  async function loadRole(){
+    if(!sbClient || !currentUser){ currentRole = null; currentTeacherName = null; return; }
+    try{
+      const { data, error } = await sbClient.from("profiles").select("role,teacher_name").eq("id", currentUser.id).maybeSingle();
+      if(error) throw error;
+      currentRole = data ? data.role : "pending"; currentTeacherName = data ? data.teacher_name : null;
+    }catch(e){ console.warn("couldn't load role", e); currentRole = "pending"; currentTeacherName = null; }
+  }
+  let shownUserId = null;
+  async function boot(){
+    if(!window.supabase){ showLogin("Couldn't load Supabase."); return; }
+    try{ sbClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY); }catch(e){ showLogin("Couldn't connect to Supabase."); return; }
+    const { data:{ session } } = await sbClient.auth.getSession();
+    if(session){ currentUser = session.user; shownUserId = session.user.id; await loadRole(); showApp(); renderAccount(); startApp(); }
+    else showLogin();
+    sbClient.auth.onAuthStateChange(async (event, session)=>{
+      if(session){
+        if(shownUserId === session.user.id) return;
+        if(shownUserId){ location.reload(); return; }
+        currentUser = session.user; shownUserId = session.user.id; await loadRole(); showApp(); renderAccount(); startApp();
+      }else{ if(shownUserId){ location.reload(); return; } currentUser = null; currentRole = null; showLogin(); }
+    });
+  }
+
+  async function selectAll(table, cols, build){
+    let out = [], from = 0;
+    for(;;){
+      let q = sbClient.from(table).select(cols).range(from, from + 999);
+      if(build) q = build(q);
+      const { data, error } = await q;
+      if(error){ console.warn(table, error); return out; }
+      out = out.concat(data || []);
+      if(!data || data.length < 1000) return out;
+      from += 1000;
+    }
+  }
+  async function loadAll(){
+    const tasks = [
+      (async () => { try{ const { data } = await sbClient.from("settings").select("value").eq("id","staff").maybeSingle(); const v = data ? data.value : {}; staffTeachers = Array.isArray(v.teachers) ? v.teachers : (Array.isArray(v.trainers) ? v.trainers : []); }catch(e){} await loadTeacherGroups(); })(),
+      (async () => { students = await selectAll("students", "id,name,first_name,last_name,age_grade,first_day,status", q => q.order("id")); studentById = new Map(students.map(s => [s.id, s])); })(),
+      (async () => { enrollments = await selectAll("subject_enrollments", "id,student_id,student_name,subject,teacher,status,current_level,current_page,created_at", q => q.eq("status","active").order("id")); })(),
+      (async () => { histRows = await selectAll("enrollment_monthly_history", "id,subject_enrollment_id,cycle_key,cycle_label,current_level,current_page", q => q.order("id")); })(),
+      loadProjections(),
+      (async () => { diagnostics = await selectAll("diagnostics", "id,student_id,date,subject,start_point,outcome", q => q.order("id")); })(),
+      (async () => { ptcDone = await selectAll("ptc_milestones", "student_id,month_no,status,done_on,due_date", q => q.order("student_id")); })(),
+      (async () => { try{ const { data } = await sbClient.rpc("ptc_due", { p_days_ahead: 400 }); ptcDue = data || []; }catch(e){ ptcDue = []; } })()
+    ];
+    await Promise.all(tasks);
+  }
+  async function loadProjections(){ projections = await selectAll("study_projections", "*", q => q.order("id")); }
+
+  let started = false;
+  async function startApp(){
+    if(started || !isAuthorized()) return;
+    started = true;
+    if(isTeacherScoped() && currentTeacherName) ui.teacher = currentTeacherName;
+    $("#view").innerHTML = `<div class="empty">Loading…</div>`;
+    await loadAll();
+    route();
+    window.addEventListener("hashchange", () => { if(draftTouched && !confirm("You have unsaved changes to this projection. Leave without saving?")){ history_back_guard(); return; } route(); });
+    sbClient.channel("realtime:projection-page")
+      .on("postgres_changes", { event:"*", schema:"public", table:"study_projections" }, async () => { await loadProjections(); if(!currentEnrollmentId()) renderList(); })
+      .on("postgres_changes", { event:"*", schema:"public", table:"subject_enrollments" }, async () => { enrollments = await selectAll("subject_enrollments", "id,student_id,student_name,subject,teacher,status,current_level,current_page,created_at", q => q.eq("status","active").order("id")); if(!currentEnrollmentId()) renderList(); else if(!draftDirty) renderDetail(); })
+      .subscribe();
+  }
+  let lastHash = "";
+  function history_back_guard(){ window.history.replaceState(null, "", lastHash || "#"); }
+  function currentEnrollmentId(){ const m = (location.hash || "").match(/^#e=([\w-]+)/); return m ? m[1] : null; }
+  function route(){
+    lastHash = location.hash;
+    const id = currentEnrollmentId();
+    if(id) openDetail(id); else { draft = null; draftDirty = false; draftTouched = false; renderList(); }
+    window.scrollTo(0, 0);
+  }
+
+  /* ======================= list ======================= */
+  function projectionFor(enrId){ return projections.find(p => p.subject_enrollment_id === enrId) || null; }
+  function listRows(){
+    const q = ui.search.trim().toLowerCase();
+    return enrollments
+      .filter(e => (e.subject === "Math" || e.subject === "Reading"))
+      .filter(e => (!isTeacherScoped() || myGroupTeachers().includes(e.teacher)) && teacherInFilter(e.teacher, ui.teacher))
+      .filter(e => ui.subject === "all" || e.subject === ui.subject)
+      .filter(e => !q || displayName(e.student_id, e.student_name).toLowerCase().includes(q) || String(e.student_name||"").toLowerCase().includes(q))
+      .map(e => { const p = projectionFor(e.id); const c = p ? compute(p, e) : null; return { e, p, c, st: c ? statusOf(c) : null }; })
+      .filter(r => ui.status === "all" || (ui.status === "none" ? !r.p : (r.st && r.st.key === ui.status)))
+      .sort((a,b) => ui.sort === "behind"
+          ? ((b.st && b.st.diff != null ? b.st.diff : -1e9) - (a.st && a.st.diff != null ? a.st.diff : -1e9))
+          : displayName(a.e.student_id, a.e.student_name).localeCompare(displayName(b.e.student_id, b.e.student_name)));
+  }
+  function statusPill(st){
+    if(!st) return `<span class="pill p-muted">No projection yet</span>`;
+    const cls = { ahead:"p-good", ontrack:"p-accent", behind:"p-bad", new:"p-muted", bad:"p-warn" }[st.key] || "p-muted";
+    return `<span class="pill ${cls}">${esc(st.label)}</span>`;
+  }
+  function renderList(){
+    const rows = listRows();
+    const all = enrollments.filter(e => (e.subject === "Math" || e.subject === "Reading") && (!isTeacherScoped() || myGroupTeachers().includes(e.teacher)) && teacherInFilter(e.teacher, ui.teacher) && (ui.subject === "all" || e.subject === ui.subject));
+    const withP = all.filter(e => projectionFor(e.id));
+    const cnt = { ahead:0, ontrack:0, behind:0 };
+    withP.forEach(e => { const st = statusOf(compute(projectionFor(e.id), e)); if(cnt[st.key] != null) cnt[st.key]++; });
+    const names = [...new Set([...staffTeachers, ...enrollments.map(e => e.teacher)].filter(Boolean))];
+    const picker = isTeacherScoped()
+      ? `<select id="fTeacher">${groupedTeacherOptions(myGroupTeachers(), ui.teacher, { scoped:true, withGroups:true })}</select>`
+      : `<select id="fTeacher">${groupedTeacherOptions(names, ui.teacher, { withAll:true, withGroups:true })}</select>`;
+    const tile = (key, n, label, cls) => `<button class="stat ${cls||""}${ui.status === key ? " selected" : ""}" data-action="f-status" data-status="${key}"><span class="n">${n}</span><span class="l">${label}</span></button>`;
+    $("#view").innerHTML = `
+      <div class="stats">
+        ${tile("all", all.length, `Subjects · ${withP.length} with a projection`)}
+        ${tile("none", all.length - withP.length, "No projection yet")}
+        ${tile("ahead", cnt.ahead, "Ahead", "good")}
+        ${tile("ontrack", cnt.ontrack, "On track")}
+        ${tile("behind", cnt.behind, "Behind", cnt.behind ? "bad" : "")}
+      </div>
+      <div class="toolbar">
+        <input type="text" id="fSearch" placeholder="Search student…" value="${esc(ui.search)}" style="max-width:220px;">
+        ${picker}
+        <select id="fSubject"><option value="all">Math &amp; Reading</option><option value="Math"${ui.subject === "Math" ? " selected" : ""}>Math</option><option value="Reading"${ui.subject === "Reading" ? " selected" : ""}>Reading</option></select>
+        <select id="fSort"><option value="name">Sort: name</option><option value="behind"${ui.sort === "behind" ? " selected" : ""}>Sort: most behind first</option></select>
+      </div>
+      <div class="card"><div class="table-scroll"><table class="stable"><thead><tr><th>Student</th><th>Subject</th><th>Teacher</th><th>Grade</th><th>Starting point</th><th>Now</th><th>Projection</th><th>Status</th><th></th></tr></thead><tbody>
+      ${rows.length ? rows.slice(0, 600).map(r => {
+        const s = studentById.get(r.e.student_id) || {};
+        const now = r.e.current_level ? `${esc(r.e.current_level)} ${esc(r.e.current_page || "")}` : `<span class="faint">—</span>`;
+        const target = r.c && r.c.ok && r.c.rows.length ? `Finishes ${esc(r.c.rows[r.c.rows.length-1].level)} by ${esc(fmtMonth(r.c.rows[r.c.rows.length-1].target))}` : "";
+        return `<tr class="clickrow" data-href="#e=${esc(r.e.id)}">
+          <td><b>${esc(displayName(r.e.student_id, r.e.student_name))}</b></td>
+          <td><span class="pill ${r.e.subject === "Reading" ? "subj-reading" : "subj-math"}">${esc(r.e.subject)}</span></td>
+          <td>${esc(r.e.teacher || "—")}</td>
+          <td>${esc((r.p && r.p.grade) || normGrade(s.age_grade) || "—")}</td>
+          <td>${r.p ? `${esc(r.p.start_level)} ${esc(r.p.start_page)} <span class="faint">· ${esc(fmtMonth(r.p.start_date))}</span>` : `<span class="faint">—</span>`}</td>
+          <td>${now}</td>
+          <td class="muted">${target}</td>
+          <td>${statusPill(r.st)}</td>
+          <td><a class="btn sm${r.p ? "" : " primary"}" href="#e=${esc(r.e.id)}">${r.p ? "Open" : "Set up"}</a></td>
+        </tr>`; }).join("") : `<tr><td colspan="9"><div class="empty">No subjects match these filters.</div></td></tr>`}
+      </tbody></table></div>${rows.length > 600 ? `<div class="empty">Showing the first 600 — narrow it with the filters.</div>` : ""}</div>`;
+    restoreFocus();
+  }
+
+  /* ======================= detail ======================= */
+  function parseStartPoint(sp){
+    const m = String(sp || "").toUpperCase().replace(/\s+/g, " ").match(/(\d?[A-Z]{1,3}(?:-?I{1,2})?)\s*[- ]?\s*(\d{1,3})?/);
+    return m ? { level: m[1], page: m[2] ? Number(m[2]) : 1 } : null;
+  }
+  function newDraft(e){
+    const s = studentById.get(e.student_id) || {};
+    const subject = e.subject;
+    let start = null;
+    const dts = diagnostics.filter(d => d.student_id === e.student_id && d.start_point && (!d.subject || d.subject === subject || d.subject === "Both")).sort((a,b) => String(b.date).localeCompare(String(a.date)));
+    if(dts.length){ const sp = parseStartPoint(dts[0].start_point); if(sp && levelIndex(subject, sp.level) >= 0) start = sp; }
+    if(!start){
+      const h = histRows.filter(x => x.subject_enrollment_id === e.id && x.current_level).sort((a,b) => a.cycle_key < b.cycle_key ? -1 : 1)[0];
+      if(h && levelIndex(subject, h.current_level) >= 0) start = { level: normLevel(subject, h.current_level), page: parseInt(h.current_page, 10) || 1 };
+    }
+    let fromNow = false;
+    if(!start && e.current_level && levelIndex(subject, e.current_level) >= 0){ start = { level: normLevel(subject, e.current_level), page: parseInt(e.current_page, 10) || 1 }; fromNow = true; }
+    if(!start) start = { level: LADDER[subject][0], page: 1 };
+    // Starting from where they are today (no DT or history to go on) → the projection starts today too.
+    const sd = fromNow ? todayISO() : (s.first_day || (dts[0] && dts[0].date) || (e.created_at ? String(e.created_at).slice(0,10) : todayISO()));
+    const d = DEFAULTS[subject] || DEFAULTS.Math;
+    return { subject_enrollment_id: e.id, student_id: e.student_id, subject, grade: normGrade(s.age_grade) || "",
+      start_level: normLevel(subject, start.level), start_page: Math.max(1, Math.min(200, start.page || 1)), start_date: sd, sy_start: syStartFor(sd),
+      default_rate: d.rate, default_ppd: d.ppd, level_count: 8, levels: [], skills: [], plan_note: "", notes: "" };
+  }
+  function openDetail(id){
+    const e = enrollments.find(x => x.id === id);
+    if(!e){ $("#view").innerHTML = `<div class="card"><div class="empty">This subject isn't on your list (it may be inactive or another group's). <a href="#">Back to the list</a></div></div>`; return; }
+    const p = projectionFor(id);
+    draft = p ? JSON.parse(JSON.stringify(p)) : newDraft(e);
+    if(!Array.isArray(draft.levels)) draft.levels = [];
+    if(!Array.isArray(draft.skills)) draft.skills = [];
+    draftDirty = !p; draftTouched = false;
+    renderDetail();
+  }
+  function ptcBoxes(e){
+    const s = studentById.get(e.student_id) || {};
+    const box = (title, n) => {
+      if(n === 0) return `<div class="sigbox"><b>${title}</b><div class="sigline"></div><span class="faint">Parent's signature · Date</span><div><span class="pill p-good">${esc(fmtDate(draft.start_date))}</span></div></div>`;
+      const done = ptcDone.find(m => m.student_id === e.student_id && m.month_no === n && m.status === "done");
+      const open = ptcDue.find(m => m.student_id === e.student_id && m.month_no === n);
+      const dueDate = open ? open.due_date : (s.first_day ? addMonths(s.first_day, n) : addMonths(draft.start_date, n));
+      const pill = done ? `<span class="pill p-good">Done ${esc(fmtDate(done.done_on || done.due_date))}</span>`
+        : (dueDate <= todayISO() ? `<span class="pill p-warn">Due ${esc(fmtDate(dueDate))}</span>` : `<span class="pill p-muted">${esc(fmtDate(dueDate))}</span>`);
+      return `<div class="sigbox"><b>${title}</b><div class="sigline"></div><span class="faint">Parent's signature · Date</span><div>${pill}</div></div>`;
+    };
+    return `<div class="sig">${box("DT &amp; study projection", 0)}${box("1st month PTC", 1)}${box("6th month PTC", 6)}${box("12th month PTC", 12)}</div>`;
+  }
+  function renderDetail(){
+    const e = enrollments.find(x => x.id === draft.subject_enrollment_id);
+    if(!e){ route(); return; }
+    const c = compute(draft, e);
+    const st = statusOf(c);
+    const L = LADDER[draft.subject];
+    const today = todayISO();
+    let ins = "";
+    if(c.ok){
+      const kisNow = c.lines ? c.lines.kis(today) : null;
+      const startY = c.proj[0].y;
+      const yr = addMonths(draft.start_date, 12);
+      const y1 = projAt(c, yr);
+      let cross = null;
+      if(c.lines && startY < c.lines.kis(draft.start_date)){
+        const end = c.proj[c.proj.length-1].d;
+        for(let t = T(draft.start_date); t <= T(end); t += 2 * MS_DAY){ const d = iso(t); if(projAt(c, d) >= c.lines.kis(d)){ cross = d; break; } }
+      }
+      const behindLv = kisNow != null ? Math.floor(kisNow/20) - Math.floor(startY/20) : null;
+      ins = `<div class="insights">
+        <div class="ins"><div class="k">Grade level (KIS) for ${esc(draft.grade || "—")} now</div><div class="n">${kisNow != null ? "Level " + esc(bandName(draft.subject, kisNow)) : "—"}</div><div class="d">${kisNow == null ? "Set the grade to see the KIS and award lines." : behindLv > 0 ? `Starting at ${esc(draft.start_level)} = about ${behindLv} level${behindLv === 1 ? "" : "s"} to catch up.` : behindLv === 0 ? "Starting at grade level." : `Starting ${-behindLv} level${behindLv === -1 ? "" : "s"} ahead of grade level.`}</div></div>
+        <div class="ins"><div class="k">Target on 1st year (${esc(fmtMonth(yr))})</div><div class="n">Level ${esc(bandName(draft.subject, y1))}</div><div class="d">${(() => { const r = c.rows.filter(r => r.target <= yr).pop(); return r ? `Finishes ${esc(r.level)} by ${esc(fmtDate(r.target))}.` : "Still in the first level."; })()}</div></div>
+        <div class="ins"><div class="k">Catches up to grade level</div><div class="n">${cross ? "≈ " + esc(fmtDate(cross)) : (c.lines && startY >= c.lines.kis(draft.start_date) ? "Already there" : c.lines ? "Not within this plan" : "—")}</div><div class="d">${cross ? `Projection crosses the KIS line in Level ${esc(bandName(draft.subject, projAt(c, cross)))}.` : c.lines && startY < c.lines.kis(draft.start_date) ? "Add levels or more pages a day to see when." : ""}</div></div>
+        <div class="ins"><div class="k">Actual vs projection</div><div class="n">${statusPill(st)}</div><div class="d">${c.actual.length > 1 ? `Now at ${esc(levelAndPage(draft.subject, c.actual[c.actual.length-1].y))} (${esc(c.actual[c.actual.length-1].label)}).` : "Fills in from the roster each month."}</div></div>
+      </div>`;
+    }
+    const lvOpts = L.map(x => `<option${x === normLevel(draft.subject, draft.start_level) ? " selected" : ""}>${esc(x)}</option>`).join("");
+    const gradeOpts = `<option value="">—</option>` + GRADES.map(g => `<option${g === draft.grade ? " selected" : ""}>${g}</option>`).join("") + (draft.grade && !GRADES.includes(draft.grade) ? `<option selected>${esc(draft.grade)}</option>` : "");
+    const pickedSkills = (SKILLS[draft.subject] || []).filter(x => draft.skills.includes(x.obs));
+    $("#view").innerHTML = `
+      <div class="detail-top no-print"><a class="btn sm ghost" href="#">‹ All students</a>
+        <span class="grow"></span>
+        ${draftDirty ? `<span class="pill p-warn">${projectionFor(draft.subject_enrollment_id) ? "Unsaved changes" : "Not saved yet"}</span>` : ""}
+        ${projectionFor(draft.subject_enrollment_id) ? `<button class="btn sm danger" data-action="delete">Delete</button>` : ""}
+        <button class="btn sm" data-action="print">Print goal sheet</button>
+        <button class="btn sm primary" data-action="save"${draftDirty ? "" : " disabled"}>Save</button></div>
+      <div class="card sp-card">
+        <div class="sp-head">
+          <div><h2>${esc(displayName(e.student_id, e.student_name))}</h2>
+            <div class="page-sub"><span class="pill ${draft.subject === "Reading" ? "subj-reading" : "subj-math"}">${esc(draft.subject)}</span> &nbsp;${esc(e.teacher || "")}${e.current_level ? ` · now at ${esc(e.current_level)} ${esc(e.current_page || "")}` : ""}</div></div>
+          <div class="print-only print-title">GOAL SETTING SHEET · Kumon Iligan City</div>
+        </div>
+        <div class="sp-body">
+          <div class="inputs">
+            <label class="f">Grade<select data-f="grade">${gradeOpts}</select></label>
+            <label class="f">Starting point<span class="pair"><select data-f="start_level">${lvOpts}</select><input type="number" min="1" max="200" data-f="start_page" value="${esc(draft.start_page)}" aria-label="Starting page"></span></label>
+            <label class="f">Date enrolled<input type="date" data-f="start_date" value="${esc(draft.start_date)}"></label>
+            <label class="f">School year starts<input type="date" data-f="sy_start" value="${esc(draft.sy_start)}"></label>
+            <label class="f">Repeats per set<input type="number" min="1" max="20" step="1" data-f="default_rate" value="${esc(draft.default_rate)}"></label>
+            <label class="f">Pages per day<input type="number" min="1" max="100" step="1" data-f="default_ppd" value="${esc(draft.default_ppd)}"></label>
+          </div>
+          ${c.ok ? ins : `<div class="banner">“${esc(draft.start_level)}” isn't a ${esc(draft.subject)} level the projection knows. Pick the starting level above.</div>`}
+          ${c.ok ? `<div class="sec"><div class="sec-h"><h3>Study projection</h3><span class="legend" id="legend"></span></div>
+            <div class="chart"><svg id="chart" viewBox="0 0 1000 430" role="img" aria-label="Study projection chart"></svg></div>
+            <div class="hint">One row on the chart = one level. The Actual line uses each month's close-out (Monthly History) and today's level on the roster.</div></div>
+          <div class="sec"><div class="sec-h"><h3>Level plan</h3><span class="hint no-print">Change repeats or pages a day for any level · Levels shown <input type="number" min="1" max="30" data-f="level_count" value="${esc(draft.level_count)}" style="width:62px"></span></div>
+            <div class="tbl"><table class="stable plan"><thead><tr><th>Level</th><th>Repeats</th><th>Total WS</th><th>Pages/day</th><th>Months</th><th>Target completion</th><th>Actual completion</th></tr></thead><tbody>
+            ${c.rows.map(r => `<tr><td><b>${esc(r.level)}</b>${r.topic ? `<div class="topic">${esc(r.topic)}</div>` : ""}</td>
+              <td><input class="cellin${r.rateSet ? " set" : ""}" type="number" min="1" max="20" data-lv="${esc(r.level)}" data-k="rate" value="${esc(r.rate)}"></td>
+              <td class="tnum">${r.total}</td>
+              <td><input class="cellin${r.ppdSet ? " set" : ""}" type="number" min="1" max="100" data-lv="${esc(r.level)}" data-k="ppd" value="${esc(r.ppd)}"></td>
+              <td class="tnum">${r.months.toFixed(1)}</td>
+              <td class="tnum"><b>${esc(fmtDate(r.target))}</b></td>
+              <td class="tnum">${r.actual ? (() => { const late = (T(r.actual) - T(r.target)) / MS_DAY; return `${esc(fmtDate(r.actual))} <span class="pill ${late > 15 ? "p-bad" : late < -15 ? "p-good" : "p-accent"}" title="${esc(r.actualLabel)}">${late > 15 ? Math.round(late) + "d late" : late < -15 ? Math.round(-late) + "d early" : "on time"}</span>`; })() : `<span class="faint">—</span>`}</td></tr>`).join("")}
+            </tbody></table></div></div>` : ""}
+          <div class="cols">
+            <div class="box"><div class="t">Skills &amp; abilities to develop first</div>
+              ${pickedSkills.length ? `<ul class="slist">${pickedSkills.map(x => `<li><span class="faint">${esc(x.obs)} →</span> ${esc(x.skill || "—")}</li>`).join("")}</ul>` : `<div class="faint">None picked yet.</div>`}
+              <button class="btn sm no-print" data-action="skills">Pick from list</button></div>
+            <div class="box"><div class="t">Instruction plan</div>
+              ${pickedSkills.filter(x => x.plan).length ? `<ul class="slist">${[...new Set(pickedSkills.map(x => x.plan).filter(Boolean))].map(t => `<li>${esc(t)}</li>`).join("")}</ul>` : ""}
+              <textarea data-f="plan_note" rows="3" placeholder="e.g. 3 sets per worksheet, 10 pages a day, praise and encourage every visit…">${esc(draft.plan_note || "")}</textarea></div>
+          </div>
+          <div class="sec"><h3>Discussed with the parent</h3>${ptcBoxes(e)}</div>
+        </div>
+      </div>`;
+    if(c.ok) drawChart(c);
+  }
+
+  function drawChart(c){
+    const svg = $("#chart"); if(!svg) return;
+    const subj = c.subject, lines = c.lines;
+    const today = todayISO();
+    const x0d = [draft.sy_start, draft.start_date].sort()[0];
+    const x1d = [c.proj[c.proj.length-1].d, addMonths(today, 1)].sort().pop();
+    const x0 = T(x0d), x1 = T(addMonths(x1d, 1));
+    const mk = (fn, add) => { const pts = []; for(let t = x0; t <= x1; t += 15 * MS_DAY){ const d = iso(t); pts.push({ d, y: fn(d) + (add||0) }); } return pts; };
+    const series = [
+      { key:"proj", name:"Projection", color:"var(--proj)", w:3, pts:c.proj, dots:true },
+      { key:"actual", name:"Actual", color:"var(--actual)", w:3, pts:c.actual, dots:true },
+    ];
+    if(lines){
+      series.push({ key:"kis", name:"KIS (grade level)", color:"var(--kis)", w:2, dash:"6 5", pts: mk(lines.kis) });
+      series.push({ key:"bronze", name:"Bronze", color:"var(--bronze)", w:2, pts: mk(lines.bronze) });
+      series.push({ key:"silver", name:"Silver", color:"var(--silver)", w:2, pts: mk(lines.silver) });
+      series.push({ key:"gold", name:"Gold", color:"var(--gold)", w:2, pts: mk(lines.gold) });
+    }
+    const lg = $("#legend");
+    if(lg) lg.innerHTML = series.map(s => `<button class="lg${chartOff.has(s.key) ? " off" : ""}" data-action="toggle-line" data-k="${s.key}"><i style="background:${s.color}"></i>${esc(s.name)}</button>`).join("");
+    const vis = series.filter(s => !chartOff.has(s.key));
+    const ys = vis.flatMap(s => s.pts.filter(p => T(p.d) >= x0 && T(p.d) <= x1).map(p => p.y));
+    if(!ys.length) ys.push(c.proj[0].y);
+    const maxY = (LADDER[subj].length) * 20;
+    let ymin = Math.max(0, Math.floor(Math.min(...ys) / 20) * 20), ymax = Math.min(maxY, Math.ceil(Math.max(...ys) / 20) * 20);
+    if(ymax <= ymin) ymax = ymin + 20;
+    const Lp = 62, R = 985, Tp = 14, B = 390;
+    const X = t => Lp + (t - x0) / (x1 - x0) * (R - Lp), Y = y => B - (Math.min(ymax, Math.max(ymin, y)) - ymin) / (ymax - ymin) * (B - Tp);
+    let g = "";
+    const step = (ymax - ymin) / 20 > 14 ? 40 : 20;
+    for(let y = ymin; y <= ymax; y += 20){
+      g += `<line x1="${Lp}" x2="${R}" y1="${Y(y)}" y2="${Y(y)}" stroke="var(--grid)"/>`;
+      if(y < ymax && ((y - ymin) % step === 0)) g += `<text x="${Lp-10}" y="${(Y(y)+Y(y+20))/2+4}" text-anchor="end" font-size="12" font-weight="700" fill="var(--ink-muted)">${esc(LADDER[subj][y/20] || "")}</text>`;
+    }
+    const months = Math.round((x1 - x0) / (30.4375 * MS_DAY));
+    const every = months > 36 ? 6 : months > 18 ? 3 : months > 9 ? 2 : 1;
+    const first = new Date(x0); first.setUTCDate(1); if(first.getTime() < x0) first.setUTCMonth(first.getUTCMonth() + 1);
+    for(let k = 0, d = new Date(first); d.getTime() <= x1; k++, d.setUTCMonth(d.getUTCMonth() + 1)){
+      const x = X(d.getTime());
+      g += `<line x1="${x}" x2="${x}" y1="${B}" y2="${B+5}" stroke="var(--ink-faint)"/>`;
+      if(d.getUTCMonth() % every === 0) g += `<text x="${x}" y="${B+20}" text-anchor="middle" font-size="11.5" fill="var(--ink-muted)">${d.toLocaleDateString("en-US",{timeZone:"UTC",month:"short"})}${d.getUTCMonth() === 0 || k === 0 ? " ’" + String(d.getUTCFullYear()).slice(2) : ""}</text>`;
+    }
+    const tx = X(T(today));
+    if(tx >= Lp && tx <= R) g += `<line x1="${tx}" x2="${tx}" y1="${Tp}" y2="${B}" stroke="var(--ink)" stroke-dasharray="3 4" opacity=".35"/><text x="${tx+5}" y="${Tp+12}" font-size="11" fill="var(--ink-muted)">Today</text>`;
+    g += `<clipPath id="plot"><rect x="${Lp}" y="${Tp-2}" width="${R-Lp}" height="${B-Tp+4}"/></clipPath><g clip-path="url(#plot)">`;
+    for(const s of vis.slice().reverse()){
+      const pts = s.pts.filter(p => T(p.d) >= x0 - 20 * MS_DAY && T(p.d) <= x1 + 20 * MS_DAY);
+      if(!pts.length) continue;
+      g += `<polyline fill="none" stroke="${s.color}" stroke-width="${s.w}" ${s.dash ? `stroke-dasharray="${s.dash}"` : ""} stroke-linejoin="round" points="${pts.map(p => X(T(p.d)).toFixed(1) + "," + Y(p.y).toFixed(1)).join(" ")}"/>`;
+    }
+    g += `</g>`;
+    for(const s of vis) if(s.dots) for(const p of s.pts){
+      if(T(p.d) < x0 || T(p.d) > x1) continue;
+      g += `<circle cx="${X(T(p.d)).toFixed(1)}" cy="${Y(p.y).toFixed(1)}" r="${s.key === "actual" ? 5.5 : 4.5}" fill="var(--surface)" stroke="${s.color}" stroke-width="2.5" data-tip="${esc(s.name)}: ${esc(levelAndPage(subj, p.y))}<br>${esc(fmtDate(p.d))}${p.label ? " · " + esc(p.label) : ""}"/>`;
+    }
+    g += `<line x1="${Lp}" x2="${R}" y1="${B}" y2="${B}" stroke="var(--ink-faint)"/>`;
+    svg.innerHTML = g;
+  }
+
+  /* ======================= skills modal ======================= */
+  function openSkills(){
+    const list = SKILLS[draft.subject] || [];
+    const secs = [...new Set(list.map(x => x.section))];
+    $("#modal").innerHTML = `<div class="modal-head"><h3>Skills &amp; instruction plan</h3><button class="iconbtn" data-action="close-modal">✕</button></div>
+      <div class="modal-body">${secs.map(sec => `<div class="t" style="font-size:11.5px;font-weight:800;color:var(--ink-muted);letter-spacing:.04em">${esc(sec)}</div>${list.filter(x => x.section === sec).map(x => `
+        <label class="skill-opt"><input type="checkbox" data-skill="${esc(x.obs)}"${draft.skills.includes(x.obs) ? " checked" : ""}>
+          <span><b>${esc(x.obs)}</b><br><span class="faint">Develop:</span> ${esc(x.skill || "—")}<br><span class="faint">Plan:</span> ${esc(x.plan || "—")}</span></label>`).join("")}`).join("")}</div>
+      <div class="modal-foot"><button class="btn" data-action="close-modal">Cancel</button><button class="btn primary" data-action="skills-ok">Use these</button></div>`;
+    $("#modal").className = "modal wide";
+    $("#modalBackdrop").hidden = false;
+  }
+  function closeModal(){ $("#modalBackdrop").hidden = true; $("#modal").innerHTML = ""; }
+
+  /* ======================= save ======================= */
+  async function save(){
+    const e = enrollments.find(x => x.id === draft.subject_enrollment_id);
+    if(levelIndex(draft.subject, draft.start_level) < 0){ alert("Pick the starting level first."); return; }
+    if(!draft.start_date || !draft.sy_start){ alert("Fill in the date enrolled and the school-year start."); return; }
+    const row = {
+      subject_enrollment_id: draft.subject_enrollment_id, student_id: draft.student_id, subject: draft.subject, grade: draft.grade || null,
+      start_level: normLevel(draft.subject, draft.start_level), start_page: Number(draft.start_page) || 1, start_date: draft.start_date, sy_start: draft.sy_start,
+      default_rate: Number(draft.default_rate) || 1, default_ppd: Number(draft.default_ppd) || 10, level_count: Number(draft.level_count) || 8,
+      levels: draft.levels || [], skills: draft.skills || [], plan_note: (draft.plan_note || "").trim() || null, notes: draft.notes || null,
+      updated_by_name: myName(), updated_at: new Date().toISOString()
+    };
+    const { data, error } = await sbClient.from("study_projections").upsert([row], { onConflict: "subject_enrollment_id" }).select();
+    if(error){ alert("Couldn't save: " + error.message); return; }
+    const isNew = !projectionFor(draft.subject_enrollment_id);
+    logHistory(isNew ? "projection_new" : "projection_edit", `${isNew ? "Set up" : "Updated"} ${draft.subject} projection: ${displayName(draft.student_id, e && e.student_name)} (${row.start_level} ${row.start_page})`, data && data[0] && data[0].id, row);
+    await loadProjections();
+    draft = JSON.parse(JSON.stringify(projectionFor(row.subject_enrollment_id) || row));
+    draftDirty = false; draftTouched = false; renderDetail(); toast("Saved.");
+  }
+
+  /* ======================= events ======================= */
+  let focusId = null, focusPos = null;
+  function restoreFocus(){ if(!focusId) return; const el = document.getElementById(focusId); if(el){ el.focus(); try{ el.setSelectionRange(focusPos, focusPos); }catch(e){} } focusId = null; }
+  document.addEventListener("submit", async (e)=>{
+    if(e.target.id === "loginForm"){ e.preventDefault(); const fd = new FormData(e.target);
+      const { error } = await sbClient.auth.signInWithPassword({ email: fd.get("email"), password: fd.get("password") }); if(error) showLogin(error.message); }
+  });
+  document.addEventListener("input", (e)=>{
+    const t = e.target;
+    if(t.id === "fSearch"){ ui.search = t.value; focusId = t.id; focusPos = t.selectionStart; renderList(); }
+    else if(t.dataset.f === "plan_note"){ draft.plan_note = t.value; markDirty(false); }
+  });
+  function markDirty(rerender){
+    const was = draftDirty; draftDirty = true; draftTouched = true;
+    if(rerender) renderDetail();
+    else if(!was){ const b = $('[data-action="save"]'); if(b) b.disabled = false; }
+  }
+  document.addEventListener("change", (e)=>{
+    const t = e.target;
+    if(t.id === "fTeacher"){ ui.teacher = t.value; renderList(); return; }
+    if(t.id === "fSubject"){ ui.subject = t.value; renderList(); return; }
+    if(t.id === "fSort"){ ui.sort = t.value; renderList(); return; }
+    if(!draft) return;
+    if(t.dataset.f && t.dataset.f !== "plan_note"){
+      const f = t.dataset.f; let v = t.value;
+      if(["start_page","default_rate","default_ppd","level_count"].includes(f)){ v = Number(v); if(!v || v < 1){ renderDetail(); return; } }
+      if(f === "start_page") v = Math.min(200, Math.round(v));
+      if(f === "level_count") v = Math.min(30, Math.round(v));
+      if(f === "start_date" && v && draft.sy_start === syStartFor(draft.start_date)) draft.sy_start = syStartFor(v);   // keep the school year in step
+      draft[f] = v; markDirty(true); return;
+    }
+    if(t.dataset.lv){
+      const lv = t.dataset.lv, k = t.dataset.k, v = Number(t.value);
+      draft.levels = draft.levels || [];
+      let o = draft.levels.find(x => x.level === lv);
+      if(!o){ o = { level: lv }; draft.levels.push(o); }
+      const def = k === "rate" ? Number(draft.default_rate) : Number(draft.default_ppd);
+      if(!v || v === def) delete o[k]; else o[k] = v;
+      draft.levels = draft.levels.filter(x => x.rate != null || x.ppd != null);
+      markDirty(true);
+    }
+  });
+  document.addEventListener("click", async (e)=>{
+    if(e.target.id === "modalBackdrop"){ closeModal(); return; }
+    const row = e.target.closest("tr.clickrow");
+    const btn = e.target.closest("[data-action]");
+    if(row && !btn && !e.target.closest("a")){ location.hash = row.dataset.href; return; }
+    if(!btn) return;
+    const a = btn.dataset.action;
+    if(a === "logout"){ await sbClient.auth.signOut(); return; }
+    if(a === "f-status"){ ui.status = ui.status === btn.dataset.status ? "all" : btn.dataset.status; renderList(); return; }
+    if(a === "toggle-line"){ const k = btn.dataset.k; chartOff.has(k) ? chartOff.delete(k) : chartOff.add(k); renderDetail(); return; }
+    if(a === "save"){ btn.disabled = true; await save(); return; }
+    if(a === "print"){ window.print(); return; }
+    if(a === "skills"){ openSkills(); return; }
+    if(a === "close-modal"){ closeModal(); return; }
+    if(a === "skills-ok"){ draft.skills = $$("[data-skill]").filter(x => x.checked).map(x => x.dataset.skill); closeModal(); markDirty(true); return; }
+    if(a === "delete"){
+      const p = projectionFor(draft.subject_enrollment_id); if(!p) return;
+      if(!confirm("Delete this study projection? The roster and Monthly History aren't touched.")) return;
+      const { error } = await sbClient.from("study_projections").delete().eq("id", p.id);
+      if(error){ alert("Couldn't delete: " + error.message); return; }
+      logHistory("projection_delete", `Deleted ${draft.subject} projection: ${displayName(draft.student_id)}`, p.id, null);
+      await loadProjections(); draftDirty = false; draftTouched = false; location.hash = ""; return;
+    }
+  });
+  document.addEventListener("mousemove", (e) => {
+    const tip = $("#tip"); if(!tip) return;
+    const c = e.target.closest && e.target.closest("circle[data-tip]");
+    if(!c){ tip.style.display = "none"; return; }
+    tip.innerHTML = c.dataset.tip; tip.style.display = "block"; tip.style.left = (e.clientX + 12) + "px"; tip.style.top = (e.clientY + 12) + "px";
+  });
+  window.addEventListener("beforeunload", (e) => { if(draftTouched){ e.preventDefault(); e.returnValue = ""; } });
+
+  window.__sp = { compute, statusOf, standardLines, yOf, levelAndPage };   // for tests
+  boot();
+})();
+</script>
+<script>
+(function(){
+  var KEY = "kumonRailCollapsed", root = document.documentElement;
+  function apply(c){
+    root.classList.toggle("rail-collapsed", c);
+    var b = document.getElementById("railToggle");
+    if(b){ var t = c ? "Expand sidebar" : "Collapse sidebar"; b.title = t; b.setAttribute("aria-label", t); b.setAttribute("aria-expanded", String(!c)); }
+  }
+  apply(root.classList.contains("rail-collapsed"));
+  var b = document.getElementById("railToggle");
+  if(b) b.addEventListener("click", function(){
+    var c = !root.classList.contains("rail-collapsed"); apply(c);
+    try{ localStorage.setItem(KEY, c ? "1" : "0"); }catch(e){}
+  });
+  // Collapsed rail is icons only, so every link gets a tooltip with its name.
+  document.querySelectorAll(".rail .navbtn").forEach(function(a){
+    if(a.title) return;
+    var t = (a.textContent || "").replace(/\s+/g, " ").trim().replace(/\s*\d+$/, "");
+    if(t) a.title = t;
+  });
+  // The Pipeline views group follows the same who-can-see-Pipeline flag as the single Pipeline link.
+  var link = document.getElementById("navPipelineLink"), grp = document.getElementById("navPipelineGroup");
+  if(link && grp){
+    var sync = function(){ grp.hidden = link.hidden; };
+    sync(); new MutationObserver(sync).observe(link, { attributes:true, attributeFilter:["hidden"] });
+  }
+})();
+</script>
+</body>
+</html>

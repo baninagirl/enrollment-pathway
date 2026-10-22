@@ -150,7 +150,9 @@
 window.kumonPtcNav = function(client, role){
   var link = document.getElementById("navPtcLink"); if(!link) return;
   var ok = ["admin","superadmin","teacher","trainer_teacher"].indexOf(role) >= 0;
-  link.hidden = !ok; if(!ok || !client) return;
+  link.hidden = !ok;
+  var proj = document.getElementById("navProjLink"); if(proj) proj.hidden = !ok;
+  if(!ok || !client) return;
   if(!document.getElementById("ptcBadgeStyle")){
     var st = document.createElement("style"); st.id = "ptcBadgeStyle";
     st.textContent = ".navbtn .ptc-badge{margin-left:auto;background:var(--bad);color:#fff;font-size:11px;font-weight:700;border-radius:99px;padding:1px 6px;min-width:18px;text-align:center;line-height:16px;}";
@@ -200,6 +202,7 @@ window.kumonPtcNav = function(client, role){
       <a class="navbtn" href="roster.html">Student roster</a>
       <a class="navbtn" href="calendar.html">Calendar</a>
       <a class="navbtn" href="ptc.html" id="navPtcLink" hidden>PTC<span class="badge ptc-badge" id="navPtcBadge" hidden></span></a>
+      <a class="navbtn" href="projection.html" id="navProjLink" hidden>Projection</a>
       <a class="navbtn active" href="history.html">Monthly history</a>
       <a class="navbtn" href="admin.html" id="navAdminLink" hidden>Admin</a>
     </div>
