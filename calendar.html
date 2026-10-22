@@ -166,7 +166,10 @@
   .cal-chip.subj-math{ background:var(--accent-soft); color:var(--accent-soft-ink); }
   .cal-chip.subj-reading{ background:var(--bad-soft); color:var(--bad); }
   .cal-chip.arrived{ border-left-color:currentColor; }
-  .cal-chip .teacher-sub{ font-weight:500; opacity:.82; font-size:10.5px; margin-left:19px; }
+  .cal-chip .teacher-sub{ font-weight:500; opacity:.82; font-size:10.5px; margin-left:22px; }
+  .chip-num{ flex:none; min-width:16px; font-size:10.5px; font-weight:800; opacity:.6; font-variant-numeric:tabular-nums; text-align:right; }
+  .cell-count{ font-size:11px; font-weight:800; color:var(--ink-muted); margin:0 26px 5px 2px; font-variant-numeric:tabular-nums; }
+  .cell-count-sub{ font-weight:600; color:var(--ink-faint); }
   .chip-row{ display:flex; align-items:center; gap:6px; cursor:pointer; }
   /* A quiet little dot instead of a standard checkbox — same ink color the chip's text
      already uses, so it sits in the chip rather than shouting over it. Hollow until
@@ -892,7 +895,7 @@ window.kumonPtcNav = function(client, role){
         for(const e of enrs){
           out.push({
             day: slot.day, time: slot.time, mode: slot.mode === "RI" ? "RI" : "IC",
-            scheduleId: sc.id,
+            scheduleId: sc.id, studentId: sc.student_id || e.student_id || null,
             studentName: sc.student_name || e.student_name || "",
             subject: e.subject, teacher: e.teacher || "",
             groupKey: levelGroupKey(e.subject, e.current_level, e.current_page),
@@ -986,7 +989,15 @@ window.kumonPtcNav = function(client, role){
         const ccBits = !canComment ? "" :
           (nOpen ? `<button type="button" class="cc-flag" data-cc="show-cell" data-cell="${esc(ck)}" title="${nOpen} open comment${nOpen===1?"":"s"} — click to read" aria-label="${nOpen} open comments"></button>` : "") +
           `<button type="button" class="cc-add" data-cc="new" data-cell="${esc(ck)}" title="Add a comment on ${esc(d)} ${esc(fmtTime(t))}" aria-label="Add comment"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></button>`;
-        html += `<div class="cal-cell${nOpen ? " has-cc" : ""}" data-cell="${esc(ck)}">${ccBits}${items.map(it => {
+        // Numbering: one number per child (a child with Math + Reading in this slot is counted once).
+        const kidKey = it => it.studentId || it.studentName;
+        const kidNo = new Map(); items.forEach(it => { const k = kidKey(it); if(!kidNo.has(k)) kidNo.set(k, kidNo.size + 1); });
+        const nKids = kidNo.size, nSubj = items.length;
+        const countBit = nKids ? `<div class="cell-count" title="${nKids} student${nKids===1?"":"s"}${nSubj !== nKids ? ` · ${nSubj} subjects` : ""} in this slot (with the current filters)">${nKids} student${nKids===1?"":"s"}${nSubj !== nKids ? `<span class="cell-count-sub"> · ${nSubj} subjects</span>` : ""}</div>` : "";
+        const seenKid = new Set();
+        html += `<div class="cal-cell${nOpen ? " has-cc" : ""}" data-cell="${esc(ck)}">${ccBits}${countBit}${items.map(it => {
+          const kk = kidKey(it); const firstOfKid = !seenKid.has(kk); seenKid.add(kk);
+          const numTag = `<span class="chip-num"${firstOfKid ? "" : ` style="visibility:hidden"`}>${kidNo.get(kk)}</span>`;
           const cls = it.subject === "Reading" ? "subj-reading" : "subj-math";
           const teacherLine = showTeacherLabel && it.teacher ? `<span class="teacher-sub">${esc(it.teacher)}</span>` : "";
           const titleBits = [it.studentName, it.subject, it.level ? "Level " + it.level : "", it.teacher].filter(Boolean).join(" — ");
@@ -1000,7 +1011,7 @@ window.kumonPtcNav = function(client, role){
             ? `<input type="checkbox" data-action="toggle-arrived" data-schedule="${esc(it.scheduleId)}" data-day="${esc(it.day)}" ${arrived?"checked":""}>`
             : "";
           return `<div class="cal-chip ${cls} ${isToday && arrived?"arrived":""}" title="${esc(titleBits)}">
-            <label class="chip-row">${checkbox}<span class="chip-name">${esc(chipDisplayName(it.studentName))}${lvlTag} ${modeTag}${ccCells.chips.has(ccChipKey(it.scheduleId, it.day, it.time, it.subject)) ? `<span class="cc-chip-dot" title="Has an open comment"></span>` : ""}</span></label>
+            <label class="chip-row">${numTag}${checkbox}<span class="chip-name">${esc(chipDisplayName(it.studentName))}${lvlTag} ${modeTag}${ccCells.chips.has(ccChipKey(it.scheduleId, it.day, it.time, it.subject)) ? `<span class="cc-chip-dot" title="Has an open comment"></span>` : ""}</span></label>
             ${teacherLine}
           </div>`;
         }).join("")}</div>`;
