@@ -167,6 +167,7 @@
   .cal-chip.subj-reading{ background:var(--bad-soft); color:var(--bad); }
   .cal-chip.arrived{ border-left-color:currentColor; }
   .cal-chip .teacher-sub{ font-weight:500; opacity:.82; font-size:10.5px; margin-left:22px; }
+  .cal-chip.cont{ background:transparent !important; border:1.5px dashed currentColor; opacity:.78; font-weight:600; }
   .chip-num{ flex:none; min-width:16px; font-size:10.5px; font-weight:800; opacity:.6; font-variant-numeric:tabular-nums; text-align:right; }
   .cell-count{ font-size:11px; font-weight:800; color:var(--ink-muted); margin:0 26px 5px 2px; font-variant-numeric:tabular-nums; }
   .cell-count-sub{ font-weight:600; color:var(--ink-faint); }
@@ -1083,11 +1084,30 @@ window.kumonPtcNav = function(client, role){
     emptyEl.hidden = true;
 
     const days = DAY_ORDER.filter(d => d !== "Sun" || entries.some(e => e.day === "Sun"));
-    const times = [...new Set(entries.map(e => e.time))].sort();
+    // A child doing BOTH subjects in one slot is there for an hour: they also show (as "continuing") in the next
+    // half-hour row, and count there, so each row's number is who's really in the room. One subject = 30 minutes.
+    const plus30 = t => { const [h, m] = String(t).split(":").map(Number); const x = h * 60 + m + 30; return String(Math.floor(x / 60)).padStart(2, "0") + ":" + String(x % 60).padStart(2, "0"); };
+    const contEntries = [];
+    {
+      const g = new Map();
+      for(const e of entries){ const k = (e.studentId || e.studentName) + "|" + e.day + "|" + e.time; (g.get(k) || g.set(k, []).get(k)).push(e); }
+      const minus30 = t => { const [h, m] = String(t).split(":").map(Number); const x = h * 60 + m - 30; return String(Math.floor(x / 60)).padStart(2, "0") + ":" + String(x % 60).padStart(2, "0"); };
+      g.forEach(list => {
+        const subjects = [...new Set(list.map(x => x.subject))];
+        if(subjects.length < 2) return;
+        // Already spread over the hour by their teacher (e.g. Math 5:00 + Reading 5:30, or the next half hour saved
+        // too): they're on the calendar in the neighbouring row already, so don't add a "continuing" copy.
+        const e0 = list[0], kid = e0.studentId || e0.studentName;
+        if(g.has(kid + "|" + e0.day + "|" + plus30(e0.time)) || g.has(kid + "|" + e0.day + "|" + minus30(e0.time))) return;
+        const first = list.find(x => x.subject === "Math") || list[0];
+        contEntries.push(Object.assign({}, first, { time: plus30(first.time), cont: true, fromTime: first.time, subjects, scheduleId: null }));
+      });
+    }
+    const times = [...new Set(entries.map(e => e.time).concat(contEntries.map(e => e.time)))].sort();
     const showTeacherLabel = filters.teachers.size !== 1;
 
     const byCell = {};
-    for(const e of entries){
+    for(const e of entries.concat(contEntries)){
       const key = e.day + "|" + e.time;
       (byCell[key] = byCell[key] || []).push(e);
     }
@@ -1102,7 +1122,7 @@ window.kumonPtcNav = function(client, role){
       html += `<div class="cal-cell cal-time-label">${fmtTime(t)}</div>`;
       for(const d of days){
         const isToday = d === today;
-        const items = (byCell[d+"|"+t] || []).slice().sort((a,b) => lastNameSortKey(a.studentName).localeCompare(lastNameSortKey(b.studentName)));
+        const items = (byCell[d+"|"+t] || []).slice().sort((a,b) => (b.cont ? 1 : 0) - (a.cont ? 1 : 0) || lastNameSortKey(a.studentName).localeCompare(lastNameSortKey(b.studentName)));
         const ck = d + "|" + t, nOpen = (ccCells.cells[ck] || 0);
         const ccBits = !canComment ? "" :
           (nOpen ? `<button type="button" class="cc-flag" data-cc="show-cell" data-cell="${esc(ck)}" title="${nOpen} open comment${nOpen===1?"":"s"} — click to read" aria-label="${nOpen} open comments"></button>` : "") +
@@ -1110,12 +1130,22 @@ window.kumonPtcNav = function(client, role){
         // Numbering: one number per child (a child with Math + Reading in this slot is counted once).
         const kidKey = it => it.studentId || it.studentName;
         const kidNo = new Map(); items.forEach(it => { const k = kidKey(it); if(!kidNo.has(k)) kidNo.set(k, kidNo.size + 1); });
-        const nKids = kidNo.size, nSubj = items.length;
-        const countBit = nKids ? `<div class="cell-count" title="${nKids} student${nKids===1?"":"s"}${nSubj !== nKids ? ` · ${nSubj} subjects` : ""} in this slot (with the current filters)">${nKids} student${nKids===1?"":"s"}${nSubj !== nKids ? `<span class="cell-count-sub"> · ${nSubj} subjects</span>` : ""}</div>` : "";
+        const nKids = kidNo.size, nSubj = items.filter(x => !x.cont).length;
+        const nCont = new Set(items.filter(x => x.cont).map(kidKey)).size;
+        const realKids = new Set(items.filter(x => !x.cont).map(kidKey)).size;
+        const extra = [nSubj && nSubj !== realKids ? `${nSubj} subjects` : "", nCont ? `${nCont} continuing` : ""].filter(Boolean).join(" · ");
+        const countBit = nKids ? `<div class="cell-count" title="${nKids} student${nKids===1?"":"s"} in the room at this time${nCont ? ` (${nCont} still finishing their second subject from the half hour before)` : ""} — with the current filters">${nKids} student${nKids===1?"":"s"}${extra ? `<span class="cell-count-sub"> · ${extra}</span>` : ""}</div>` : "";
         const seenKid = new Set();
         html += `<div class="cal-cell${nOpen ? " has-cc" : ""}" data-cell="${esc(ck)}">${ccBits}${countBit}${items.map(it => {
           const kk = kidKey(it); const firstOfKid = !seenKid.has(kk); seenKid.add(kk);
           const numTag = `<span class="chip-num"${firstOfKid ? "" : ` style="visibility:hidden"`}>${kidNo.get(kk)}</span>`;
+          if(it.cont){
+            if(!firstOfKid) return "";
+            return `<div class="cal-chip cont ${it.subject === "Reading" ? "subj-reading" : "subj-math"}" title="${esc(it.studentName)} — ${esc(it.subjects.join(" + "))} from ${esc(fmtTime(it.fromTime))}, so they're still here at ${esc(fmtTime(it.time))}">
+              <span class="chip-row">${numTag}<span class="chip-name">${esc(chipDisplayName(it.studentName))}${it.mode === "RI" ? ` <span class="mode-tag">RI</span>` : ""}</span></span>
+              <span class="teacher-sub">continuing · ${esc(it.subjects.join(" + "))} from ${esc(fmtTime(it.fromTime))}</span>
+            </div>`;
+          }
           const cls = it.subject === "Reading" ? "subj-reading" : "subj-math";
           const teacherLine = showTeacherLabel && it.teacher ? `<span class="teacher-sub">${esc(it.teacher)}</span>` : "";
           const titleBits = [it.studentName, it.subject, it.level ? "Level " + it.level : "", it.teacher].filter(Boolean).join(" — ");
