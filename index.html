@@ -4026,8 +4026,8 @@ window.kumonPtcNav = function(client, role){
           <div id="mathScheduleBlock" ${mathChecked?"":"hidden"} style="margin:8px 0 4px;">
             ${monitorMode ? "" : fieldSelectStaff("mathTeacher", STATE.settings.teachers, "Math teacher", false)}
             <div class="field-row">
-              <label class="field">Current level${levelSelect("mathCurLevel","Math",presetMathLevel)}</label>
-              <label class="field">Current page<input type="text" name="mathCurPage" placeholder="e.g. 130"></label>
+              <label class="field">LWC${levelSelect("mathCurLevel","Math",presetMathLevel)}</label>
+              <label class="field">LWC page<input type="text" name="mathCurPage" placeholder="e.g. 130"></label>
             </div>
             <div class="field-row">
               <label class="field">Goal level${levelSelect("mathGoalLevel","Math")}</label>
@@ -4041,8 +4041,8 @@ window.kumonPtcNav = function(client, role){
           <div id="readingScheduleBlock" ${readingChecked?"":"hidden"} style="margin:8px 0 4px;">
             ${monitorMode ? "" : fieldSelectStaff("readingTeacher", STATE.settings.teachers, "Reading teacher", false)}
             <div class="field-row">
-              <label class="field">Current level${levelSelect("readingCurLevel","Reading",presetReadingLevel)}</label>
-              <label class="field">Current page<input type="text" name="readingCurPage" placeholder="e.g. 130"></label>
+              <label class="field">LWC${levelSelect("readingCurLevel","Reading",presetReadingLevel)}</label>
+              <label class="field">LWC page<input type="text" name="readingCurPage" placeholder="e.g. 130"></label>
             </div>
             <div class="field-row">
               <label class="field">Goal level${levelSelect("readingGoalLevel","Reading")}</label>

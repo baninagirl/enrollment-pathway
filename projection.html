@@ -551,6 +551,20 @@ window.kumonPtcNav = function(client, role){
     const p = Math.max(0, Math.min(200, parseInt(page, 10) || 0));
     return i * 20 + p / 10;
   }
+  // LWC is free text ("3A 80", "3A80", "BII-200") → { level, page } or null.
+  function parseLwc(subject, txt){
+    const m = String(txt || "").trim().match(/^(.*?[A-Za-z])\s*[-–]?\s*(\d{1,3})$/);
+    if(!m || levelIndex(subject, m[1]) < 0) return null;
+    return { level: normLevel(subject, m[1]), page: m[2] };
+  }
+  // Where a row says the child is: the roster's Current level/page or the report's LWC — whichever is further along.
+  function bestPos(subject, row){
+    const a = yOf(subject, row.current_level, row.current_page);
+    const l = parseLwc(subject, row.lwc), b = l ? yOf(subject, l.level, l.page) : null;
+    if(b != null && (a == null || b > a)) return { y: b, txt: `${l.level} ${l.page}`, src: "lwc" };
+    if(a != null) return { y: a, txt: `${row.current_level} ${row.current_page || ""}`.trim(), src: "level" };
+    return null;
+  }
   function bandName(subject, y){
     const L = LADDER[subject] || [];
     const i = Math.max(0, Math.min(L.length - 1, Math.floor((y + 1e-9) / 20)));
@@ -623,14 +637,14 @@ window.kumonPtcNav = function(client, role){
     if(enr){
       const hist = histRows.filter(h => h.subject_enrollment_id === enr.id && h.cycle_key).sort((a,b) => a.cycle_key < b.cycle_key ? -1 : 1);
       for(const h of hist){
-        const y = yOf(subject, h.current_level, h.current_page); if(y == null) continue;
+        const b = bestPos(subject, h); if(!b) continue;
         const d = h.cycle_key + "-20";
         if(d <= p.start_date) continue;
-        out.actual.push({ d, y, label: (h.cycle_label || fmtMonth(d)) + " close-out", txt: `${h.current_level} ${h.current_page || ""}`.trim() });
+        out.actual.push({ d, y: b.y, label: (h.cycle_label || fmtMonth(d)) + " close-out", txt: b.txt });
       }
-      const yl = yOf(subject, enr.current_level, enr.current_page);
+      const b = bestPos(subject, enr);
       const td = todayISO();
-      if(yl != null && td > p.start_date && (!out.actual.length || out.actual[out.actual.length-1].d < td)) out.actual.push({ d: td, y: yl, label: "on the roster today", txt: `${enr.current_level} ${enr.current_page || ""}`.trim() });
+      if(b && td > p.start_date && (!out.actual.length || out.actual[out.actual.length-1].d < td)) out.actual.push({ d: td, y: b.y, label: "LWC today", txt: b.txt });
     }
     out.rows.forEach(r => { const a = out.actual.find(x => !x.start && x.y >= r.endY - 1e-9); r.actual = a ? a.d : null; r.actualLabel = a ? a.label : ""; });
     out.lines = standardLines(subject, p.grade, p.sy_start);
@@ -796,8 +810,8 @@ window.kumonPtcNav = function(client, role){
     const tasks = [
       (async () => { try{ const { data } = await sbClient.from("settings").select("value").eq("id","staff").maybeSingle(); const v = data ? data.value : {}; staffTeachers = Array.isArray(v.teachers) ? v.teachers : (Array.isArray(v.trainers) ? v.trainers : []); }catch(e){} await loadTeacherGroups(); })(),
       (async () => { students = await selectAll("students", "id,name,first_name,last_name,age_grade,first_day,status", q => q.order("id")); studentById = new Map(students.map(s => [s.id, s])); })(),
-      (async () => { enrollments = await selectAll("subject_enrollments", "id,student_id,student_name,subject,teacher,status,current_level,current_page,created_at", q => q.eq("status","active").order("id")); })(),
-      (async () => { histRows = await selectAll("enrollment_monthly_history", "id,subject_enrollment_id,cycle_key,cycle_label,current_level,current_page", q => q.order("id")); })(),
+      (async () => { enrollments = await selectAll("subject_enrollments", "id,student_id,student_name,subject,teacher,status,current_level,current_page,lwc,created_at", q => q.eq("status","active").order("id")); })(),
+      (async () => { histRows = await selectAll("enrollment_monthly_history", "id,subject_enrollment_id,cycle_key,cycle_label,current_level,current_page,lwc", q => q.order("id")); })(),
       loadProjections(),
       (async () => { diagnostics = await selectAll("diagnostics", "id,student_id,date,subject,start_point,outcome", q => q.order("id")); })(),
       (async () => { ptcDone = await selectAll("ptc_milestones", "student_id,month_no,status,done_on,due_date", q => q.order("student_id")); })(),
@@ -818,7 +832,7 @@ window.kumonPtcNav = function(client, role){
     window.addEventListener("hashchange", () => { if(draftTouched && !confirm("You have unsaved changes to this projection. Leave without saving?")){ history_back_guard(); return; } route(); });
     sbClient.channel("realtime:projection-page")
       .on("postgres_changes", { event:"*", schema:"public", table:"study_projections" }, async () => { await loadProjections(); if(!currentEnrollmentId()) renderList(); })
-      .on("postgres_changes", { event:"*", schema:"public", table:"subject_enrollments" }, async () => { enrollments = await selectAll("subject_enrollments", "id,student_id,student_name,subject,teacher,status,current_level,current_page,created_at", q => q.eq("status","active").order("id")); if(!currentEnrollmentId()) renderList(); else if(!draftDirty) renderDetail(); })
+      .on("postgres_changes", { event:"*", schema:"public", table:"subject_enrollments" }, async () => { enrollments = await selectAll("subject_enrollments", "id,student_id,student_name,subject,teacher,status,current_level,current_page,lwc,created_at", q => q.eq("status","active").order("id")); if(!currentEnrollmentId()) renderList(); else if(!draftDirty) renderDetail(); })
       .subscribe();
   }
   let lastHash = "";
@@ -879,7 +893,8 @@ window.kumonPtcNav = function(client, role){
       <div class="card"><div class="table-scroll"><table class="stable"><thead><tr><th>Student</th><th>Subject</th><th>Teacher</th><th>Grade</th><th>Starting point</th><th>Now</th><th>Projection</th><th>Status</th><th></th></tr></thead><tbody>
       ${rows.length ? rows.slice(0, 600).map(r => {
         const s = studentById.get(r.e.student_id) || {};
-        const now = r.e.current_level ? `${esc(r.e.current_level)} ${esc(r.e.current_page || "")}` : `<span class="faint">—</span>`;
+        const bp = bestPos(r.e.subject, r.e);
+        const now = bp ? esc(bp.txt) : r.e.current_level ? `${esc(r.e.current_level)} ${esc(r.e.current_page || "")}` : `<span class="faint">—</span>`;
         const target = r.c && r.c.ok && r.c.rows.length ? `Finishes ${esc(r.c.rows[r.c.rows.length-1].level)} by ${esc(fmtMonth(r.c.rows[r.c.rows.length-1].target))}` : "";
         return `<tr class="clickrow" data-href="#e=${esc(r.e.id)}">
           <td><b>${esc(displayName(r.e.student_id, r.e.student_name))}</b></td>
@@ -967,7 +982,7 @@ window.kumonPtcNav = function(client, role){
         <div class="ins"><div class="k">Grade level (KIS) for ${esc(draft.grade || "—")} now</div><div class="n">${kisNow != null ? "Level " + esc(bandName(draft.subject, kisNow)) : "—"}</div><div class="d">${kisNow == null ? "Set the grade to see the KIS and award lines." : behindLv > 0 ? `Starting point ${esc(draft.start_level)} = about ${behindLv} level${behindLv === 1 ? "" : "s"} to catch up.` : behindLv === 0 ? `Starting point ${esc(draft.start_level)} = at grade level.` : `Starting point ${esc(draft.start_level)} = ${-behindLv} level${behindLv === -1 ? "" : "s"} ahead of grade level.`}</div></div>
         <div class="ins"><div class="k">Target on 1st year (${esc(fmtMonth(yr))})</div><div class="n">Level ${esc(bandName(draft.subject, y1))}</div><div class="d">${(() => { const r = c.rows.filter(r => r.target <= yr).pop(); return r ? `Finishes ${esc(r.level)} by ${esc(fmtDate(r.target))}.` : "Still in the first level."; })()}</div></div>
         <div class="ins"><div class="k">Catches up to grade level</div><div class="n">${cross ? "≈ " + esc(fmtDate(cross)) : (c.lines && startY >= c.lines.kis(draft.start_date) ? "Already there" : c.lines ? "Not within this plan" : "—")}</div><div class="d">${cross ? `Projection crosses the KIS line in Level ${esc(bandName(draft.subject, projAt(c, cross)))}.` : c.lines && startY < c.lines.kis(draft.start_date) ? "Add levels or more pages a day to see when." : ""}</div></div>
-        <div class="ins"><div class="k">Actual vs projection</div><div class="n">${statusPill(st)}</div><div class="d">${c.actual.length > 1 ? `Now at ${esc(c.actual[c.actual.length-1].txt || levelAndPage(draft.subject, c.actual[c.actual.length-1].y))} (${esc(c.actual[c.actual.length-1].label)}).` : "Fills in from the roster each month."}</div></div>
+        <div class="ins"><div class="k">Actual vs projection</div><div class="n">${statusPill(st)}</div><div class="d">${c.actual.length > 1 ? `Now at ${esc(c.actual[c.actual.length-1].txt || levelAndPage(draft.subject, c.actual[c.actual.length-1].y))} (${esc(c.actual[c.actual.length-1].label)}).` : "Fills in from the LWC each month."}</div></div>
       </div>`;
     }
     const lvOpts = L.map(x => `<option${x === normLevel(draft.subject, draft.start_level) ? " selected" : ""}>${esc(x)}</option>`).join("");
@@ -985,7 +1000,7 @@ window.kumonPtcNav = function(client, role){
       <div class="card sp-card">
         <div class="sp-head">
           <div><h2>${esc(displayName(e.student_id, e.student_name))}</h2>
-            <div class="page-sub"><span class="pill ${draft.subject === "Reading" ? "subj-reading" : "subj-math"}">${esc(draft.subject)}</span> &nbsp;${esc(e.teacher || "")}${e.current_level ? ` · now at ${esc(e.current_level)} ${esc(e.current_page || "")}` : ""}</div></div>
+            <div class="page-sub"><span class="pill ${draft.subject === "Reading" ? "subj-reading" : "subj-math"}">${esc(draft.subject)}</span> &nbsp;${esc(e.teacher || "")}${(() => { const bp = bestPos(draft.subject, e); return bp ? ` · now at ${esc(bp.txt)}` : e.current_level ? ` · now at ${esc(e.current_level)} ${esc(e.current_page || "")}` : ""; })()}</div></div>
           <div class="print-only print-title">GOAL SETTING SHEET · Kumon Iligan City</div>
         </div>
         <div class="sp-body">
@@ -1000,7 +1015,7 @@ window.kumonPtcNav = function(client, role){
           ${c.ok ? ins : `<div class="banner">“${esc(draft.start_level)}” isn't a ${esc(draft.subject)} level the projection knows. Pick the starting point above.</div>`}
           ${c.ok ? `<div class="sec"><div class="sec-h"><h3>Study projection</h3><span class="legend" id="legend"></span></div>
             <div class="chart"><svg id="chart" viewBox="0 0 1000 430" role="img" aria-label="Study projection chart"></svg></div>
-            <div class="hint">One row on the chart = one level. The Actual line uses each month's close-out (Monthly History) and today's level on the roster.</div></div>
+            <div class="hint">One row on the chart = one level. The Actual line uses each month's close-out (Monthly History) and today's LWC.</div></div>
           <div class="sec"><div class="sec-h"><h3>Level plan</h3><span class="hint no-print">Change repeats or pages a day for any level · Levels shown <input type="number" min="1" max="30" data-f="level_count" value="${esc(draft.level_count)}" style="width:62px"></span></div>
             <div class="tbl"><table class="stable plan"><thead><tr><th>Level</th><th>Repeats</th><th>Total WS</th><th>Pages/day</th><th>Months</th><th>Target completion</th><th>Actual completion</th></tr></thead><tbody>
             ${c.rows.map(r => `<tr><td><b>${esc(r.level)}</b>${r.topic ? `<div class="topic">${esc(r.topic)}</div>` : ""}</td>

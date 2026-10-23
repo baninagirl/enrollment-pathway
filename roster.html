@@ -423,7 +423,7 @@ window.kumonPtcNav = function(client, role){
     <div class="page-head" id="pageHead">
       <div>
         <h1>Student roster</h1>
-        <div class="page-sub">Current level and goal, per student, per subject.</div>
+        <div class="page-sub">LWC and goal, per student, per subject.</div>
       </div>
       <div style="display:flex; gap:8px; align-items:center;" id="pageHeadActions"></div>
     </div>
@@ -483,7 +483,7 @@ window.kumonPtcNav = function(client, role){
             <thead><tr>
               <th class="selectcol" id="selectHeaderCell">#</th>
               <th id="monitorActionHead" hidden></th>
-              <th>Student</th><th>Grade</th><th>Subject</th><th>Teacher</th><th>Current level</th><th>Schedule</th><th>Mode</th><th>Status</th><th>Payment</th><th>Date enrolled</th>
+              <th>Student</th><th>Grade</th><th>Subject</th><th>Teacher</th><th>LWC</th><th>Schedule</th><th>Mode</th><th>Status</th><th>Payment</th><th>Date enrolled</th>
             </tr></thead>
             <tbody id="rosterBody"></tbody>
           </table>
@@ -1709,8 +1709,8 @@ window.kumonPtcNav = function(client, role){
     if(histError){ alert("Couldn't archive: " + histError.message); return; }
     let historyIds = (insertedHistory || []).map(h => h.id);
 
-    const clearedFields = {
-      lwc: null, nwu: null, no_of_days: null, no_of_months_current_level: null,
+    const clearedFields = {   // LWC carries over — it's the child's level and page (phase105)
+      nwu: null, no_of_days: null, no_of_months_current_level: null,
       test_date: null, test_level: null, test_time: null, test_score: null, test_group: null,
       updated_at: new Date().toISOString()
     };
@@ -1835,9 +1835,9 @@ window.kumonPtcNav = function(client, role){
       <form id="reportForm">
         <div class="modal-body">
           <label class="field">Reporting tag${reportTagSelect(e.enrollment_type || "", "enrollment_type")}</label>
-          <p class="hint" style="font-size:12px; color:var(--ink-muted); margin:0;">${esc(monthLabel(viewMonth))}'s numbers. Current level, Goal, Schedule, Mode, Award and Actual are edited from the Student Roster view instead.</p>
+          <p class="hint" style="font-size:12px; color:var(--ink-muted); margin:0;">${esc(monthLabel(viewMonth))}'s numbers. The LWC is the same as the level and page on the Student Roster — saving it here updates both. Goal, Schedule, Mode, Award and Actual are edited from the Student Roster view.</p>
           <div class="field-row">
-            <label class="field">LWC (last worksheet)<input type="text" name="lwc" value="${v("lwc")}" placeholder="e.g. 2A 120"></label>
+            <label class="field">LWC<input type="text" name="lwc" value="${v("lwc")}" placeholder="e.g. 3A 80"></label>
             <label class="field">NWU (worksheets used)<input type="text" name="nwu" value="${v("nwu")}" placeholder="e.g. 31"></label>
           </div>
           <div class="field-row">
@@ -2117,8 +2117,8 @@ window.kumonPtcNav = function(client, role){
             : `Tick to put this subject on the Monitor Students list, starting ${esc(monitorCycleLabel(cycleKeyOf(new Date())))}. It stays there until someone moves them off.`}</span>
           <label class="field">NEW label (this month)${newTagSelectHtml(enrollment.monitor_cycle || "")}<span class="hint" style="font-size:11.5px; margin-top:4px; display:block;">Shows a NEW label next to their name for the rest of the month. It clears itself when the next month starts. Separate from Monitor.</span></label>
           <div class="field-row">
-            <label class="field">Current level<select name="current_level" id="curLevelSelect">${levelOptions(subject, enrollment.current_level)}</select></label>
-            <label class="field">Current page<input type="text" name="current_page" value="${esc(enrollment.current_page||"")}" placeholder="e.g. 130"></label>
+            <label class="field">LWC<select name="current_level" id="curLevelSelect">${levelOptions(subject, enrollment.current_level)}</select></label>
+            <label class="field">LWC page<input type="text" name="current_page" value="${esc(enrollment.current_page||"")}" placeholder="e.g. 130"></label>
           </div>
           ${scheduleSectionHtml(scheduleRows, enrollment.mode)}
         </div>
@@ -2160,8 +2160,8 @@ window.kumonPtcNav = function(client, role){
           </label>
           <label class="field">Teacher<select name="teacher" ${lockedTeacher!==null?"disabled":""}>${lockedTeacher!==null ? `<option value="${esc(lockedTeacher)}" selected>${esc(lockedTeacher||"You")}</option>` : teacherOptions(null)}</select></label>
           <div class="field-row">
-            <label class="field">Current level<select name="current_level" id="curLevelSelect">${levelOptions(subject, null)}</select></label>
-            <label class="field">Current page<input type="text" name="current_page" placeholder="e.g. 130"></label>
+            <label class="field">LWC<select name="current_level" id="curLevelSelect">${levelOptions(subject, null)}</select></label>
+            <label class="field">LWC page<input type="text" name="current_page" placeholder="e.g. 130"></label>
           </div>
           <label class="field" style="flex-direction:row; align-items:center; gap:8px;"><input type="checkbox" name="is_monitor" value="1" ${currentRole === "teacher" ? "" : "checked"} style="width:auto;"> Monitor student (starts ${esc(monitorCycleLabel(cycleKeyOf(new Date())))})</label>
           <label class="field" style="flex-direction:row; align-items:center; gap:8px;"><input type="checkbox" name="mark_new" value="1" checked style="width:auto;"> Mark as NEW for ${esc(monitorCycleLabel(cycleKeyOf(new Date())))}</label>
@@ -2211,8 +2211,8 @@ window.kumonPtcNav = function(client, role){
             <option value="__clear__">Remove NEW</option>
           </select></label>
           <div class="field-row">
-            <label class="field">Current level<input type="text" name="current_level" placeholder="No change"></label>
-            <label class="field">Current page<input type="text" name="current_page" placeholder="No change"></label>
+            <label class="field">LWC<input type="text" name="current_level" placeholder="No change"></label>
+            <label class="field">LWC page<input type="text" name="current_page" placeholder="No change"></label>
           </div>
           <div class="field-row">
             <label class="field">Goal level<input type="text" name="goal_level" placeholder="No change"></label>
