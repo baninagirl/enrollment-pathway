@@ -659,7 +659,8 @@ window.kumonPtcNav = function(client, role){
   async function loadSchedules(){
     const { data, error } = await sbClient.from("schedules").select("*").eq("status","active");
     if(error){ console.warn(error); schedules = []; return; }
-    schedules = data || [];
+    // Newest first, so when a subject's schedule was saved more than once the latest copy is the one shown.
+    schedules = (data || []).slice().sort((a,b) => String(b.created_at || "").localeCompare(String(a.created_at || "")));
   }
   async function loadEnrollments(){
     const { data, error } = await sbClient.from("subject_enrollments").select("*").eq("status","active");
@@ -883,14 +884,24 @@ window.kumonPtcNav = function(client, role){
 
   function buildEntries(){
     const out = [];
+    // Subjects that have their own linked schedule: an old unlinked row for the same student mustn't show them a
+    // second time (the Pipeline used to save both, which made every subject appear twice on the Calendar).
+    const hasLinked = new Set(schedules.filter(sc => sc.subject_enrollment_id).map(sc => sc.subject_enrollment_id));
+    // Only one card per subject per schedule row, even if the same subject was saved several times.
+    const seenLinked = new Set();
     for(const sc of schedules){
+      if(sc.subject_enrollment_id){
+        const k = sc.subject_enrollment_id;
+        if(seenLinked.has(k)) continue;   // a duplicate copy of a schedule already drawn (newest is drawn — see sort below)
+        seenLinked.add(k);
+      }
       // A schedule tied to one specific subject_enrollment_id (every schedule created
       // from Student Roster now is) only ever describes THAT enrollment — Math and
       // Reading can run on completely different days. An older, unlinked schedule row
       // falls back to the original behavior: every active enrollment that student has.
       const enrs = sc.subject_enrollment_id
         ? enrollments.filter(e => e.id === sc.subject_enrollment_id)
-        : enrollments.filter(e => e.student_id === sc.student_id);
+        : enrollments.filter(e => e.student_id === sc.student_id && !hasLinked.has(e.id));
       if(!enrs.length) continue;
       const slots = Array.isArray(sc.slots) ? sc.slots : [];
       for(const slot of slots){

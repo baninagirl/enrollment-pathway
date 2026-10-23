@@ -4350,9 +4350,32 @@ window.kumonPtcNav = function(client, role){
     const enrollmentType = s.enrollmentType || (STATE.enrollments.some(e => e.studentId === studentId) ? "eo" : "new");
     const enrollmentTypeSetAt = new Date().toISOString();
     await guardWrite(async ()=>{
-      await db.collection("schedules").add({
-        studentId, studentName: s.name, slots, startDate, status: "active", createdAt: new Date().toISOString()
-      });
+      // Only a schedule with no subject ticked is saved unlinked; otherwise each subject gets its own linked row
+      // below (saving both made every subject show twice on the Calendar).
+      if(!mathOn && !readingOn){
+        const old = STATE.schedules.find(x => x.studentId === studentId && !x.subjectEnrollmentId && x.status === "active");
+        if(old) await db.collection("schedules").doc(old.id).update({ slots, startDate, status: "active" });
+        else await db.collection("schedules").add({ studentId, studentName: s.name, slots, startDate, status: "active", createdAt: new Date().toISOString() });
+      }
+      // A subject the student already has (active) is updated in place — teacher / monitor / levels and its own
+      // schedule row — instead of adding a second copy of the subject and its schedule.
+      const saveSubjectWithSchedule = async (subject, f) => {
+        const existing = STATE.enrollments.find(e => e.studentId === studentId && e.subject === subject && !e.archived && (e.status || "active") === "active");
+        let enrId;
+        if(existing){
+          const patch = { mode, ...monitorFields };
+          if(f.teacher) patch.teacher = f.teacher;
+          for(const k of ["currentLevel","currentPage","goalLevel","goalPage"]) if(f[k]) patch[k] = f[k];
+          await db.collection("subject_enrollments").doc(existing.id).update(patch);
+          enrId = existing.id;
+        }else{
+          const enr = await db.collection("subject_enrollments").add({ studentId, studentName: s.name, subject, ...f, mode, enrollmentType, enrollmentTypeSetAt, ...monitorFields });
+          enrId = enr.id;
+        }
+        const linked = STATE.schedules.find(x => x.subjectEnrollmentId === enrId && x.status === "active");
+        if(linked) await db.collection("schedules").doc(linked.id).update({ slots: linkedSlots, startDate, status: "active" });
+        else await db.collection("schedules").add({ studentId, studentName: s.name, subjectEnrollmentId: enrId, slots: linkedSlots, startDate, status: "active", createdAt: new Date().toISOString() });
+      };
       // A monitor student stays "On monitor schedule" in Pipeline until they're moved to the regular roster.
       // An early schedule leaves the status alone — they're still Awaiting training; the normal
       // training-complete flow moves them on and the roster rows already exist.
@@ -4365,29 +4388,17 @@ window.kumonPtcNav = function(client, role){
       // see roster.html), so the days/times just picked above show up there immediately
       // instead of the teacher having to re-enter them from scratch.
       if(mathOn){
-        const enr = await db.collection("subject_enrollments").add({
-          studentId, studentName: s.name, subject: "Math",
+        await saveSubjectWithSchedule("Math", {
           teacher: monitorMode ? monitorTrainer : (fd.get("mathTeacher") || ""),
           currentLevel: fd.get("mathCurLevel") || "", currentPage: fd.get("mathCurPage") || "",
-          goalLevel: fd.get("mathGoalLevel") || "", goalPage: fd.get("mathGoalPage") || "",
-          mode, enrollmentType, enrollmentTypeSetAt, ...monitorFields
-        });
-        await db.collection("schedules").add({
-          studentId, studentName: s.name, subjectEnrollmentId: enr.id,
-          slots: linkedSlots, startDate, status: "active", createdAt: new Date().toISOString()
+          goalLevel: fd.get("mathGoalLevel") || "", goalPage: fd.get("mathGoalPage") || ""
         });
       }
       if(readingOn){
-        const enr = await db.collection("subject_enrollments").add({
-          studentId, studentName: s.name, subject: "Reading",
+        await saveSubjectWithSchedule("Reading", {
           teacher: monitorMode ? monitorTrainer : (fd.get("readingTeacher") || ""),
           currentLevel: fd.get("readingCurLevel") || "", currentPage: fd.get("readingCurPage") || "",
-          goalLevel: fd.get("readingGoalLevel") || "", goalPage: fd.get("readingGoalPage") || "",
-          mode, enrollmentType, enrollmentTypeSetAt, ...monitorFields
-        });
-        await db.collection("schedules").add({
-          studentId, studentName: s.name, subjectEnrollmentId: enr.id,
-          slots: linkedSlots, startDate, status: "active", createdAt: new Date().toISOString()
+          goalLevel: fd.get("readingGoalLevel") || "", goalPage: fd.get("readingGoalPage") || ""
         });
       }
       const subjectsOn = [mathOn && "Math", readingOn && "Reading"].filter(Boolean).join(" + ");

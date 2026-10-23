@@ -1195,7 +1195,12 @@ window.kumonPtcNav = function(client, role){
     if(error){ console.warn(error); schedules = []; return; }
     schedules = data || [];
   }
-  function scheduleFor(enrollmentId){ return schedules.find(sc => sc.subject_enrollment_id === enrollmentId) || null; }
+  // The subject's own schedule: an active one first, the most recently saved if there are copies.
+  function scheduleFor(enrollmentId){
+    const xs = schedules.filter(sc => sc.subject_enrollment_id === enrollmentId);
+    if(xs.length < 2) return xs[0] || null;
+    return xs.slice().sort((a,b) => ((b.status === "active") - (a.status === "active")) || String(b.created_at || "").localeCompare(String(a.created_at || "")))[0];
+  }
 
   /* ---------------- Delete/restore snapshots (for undo) ----------------
      Deleting a subject_enrollments row cascades in the database to its schedules row
