@@ -997,16 +997,6 @@ window.kumonPtcNav = function(client, role){
             <label class="f">Repeats per set<input type="number" min="1" max="20" step="1" data-f="default_rate" value="${esc(draft.default_rate)}"></label>
             <label class="f">Pages per day<input type="number" min="1" max="100" step="1" data-f="default_ppd" value="${esc(draft.default_ppd)}"></label>
           </div>
-          ${(() => {
-            const yr = yOf(draft.subject, e.current_level, e.current_page), ys = yOf(draft.subject, draft.start_level, draft.start_page);
-            if(yr == null || ys == null || Math.abs(yr - ys) < 0.05 || draft.start_date < todayISO()) return "";
-            return `<div class="banner info no-print" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;"><span>The roster has <b>${esc(e.current_level)} ${esc(e.current_page || "")}</b> for this subject today, but the projection's starting point is <b>${esc(draft.start_level)} ${esc(draft.start_page)}</b>.</span><button class="btn sm" data-action="use-roster-level">Use the roster's level</button></div>`;
-          })()}
-          ${(() => {
-            const yr = yOf(draft.subject, e.current_level, e.current_page), ys = yOf(draft.subject, draft.start_level, draft.start_page);
-            if(yr == null || ys == null || Math.abs(yr - ys) < 0.05 || draft.start_date >= todayISO() || c.actual.length > 2) return "";
-            return `<div class="banner info no-print" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;"><span>The roster has <b>${esc(e.current_level)} ${esc(e.current_page || "")}</b> today; the projection starts from <b>${esc(draft.start_level)} ${esc(draft.start_page)}</b> on ${esc(fmtDate(draft.start_date))}. If the roster's level is right, start the projection from it today.</span><button class="btn sm" data-action="use-roster-level">Start from the roster's level today</button></div>`;
-          })()}
           ${c.ok ? ins : `<div class="banner">“${esc(draft.start_level)}” isn't a ${esc(draft.subject)} level the projection knows. Pick the starting point above.</div>`}
           ${c.ok ? `<div class="sec"><div class="sec-h"><h3>Study projection</h3><span class="legend" id="legend"></span></div>
             <div class="chart"><svg id="chart" viewBox="0 0 1000 430" role="img" aria-label="Study projection chart"></svg></div>
@@ -1307,12 +1297,6 @@ window.kumonPtcNav = function(client, role){
     if(a === "toggle-line"){ const k = btn.dataset.k; chartOff.has(k) ? chartOff.delete(k) : chartOff.add(k); renderDetail(); return; }
     if(a === "save"){ btn.disabled = true; await save(); return; }
     if(a === "print"){ window.print(); return; }
-    if(a === "use-roster-level"){
-      const e = enrollments.find(x => x.id === draft.subject_enrollment_id); if(!e) return;
-      draft.start_level = normLevel(draft.subject, e.current_level); draft.start_page = Math.max(1, Math.min(200, parseInt(e.current_page, 10) || 1));
-      draft.start_date = todayISO(); draft.sy_start = syStartFor(draft.start_date);
-      markDirty(true); return;
-    }
     if(a === "dl-jpeg" || a === "dl-pdf"){ btn.disabled = true; try{ await downloadSheet(a === "dl-pdf" ? "pdf" : "jpeg"); } finally { btn.disabled = false; } return; }
     if(a === "skills"){ openSkills(); return; }
     if(a === "close-modal"){ closeModal(); return; }
