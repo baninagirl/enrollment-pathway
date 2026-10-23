@@ -617,8 +617,8 @@ window.kumonPtcNav = function(client, role){
                       rateSet: o.rate != null, ppdSet: o.ppd != null });
       out.proj.push({ d: t, y: (si + k + 1) * 20 });
     }
-    // Actual: the starting point, every closed-out month (Monthly History), then where they are today (roster).
-    out.actual.push({ d: p.start_date, y: out.proj[0].y, label: "Current level when the projection started" });
+    // Actual: ONLY what was really recorded — every closed-out month (Monthly History) and today's level on the
+    // roster. (The level typed into the projection isn't a recording, so it isn't drawn as Actual.)
     if(enr){
       const hist = histRows.filter(h => h.subject_enrollment_id === enr.id && h.cycle_key).sort((a,b) => a.cycle_key < b.cycle_key ? -1 : 1);
       for(const h of hist){
@@ -629,9 +629,9 @@ window.kumonPtcNav = function(client, role){
       }
       const yl = yOf(subject, enr.current_level, enr.current_page);
       const td = todayISO();
-      if(yl != null && td > p.start_date && (!out.actual.length || out.actual[out.actual.length-1].d < td)) out.actual.push({ d: td, y: yl, label: "on the roster today" });
+      if(yl != null && td >= p.start_date && (!out.actual.length || out.actual[out.actual.length-1].d < td)) out.actual.push({ d: td, y: yl, label: "on the roster today" });
     }
-    out.rows.forEach(r => { const a = out.actual.find(x => x.y >= r.endY - 1e-9 && x !== out.actual[0]); r.actual = a ? a.d : null; r.actualLabel = a ? a.label : ""; });
+    out.rows.forEach(r => { const a = out.actual.find(x => x.y >= r.endY - 1e-9); r.actual = a ? a.d : null; r.actualLabel = a ? a.label : ""; });
     out.lines = standardLines(subject, p.grade, p.sy_start);
     return out;
   }
@@ -652,7 +652,7 @@ window.kumonPtcNav = function(client, role){
   function statusOf(c){
     if(!c.ok) return { key:"bad", label:"Unknown current level" };
     const last = c.actual[c.actual.length - 1];
-    if(c.actual.length < 2) return { key:"new", label:"No progress recorded yet" };
+    if(!c.actual.length) return { key:"new", label:"No progress recorded yet" };
     const exp = projDateFor(c, last.y);
     const diff = (T(last.d) - T(exp)) / MS_DAY;
     const mo = Math.abs(diff) / 30.4375;
@@ -966,7 +966,7 @@ window.kumonPtcNav = function(client, role){
         <div class="ins"><div class="k">Grade level (KIS) for ${esc(draft.grade || "—")} now</div><div class="n">${kisNow != null ? "Level " + esc(bandName(draft.subject, kisNow)) : "—"}</div><div class="d">${kisNow == null ? "Set the grade to see the KIS and award lines." : behindLv > 0 ? `Current level ${esc(draft.start_level)} = about ${behindLv} level${behindLv === 1 ? "" : "s"} to catch up.` : behindLv === 0 ? `Current level ${esc(draft.start_level)} = at grade level.` : `Current level ${esc(draft.start_level)} = ${-behindLv} level${behindLv === -1 ? "" : "s"} ahead of grade level.`}</div></div>
         <div class="ins"><div class="k">Target on 1st year (${esc(fmtMonth(yr))})</div><div class="n">Level ${esc(bandName(draft.subject, y1))}</div><div class="d">${(() => { const r = c.rows.filter(r => r.target <= yr).pop(); return r ? `Finishes ${esc(r.level)} by ${esc(fmtDate(r.target))}.` : "Still in the first level."; })()}</div></div>
         <div class="ins"><div class="k">Catches up to grade level</div><div class="n">${cross ? "≈ " + esc(fmtDate(cross)) : (c.lines && startY >= c.lines.kis(draft.start_date) ? "Already there" : c.lines ? "Not within this plan" : "—")}</div><div class="d">${cross ? `Projection crosses the KIS line in Level ${esc(bandName(draft.subject, projAt(c, cross)))}.` : c.lines && startY < c.lines.kis(draft.start_date) ? "Add levels or more pages a day to see when." : ""}</div></div>
-        <div class="ins"><div class="k">Actual vs projection</div><div class="n">${statusPill(st)}</div><div class="d">${c.actual.length > 1 ? `Now at ${esc(levelAndPage(draft.subject, c.actual[c.actual.length-1].y))} (${esc(c.actual[c.actual.length-1].label)}).` : "Fills in from the roster each month."}</div></div>
+        <div class="ins"><div class="k">Actual vs projection</div><div class="n">${statusPill(st)}</div><div class="d">${c.actual.length ? `Now at ${esc(levelAndPage(draft.subject, c.actual[c.actual.length-1].y))} (${esc(c.actual[c.actual.length-1].label)}).` : "Fills in from the roster each month."}</div></div>
       </div>`;
     }
     const lvOpts = L.map(x => `<option${x === normLevel(draft.subject, draft.start_level) ? " selected" : ""}>${esc(x)}</option>`).join("");
@@ -996,6 +996,16 @@ window.kumonPtcNav = function(client, role){
             <label class="f">Repeats per set<input type="number" min="1" max="20" step="1" data-f="default_rate" value="${esc(draft.default_rate)}"></label>
             <label class="f">Pages per day<input type="number" min="1" max="100" step="1" data-f="default_ppd" value="${esc(draft.default_ppd)}"></label>
           </div>
+          ${(() => {
+            const yr = yOf(draft.subject, e.current_level, e.current_page), ys = yOf(draft.subject, draft.start_level, draft.start_page);
+            if(yr == null || ys == null || Math.abs(yr - ys) < 0.05 || draft.start_date < todayISO()) return "";
+            return `<div class="banner info no-print" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;"><span>The roster has <b>${esc(e.current_level)} ${esc(e.current_page || "")}</b> for this subject today, but the projection's current level is <b>${esc(draft.start_level)} ${esc(draft.start_page)}</b>.</span><button class="btn sm" data-action="use-roster-level">Use the roster's level</button></div>`;
+          })()}
+          ${(() => {
+            const yr = yOf(draft.subject, e.current_level, e.current_page), ys = yOf(draft.subject, draft.start_level, draft.start_page);
+            if(yr == null || ys == null || Math.abs(yr - ys) < 0.05 || draft.start_date >= todayISO() || c.actual.length > 1) return "";
+            return `<div class="banner info no-print" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;"><span>The roster has <b>${esc(e.current_level)} ${esc(e.current_page || "")}</b> today; the projection starts from <b>${esc(draft.start_level)} ${esc(draft.start_page)}</b> on ${esc(fmtDate(draft.start_date))}. If the roster's level is right, start the projection from it today.</span><button class="btn sm" data-action="use-roster-level">Start from the roster's level today</button></div>`;
+          })()}
           ${c.ok ? ins : `<div class="banner">“${esc(draft.start_level)}” isn't a ${esc(draft.subject)} level the projection knows. Pick the current level above.</div>`}
           ${c.ok ? `<div class="sec"><div class="sec-h"><h3>Study projection</h3><span class="legend" id="legend"></span></div>
             <div class="chart"><svg id="chart" viewBox="0 0 1000 430" role="img" aria-label="Study projection chart"></svg></div>
@@ -1296,6 +1306,12 @@ window.kumonPtcNav = function(client, role){
     if(a === "toggle-line"){ const k = btn.dataset.k; chartOff.has(k) ? chartOff.delete(k) : chartOff.add(k); renderDetail(); return; }
     if(a === "save"){ btn.disabled = true; await save(); return; }
     if(a === "print"){ window.print(); return; }
+    if(a === "use-roster-level"){
+      const e = enrollments.find(x => x.id === draft.subject_enrollment_id); if(!e) return;
+      draft.start_level = normLevel(draft.subject, e.current_level); draft.start_page = Math.max(1, Math.min(200, parseInt(e.current_page, 10) || 1));
+      draft.start_date = todayISO(); draft.sy_start = syStartFor(draft.start_date);
+      markDirty(true); return;
+    }
     if(a === "dl-jpeg" || a === "dl-pdf"){ btn.disabled = true; try{ await downloadSheet(a === "dl-pdf" ? "pdf" : "jpeg"); } finally { btn.disabled = false; } return; }
     if(a === "skills"){ openSkills(); return; }
     if(a === "close-modal"){ closeModal(); return; }
