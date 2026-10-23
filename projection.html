@@ -917,7 +917,9 @@ window.kumonPtcNav = function(client, role){
         <span class="grow"></span>
         ${draftDirty ? `<span class="pill p-warn">${projectionFor(draft.subject_enrollment_id) ? "Unsaved changes" : "Not saved yet"}</span>` : ""}
         ${projectionFor(draft.subject_enrollment_id) ? `<button class="btn sm danger" data-action="delete">Delete</button>` : ""}
-        <button class="btn sm" data-action="print">Print goal sheet</button>
+        <button class="btn sm" data-action="dl-jpeg">Save as JPEG</button>
+        <button class="btn sm" data-action="dl-pdf">Save as PDF</button>
+        <button class="btn sm" data-action="print">Print</button>
         <button class="btn sm primary" data-action="save"${draftDirty ? "" : " disabled"}>Save</button></div>
       <div class="card sp-card">
         <div class="sp-head">
@@ -962,26 +964,32 @@ window.kumonPtcNav = function(client, role){
     if(c.ok) drawChart(c);
   }
 
-  function drawChart(c){
-    const svg = $("#chart"); if(!svg) return;
-    const subj = c.subject, lines = c.lines;
+  // Chart colours: the page uses the theme's CSS colours; a saved JPEG / PDF uses fixed light colours.
+  const LIVE_COLORS = { proj:"var(--proj)", actual:"var(--actual)", kis:"var(--kis)", bronze:"var(--bronze)", silver:"var(--silver)", gold:"var(--gold)",
+    grid:"var(--grid)", ink:"var(--ink)", muted:"var(--ink-muted)", faint:"var(--ink-faint)", surface:"var(--surface)" };
+  const PRINT_COLORS = { proj:"#3454D1", actual:"#1E8E5A", kis:"#7A8394", bronze:"#B5703A", silver:"#8E98A8", gold:"#D4A21A",
+    grid:"#E8EAF0", ink:"#1B1F27", muted:"#636C7C", faint:"#9AA1AF", surface:"#FFFFFF" };
+  function chartSeries(c, C){
     const today = todayISO();
     const x0d = [draft.sy_start, draft.start_date].sort()[0];
     const x1d = [c.proj[c.proj.length-1].d, addMonths(today, 1)].sort().pop();
     const x0 = T(x0d), x1 = T(addMonths(x1d, 1));
-    const mk = (fn, add) => { const pts = []; for(let t = x0; t <= x1; t += 15 * MS_DAY){ const d = iso(t); pts.push({ d, y: fn(d) + (add||0) }); } return pts; };
+    const mk = (fn) => { const pts = []; for(let t = x0; t <= x1; t += 15 * MS_DAY){ const d = iso(t); pts.push({ d, y: fn(d) }); } return pts; };
     const series = [
-      { key:"proj", name:"Projection", color:"var(--proj)", w:3, pts:c.proj, dots:true },
-      { key:"actual", name:"Actual", color:"var(--actual)", w:3, pts:c.actual, dots:true },
+      { key:"proj", name:"Projection", color:C.proj, w:3, pts:c.proj, dots:true },
+      { key:"actual", name:"Actual", color:C.actual, w:3, pts:c.actual, dots:true },
     ];
-    if(lines){
-      series.push({ key:"kis", name:"KIS (grade level)", color:"var(--kis)", w:2, dash:"6 5", pts: mk(lines.kis) });
-      series.push({ key:"bronze", name:"Bronze", color:"var(--bronze)", w:2, pts: mk(lines.bronze) });
-      series.push({ key:"silver", name:"Silver", color:"var(--silver)", w:2, pts: mk(lines.silver) });
-      series.push({ key:"gold", name:"Gold", color:"var(--gold)", w:2, pts: mk(lines.gold) });
+    if(c.lines){
+      series.push({ key:"kis", name:"KIS (grade level)", color:C.kis, w:2, dash:"6 5", pts: mk(c.lines.kis) });
+      series.push({ key:"bronze", name:"Bronze", color:C.bronze, w:2, pts: mk(c.lines.bronze) });
+      series.push({ key:"silver", name:"Silver", color:C.silver, w:2, pts: mk(c.lines.silver) });
+      series.push({ key:"gold", name:"Gold", color:C.gold, w:2, pts: mk(c.lines.gold) });
     }
-    const lg = $("#legend");
-    if(lg) lg.innerHTML = series.map(s => `<button class="lg${chartOff.has(s.key) ? " off" : ""}" data-action="toggle-line" data-k="${s.key}"><i style="background:${s.color}"></i>${esc(s.name)}</button>`).join("");
+    return { series, x0, x1, today };
+  }
+  function chartSvg(c, C){
+    const subj = c.subject;
+    const { series, x0, x1, today } = chartSeries(c, C);
     const vis = series.filter(s => !chartOff.has(s.key));
     const ys = vis.flatMap(s => s.pts.filter(p => T(p.d) >= x0 && T(p.d) <= x1).map(p => p.y));
     if(!ys.length) ys.push(c.proj[0].y);
@@ -993,20 +1001,21 @@ window.kumonPtcNav = function(client, role){
     let g = "";
     const step = (ymax - ymin) / 20 > 14 ? 40 : 20;
     for(let y = ymin; y <= ymax; y += 20){
-      g += `<line x1="${Lp}" x2="${R}" y1="${Y(y)}" y2="${Y(y)}" stroke="var(--grid)"/>`;
-      if(y < ymax && ((y - ymin) % step === 0)) g += `<text x="${Lp-10}" y="${(Y(y)+Y(y+20))/2+4}" text-anchor="end" font-size="12" font-weight="700" fill="var(--ink-muted)">${esc(LADDER[subj][y/20] || "")}</text>`;
+      g += `<line x1="${Lp}" x2="${R}" y1="${Y(y)}" y2="${Y(y)}" stroke="${C.grid}"/>`;
+      if(y < ymax && ((y - ymin) % step === 0)) g += `<text x="${Lp-10}" y="${(Y(y)+Y(y+20))/2+4}" text-anchor="end" font-size="12" font-weight="700" font-family="Inter, Arial, sans-serif" fill="${C.muted}">${esc(LADDER[subj][y/20] || "")}</text>`;
     }
     const months = Math.round((x1 - x0) / (30.4375 * MS_DAY));
     const every = months > 36 ? 6 : months > 18 ? 3 : months > 9 ? 2 : 1;
     const first = new Date(x0); first.setUTCDate(1); if(first.getTime() < x0) first.setUTCMonth(first.getUTCMonth() + 1);
     for(let k = 0, d = new Date(first); d.getTime() <= x1; k++, d.setUTCMonth(d.getUTCMonth() + 1)){
       const x = X(d.getTime());
-      g += `<line x1="${x}" x2="${x}" y1="${B}" y2="${B+5}" stroke="var(--ink-faint)"/>`;
-      if(d.getUTCMonth() % every === 0) g += `<text x="${x}" y="${B+20}" text-anchor="middle" font-size="11.5" fill="var(--ink-muted)">${d.toLocaleDateString("en-US",{timeZone:"UTC",month:"short"})}${d.getUTCMonth() === 0 || k === 0 ? " ’" + String(d.getUTCFullYear()).slice(2) : ""}</text>`;
+      g += `<line x1="${x}" x2="${x}" y1="${B}" y2="${B+5}" stroke="${C.faint}"/>`;
+      if(d.getUTCMonth() % every === 0) g += `<text x="${x}" y="${B+20}" text-anchor="middle" font-size="11.5" font-family="Inter, Arial, sans-serif" fill="${C.muted}">${d.toLocaleDateString("en-US",{timeZone:"UTC",month:"short"})}${d.getUTCMonth() === 0 || k === 0 ? " ’" + String(d.getUTCFullYear()).slice(2) : ""}</text>`;
     }
     const tx = X(T(today));
-    if(tx >= Lp && tx <= R) g += `<line x1="${tx}" x2="${tx}" y1="${Tp}" y2="${B}" stroke="var(--ink)" stroke-dasharray="3 4" opacity=".35"/><text x="${tx+5}" y="${Tp+12}" font-size="11" fill="var(--ink-muted)">Today</text>`;
-    g += `<clipPath id="plot"><rect x="${Lp}" y="${Tp-2}" width="${R-Lp}" height="${B-Tp+4}"/></clipPath><g clip-path="url(#plot)">`;
+    if(tx >= Lp && tx <= R) g += `<line x1="${tx}" x2="${tx}" y1="${Tp}" y2="${B}" stroke="${C.ink}" stroke-dasharray="3 4" opacity=".35"/><text x="${tx+5}" y="${Tp+12}" font-size="11" font-family="Inter, Arial, sans-serif" fill="${C.muted}">Today</text>`;
+    const clipId = "plot" + Math.random().toString(36).slice(2, 8);
+    g += `<clipPath id="${clipId}"><rect x="${Lp}" y="${Tp-2}" width="${R-Lp}" height="${B-Tp+4}"/></clipPath><g clip-path="url(#${clipId})">`;
     for(const s of vis.slice().reverse()){
       const pts = s.pts.filter(p => T(p.d) >= x0 - 20 * MS_DAY && T(p.d) <= x1 + 20 * MS_DAY);
       if(!pts.length) continue;
@@ -1015,10 +1024,127 @@ window.kumonPtcNav = function(client, role){
     g += `</g>`;
     for(const s of vis) if(s.dots) for(const p of s.pts){
       if(T(p.d) < x0 || T(p.d) > x1) continue;
-      g += `<circle cx="${X(T(p.d)).toFixed(1)}" cy="${Y(p.y).toFixed(1)}" r="${s.key === "actual" ? 5.5 : 4.5}" fill="var(--surface)" stroke="${s.color}" stroke-width="2.5" data-tip="${esc(s.name)}: ${esc(levelAndPage(subj, p.y))}<br>${esc(fmtDate(p.d))}${p.label ? " · " + esc(p.label) : ""}"/>`;
+      g += `<circle cx="${X(T(p.d)).toFixed(1)}" cy="${Y(p.y).toFixed(1)}" r="${s.key === "actual" ? 5.5 : 4.5}" fill="${C.surface}" stroke="${s.color}" stroke-width="2.5" data-tip="${esc(s.name)}: ${esc(levelAndPage(subj, p.y))}<br>${esc(fmtDate(p.d))}${p.label ? " · " + esc(p.label) : ""}"/>`;
     }
-    g += `<line x1="${Lp}" x2="${R}" y1="${B}" y2="${B}" stroke="var(--ink-faint)"/>`;
-    svg.innerHTML = g;
+    g += `<line x1="${Lp}" x2="${R}" y1="${B}" y2="${B}" stroke="${C.faint}"/>`;
+    return { svg: g, series, vis };
+  }
+  function drawChart(c){
+    const svg = $("#chart"); if(!svg) return;
+    const r = chartSvg(c, LIVE_COLORS);
+    const lg = $("#legend");
+    if(lg) lg.innerHTML = r.series.map(s => `<button class="lg${chartOff.has(s.key) ? " off" : ""}" data-action="toggle-line" data-k="${s.key}"><i style="background:${s.color}"></i>${esc(s.name)}</button>`).join("");
+    svg.innerHTML = r.svg;
+  }
+
+  /* ======================= save as JPEG / one-page PDF ======================= */
+  // Builds a clean, fixed-width goal sheet (no inputs or buttons) off screen, turns it into a picture with
+  // html2canvas, then saves it as a JPEG, or as a PDF squeezed onto one A4 page with jsPDF.
+  const LIBS = {
+    html2canvas: "https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js",
+    jspdf: "https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"
+  };
+  const libLoads = {};
+  function loadLib(name){
+    if(libLoads[name]) return libLoads[name];
+    libLoads[name] = new Promise((res, rej) => { const s = document.createElement("script"); s.src = LIBS[name]; s.onload = res; s.onerror = () => { delete libLoads[name]; rej(new Error("Couldn't load " + name)); }; document.head.appendChild(s); });
+    return libLoads[name];
+  }
+  function exportSheetHtml(e, c){
+    const C = PRINT_COLORS;
+    const st = statusOf(c);
+    const chart = chartSvg(c, C);
+    const legend = chart.vis.map(s => `<span style="display:inline-flex;align-items:center;gap:5px;margin-right:12px;"><i style="display:inline-block;width:14px;height:3px;border-radius:2px;background:${s.color}"></i>${esc(s.name)}</span>`).join("");
+    const insights = $$(".insights .ins").map(x => `<div class="xi">${x.innerHTML}</div>`).join("");
+    const picked = (SKILLS[draft.subject] || []).filter(x => draft.skills.includes(x.obs));
+    const plans = [...new Set(picked.map(x => x.plan).filter(Boolean))];
+    const sig = $(".sig") ? $(".sig").innerHTML : "";
+    return `<div class="xs">
+      <div class="xh"><div><div class="xk">GOAL SETTING SHEET · Kumon Iligan City</div>
+        <div class="xn">${esc(displayName(e.student_id, e.student_name))}</div>
+        <div class="xm">${esc(draft.subject)} · ${esc(e.teacher || "")} · Grade ${esc(draft.grade || "—")}</div></div>
+        <div class="xd">Saved ${esc(fmtDate(todayISO()))}</div></div>
+      <div class="xg">
+        <div><b>Starting point</b>${esc(normLevel(draft.subject, draft.start_level))} ${esc(draft.start_page)}</div>
+        <div><b>Date enrolled</b>${esc(fmtDate(draft.start_date))}</div>
+        <div><b>School year starts</b>${esc(fmtDate(draft.sy_start))}</div>
+        <div><b>Repeats per set</b>${esc(draft.default_rate)}×</div>
+        <div><b>Pages per day</b>${esc(draft.default_ppd)}</div>
+        <div><b>Status</b>${esc(st.label)}</div>
+      </div>
+      <div class="xins">${insights}</div>
+      <div class="xsec">Study projection <span class="xl">${legend}</span></div>
+      <svg viewBox="0 0 1000 430" width="1000" height="430" xmlns="http://www.w3.org/2000/svg" style="display:block;width:100%;height:auto;border:1px solid #E1E4EB;border-radius:10px;">${chart.svg}</svg>
+      <div class="xsec">Level plan</div>
+      <table class="xt"><thead><tr><th>Level</th><th>Topics</th><th>Repeats</th><th>Total WS</th><th>Pages/day</th><th>Months</th><th>Target completion</th><th>Actual completion</th></tr></thead><tbody>
+        ${c.rows.map(r => `<tr><td><b>${esc(r.level)}</b></td><td class="xtp">${esc(r.topic)}</td><td>${r.rate}×</td><td>${r.total}</td><td>${r.ppd}</td><td>${r.months.toFixed(1)}</td><td><b>${esc(fmtDate(r.target))}</b></td><td>${r.actual ? esc(fmtDate(r.actual)) : "—"}</td></tr>`).join("")}
+      </tbody></table>
+      <div class="xcols">
+        <div class="xb"><div class="xk">Skills &amp; abilities to develop first</div>${picked.length ? `<ul>${picked.map(x => `<li>${esc(x.obs)} → ${esc(x.skill || "—")}</li>`).join("")}</ul>` : `<div class="xf">—</div>`}</div>
+        <div class="xb"><div class="xk">Instruction plan</div>${plans.length ? `<ul>${plans.map(t => `<li>${esc(t)}</li>`).join("")}</ul>` : ""}${draft.plan_note ? `<div style="white-space:pre-wrap">${esc(draft.plan_note)}</div>` : (plans.length ? "" : `<div class="xf">—</div>`)}</div>
+      </div>
+      <div class="xsec">Discussed with the parent</div>
+      <div class="xsig">${sig}</div>
+    </div>`;
+  }
+  const EXPORT_CSS = `
+    .xs{ width:1100px; padding:36px 40px; background:#fff; color:#1B1F27; font-family:Inter, Arial, sans-serif; font-size:13px; box-sizing:border-box; }
+    .xs *{ box-sizing:border-box; }
+    .xh{ display:flex; justify-content:space-between; align-items:flex-end; border-bottom:2px solid #1B1F27; padding-bottom:10px; margin-bottom:14px; }
+    .xk{ font-size:11px; font-weight:800; letter-spacing:.06em; color:#636C7C; text-transform:uppercase; margin-bottom:6px; }
+    .xn{ font-family:Sora, Inter, Arial, sans-serif; font-size:24px; font-weight:700; }
+    .xm{ color:#636C7C; margin-top:3px; } .xd{ color:#636C7C; font-size:12px; }
+    .xg{ display:grid; grid-template-columns:repeat(6,1fr); gap:8px; margin-bottom:12px; }
+    .xg div{ border:1px solid #E1E4EB; border-radius:8px; padding:7px 9px; font-weight:600; }
+    .xg b{ display:block; font-size:10px; color:#636C7C; text-transform:uppercase; letter-spacing:.04em; margin-bottom:3px; }
+    .xins{ display:grid; grid-template-columns:repeat(4,1fr); gap:8px; margin-bottom:12px; }
+    .xi{ border:1px solid #E1E4EB; border-radius:10px; padding:9px 11px; background:#FBFBFE; }
+    .xi .k{ font-size:11px; color:#636C7C; font-weight:600; } .xi .n{ font-family:Sora, Inter, Arial, sans-serif; font-weight:700; font-size:16px; margin-top:3px; }
+    .xi .d{ font-size:11px; color:#636C7C; margin-top:2px; }
+    .xi .pill{ display:inline-block; padding:2px 8px; border-radius:99px; font-size:11.5px; font-family:Inter, Arial, sans-serif; }
+    .xi .p-good{ background:#E4F5EC; color:#1E8E5A; } .xi .p-bad{ background:#FBE8E5; color:#C23B2B; } .xi .p-accent{ background:#E9EDFC; color:#2A41A8; } .xi .p-muted{ background:#FBFBFE; color:#636C7C; border:1px solid #E1E4EB; } .xi .p-warn{ background:#FBF0E1; color:#C2831F; }
+    .xsec{ font-family:Sora, Inter, Arial, sans-serif; font-weight:700; font-size:14px; margin:12px 0 7px; display:flex; justify-content:space-between; align-items:center; }
+    .xl{ font-family:Inter, Arial, sans-serif; font-weight:600; font-size:11.5px; color:#1B1F27; }
+    .xt{ width:100%; border-collapse:collapse; font-size:12px; }
+    .xt th{ text-align:left; font-size:10px; text-transform:uppercase; letter-spacing:.04em; color:#636C7C; border-bottom:1px solid #E1E4EB; padding:5px 7px; }
+    .xt td{ border-bottom:1px solid #EEF0F4; padding:5px 7px; vertical-align:top; white-space:nowrap; } .xt td.xtp{ white-space:normal; color:#636C7C; font-size:11px; }
+    .xcols{ display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:12px; }
+    .xb{ border:1px solid #E1E4EB; border-radius:10px; padding:9px 12px; } .xb ul{ margin:0; padding-left:17px; line-height:1.45; } .xf{ color:#9AA1AF; }
+    .xsig{ display:grid; grid-template-columns:repeat(4,1fr); gap:8px; }
+    .xsig .sigbox{ border:1px solid #E1E4EB; border-radius:10px; padding:9px 11px; font-size:11.5px; display:flex; flex-direction:column; gap:5px; }
+    .xsig .sigline{ border-bottom:1px solid #9AA1AF; height:26px; } .xsig .faint{ color:#9AA1AF; }
+    .xsig .pill{ display:inline-block; padding:2px 8px; border-radius:99px; font-size:11px; font-weight:700; }
+    .xsig .p-good{ background:#E4F5EC; color:#1E8E5A; } .xsig .p-warn{ background:#FBF0E1; color:#C2831F; } .xsig .p-muted{ background:#FBFBFE; color:#636C7C; border:1px solid #E1E4EB; }`;
+  async function downloadSheet(kind){
+    const e = enrollments.find(x => x.id === draft.subject_enrollment_id); if(!e) return;
+    const c = compute(draft, e); if(!c.ok){ alert("Pick the starting level first."); return; }
+    toast(kind === "pdf" ? "Making the PDF…" : "Making the image…");
+    try{
+      await loadLib("html2canvas"); if(kind === "pdf") await loadLib("jspdf");
+    }catch(err){ alert("Couldn't load the download tools — check the internet connection and try again."); return; }
+    const host = document.createElement("div");
+    host.style.cssText = "position:fixed; left:-12000px; top:0; z-index:-1;";
+    host.innerHTML = `<style>${EXPORT_CSS}</style>` + exportSheetHtml(e, c);
+    document.body.appendChild(host);
+    try{
+      const node = host.querySelector(".xs");
+      const canvas = await window.html2canvas(node, { scale: 2, backgroundColor: "#ffffff", useCORS: true, logging: false });
+      const base = `Study projection - ${displayName(e.student_id, e.student_name).replace(/[\\/:*?"<>|,]+/g, " ").replace(/\s+/g, " ").trim()} - ${draft.subject}`;
+      if(kind === "jpeg"){
+        const a = document.createElement("a"); a.href = canvas.toDataURL("image/jpeg", 0.92); a.download = base + ".jpg";
+        document.body.appendChild(a); a.click(); a.remove();
+      }else{
+        const { jsPDF } = window.jspdf;
+        const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+        const pw = 210, ph = 297, m = 8;
+        const ratio = Math.min((pw - 2*m) / canvas.width, (ph - 2*m) / canvas.height);   // whole sheet on one page
+        const w = canvas.width * ratio, h = canvas.height * ratio;
+        pdf.addImage(canvas.toDataURL("image/jpeg", 0.92), "JPEG", (pw - w) / 2, m, w, h);
+        pdf.save(base + ".pdf");
+      }
+      logHistory("projection_download", `Downloaded ${draft.subject} projection (${kind.toUpperCase()}): ${displayName(e.student_id, e.student_name)}`, null, null);
+    }catch(err){ console.warn(err); alert("Couldn't make the file: " + err.message); }
+    finally{ host.remove(); }
   }
 
   /* ======================= skills modal ======================= */
@@ -1110,6 +1236,7 @@ window.kumonPtcNav = function(client, role){
     if(a === "toggle-line"){ const k = btn.dataset.k; chartOff.has(k) ? chartOff.delete(k) : chartOff.add(k); renderDetail(); return; }
     if(a === "save"){ btn.disabled = true; await save(); return; }
     if(a === "print"){ window.print(); return; }
+    if(a === "dl-jpeg" || a === "dl-pdf"){ btn.disabled = true; try{ await downloadSheet(a === "dl-pdf" ? "pdf" : "jpeg"); } finally { btn.disabled = false; } return; }
     if(a === "skills"){ openSkills(); return; }
     if(a === "close-modal"){ closeModal(); return; }
     if(a === "skills-ok"){ draft.skills = $$("[data-skill]").filter(x => x.checked).map(x => x.dataset.skill); closeModal(); markDirty(true); return; }
