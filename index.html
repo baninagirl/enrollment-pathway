@@ -438,6 +438,13 @@
     html.rail-collapsed .rail-divider{ margin:6px 8px; }
   }
   @media (max-width:860px){ .rail-pipeline{ display:none !important; } }
+  .eo-pick{ position:relative; display:block; }
+  .eo-results{ position:absolute; left:0; right:0; top:calc(100% + 4px); z-index:60; max-height:280px; overflow-y:auto; background:var(--surface);
+    border:1px solid var(--border); border-radius:10px; box-shadow:var(--shadow); padding:4px; display:flex; flex-direction:column; }
+  .eo-results[hidden]{ display:none; }
+  .eo-opt{ text-align:left; border:none; background:transparent; padding:8px 10px; border-radius:7px; font:500 13.5px "Inter",sans-serif; color:var(--ink); cursor:pointer; }
+  .eo-opt:hover, .eo-opt.on{ background:var(--accent-soft); color:var(--accent-soft-ink); }
+  .eo-more{ padding:8px 10px; font-size:12px; color:var(--ink-muted); }
 </style>
 <script>try{if(localStorage.getItem("kumonRailCollapsed")==="1")document.documentElement.classList.add("rail-collapsed")}catch(e){}</script>
 <script>
@@ -3352,8 +3359,10 @@ window.kumonPtcNav = function(client, role){
         <div class="modal-body">
           <p class="hint" style="margin:0 0 4px;">An existing student enrolling for a new subject. They're tagged <b>EO</b>, marked <b>NEW</b> on the teacher's roster for this month, and show up in this month's New students.</p>
           <label class="field">Student
-            <input type="text" name="studentLabel" required autofocus autocomplete="off" list="eoStudents" placeholder="Start typing a name…">
-            <datalist id="eoStudents">${[...labelOf.keys()].map(l=>`<option value="${esc(l)}">`).join("")}</datalist>
+            <span class="eo-pick">
+              <input type="text" name="studentLabel" required autofocus autocomplete="off" placeholder="Type any part of the name — first or last…" role="combobox" aria-expanded="false" aria-controls="eoResults">
+              <span class="eo-results" id="eoResults" role="listbox" hidden></span>
+            </span>
           </label>
           <div class="field-row">
             <label class="field">New subject
@@ -3415,6 +3424,41 @@ window.kumonPtcNav = function(client, role){
       note.textContent = note.hidden ? "" : `${displayName(stu)} stopped ${pick} before. Adding it here starts a new ${pick} row on the roster; to continue their old ${pick} record instead, use Resume on the Retention page.`;
     };
     input.addEventListener("input", refresh); input.addEventListener("change", refresh); sel.addEventListener("change", noteFor);
+
+    // Search box (instead of the browser's own suggestion list, which can't search inside names and stops part-way
+    // through a long list): matches every typed word anywhere in the name, first name or last, in any order.
+    const box = f.querySelector("#eoResults");
+    const fold = t => String(t || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    const labels = [...labelOf.keys()];
+    let hits = [], cur = -1;
+    const show = () => {
+      const words = fold(input.value).split(/[\s,]+/).filter(Boolean);
+      if(labelOf.has(input.value.trim()) || !words.length){ box.hidden = true; input.setAttribute("aria-expanded","false"); return; }
+      hits = labels.filter(l => { const t = fold(l); return words.every(w => t.includes(w)); });
+      const starts = l => fold(l).split(/[\s,]+/).some(p => p.startsWith(words[0])) ? 0 : 1;
+      hits.sort((a,b) => starts(a) - starts(b) || a.localeCompare(b));
+      cur = hits.length ? 0 : -1;
+      const max = 60;
+      box.innerHTML = hits.length
+        ? hits.slice(0, max).map((l, i) => `<button type="button" class="eo-opt${i === cur ? " on" : ""}" data-i="${i}" role="option">${esc(l)}</button>`).join("")
+          + (hits.length > max ? `<div class="eo-more">${hits.length - max} more — keep typing to narrow it down</div>` : "")
+        : `<div class="eo-more">No student matches “${esc(input.value.trim())}”. They may already take both subjects.</div>`;
+      box.hidden = false; input.setAttribute("aria-expanded","true");
+    };
+    const choose = (i) => { if(i < 0 || !hits[i]) return; input.value = hits[i]; box.hidden = true; input.setAttribute("aria-expanded","false"); refresh(); };
+    const mark = () => { box.querySelectorAll(".eo-opt").forEach((b, i) => b.classList.toggle("on", i === cur)); const on = box.querySelector(".eo-opt.on"); if(on) on.scrollIntoView({ block:"nearest" }); };
+    input.addEventListener("input", show);
+    input.addEventListener("focus", show);
+    input.addEventListener("keydown", (ev) => {
+      if(box.hidden) return;
+      const n = Math.min(hits.length, 60);
+      if(ev.key === "ArrowDown"){ ev.preventDefault(); cur = Math.min(n - 1, cur + 1); mark(); }
+      else if(ev.key === "ArrowUp"){ ev.preventDefault(); cur = Math.max(0, cur - 1); mark(); }
+      else if(ev.key === "Enter"){ if(cur >= 0){ ev.preventDefault(); choose(cur); } }
+      else if(ev.key === "Escape"){ ev.preventDefault(); ev.stopPropagation(); box.hidden = true; }
+    });
+    box.addEventListener("mousedown", (ev) => { const b = ev.target.closest(".eo-opt"); if(b){ ev.preventDefault(); choose(Number(b.dataset.i)); } });
+    input.addEventListener("blur", () => setTimeout(() => { box.hidden = true; input.setAttribute("aria-expanded","false"); }, 120));
   }
 
   async function submitNewEo(form){
