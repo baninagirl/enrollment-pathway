@@ -3319,8 +3319,20 @@ window.kumonPtcNav = function(client, role){
     else if(own) have.add(own);
     return have;
   }
+  // For Add EO only the subjects a student is taking NOW count: a subject they stopped (inactive on the
+  // roster) doesn't block it, so old students who stopped one or both subjects can still be picked.
+  // Their own record's subject is only used when they have no roster subjects at all yet.
+  function eoSubjectsTaken(s){
+    const all = STATE.enrollments.filter(e => e.studentId === s.id && !e.archived);
+    if(!all.length) return subjectsOfStudent(s);
+    return new Set(all.filter(e => (e.status || "active") === "active").map(e => e.subject));
+  }
+  function eoStoppedSubjects(s){
+    const taken = eoSubjectsTaken(s);
+    return [...new Set(STATE.enrollments.filter(e => e.studentId === s.id && !e.archived && (e.status || "active") !== "active").map(e => e.subject))].filter(x => x && !taken.has(x));
+  }
   function eoCandidates(){
-    return STATE.students.filter(s => subjectsOfStudent(s).size < 2)
+    return STATE.students.filter(s => eoSubjectsTaken(s).size < 2)
       .sort((a,b)=> displayName(a).localeCompare(displayName(b)));
   }
   function openNewEoModal(){
@@ -3329,6 +3341,8 @@ window.kumonPtcNav = function(client, role){
     cands.forEach(s => {
       let l = displayName(s); seen[l] = (seen[l]||0) + 1;
       if(seen[l] > 1) l += ` (${s.ageGrade ? "Gr " + s.ageGrade : "#" + seen[l]})`;
+      const stopped = eoStoppedSubjects(s);
+      if(stopped.length) l += ` — stopped ${stopped.join(" & ")}`;
       labelOf.set(l, s.id);
     });
     window.__eoLabels = labelOf; // read by the form handlers below
@@ -3352,6 +3366,7 @@ window.kumonPtcNav = function(client, role){
               </select>
             </label>
           </div>
+          <div class="hint" id="eoStoppedNote" hidden style="margin:0; color:var(--warn); font-weight:600;"></div>
           <div class="hint" style="margin-top:4px;">Diagnostic test results for the new subject <span style="font-weight:400;">(optional)</span></div>
           <div class="field-row">
             <label class="field">DT date<input type="date" name="dxDate" value="${todayISO()}"></label>
@@ -3382,13 +3397,24 @@ window.kumonPtcNav = function(client, role){
     const refresh = () => {
       const id = labelOf.get(input.value.trim());
       const stu = id ? studentById(id) : null;
-      if(!stu){ sel.disabled = true; sel.innerHTML = `<option value="">Pick a student first</option>`; return; }
-      const have = subjectsOfStudent(stu);
+      const note = f.querySelector("#eoStoppedNote");
+      if(!stu){ sel.disabled = true; sel.innerHTML = `<option value="">Pick a student first</option>`; note.hidden = true; return; }
+      const have = eoSubjectsTaken(stu);
       const missing = ["Math","Reading"].filter(x => !have.has(x));
       sel.disabled = false;
       sel.innerHTML = missing.map(x => `<option value="${x}">${x}</option>`).join("");
+      noteFor();
     };
-    input.addEventListener("input", refresh); input.addEventListener("change", refresh);
+    // Coming back to the same subject they stopped: say so (Retention's Resume keeps that subject's history going).
+    const noteFor = () => {
+      const id = labelOf.get(input.value.trim()); const stu = id ? studentById(id) : null;
+      const note = f.querySelector("#eoStoppedNote");
+      const stopped = stu ? eoStoppedSubjects(stu) : [];
+      const pick = sel.value;
+      note.hidden = !(pick && stopped.includes(pick));
+      note.textContent = note.hidden ? "" : `${displayName(stu)} stopped ${pick} before. Adding it here starts a new ${pick} row on the roster; to continue their old ${pick} record instead, use Resume on the Retention page.`;
+    };
+    input.addEventListener("input", refresh); input.addEventListener("change", refresh); sel.addEventListener("change", noteFor);
   }
 
   async function submitNewEo(form){
@@ -3399,7 +3425,7 @@ window.kumonPtcNav = function(client, role){
     if(!stu){ toast("Pick a student from the list."); return; }
     const subject = fd.get("subject").toString();
     if(!subject){ toast("Pick the new subject."); return; }
-    const have = subjectsOfStudent(stu);
+    const have = eoSubjectsTaken(stu);
     if(have.has(subject)){ toast(`${displayName(stu)} is already in ${subject}.`); return; }
     const oldSubj = have.size === 1 ? [...have][0] : "";
     const g = k => (fd.get(k) || "").toString().trim();
