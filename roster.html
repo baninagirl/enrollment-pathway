@@ -306,6 +306,66 @@ window.kumonPtcNav = function(client, role){
   if(!window.__ptcNavTimer) window.__ptcNavTimer = setInterval(refresh, 5 * 60 * 1000);
 };
 </script>
+<script>
+/* Sign-in resilience (Oct 23). A slow or dropped connection used to make the page think the account had no role
+   ("waiting for approval — ask a superadmin"), and a hiccup while renewing the sign-in could log people out.
+   kumonFetchProfile retries, renews the sign-in if it expired, and — only if the Hub still can't be reached —
+   uses the last role this account had on this browser instead of "pending". */
+(function(){
+  var sleep = function(ms){ return new Promise(function(r){ setTimeout(r, ms); }); };
+  function notice(msg){
+    var el = document.getElementById("kumonNetNotice");
+    if(!msg){ if(el) el.remove(); return; }
+    if(!el){
+      el = document.createElement("div"); el.id = "kumonNetNotice";
+      el.style.cssText = "position:fixed;left:50%;top:14px;transform:translateX(-50%);z-index:200;background:#1B1F27;color:#fff;font:600 13px Inter,system-ui,sans-serif;padding:9px 14px;border-radius:10px;box-shadow:0 8px 24px -10px rgba(0,0,0,.4)";
+      (document.body || document.documentElement).appendChild(el);
+    }
+    el.textContent = msg;
+  }
+  window.kumonFetchProfile = async function(client, uid, cols){
+    var key = "kumonProfile:" + uid, cached = null;
+    try{ cached = JSON.parse(localStorage.getItem(key) || "null"); }catch(e){}
+    var want = String(cols).split(",").map(function(s){ return s.trim(); }).filter(Boolean);
+    var cacheOk = cached && cached.role && cached.role !== "pending" && want.every(function(k){ return k in cached; });
+    var once = async function(){ try{ return await client.from("profiles").select(cols).eq("id", uid).maybeSingle(); }catch(e){ return { data:null, error:e }; } };
+    for(var attempt = 0; ; attempt++){
+      var r = await once();
+      if(!r.error && !r.data && attempt === 0){
+        // An expired sign-in can read as "no profile" instead of an error: renew it and ask once more.
+        try{ await client.auth.refreshSession(); }catch(e){}
+        r = await once();
+      }
+      if(!r.error){
+        if(r.data){ try{ localStorage.setItem(key, JSON.stringify(Object.assign({}, cached || {}, r.data))); }catch(e){} }
+        notice(null);
+        return { data: r.data, error: null };
+      }
+      var msg = String((r.error && (r.error.message || r.error.code)) || "");
+      if(/jwt|token|expired|401|auth/i.test(msg)){ try{ await client.auth.refreshSession(); }catch(e){} }
+      if(cacheOk && attempt >= 2){ notice(null); return { data: cached, error: null, fromCache: true }; }
+      notice("Can't reach the Kumon Hub right now — trying again…");
+      await sleep(Math.min(8000, 800 * (attempt + 1)));
+    }
+  };
+  // Before treating a "signed out" event as real, make sure the sign-in is really gone (not a hiccup while renewing it).
+  window.kumonStillSignedIn = async function(client, uid){
+    if(window.__kumonLoggingOut) return false;
+    await sleep(1200);
+    try{ var a = await client.auth.getSession(); if(a && a.data && a.data.session && a.data.session.user.id === uid) return true; }catch(e){}
+    if(window.__kumonLoggingOut) return false;
+    try{ var b = await client.auth.refreshSession(); if(b && b.data && b.data.session && b.data.session.user.id === uid) return true; }catch(e){}
+    return false;
+  };
+  // Mark a deliberate "Log out" click so it isn't second-guessed above; forget the remembered role on log out.
+  document.addEventListener("click", function(e){
+    var b = e.target && e.target.closest && e.target.closest('[data-action="logout"]');
+    if(!b) return;
+    window.__kumonLoggingOut = true;
+    try{ Object.keys(localStorage).forEach(function(k){ if(k.indexOf("kumonProfile:") === 0) localStorage.removeItem(k); }); }catch(err){}
+  }, true);
+})();
+</script>
 </head>
 <body>
 
@@ -845,7 +905,7 @@ window.kumonPtcNav = function(client, role){
   async function loadRole(){
     if(!sbClient || !currentUser){ currentRole = null; currentTeacherName = null; return; }
     try{
-      const { data, error } = await sbClient.from("profiles").select("role, teacher_name").eq("id", currentUser.id).maybeSingle();
+      const { data, error } = await window.kumonFetchProfile(sbClient, currentUser.id, "role, teacher_name");
       if(error) throw error;
       currentRole = data ? data.role : "pending";
       currentTeacherName = data ? (data.teacher_name || null) : null;
@@ -871,7 +931,7 @@ window.kumonPtcNav = function(client, role){
         currentUser = session.user; shownUserId = session.user.id;
         await loadRole(); showApp(); renderAccount(); startApp();
       }else{
-        if(shownUserId){ location.reload(); return; }  // signed out: reload so nothing from that account stays in memory or on screen
+        if(shownUserId){ if(window.kumonStillSignedIn && await window.kumonStillSignedIn(sbClient, shownUserId)) return; location.reload(); return; }  // signed out: reload so nothing from that account stays in memory or on screen
         currentUser = null; currentRole = null;
         showLogin();
       }
