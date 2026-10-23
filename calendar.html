@@ -690,6 +690,21 @@ window.kumonPtcNav = function(client, role){
     });
   }
 
+  // Live updates from other teachers come in bursts (a roster edit, ten ticks in a row): gather them for a moment and
+  // reload once, instead of reloading and redrawing the whole Calendar for every single change.
+  const calReloadKinds = new Set(); let calReloadTimer = null;
+  function calReload(kind){
+    calReloadKinds.add(kind); clearTimeout(calReloadTimer);
+    calReloadTimer = setTimeout(async () => {
+      const kinds = new Set(calReloadKinds); calReloadKinds.clear();
+      await Promise.all([kinds.has("schedules") && loadSchedules(), kinds.has("enrollments") && loadEnrollments(), kinds.has("attendance") && loadAttendance()].filter(Boolean));
+      renderCalendar();
+    }, 700);
+  }
+  // A new week (or a tab left open overnight): reload this week's ticks.
+  let calWeekShown = null;
+  setInterval(async () => { if(!started) return; const wk = currentWeekStart(); if(calWeekShown && wk !== calWeekShown){ calWeekShown = wk; await loadAttendance(); renderCalendar(); } else calWeekShown = wk; }, 60 * 1000);
+
   let started = false;
   async function startApp(){
     if(started) return;
@@ -706,41 +721,48 @@ window.kumonPtcNav = function(client, role){
     }
 
     sbClient.channel("realtime:calendar-schedules")
-      .on("postgres_changes", { event:"*", schema:"public", table:"schedules" }, async ()=>{ await loadSchedules(); renderCalendar(); })
+      .on("postgres_changes", { event:"*", schema:"public", table:"schedules" }, () => calReload("schedules"))
       .subscribe();
     sbClient.channel("realtime:calendar-enrollments")
-      .on("postgres_changes", { event:"*", schema:"public", table:"subject_enrollments" }, async ()=>{ await loadEnrollments(); renderCalendar(); })
+      .on("postgres_changes", { event:"*", schema:"public", table:"subject_enrollments" }, () => calReload("enrollments"))
       .subscribe();
     sbClient.channel("realtime:calendar-attendance")
-      .on("postgres_changes", { event:"*", schema:"public", table:"schedule_attendance" }, async ()=>{ await loadAttendance(); renderCalendar(); })
+      .on("postgres_changes", { event:"*", schema:"public", table:"schedule_attendance" }, () => calReload("attendance"))
       .subscribe();
   }
 
   async function loadSchedules(){
     const { data, error } = await sbClient.from("schedules").select("*").eq("status","active");
-    if(error){ console.warn(error); schedules = []; return; }
+    if(error){ console.warn(error); return; }   // keep what's on screen; a failed reload must not empty the Calendar
     // Newest first, so when a subject's schedule was saved more than once the latest copy is the one shown.
     schedules = (data || []).slice().sort((a,b) => String(b.created_at || "").localeCompare(String(a.created_at || "")));
   }
   async function loadEnrollments(){
     const { data, error } = await sbClient.from("subject_enrollments").select("*").eq("status","active");
-    if(error){ console.warn(error); enrollments = []; return; }
+    if(error){ console.warn(error); return; }   // keep what's on screen
     enrollments = data || [];
   }
   // Attendance is a per-week check-off, not a permanent log — only this week's row
   // ever matters on screen, so that's all we load.
   async function loadAttendance(){
-    const { data, error } = await sbClient.from("schedule_attendance").select("*").eq("week_start", currentWeekStart());
-    if(error){ console.warn(error); attendance = []; return; }
-    attendance = data || [];
+    // This week's check-offs. Older pages saved the week as the day before Monday (a time-zone slip), so both are read.
+    const wk = currentWeekStart();
+    const { data, error } = await sbClient.from("schedule_attendance").select("*").in("week_start", [wk, legacyWeekStart(wk)]);
+    if(error){ console.warn(error); return; }   // keep the ticks on screen; never wipe them because one reload failed
+    // Prefer this week's proper row over a legacy one for the same student/day.
+    const rows = (data || []).slice().sort((a,b) => (a.week_start === wk) - (b.week_start === wk));
+    const byKey = new Map(); rows.forEach(r => byKey.set(r.schedule_id + "|" + r.day, r));
+    attendance = [...byKey.values()];
   }
+  // Monday of this week as the CENTER's date (local), e.g. "2026-10-19".
   function currentWeekStart(){
     const now = new Date();
     const dow = now.getDay(); // 0=Sun..6=Sat
     const diff = (dow === 0 ? -6 : 1) - dow; // shift back to Monday
     const mon = new Date(now.getFullYear(), now.getMonth(), now.getDate() + diff);
-    return mon.toISOString().slice(0,10);
+    return mon.getFullYear() + "-" + String(mon.getMonth() + 1).padStart(2, "0") + "-" + String(mon.getDate()).padStart(2, "0");
   }
+  function legacyWeekStart(wk){ const d = new Date(wk + "T00:00:00Z"); d.setUTCDate(d.getUTCDate() - 1); return d.toISOString().slice(0,10); }
   async function loadSettings(){
     const { data } = await sbClient.from("settings").select("value").eq("id","staff").maybeSingle();
     const v = data ? data.value : {};
@@ -980,27 +1002,49 @@ window.kumonPtcNav = function(client, role){
     }
     return out;
   }
+  // Ticks being saved right now: shown as ticked/unticked straight away and kept that way through any reload
+  // until the save is confirmed, so a tick never "turns itself off".
+  const pendingTicks = new Map();   // "scheduleId|day" -> arrived (true/false)
   function attendanceFor(scheduleId, day){
+    const k = scheduleId + "|" + day;
+    if(pendingTicks.has(k)) return { schedule_id: scheduleId, day, arrived: pendingTicks.get(k), pending: true };
     return attendance.find(a => a.schedule_id === scheduleId && a.day === day) || null;
   }
+  function calToast(msg){
+    let el = document.getElementById("calToast");
+    if(!el){ el = document.createElement("div"); el.id = "calToast";
+      el.style.cssText = "position:fixed;left:50%;bottom:22px;transform:translateX(-50%);background:var(--ink);color:var(--bg);font-size:13px;font-weight:600;padding:10px 16px;border-radius:10px;z-index:95;box-shadow:var(--shadow)";
+      document.body.appendChild(el); }
+    el.textContent = msg; el.hidden = false; clearTimeout(el._t); el._t = setTimeout(() => { el.hidden = true; }, 4200);
+  }
   async function toggleArrived(scheduleId, day, arrived){
-    const weekStart = currentWeekStart();
-    const existing = attendanceFor(scheduleId, day);
-    if(existing){
-      const { error } = await sbClient.from("schedule_attendance")
-        .update({ arrived, arrived_at: arrived ? new Date().toISOString() : null })
-        .eq("id", existing.id);
-      if(error){ console.warn(error); return; }
-    }else{
-      const { error } = await sbClient.from("schedule_attendance")
-        .insert({ schedule_id: scheduleId, day, week_start: weekStart, arrived, arrived_at: arrived ? new Date().toISOString() : null });
-      if(error){ console.warn(error); return; }
+    const k = scheduleId + "|" + day;
+    pendingTicks.set(k, arrived);
+    const row = { schedule_id: scheduleId, day, week_start: currentWeekStart(), arrived, arrived_at: arrived ? new Date().toISOString() : null };
+    let error = null;
+    for(let attempt = 0; attempt < 3; attempt++){
+      // One row per student/day/week: insert it, or update it if it's already there (no "already exists" failures).
+      ({ error } = await sbClient.from("schedule_attendance").upsert([row], { onConflict: "schedule_id,day,week_start" }));
+      if(!error) break;
+      if(/jwt|token|expired|401/i.test(String(error.message || ""))){ try{ await sbClient.auth.refreshSession(); }catch(e){} }
+      await new Promise(r => setTimeout(r, 600 * (attempt + 1)));
+    }
+    if(pendingTicks.get(k) !== arrived) return;   // ticked again meanwhile — the newer click wins
+    if(error){
+      console.warn(error);
+      pendingTicks.delete(k);
+      renderCalendar();
+      calToast(/row-level security|permission/i.test(String(error.message || ""))
+        ? "Couldn't save that tick — this student isn't in your group's list. Ask an admin."
+        : "Couldn't save that tick — check the connection and tap it again.");
+      return;
     }
     const sc = schedules.find(s => s.id === scheduleId);
     const en = sc ? enrollments.find(e => e.id === sc.subject_enrollment_id || e.student_id === sc.student_id) : null;
     const name = (sc && sc.student_name) || (en && en.student_name) || "a student";
     logHistory("toggle_arrived", `Marked ${name} ${arrived ? "arrived" : "not arrived"} for ${day}`, "schedule_attendance", scheduleId);
     await loadAttendance();
+    if(pendingTicks.get(k) === arrived) pendingTicks.delete(k);
     renderCalendar();
   }
 
