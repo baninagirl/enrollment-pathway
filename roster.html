@@ -2110,7 +2110,7 @@ window.kumonPtcNav = function(client, role){
               <option value="Reading" ${subject==="Reading"?"selected":""}>Reading</option>
             </select>
           </label>
-          <label class="field">Teacher<select name="teacher" ${isTeacherScoped()?"disabled":""}>${teacherOptions(enrollment.teacher)}</select></label>
+          <label class="field">Teacher<select name="teacher">${teacherOptions(enrollment.teacher)}</select></label>
           <label class="field" style="flex-direction:row; align-items:center; gap:8px; margin-bottom:2px;"><input type="hidden" name="monitor_field" value="1"><input type="checkbox" name="is_monitor" value="1" ${enrollment.is_monitor ? "checked" : ""} style="width:auto;"> Monitor student</label>
           <span class="hint" style="font-size:11.5px; margin:0 0 12px; display:block;">${enrollment.is_monitor
             ? `On monitor since ${esc(monitorCycleLabel(monitorSinceKey(enrollment)) || "—")}. Untick to move them to the regular roster.`
@@ -2191,7 +2191,7 @@ window.kumonPtcNav = function(client, role){
       <form id="bulkEditForm">
         <div class="modal-body">
           <p class="hint" style="font-size:12px; color:var(--ink-muted); margin:0;">Only the fields you touch get applied to all ${n} selected — leave the rest as "No change".</p>
-          <label class="field">Teacher<select name="teacher" ${isTeacherScoped()?"disabled":""}>
+          <label class="field">Teacher<select name="teacher">
             <option value="__nochange__" selected>No change</option>
             ${groupedTeacherOptions(trainers, "__nochange__", {})}
           </select></label>
@@ -2321,8 +2321,6 @@ window.kumonPtcNav = function(client, role){
           }
         }
         const patch = {
-          // A teacher editing a group-mate's student leaves the teacher as it was (the picker is locked for her).
-          teacher: isTeacherScoped() ? (editingEnrollment.teacher || currentTeacherName) : (fd.get("teacher") || null),
           current_level: fd.get("current_level") || null,
           current_page: fd.get("current_page") || null,
           mode: fd.get("mode") || null,
@@ -2340,12 +2338,20 @@ window.kumonPtcNav = function(client, role){
           // saving a roster edit never touches (or blanks) values the form no longer shows.
           updated_at: new Date().toISOString()
         };
+        // Schedule first: if a teacher moves the child to a teacher outside her group, she can't see the row afterwards.
+        if(editingEnrollment){
+          await saveScheduleForEnrollment(editingId, editingEnrollment.student_id, editingEnrollment.student_name, readScheduleRowsFromForm(fd));
+        }
         const { data: savedRows, error } = await sbClient.from("subject_enrollments").update(patch).eq("id", editingId).select("id");
         if(error){ alert("Couldn't save: " + error.message); return; }
         if(!savedRows || !savedRows.length){ alert("Couldn't save — the database didn't allow this change."); return; }
         const monitorChanged = "is_monitor" in patch;
-        if(editingEnrollment){
-          await saveScheduleForEnrollment(editingId, editingEnrollment.student_id, editingEnrollment.student_name, readScheduleRowsFromForm(fd));
+        // Teacher change last, through the checked database function (phase107) — teachers can move students too.
+        const newTeacher = (fd.get("teacher") || "").toString();
+        if(editingEnrollment && newTeacher && newTeacher !== (editingEnrollment.teacher || "")){
+          const { error: mvErr } = await sbClient.rpc("move_subject_teacher", { p_ids: [editingId], p_teacher: newTeacher });
+          if(mvErr){ alert("Saved, but couldn't change the teacher: " + mvErr.message); }
+          else logHistory("move_teacher", `Moved ${editingEnrollment.student_name}'s ${editingEnrollment.subject || ""} from ${editingEnrollment.teacher || "no teacher"} to ${newTeacher}`, "subject_enrollment", editingId);
         }
         logHistory(
           "edit_enrollment",
@@ -2480,7 +2486,7 @@ window.kumonPtcNav = function(client, role){
       const fd = new FormData(e.target);
       const patch = {};
       const teacher = fd.get("teacher");
-      if(!isTeacherScoped() && teacher && teacher !== "__nochange__") patch.teacher = teacher;
+      const moveTo = (teacher && teacher !== "__nochange__") ? teacher : null;   // applied last, via move_subject_teacher (phase107)
       const subject = fd.get("subject");
       if(!isTeacherScoped() && subject && subject !== "__nochange__") patch.subject = subject;
       const status = fd.get("status");
@@ -2496,7 +2502,7 @@ window.kumonPtcNav = function(client, role){
       // their cycle would make the monitor flag permanent), so it's applied as its own update below.
       const newChoice = (fd.get("new_cycle") || "__nochange__").toString();
       const touchNew = newChoice !== "__nochange__";
-      if(Object.keys(patch).length === 0 && !touchNew){ alert("Nothing was changed — pick at least one field to update, or Cancel."); return; }
+      if(Object.keys(patch).length === 0 && !touchNew && !moveTo){ alert("Nothing was changed — pick at least one field to update, or Cancel."); return; }
       patch.updated_at = new Date().toISOString();
 
       const ids = [...selectedIds];
@@ -2505,6 +2511,7 @@ window.kumonPtcNav = function(client, role){
       // rows can differ from each other, so undo has to restore each one individually
       // rather than reversing the patch as if every row started the same.
       const patchKeys = Object.keys(patch).filter(k => k !== "updated_at");
+      const priorTeachers = moveTo ? ids.map(id => { const r = enrollments.find(e => e.id === id); return { id, teacher: r ? r.teacher : null }; }) : [];
       const priorValues = ids.map(id => {
         const row = enrollments.find(e => e.id === id);
         const prior = { id };
@@ -2513,12 +2520,19 @@ window.kumonPtcNav = function(client, role){
         return prior;
       });
 
-      const { error } = await sbClient.from("subject_enrollments").update(patch).in("id", ids);
-      if(error){ alert("Couldn't apply changes: " + error.message); return; }
-      if(newIds.length){
+      if(newIds.length){   // before the main update: moving rows to a teacher outside a teacher's group hides them from her
         const { error: nErr } = await sbClient.from("subject_enrollments").update({ monitor_cycle: newChoice === "__clear__" ? null : newChoice }).in("id", newIds);
-        if(nErr){ alert("Other changes saved, but the NEW tag couldn't be applied: " + nErr.message); }
+        if(nErr){ alert("The NEW tag couldn't be applied: " + nErr.message); }
         else patchKeys.push("new tag");
+      }
+      if(patchKeys.length){
+        const { error } = await sbClient.from("subject_enrollments").update(patch).in("id", ids);
+        if(error){ alert("Couldn't apply changes: " + error.message); return; }
+      }
+      if(moveTo){
+        const { error: mvErr } = await sbClient.rpc("move_subject_teacher", { p_ids: ids, p_teacher: moveTo });
+        if(mvErr){ alert("Couldn't change the teacher: " + mvErr.message); }
+        else { patchKeys.push("teacher"); logHistory("move_teacher", `Moved ${ids.length} subject${ids.length===1?"":"s"} to ${moveTo}`, "subject_enrollment", ids.join(",")); }
       }
       closeModal();
       selectedIds.clear();
@@ -2528,8 +2542,14 @@ window.kumonPtcNav = function(client, role){
       logHistory("bulk_edit_enrollments", `${label} (${patchKeys.join(", ")})`, "subject_enrollment", ids.join(","));
       pushUndo(label,
         async ()=>{
+          for(const p of priorTeachers){   // move back first, so the rows are visible again for the rest
+            if(!p.teacher) continue;
+            const { error } = await sbClient.rpc("move_subject_teacher", { p_ids: [p.id], p_teacher: p.teacher });
+            if(error) throw error;
+          }
           for(const p of priorValues){
             const { id, ...fields } = p;
+            if(Object.keys(fields).length === 0) continue;
             fields.updated_at = new Date().toISOString();
             const { error } = await sbClient.from("subject_enrollments").update(fields).eq("id", id);
             if(error) throw error;
@@ -2537,8 +2557,11 @@ window.kumonPtcNav = function(client, role){
           await loadEnrollments(); renderBoth();
         },
         async ()=>{
-          const { error } = await sbClient.from("subject_enrollments").update(patch).in("id", ids);
-          if(error) throw error;
+          if(Object.keys(patch).some(k => k !== "updated_at")){
+            const { error } = await sbClient.from("subject_enrollments").update(patch).in("id", ids);
+            if(error) throw error;
+          }
+          if(moveTo){ const { error } = await sbClient.rpc("move_subject_teacher", { p_ids: ids, p_teacher: moveTo }); if(error) throw error; }
           await loadEnrollments(); renderBoth();
         }
       );
