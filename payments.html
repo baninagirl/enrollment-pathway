@@ -96,6 +96,11 @@
   .card{ background:var(--surface); border:1px solid var(--border); border-radius:14px; margin-bottom:18px; }
   .card-head{ display:flex; align-items:center; justify-content:space-between; padding:14px 16px; border-bottom:1px solid var(--border); gap:10px; flex-wrap:wrap; }
   .card-head h3{ font-size:14.5px; font-weight:700; }
+  .soa-col{ text-align:center; width:52px; white-space:nowrap; }
+  .sel-col{ width:30px; text-align:center; }
+  .soa-col input, .sel-col input{ width:16px; height:16px; margin:0; cursor:pointer; accent-color:var(--brand, #3b4fd8); }
+  .soa-bar{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; padding:10px 16px; border-bottom:1px solid var(--border); background:var(--surface-2, #f6f7fb); font-size:13px; }
+  .soa-bar select{ width:auto; }
   .empty{ padding:30px 16px; text-align:center; color:var(--ink-muted); font-size:13.5px; }
 
   .stats{ display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin-bottom:18px; }
@@ -444,10 +449,13 @@ window.kumonPtcNav = function(client, role){
           <h3 id="tableTitle">This month</h3>
           <span class="muted" id="tableCount" style="font-size:12.5px;"></span>
         </div>
+        <div class="soa-bar" id="soaBar" hidden></div>
         <div class="table-scroll">
           <table class="stable">
             <thead><tr>
-              <th>Student</th><th>Grade</th><th>Group</th><th>Tuition due</th><th>Paid</th><th>Balance</th><th>Status</th><th></th>
+              <th class="sel-col"><input type="checkbox" id="soaSelectAll" data-action="soa-select-all" title="Select everyone shown"></th>
+              <th>Student</th><th>Grade</th><th>Group</th><th>Tuition due</th><th>Paid</th><th>Balance</th><th>Status</th>
+              <th class="soa-col">SOA 1</th><th class="soa-col">SOA 2</th><th class="soa-col">SOA 3</th><th class="soa-col">SOA 4</th><th></th>
             </tr></thead>
             <tbody id="paymentsBody"></tbody>
           </table>
@@ -521,6 +529,10 @@ window.kumonPtcNav = function(client, role){
   let students = [], enrollments = [], billingGroups = [], receipts = [], trainers = [], absences = [];
   let selectedMonth = monthDefault(); // "YYYY-MM"
   let groupView = false;
+  // SOA 1–4 ticks for the billing month on screen (phase108): "studentId|n" → true. Selection for bulk ticking.
+  let soaMonth = null, soaTicks = new Set(), soaLoading = false;
+  const soaSelected = new Set();
+  let soaBulkN = "1";
   let pageView = "month"; // "month" | "unpaid" | "absent"
   const filters = { search: "", status: "all", teacher: "all" };
   let canViewOutstanding = false;
@@ -858,7 +870,7 @@ window.kumonPtcNav = function(client, role){
     if(started) return;
     started = true;
     if(!isAuthorized()) return;
-    await Promise.all([loadStudents(), loadSettings(), loadEnrollments(), loadBillingGroups(), loadReceipts(), loadAbsences()]);
+    await Promise.all([loadStudents(), loadSettings(), loadEnrollments(), loadBillingGroups(), loadReceipts(), loadAbsences(), loadSoa()]);
     populateTeacherFilter();
     if(isTeacherScoped() && currentTeacherName){ filters.teacher = currentTeacherName; }
     render();
@@ -874,6 +886,10 @@ window.kumonPtcNav = function(client, role){
       .subscribe();
     sbClient.channel("realtime:payments-enrollments")
       .on("postgres_changes", { event:"*", schema:"public", table:"subject_enrollments" }, async ()=>{ await loadEnrollments(); render(); })
+      .subscribe();
+    let soaTimer = null;
+    sbClient.channel("realtime:payment_soa")
+      .on("postgres_changes", { event:"*", schema:"public", table:"payment_soa" }, ()=>{ clearTimeout(soaTimer); soaTimer = setTimeout(async ()=>{ await loadSoa(); render(); }, 700); })
       .subscribe();
     sbClient.channel("realtime:payments-absences")
       .on("postgres_changes", { event:"*", schema:"public", table:"absence_records" }, async ()=>{ await loadAbsences(); render(); })
@@ -917,6 +933,55 @@ window.kumonPtcNav = function(client, role){
     trainers = Array.isArray(v.teachers) ? v.teachers : (Array.isArray(v.trainers) ? v.trainers : []);
     await loadTeacherGroups();
   }
+  function soaHas(sid, n){ return soaTicks.has(`${sid}|${n}`); }
+  async function loadSoa(){
+    const ym = selectedMonth;
+    soaLoading = true;
+    const { data, error } = await sbClient.from("payment_soa").select("student_id,soa").eq("bill_month", ym).limit(10000);
+    soaLoading = false;
+    if(error){ console.warn(error); if(soaMonth !== ym){ soaTicks = new Set(); } soaMonth = ym; return; }   // keep what's on screen on a failed reload
+    if(ym !== selectedMonth) return;   // month changed while loading
+    soaTicks = new Set((data || []).map(r => `${r.student_id}|${r.soa}`));
+    soaMonth = ym;
+  }
+  async function setSoa(ids, n, on){
+    const ym = selectedMonth;
+    ids = [...new Set(ids)];
+    if(!ids.length) return true;
+    ids.forEach(id => on ? soaTicks.add(`${id}|${n}`) : soaTicks.delete(`${id}|${n}`));   // show it right away
+    render();
+    let error;
+    if(on){
+      const who = currentUser ? (currentUser.email || null) : null;
+      ({ error } = await sbClient.from("payment_soa").upsert(ids.map(id => ({ student_id: id, bill_month: ym, soa: Number(n), done_by: who })),
+                                                             { onConflict: "student_id,bill_month,soa", ignoreDuplicates: true }));
+    }else{
+      ({ error } = await sbClient.from("payment_soa").delete().eq("bill_month", ym).eq("soa", Number(n)).in("student_id", ids));
+    }
+    if(error){
+      console.warn(error);
+      toast("Couldn't save the SOA tick — " + (/relation .*payment_soa|does not exist|schema cache/i.test(error.message || "") ? "run phase108-payments-soa.sql in Supabase." : "try again."));
+      await loadSoa(); render();
+      return false;
+    }
+    return true;
+  }
+  function renderSoaBar(rows){
+    const bar = $("#soaBar"); if(!bar) return;
+    const shown = new Set(rows.map(r => r.student.id));
+    [...soaSelected].forEach(id => { if(!shown.has(id)) soaSelected.delete(id); });   // only what's on screen stays selected
+    const all = $("#soaSelectAll");
+    if(all){ all.checked = rows.length > 0 && rows.every(r => soaSelected.has(r.student.id)); all.indeterminate = !all.checked && soaSelected.size > 0; }
+    const n = soaSelected.size;
+    bar.hidden = !n;
+    if(!n){ bar.innerHTML = ""; return; }
+    bar.innerHTML = `<b>${n} selected</b>
+      <select id="soaBulkN">${[1,2,3,4].map(k => `<option value="${k}" ${String(k) === soaBulkN ? "selected" : ""}>SOA ${k}</option>`).join("")}</select>
+      <button type="button" class="btn sm primary" data-action="soa-bulk" data-on="1">Tick</button>
+      <button type="button" class="btn sm" data-action="soa-bulk" data-on="0">Untick</button>
+      <button type="button" class="btn sm ghost" data-action="soa-clear-sel" style="margin-left:auto;">Clear selection</button>`;
+  }
+
   async function loadAbsences(){
     const { data, error } = await sbClient.from("absence_records").select("*").order("marked_absent_at", { ascending:false });
     if(error){ console.warn(error); absences = []; return; }
@@ -1563,6 +1628,7 @@ window.kumonPtcNav = function(client, role){
 
   function render(){
     if(!isAuthorized()) return;
+    if(soaMonth !== null && soaMonth !== selectedMonth && !soaLoading){ soaSelected.clear(); loadSoa().then(render); }
     renderMonthNav();
     renderStats();
     renderPageView();
@@ -1652,9 +1718,11 @@ window.kumonPtcNav = function(client, role){
     $("#tableCount").textContent = rows.length ? `${rows.length} student${rows.length===1?"":"s"}` : "";
     const body = $("#paymentsBody");
     if(!rows.length){
-      body.innerHTML = `<tr><td colspan="8"><div class="empty">No students match this view.</div></td></tr>`;
+      body.innerHTML = `<tr><td colspan="13"><div class="empty">No students match this view.</div></td></tr>`;
+      renderSoaBar(rows);
       return;
     }
+    renderSoaBar(rows);
     if(!groupView){
       body.innerHTML = rows.map(r => rowHtml(r)).join("");
       return;
@@ -1679,7 +1747,10 @@ window.kumonPtcNav = function(client, role){
       const paid = members.reduce((n,r)=>n+r.paid,0);
       const balance = due - paid;
       const status = balance <= 0 ? "paid" : (paid > 0 ? "partial" : "unpaid");
+      const memberIds = members.map(r => r.student.id);
+      const allSel = memberIds.every(id => soaSelected.has(id));
       html += `<tr class="group-row">
+        <td class="sel-col"><input type="checkbox" data-action="soa-select-group" data-ids="${esc(memberIds.join(","))}" ${allSel ? "checked" : ""} title="Select this group"></td>
         <td class="gname">${esc(name)}<span class="faint" style="font-weight:500;">(${members.length})</span>${gid !== "__none__" ? `<button class="iconbtn" data-action="download-tuition" data-group="${esc(gid)}" title="Download tuition image">⬇</button>` : ""}</td>
         <td></td>
         <td></td>
@@ -1687,6 +1758,7 @@ window.kumonPtcNav = function(client, role){
         <td class="money">${peso(paid)}</td>
         <td class="money">${peso(balance)}</td>
         <td>${statusPill(status)}</td>
+        ${[1,2,3,4].map(n => { const k = memberIds.filter(id => soaHas(id, n)).length; return `<td class="soa-col faint" style="font-size:12px;">${k ? `${k}/${memberIds.length}` : ""}</td>`; }).join("")}
         <td></td>
       </tr>`;
       html += members.map(r => rowHtml(r)).join("");
@@ -1697,6 +1769,7 @@ window.kumonPtcNav = function(client, role){
   function rowHtml(r){
     const s = r.student;
     return `<tr>
+      <td class="sel-col"><input type="checkbox" data-action="soa-select" data-student="${esc(s.id)}" ${soaSelected.has(s.id) ? "checked" : ""}></td>
       <td>${esc(displayName(s))}${subjectBadgesFor(s.id)}<button class="iconbtn" data-action="download-tuition" data-student="${esc(s.id)}" title="Download tuition image">⬇</button></td>
       <td class="muted">${esc(s.age_grade || "—")}</td>
       <td class="muted">${esc(groupNameFor(s.billing_group_id) || "—")}</td>
@@ -1704,6 +1777,7 @@ window.kumonPtcNav = function(client, role){
       <td class="money">${peso(r.paid)}</td>
       <td class="money">${peso(r.balance)}</td>
       <td>${statusPill(r.status)}</td>
+      ${[1,2,3,4].map(n => `<td class="soa-col"><input type="checkbox" data-action="soa-toggle" data-student="${esc(s.id)}" data-n="${n}" ${soaHas(s.id, n) ? "checked" : ""} title="SOA ${n} sent"></td>`).join("")}
       <td><div class="row-actions"><button class="iconbtn" data-action="open-payment-history" data-student="${esc(s.id)}" title="Payment history — undo a payment">🕘</button><button class="btn sm" data-action="open-log-payment" data-student="${esc(s.id)}">Log payment</button>${markPaidLeft(s.id) > 0 ? `<button class="btn sm paid-btn" data-action="mark-paid" data-student="${esc(s.id)}" title="Record this month's remaining tuition as paid, no receipt needed">Mark paid</button>` : ""}${canMarkAbsent() ? `<button class="btn sm danger" data-action="mark-absent" data-student="${esc(s.id)}">Mark absent</button>` : ""}</div></td>
     </tr>`;
   }
@@ -2290,6 +2364,7 @@ window.kumonPtcNav = function(client, role){
   document.addEventListener("change", (e)=>{
     if(e.target.id === "searchInput"){ filters.search = e.target.value; render(); }
     if(e.target.id === "statusFilter"){ filters.status = e.target.value; render(); }
+    if(e.target.id === "soaBulkN"){ soaBulkN = e.target.value; }
     if(e.target.id === "teacherFilter"){ filters.teacher = e.target.value; render(); }
     if(e.target.closest && e.target.closest("#logPaymentForm") && (e.target.name === "studentId" || e.target.name === "coversMonth")) refreshLogPaymentSuggestion();
   });
@@ -2316,6 +2391,26 @@ window.kumonPtcNav = function(client, role){
       btn.classList.toggle("on", groupView);
       btn.textContent = groupView ? "View by student" : "View by billing group";
       render();
+    }
+    else if(action === "soa-toggle"){ await setSoa([btn.dataset.student], btn.dataset.n, btn.checked); }
+    else if(action === "soa-select"){ btn.checked ? soaSelected.add(btn.dataset.student) : soaSelected.delete(btn.dataset.student); render(); }
+    else if(action === "soa-select-group"){ (btn.dataset.ids || "").split(",").filter(Boolean).forEach(id => btn.checked ? soaSelected.add(id) : soaSelected.delete(id)); render(); }
+    else if(action === "soa-select-all"){ const ids = filteredRows().map(r => r.student.id); ids.forEach(id => btn.checked ? soaSelected.add(id) : soaSelected.delete(id)); render(); }
+    else if(action === "soa-clear-sel"){ soaSelected.clear(); render(); }
+    else if(action === "soa-bulk"){
+      const n = ($("#soaBulkN") || {}).value || soaBulkN, on = btn.dataset.on === "1";
+      const ids = [...soaSelected];
+      const changed = ids.filter(id => soaHas(id, n) !== on);
+      if(!changed.length){ toast(`Already ${on ? "ticked" : "unticked"}.`); return; }
+      if(await setSoa(changed, n, on)){
+        const label = `${on ? "Ticked" : "Unticked"} SOA ${n} for ${changed.length} student${changed.length === 1 ? "" : "s"}`;
+        const ym = selectedMonth;
+        logHistory("soa_bulk", `${label} (${fmtBillLabel(ym)})`);
+        toast(label + ".");
+        pushUndo(label,
+          async ()=>{ if(selectedMonth !== ym){ selectedMonth = ym; await loadSoa(); } if(!(await setSoa(changed, n, !on))) throw new Error("undo failed"); },
+          async ()=>{ if(selectedMonth !== ym){ selectedMonth = ym; await loadSoa(); } if(!(await setSoa(changed, n, on))) throw new Error("redo failed"); });
+      }
     }
     else if(action === "mark-paid"){ markPaid(btn.dataset.student); }
     else if(action === "open-log-payment"){ openLogPaymentModal(btn.dataset.student || null); }
