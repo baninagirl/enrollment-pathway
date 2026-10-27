@@ -4068,6 +4068,18 @@ window.kumonPtcNav = function(client, role){
   }
 
   function confirmDeleteModal(name, studentId){
+    // A child with subjects on the Student Roster can't be deleted from here: deleting the student also wipes their
+    // roster subjects, past months, payments and absences (that's how Julianne Alferez was lost, Oct 22).
+    const onRoster = STATE.enrollments.filter(e => e.studentId === studentId);
+    if(onRoster.length) return `
+      <div class="modal-head"><h3>${esc(name || "This student")} is on the Student Roster</h3><button class="iconbtn" data-action="close-modal">✕</button></div>
+      <div class="modal-body">
+        <div style="font-size:13.5px;">${esc(name || "This student")} has ${onRoster.length === 1 ? "a subject" : "subjects"} on the Student Roster: <b>${onRoster.map(e => esc(`${e.subject || ""}${e.teacher ? " (" + e.teacher + ")" : ""}`)).join(", ")}</b>.
+        Deleting here would also erase those subjects, past months, payments and absences, for good — so it's blocked.</div>
+        <div style="font-size:13px; color:var(--ink-muted); margin-top:8px;">To remove a duplicate, use <b>Possible duplicates → Merge</b> on the Student Roster instead. To stop a subject, set it to inactive on the Student Roster.</div>
+      </div>
+      <div class="modal-foot"><button class="btn primary" data-action="close-modal">OK</button></div>
+    `;
     return `
       <div class="modal-head"><h3>Delete ${esc(name || "this student")}?</h3><button class="iconbtn" data-action="close-modal">✕</button></div>
       <div class="modal-body">
@@ -4519,6 +4531,7 @@ window.kumonPtcNav = function(client, role){
   }
   async function deleteStudentEverywhere(studentId){
     if(!studentId) return;
+    if(STATE.enrollments.some(e => e.studentId === studentId)){ toast("Not deleted — this student has subjects on the Student Roster."); return; }
     const snap = {
       studentSnap: studentById(studentId),
       diagSnap: STATE.diagnostics.filter(d => d.studentId === studentId),

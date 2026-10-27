@@ -735,9 +735,22 @@ window.kumonPtcNav = function(client, role){
     if(error){ console.warn(error); absences = []; return; }
     absences = data || [];
   }
+  // Reads every row, 1,000 at a time (one request stops at the project's row limit). Returns { data, error }.
+  async function fetchAll(table, cols, apply){
+    const out = []; const size = 1000;
+    for(let from = 0; ; from += size){
+      let q = sbClient.from(table).select(cols);
+      if(apply) q = apply(q);
+      const { data, error } = await q.range(from, from + size - 1);
+      if(error) return { data: null, error };
+      out.push(...(data || []));
+      if(!data || data.length < size) break;
+    }
+    return { data: out, error: null };
+  }
   async function loadReceipts(){
-    const { data, error } = await sbClient.from("payment_receipts").select("*");
-    if(error){ console.warn(error); receipts = []; return; }
+    const { data, error } = await fetchAll("payment_receipts", "*", q => q.order("id"));
+    if(error){ console.warn(error); return; }   // keep what's on screen
     receipts = data || [];
   }
 

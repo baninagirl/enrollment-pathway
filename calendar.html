@@ -745,10 +745,23 @@ window.kumonPtcNav = function(client, role){
   }
   // Attendance is a per-week check-off, not a permanent log — only this week's row
   // ever matters on screen, so that's all we load.
+  // Reads every row, 1,000 at a time (one request stops at the project's row limit). Returns { data, error }.
+  async function fetchAll(table, cols, apply){
+    const out = []; const size = 1000;
+    for(let from = 0; ; from += size){
+      let q = sbClient.from(table).select(cols);
+      if(apply) q = apply(q);
+      const { data, error } = await q.range(from, from + size - 1);
+      if(error) return { data: null, error };
+      out.push(...(data || []));
+      if(!data || data.length < size) break;
+    }
+    return { data: out, error: null };
+  }
   async function loadAttendance(){
     // This week's check-offs. Older pages saved the week as the day before Monday (a time-zone slip), so both are read.
     const wk = currentWeekStart();
-    const { data, error } = await sbClient.from("schedule_attendance").select("*").in("week_start", [wk, legacyWeekStart(wk)]);
+    const { data, error } = await fetchAll("schedule_attendance", "*", q => q.in("week_start", [wk, legacyWeekStart(wk)]).order("schedule_id").order("day").order("week_start"));
     if(error){ console.warn(error); return; }   // keep the ticks on screen; never wipe them because one reload failed
     // Prefer this week's proper row over a legacy one for the same student/day.
     const rows = (data || []).slice().sort((a,b) => (a.week_start === wk) - (b.week_start === wk));

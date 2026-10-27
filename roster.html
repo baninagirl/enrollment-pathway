@@ -1078,9 +1078,22 @@ window.kumonPtcNav = function(client, role){
     if(error){ console.warn(error); billingGroups = []; return; }
     billingGroups = data || [];
   }
+  // Reads every row, 1,000 at a time (one request stops at the project's row limit). Returns { data, error }.
+  async function fetchAll(table, cols, apply){
+    const out = []; const size = 1000;
+    for(let from = 0; ; from += size){
+      let q = sbClient.from(table).select(cols);
+      if(apply) q = apply(q);
+      const { data, error } = await q.range(from, from + size - 1);
+      if(error) return { data: null, error };
+      out.push(...(data || []));
+      if(!data || data.length < size) break;
+    }
+    return { data: out, error: null };
+  }
   async function loadReceipts(){
-    const { data, error } = await sbClient.from("payment_receipts").select("id,student_id,status,covers_month,amount");
-    if(error){ console.warn(error); receipts = []; return; }
+    const { data, error } = await fetchAll("payment_receipts", "id,student_id,status,covers_month,amount", q => q.order("id"));
+    if(error){ console.warn(error); return; }   // keep what's on screen
     receipts = data || [];
   }
 
@@ -1547,8 +1560,8 @@ window.kumonPtcNav = function(client, role){
   }
 
   async function loadHistory(){
-    const { data, error } = await sbClient.from("enrollment_monthly_history").select("*").order("cycle_key", { ascending:false });
-    if(error){ console.warn(error); history = []; return; }
+    const { data, error } = await fetchAll("enrollment_monthly_history", "*", q => q.order("cycle_key", { ascending:false }).order("id"));
+    if(error){ console.warn(error); return; }   // keep what's on screen
     history = data || [];
   }
 
@@ -2547,6 +2560,15 @@ window.kumonPtcNav = function(client, role){
             const { error } = await sbClient.rpc("move_subject_teacher", { p_ids: [p.id], p_teacher: p.teacher });
             if(error) throw error;
           }
+          // Rows that had no teacher: the move function only accepts real teachers, so clear them directly.
+          let notUndone = 0;
+          for(const p of priorTeachers){
+            if(p.teacher) continue;
+            const { data, error } = await sbClient.from("subject_enrollments")
+              .update({ teacher: p.teacher === "" ? "" : null, updated_at: new Date().toISOString() }).eq("id", p.id).select("id");
+            if(error || !data || !data.length) notUndone++;
+          }
+          if(notUndone) alert(`${notUndone} subject${notUndone === 1 ? "" : "s"} couldn't be put back to "no teacher" — ask an admin to do it.`);
           for(const p of priorValues){
             const { id, ...fields } = p;
             if(Object.keys(fields).length === 0) continue;

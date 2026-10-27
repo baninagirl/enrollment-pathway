@@ -889,7 +889,7 @@ window.kumonPtcNav = function(client, role){
       .subscribe();
     let soaTimer = null;
     sbClient.channel("realtime:payment_soa")
-      .on("postgres_changes", { event:"*", schema:"public", table:"payment_soa" }, ()=>{ clearTimeout(soaTimer); soaTimer = setTimeout(async ()=>{ await loadSoa(); render(); }, 700); })
+      .on("postgres_changes", { event:"*", schema:"public", table:"payment_soa" }, ()=>{ clearTimeout(soaTimer); soaTimer = setTimeout(async ()=>{ if(soaFlushing) await soaFlushing; await loadSoa(); render(); }, 700); })
       .subscribe();
     sbClient.channel("realtime:payments-absences")
       .on("postgres_changes", { event:"*", schema:"public", table:"absence_records" }, async ()=>{ await loadAbsences(); render(); })
@@ -906,12 +906,12 @@ window.kumonPtcNav = function(client, role){
   async function loadStudents(){
     const { data, error } = await sbClient.from("students")
       .select("id,name,first_name,last_name,age_grade,status,monthly_tuition,billing_group_id");
-    if(error){ console.warn(error); students = []; return; }
+    if(error){ console.warn(error); return; }   // keep what's on screen
     students = (data || []).sort(byLastName);
   }
   async function loadEnrollments(){
     const { data, error } = await sbClient.from("subject_enrollments").select("id,student_id,status,subject,teacher");
-    if(error){ console.warn(error); enrollments = []; return; }
+    if(error){ console.warn(error); return; }   // keep what's on screen
     enrollments = data || [];
   }
   async function loadBillingGroups(){
@@ -919,10 +919,26 @@ window.kumonPtcNav = function(client, role){
     if(error){ console.warn(error); billingGroups = []; return; }
     billingGroups = data || [];
   }
+  // Reads every row, 1,000 at a time (one request stops at the project's row limit). Returns { data, error }.
+  async function fetchAll(table, cols, apply){
+    const out = []; const size = 1000;
+    for(let from = 0; ; from += size){
+      let q = sbClient.from(table).select(cols);
+      if(apply) q = apply(q);
+      const { data, error } = await q.range(from, from + size - 1);
+      if(error) return { data: null, error };
+      out.push(...(data || []));
+      if(!data || data.length < size) break;
+    }
+    return { data: out, error: null };
+  }
+  let receiptsLoaded = false;
+  // Keeps the last list on a failed reload (never empties the table). Returns true when this reload worked.
   async function loadReceipts(){
-    const { data, error } = await sbClient.from("payment_receipts").select("*").order("created_at", { ascending:false });
-    if(error){ console.warn(error); receipts = []; return; }
-    receipts = data || [];
+    const { data, error } = await fetchAll("payment_receipts", "*", q => q.order("created_at", { ascending:false }).order("id"));
+    if(error){ console.warn(error); toast("Couldn't refresh payments — showing the last list loaded."); return false; }
+    receipts = data || []; receiptsLoaded = true;
+    return true;
   }
   // Canonical teacher list — same settings row Roster/Report use for their teacher filters,
   // so this one lists the same names even for a teacher with nothing currently billable.
@@ -933,39 +949,118 @@ window.kumonPtcNav = function(client, role){
     trainers = Array.isArray(v.teachers) ? v.teachers : (Array.isArray(v.trainers) ? v.trainers : []);
     await loadTeacherGroups();
   }
-  function soaHas(sid, n){ return soaTicks.has(`${sid}|${n}`); }
+  // ---- SOA ticks: built so a tick never "goes away" on its own ----
+  //  • every click is remembered as wanted (soaWanted) until the database confirms it — a reload or a live update
+  //    that arrives in between can't undo it on screen;
+  //  • saves go out one batch at a time (a quick tick-untick can't land in the wrong order) and retry up to 4 times,
+  //    refreshing the sign-in if it expired; only after that is the tick put back, with a message;
+  //  • a reload that started before a save finished is thrown away and done again;
+  //  • a failed reload keeps what's on screen; ticks can't be clicked until the month on screen has loaded.
+  const soaWanted = new Map();          // "ym|sid|n" → true/false, not yet confirmed by the database
+  let soaWriteSeq = 0, soaFlushing = null;
+  const soaKey = (ym, sid, n) => `${ym}|${sid}|${n}`;
+  function soaReady(){ return soaMonth === selectedMonth; }
+  function soaHas(sid, n){
+    const w = soaWanted.get(soaKey(selectedMonth, sid, n));
+    if(w !== undefined) return w;
+    return soaReady() && soaTicks.has(`${sid}|${n}`);
+  }
   async function loadSoa(){
     const ym = selectedMonth;
     soaLoading = true;
-    const { data, error } = await sbClient.from("payment_soa").select("student_id,soa").eq("bill_month", ym).limit(10000);
-    soaLoading = false;
-    if(error){ console.warn(error); if(soaMonth !== ym){ soaTicks = new Set(); } soaMonth = ym; return; }   // keep what's on screen on a failed reload
-    if(ym !== selectedMonth) return;   // month changed while loading
-    soaTicks = new Set((data || []).map(r => `${r.student_id}|${r.soa}`));
-    soaMonth = ym;
+    try{
+      for(let attempt = 0; attempt < 3; attempt++){
+        const seqAtStart = soaWriteSeq;
+        const rows = [];
+        let failed = null;
+        for(let from = 0; ; from += 1000){
+          const { data, error } = await sbClient.from("payment_soa").select("student_id,soa").eq("bill_month", ym)
+            .order("student_id").order("soa").range(from, from + 999);
+          if(error){ failed = error; break; }
+          rows.push(...(data || []));
+          if(!data || data.length < 1000) break;
+        }
+        if(failed){ console.warn(failed); if(attempt < 2){ await new Promise(r => setTimeout(r, 800 * (attempt + 1))); continue; } return; }  // keep what's on screen
+        if(ym !== selectedMonth) return;                    // month changed while loading
+        if(seqAtStart !== soaWriteSeq) continue;             // a save finished meanwhile — this read may be older; read again
+        soaTicks = new Set(rows.map(r => `${r.student_id}|${r.soa}`));
+        soaMonth = ym;
+        return;
+      }
+    } finally { soaLoading = false; }
   }
+  function soaLooksLikeAuth(err){ const m = String((err && (err.message || err.code)) || ""); return /jwt|token|expired|401|not authenticated/i.test(m); }
+  async function soaSend(ym, n, on, ids){
+    for(let attempt = 0; attempt < 4; attempt++){
+      let error = null;
+      for(let i = 0; i < ids.length && !error; i += 100){       // chunks keep requests small
+        const part = ids.slice(i, i + 100);
+        if(on){
+          const who = currentUser ? (currentUser.email || null) : null;
+          ({ error } = await sbClient.from("payment_soa").upsert(part.map(id => ({ student_id: id, bill_month: ym, soa: Number(n), done_by: who })),
+                                                                 { onConflict: "student_id,bill_month,soa", ignoreDuplicates: true }));
+        }else{
+          ({ error } = await sbClient.from("payment_soa").delete().eq("bill_month", ym).eq("soa", Number(n)).in("student_id", part));
+        }
+      }
+      if(!error) return null;
+      console.warn("SOA save attempt", attempt + 1, error);
+      if(/relation .*payment_soa|does not exist|schema cache/i.test(error.message || "")) return error;   // table missing — retrying won't help
+      if(soaLooksLikeAuth(error)){ try{ await sbClient.auth.refreshSession(); }catch(_){ } }
+      await new Promise(r => setTimeout(r, [600, 1500, 3000, 0][attempt]));
+    }
+    return { message: "no connection" };
+  }
+  function soaFlush(){
+    if(soaFlushing) return soaFlushing;
+    soaFlushing = (async ()=>{
+      const failedKeys = new Set();
+      let lastErr = null;
+      while(true){
+        const batch = [...soaWanted.entries()].filter(([k]) => !failedKeys.has(k));
+        if(!batch.length) break;
+        const groups = new Map();      // "ym|n|on" → [ids]
+        batch.forEach(([k, on]) => { const [ym, sid, n] = k.split("|"); const g = `${ym}|${n}|${on ? 1 : 0}`; if(!groups.has(g)) groups.set(g, []); groups.get(g).push(sid); });
+        for(const [g, ids] of groups){
+          const [ym, n, on] = g.split("|");
+          const err = await soaSend(ym, n, on === "1", ids);
+          ids.forEach(sid => {
+            const k = soaKey(ym, sid, n);
+            if(err){ failedKeys.add(k); return; }
+            if(soaWanted.get(k) === (on === "1")){            // still what's wanted → confirmed
+              soaWanted.delete(k);
+              if(ym === soaMonth) (on === "1") ? soaTicks.add(`${sid}|${n}`) : soaTicks.delete(`${sid}|${n}`);
+            }                                                 // else: clicked again meanwhile → next loop sends the new value
+          });
+          if(err) lastErr = err; else soaWriteSeq++;
+        }
+      }
+      if(failedKeys.size){
+        failedKeys.forEach(k => soaWanted.delete(k));
+        toast("Couldn't save " + (failedKeys.size === 1 ? "an SOA tick" : failedKeys.size + " SOA ticks") + " — " +
+              (/payment_soa|does not exist|schema cache/i.test((lastErr && lastErr.message) || "") ? "run phase108-payments-soa.sql in Supabase." : "check the connection and tick again."));
+        await loadSoa();
+      }
+      return failedKeys;
+    })();
+    soaFlushing.finally(() => { soaFlushing = null; if(soaWanted.size) soaFlush(); render(); });
+    return soaFlushing;
+  }
+  // Returns true when every one of these ticks is saved.
   async function setSoa(ids, n, on){
+    if(!soaReady()){ toast("Still loading this month's SOAs — try again in a second."); render(); return false; }
     const ym = selectedMonth;
     ids = [...new Set(ids)];
     if(!ids.length) return true;
-    ids.forEach(id => on ? soaTicks.add(`${id}|${n}`) : soaTicks.delete(`${id}|${n}`));   // show it right away
+    const keys = ids.map(id => soaKey(ym, id, n));
+    keys.forEach(k => soaWanted.set(k, !!on));
     render();
-    let error;
-    if(on){
-      const who = currentUser ? (currentUser.email || null) : null;
-      ({ error } = await sbClient.from("payment_soa").upsert(ids.map(id => ({ student_id: id, bill_month: ym, soa: Number(n), done_by: who })),
-                                                             { onConflict: "student_id,bill_month,soa", ignoreDuplicates: true }));
-    }else{
-      ({ error } = await sbClient.from("payment_soa").delete().eq("bill_month", ym).eq("soa", Number(n)).in("student_id", ids));
-    }
-    if(error){
-      console.warn(error);
-      toast("Couldn't save the SOA tick — " + (/relation .*payment_soa|does not exist|schema cache/i.test(error.message || "") ? "run phase108-payments-soa.sql in Supabase." : "try again."));
-      await loadSoa(); render();
-      return false;
-    }
-    return true;
+    const failed = new Set(await soaFlush());
+    while(soaFlushing){ (await soaFlushing).forEach(k => failed.add(k)); }   // a follow-up round may be carrying our keys
+    return !keys.some(k => failed.has(k) || soaWanted.has(k));
   }
+  window.addEventListener("beforeunload", e => { if(soaWanted.size){ e.preventDefault(); e.returnValue = ""; } });
+
   function renderSoaBar(rows){
     const bar = $("#soaBar"); if(!bar) return;
     const shown = new Set(rows.map(r => r.student.id));
@@ -977,8 +1072,8 @@ window.kumonPtcNav = function(client, role){
     if(!n){ bar.innerHTML = ""; return; }
     bar.innerHTML = `<b>${n} selected</b>
       <select id="soaBulkN">${[1,2,3,4].map(k => `<option value="${k}" ${String(k) === soaBulkN ? "selected" : ""}>SOA ${k}</option>`).join("")}</select>
-      <button type="button" class="btn sm primary" data-action="soa-bulk" data-on="1">Tick</button>
-      <button type="button" class="btn sm" data-action="soa-bulk" data-on="0">Untick</button>
+      <button type="button" class="btn sm primary" data-action="soa-bulk" data-on="1" ${soaReady() ? "" : "disabled"}>Tick</button>
+      <button type="button" class="btn sm" data-action="soa-bulk" data-on="0" ${soaReady() ? "" : "disabled"}>Untick</button>
       <button type="button" class="btn sm ghost" data-action="soa-clear-sel" style="margin-left:auto;">Clear selection</button>`;
   }
 
@@ -1150,6 +1245,9 @@ window.kumonPtcNav = function(client, role){
   async function markPaid(studentId){
     const s = students.find(x => x.id === studentId);
     if(!s) return;
+    // Fresh list first, so a payment someone just logged isn't counted twice.
+    if(!(await loadReceipts())){ toast("Couldn't check the latest payments — try again in a moment."); return; }
+    render();
     const { alloc, total } = markPaidAllocation(studentId, selectedMonth);
     if(!total){ toast("Nothing left to pay this month."); return; }
     const parts = Object.entries(alloc).map(([k,v]) => `${k} ${peso(v)}`).join(" + ");
@@ -1628,7 +1726,7 @@ window.kumonPtcNav = function(client, role){
 
   function render(){
     if(!isAuthorized()) return;
-    if(soaMonth !== null && soaMonth !== selectedMonth && !soaLoading){ soaSelected.clear(); loadSoa().then(render); }
+    if(soaMonth !== selectedMonth && !soaLoading && sbClient){ soaSelected.clear(); loadSoa().then(render); }
     renderMonthNav();
     renderStats();
     renderPageView();
@@ -1777,7 +1875,7 @@ window.kumonPtcNav = function(client, role){
       <td class="money">${peso(r.paid)}</td>
       <td class="money">${peso(r.balance)}</td>
       <td>${statusPill(r.status)}</td>
-      ${[1,2,3,4].map(n => `<td class="soa-col"><input type="checkbox" data-action="soa-toggle" data-student="${esc(s.id)}" data-n="${n}" ${soaHas(s.id, n) ? "checked" : ""} title="SOA ${n} sent"></td>`).join("")}
+      ${[1,2,3,4].map(n => `<td class="soa-col"><input type="checkbox" data-action="soa-toggle" data-student="${esc(s.id)}" data-n="${n}" ${soaHas(s.id, n) ? "checked" : ""} ${soaReady() ? "" : "disabled"} title="SOA ${n} sent"></td>`).join("")}
       <td><div class="row-actions"><button class="iconbtn" data-action="open-payment-history" data-student="${esc(s.id)}" title="Payment history — undo a payment">🕘</button><button class="btn sm" data-action="open-log-payment" data-student="${esc(s.id)}">Log payment</button>${markPaidLeft(s.id) > 0 ? `<button class="btn sm paid-btn" data-action="mark-paid" data-student="${esc(s.id)}" title="Record this month's remaining tuition as paid, no receipt needed">Mark paid</button>` : ""}${canMarkAbsent() ? `<button class="btn sm danger" data-action="mark-absent" data-student="${esc(s.id)}">Mark absent</button>` : ""}</div></td>
     </tr>`;
   }
