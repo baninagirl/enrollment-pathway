@@ -439,17 +439,29 @@ window.kumonPtcNav = function(client, role){
   }
   // Adds a teacher login's name to Staff (Pipeline → Settings) if it's not there yet — Teacher
   // always, Trainer too for Trainer + Teacher logins — so no separate trip to Pipeline.
+  // Adds a name to Pipeline → Settings → Staff. Never saves when the current list couldn't be read
+  // (saving then would replace the whole list with just this one name).
   async function ensureTrainer(name, role){
-    const { data } = await sbClient.from("settings").select("value").eq("id","staff").maybeSingle();
-    const v = data ? data.value : {};
+    const { data, error } = await sbClient.from("settings").select("value").eq("id","staff").maybeSingle();
+    if(error){ console.warn(error); alert(`Couldn't add "${name}" to the Staff list (the list didn't load). Add them in Pipeline → Settings → Staff.`); return false; }
+    if(!data){
+      // No Staff list yet: create it — insert (not upsert), so an existing list we can't see is never overwritten.
+      const { error: insErr } = await sbClient.from("settings").insert({ id: "staff", value: { examiners: [], trainers: role === "trainer_teacher" ? [name] : [], teachers: [name] } });
+      if(insErr){ console.warn(insErr); alert(`Couldn't add "${name}" to the Staff list. Add them in Pipeline → Settings → Staff.`); return false; }
+      return true;
+    }
+    const v = (data.value && typeof data.value === "object") ? data.value : null;
+    if(!v){ alert(`Couldn't add "${name}" to the Staff list (it looks damaged). Add them in Pipeline → Settings → Staff.`); return false; }
     const examiners = Array.isArray(v.examiners) ? v.examiners : [];
     const trainers = Array.isArray(v.trainers) ? v.trainers : [];
     const teachers = Array.isArray(v.teachers) ? v.teachers : trainers.slice();
     const addT = !teachers.includes(name), addTr = role === "trainer_teacher" && !trainers.includes(name);
-    if(!addT && !addTr && Array.isArray(v.teachers)) return;
-    await sbClient.from("settings").upsert({ id: "staff", value: { ...v, examiners,
+    if(!addT && !addTr && Array.isArray(v.teachers)) return true;
+    const { error: upErr } = await sbClient.from("settings").update({ value: { ...v, examiners,
       trainers: addTr ? [...trainers, name] : trainers,
-      teachers: addT ? [...teachers, name] : teachers } });
+      teachers: addT ? [...teachers, name] : teachers } }).eq("id", "staff");
+    if(upErr){ console.warn(upErr); alert(`Couldn't add "${name}" to the Staff list. Add them in Pipeline → Settings → Staff.`); return false; }
+    return true;
   }
 
   function teacherNameCell(p){
@@ -595,13 +607,28 @@ window.kumonPtcNav = function(client, role){
         const patch = { role, teacher_name: teacherName || null };
         // The trigger that creates their profile row runs the instant signUp() is called
         // (before they've even confirmed their email), so this update is safe right away.
-        await sbClient.from("profiles").update(patch).eq("id", newId);
+        // Checked, with a couple of retries (the profile row can take a moment to appear).
+        let roleSet = false;
+        for(let attempt = 0; attempt < 3 && !roleSet; attempt++){
+          if(attempt) await new Promise(r => setTimeout(r, 1200));
+          const { data: upd, error: upErr } = await sbClient.from("profiles").update(patch).eq("id", newId).select("id");
+          if(upErr) console.warn(upErr);
+          roleSet = !upErr && upd && upd.length > 0;
+        }
         if(role === "teacher" || role === "trainer_teacher") await ensureTrainer(teacherName, role);
-        logHistory("create_login", `Created a login for ${email} (${role}${teacherName ? " — " + teacherName : ""})`, "profile", newId);
+        logHistory("create_login", `Created a login for ${email} (${role}${teacherName ? " — " + teacherName : ""})${roleSet ? "" : " — role NOT set"}`, "profile", newId);
+        closeModal();
+        [profiles, trainers] = await Promise.all([loadProfiles(), loadTrainers()]);
+        renderAdmin();
+        if(!roleSet){
+          alert(`The login for ${email} was created, but their role${teacherName ? " and teacher name" : ""} couldn't be saved — they'd be stuck on "Pending approval".\n\nFind ${email} in the list and set the role${teacherName ? " and name" : ""} there.`);
+          return;
+        }
+      }else{
+        closeModal();
+        [profiles, trainers] = await Promise.all([loadProfiles(), loadTrainers()]);
+        renderAdmin();
       }
-      closeModal();
-      [profiles, trainers] = await Promise.all([loadProfiles(), loadTrainers()]);
-      renderAdmin();
       alert(`Login created for ${email}. They can log in right away with the password you set — tell them their password yourself.`);
     }
   });

@@ -3016,6 +3016,12 @@ window.kumonPtcNav = function(client, role){
     const isBoth = studentSubject(s) === "Both";
     const slot1 = sched && sched.slots && sched.slots[0] ? sched.slots[0] : null;
     const slot2 = sched && sched.slots && sched.slots[1] ? sched.slots[1] : null;
+    // The day/time editor here changes every subject's schedule together, so it's only offered when all of this
+    // child's schedules already share the same days and times (and have at most 2 days). Otherwise: edit on the Roster.
+    const schedRows = STATE.schedules.filter(x => x.studentId === s.id && x.status === "active");
+    const slotSig = row => JSON.stringify((row.slots || []).map(x => [x.day || "", x.time || ""]));
+    const schedSame = schedRows.length > 0 && schedRows.every(r => slotSig(r) === slotSig(schedRows[0]) && (r.slots || []).length <= 2);
+    const schedOrig = JSON.stringify([slot1 ? slot1.day : "Tue", slot1 ? slot1.time : "16:00", slot2 ? slot2.day : "Thu", slot2 ? slot2.time : "16:00", (sched && sched.startDate) || todayISO()]);
     // NEW/EO/RETURNEE is normally set automatically (see enrollmentTagFor above) — this is
     // just an override for when it was mistagged, one dropdown per subject enrollment this
     // student actually has (a student can carry both a Math and a Reading enrollment, each
@@ -3147,7 +3153,8 @@ window.kumonPtcNav = function(client, role){
             <div class="hint">Set automatically when marked Enrolled — only override this if it got mistagged.</div>
           ` : ""}
           <div class="hint" style="margin-top:4px;">Regular schedule</div>
-          ${sched ? `
+          ${sched && !schedSame ? `<div class="hint">This child's subjects have different days or times — change them on the Student Roster (Edit enrollment), one subject at a time.</div>` : sched ? `
+            <input type="hidden" name="schedOrig" value="${esc(schedOrig)}">
             <div class="field-row">
               <label class="field">Day 1<select name="day1">${daySelectOptions(slot1?slot1.day:"Tue")}</select></label>
               <label class="field">Time<input type="time" name="time1" value="${esc(slot1?slot1.time:"16:00")}"></label>
@@ -3169,13 +3176,14 @@ window.kumonPtcNav = function(client, role){
     wireDtSubjectSwap();
   }
 
+  const pendingRenames = new Set();   // students whose new name still has to be copied everywhere (a retry on next Save)
   async function submitEditStudent(form){
     const id = form.dataset.id;
     const fd = new FormData(form);
     const firstName = fd.get("firstName").toString().trim();
     const lastName = fd.get("lastName").toString().trim();
     const name = `${firstName} ${lastName}`.trim();
-    if(!id || !firstName || !lastName) return;
+    if(!id || !firstName || !lastName) return false;
     const sched = scheduleFor(id);
     const s = studentById(id);
     const d = activeDiagnosticFor(id);
@@ -3208,10 +3216,12 @@ window.kumonPtcNav = function(client, role){
         if(flipOff.length) logHistory("monitor_off", `Took ${name} off monitor (${flipOff.map(e => e.subject).filter(Boolean).join(", ")})`, "student", id);
       }
       await db.collection("students").doc(id).update(studentPatch);
+      let renameFailed = false;
       // Name changed (phase35): copy it onto every subject, schedule, training and past month too.
-      if(prevName !== [firstName, lastName, name].join("|")){
+      if(prevName !== [firstName, lastName, name].join("|") || pendingRenames.has(id)){
         const { error: rnErr } = await sbClient.rpc("rename_student", { p_student_id: id, p_first: firstName, p_last: lastName });
-        if(rnErr) console.warn("couldn't copy the new name everywhere", rnErr);
+        if(rnErr){ console.warn("couldn't copy the new name everywhere", rnErr); renameFailed = true; pendingRenames.add(id); }
+        else pendingRenames.delete(id);
       }
       if(s) Object.assign(s, studentPatch);
       // Status ↔ monitor (phase33): "On monitor schedule" is really decided by the subjects' monitor flag,
@@ -3281,16 +3291,17 @@ window.kumonPtcNav = function(client, role){
       // Every schedules row sharing this studentId (the plain one plus each subject-linked
       // one) was created together with the same slots/startDate — keep them together on
       // an edit too, rather than letting Math and Reading drift out of sync.
-      if(sched && fd.get("day1")){
+      // Only when the days/times/start date were actually changed in this form — saving a phone number never touches them.
+      const schedNow = JSON.stringify([fd.get("day1"), fd.get("time1"), fd.get("day2"), fd.get("time2"), fd.get("startDate")]);
+      if(sched && fd.get("day1") && fd.get("schedOrig") !== null && schedNow !== fd.get("schedOrig").toString()){
         const day1 = fd.get("day1"), time1 = fd.get("time1");
         const day2 = fd.get("day2"), time2 = fd.get("time2");
         const startDate = fd.get("startDate");
         const linked = STATE.schedules.filter(x => x.studentId === id && x.status === "active");
         for(const row of linked){
-          const mode = row.slots && row.slots[0] && row.slots[0].mode ? row.slots[0].mode : undefined;
-          const slots = mode
-            ? [{ day: day1, time: time1, mode }, { day: day2, time: time2, mode }]
-            : [{ day: day1, time: time1 }, { day: day2, time: time2 }];
+          // Each day keeps its own In-center / Remote setting.
+          const modeAt = i => row.slots && row.slots[i] && row.slots[i].mode ? row.slots[i].mode : undefined;
+          const slots = [[day1, time1, modeAt(0)], [day2, time2, modeAt(1)]].map(([day, time, mode]) => mode ? { day, time, mode } : { day, time });
           await db.collection("schedules").doc(row.id).update({ slots, startDate });
         }
       }
@@ -3326,7 +3337,8 @@ window.kumonPtcNav = function(client, role){
         logHistory("override_enrollment_tag", `Set ${name}'s reporting tag — ${tagChanges.join(", ")}`, "student", id);
       }
       logHistory("edit_student", `Edited ${name}`, "student", id);
-      toast("Student updated.");
+      if(renameFailed) alert(`Saved — but the new name couldn't be copied to the Student Roster, Payments and past months, so they still show the old spelling.\n\nOpen Edit details again and press Save to retry.`);
+      else toast("Student updated.");
       renderAll();
     });
   }
@@ -3526,11 +3538,11 @@ window.kumonPtcNav = function(client, role){
     const labelOf = window.__eoLabels || new Map();
     const sid = labelOf.get(fd.get("studentLabel").toString().trim());
     const stu = sid ? studentById(sid) : null;
-    if(!stu){ toast("Pick a student from the list."); return; }
+    if(!stu){ toast("Pick a student from the list."); return false; }
     const subject = fd.get("subject").toString();
-    if(!subject){ toast("Pick the new subject."); return; }
+    if(!subject){ toast("Pick the new subject."); return false; }
     const have = eoSubjectsTaken(stu);
-    if(have.has(subject)){ toast(`${displayName(stu)} is already in ${subject}.`); return; }
+    if(have.has(subject)){ toast(`${displayName(stu)} is already in ${subject}.`); return false; }
     const oldSubj = have.size === 1 ? [...have][0] : "";
     const g = k => (fd.get(k) || "").toString().trim();
     const teacher = g("teacher");
@@ -3558,7 +3570,9 @@ window.kumonPtcNav = function(client, role){
       const now = new Date().toISOString();
       const row = { studentId: stu.id, studentName: name, subject, teacher, enrollmentType: "eo", enrollmentTypeSetAt: now,
         // Shows the NEW · <month> label on the teacher's roster for this cycle (clears itself next cycle).
-        monitorCycle: currentCycleKey() };
+        monitorCycle: currentCycleKey(),
+        // Files this subject under this month in New students (same as Add subject does).
+        addedMonth: currentCycleKey() };
       await db.collection("subject_enrollments").add(row);
       const patch = { subject: resultSubject };
       // A student who was added from the roster page is hidden from Pipeline; an EO belongs in this
@@ -3581,8 +3595,8 @@ window.kumonPtcNav = function(client, role){
     const firstName = fd.get("firstName").toString().trim();
     const lastName = fd.get("lastName").toString().trim();
     const name = `${firstName} ${lastName}`.trim();
-    if(!firstName || !lastName) return;
-    if(findExistingStudentId(name)){ toast("A student with that name is already on the roster."); return; }
+    if(!firstName || !lastName) return false;
+    if(findExistingStudentId(name)){ toast("A student with that name is already on the roster."); return false; }
     // Same child under a slightly different name? Ask before creating a second record.
     if(blockIfLookAlike(form, name, STATE.students, describeStudentForDup)){ toast("Check the possible duplicate first."); return false; }
     const needsTraining = fd.get("needsTraining") === "1";
@@ -4107,10 +4121,12 @@ window.kumonPtcNav = function(client, role){
   }
 
   /* ---------------- Write operations ---------------- */
+  let writeFailed = false;   // set when a save inside a form fails, so the form stays open with what was typed
   async function guardWrite(fn){
-    if(!db){ toast("Not connected — open this from its Claude link."); return; }
+    if(!db){ toast("Not connected — open this from its Claude link."); writeFailed = true; return; }
     try{ await fn(); }
     catch(e){
+      writeFailed = true;
       console.warn(e);
       const msg = String((e && (e.message || e.details)) || "");
       // A missing column means a database migration hasn't been run yet — say which one, instead of a vague retry.
@@ -4220,7 +4236,7 @@ window.kumonPtcNav = function(client, role){
     const inquiry = fd.get("inquiry").toString();
     const examiner = fd.get("examiner");
     const notes = fd.get("notes").toString().trim();
-    if(!firstName || !lastName || !date || !time || !examiner) return;
+    if(!firstName || !lastName || !date || !time || !examiner) return false;
     if(!findExistingStudentId(studentName) && blockIfLookAlike(form, studentName, STATE.students, describeStudentForDup)){ toast("Check the possible duplicate first."); return false; }
 
     await guardWrite(async ()=>{
@@ -4285,7 +4301,7 @@ window.kumonPtcNav = function(client, role){
       diagPatch.dtTime = fd.get("dtTime").toString().trim();
       diagPatch.startPoint = fd.get("startPoint").toString().trim();
     }
-    if(!firstName || !lastName || !date || !time || !examiner) return;
+    if(!firstName || !lastName || !date || !time || !examiner) return false;
 
     await guardWrite(async ()=>{
       await db.collection("diagnostics").doc(id).update(diagPatch);
@@ -4304,13 +4320,13 @@ window.kumonPtcNav = function(client, role){
     const date = fd.get("date");
     const time = fd.get("time");
     const trainer = fd.get("trainer");
-    if(!studentId || !date || !time || !trainer) return;
+    if(!studentId || !date || !time || !trainer) return false;
     const s = studentById(studentId);
     if(!s) return;
     const existing = trainingsFor(studentId).filter(t=>t.status!=="cancelled");
     const sessionNumber = existing.length + 1;
     const needed = trainingsNeeded(s);
-    if(sessionNumber > needed){ toast(needed === 1 ? "Their training is already scheduled." : `All ${needed} trainings are already scheduled.`); return; }
+    if(sessionNumber > needed){ toast(needed === 1 ? "Their training is already scheduled." : `All ${needed} trainings are already scheduled.`); return false; }
 
     await guardWrite(async ()=>{
       const training = await db.collection("trainings").add({
@@ -4330,7 +4346,7 @@ window.kumonPtcNav = function(client, role){
     const date = fd.get("date");
     const time = fd.get("time");
     const trainer = fd.get("trainer");
-    if(!date || !time || !trainer) return;
+    if(!date || !time || !trainer) return false;
     await guardWrite(async ()=>{
       await db.collection("trainings").doc(id).update({ date, time, trainer });
       logHistory("edit_training", `Edited ${t.studentName || "a student"}'s training session ${t.sessionNumber} — now ${date} ${time} with ${trainer}`, "training", id);
@@ -4391,8 +4407,8 @@ window.kumonPtcNav = function(client, role){
     const day1 = fd.get("day1"), time1 = fd.get("time1");
     const day2 = fd.get("day2"), time2 = fd.get("time2");
     const startDate = fd.get("startDate");
-    if(!studentId || !day1 || !time1 || !day2 || !time2 || !startDate) return;
-    if(day1 === day2){ toast("Pick two different days."); return; }
+    if(!studentId || !day1 || !time1 || !day2 || !time2 || !startDate) return false;
+    if(day1 === day2){ toast("Pick two different days."); return false; }
     const s = studentById(studentId);
     if(!s) return;
     const earlyMode = fd.get("kind") === "early";
@@ -4400,12 +4416,12 @@ window.kumonPtcNav = function(client, role){
     const alreadyHas = sub => STATE.enrollments.some(e => e.studentId === studentId && e.subject === sub);
     const mathOn = fd.get("mathOn") === "on" && !(earlyMode && alreadyHas("Math"));
     const readingOn = fd.get("readingOn") === "on" && !(earlyMode && alreadyHas("Reading"));
-    if(earlyMode && !mathOn && !readingOn){ toast("Pick Math, Reading, or both."); return; }
+    if(earlyMode && !mathOn && !readingOn){ toast("Pick Math, Reading, or both."); return false; }
     const monitorMode = fd.get("kind") === "monitor" || earlyMode;
     const monitorTrainer = (fd.get("monitorTrainer") || "").toString();
     if(monitorMode){
-      if(!monitorTrainer){ toast("Pick the monitoring trainer."); return; }
-      if(!mathOn && !readingOn){ toast("Pick Math, Reading, or both."); return; }
+      if(!monitorTrainer){ toast("Pick the monitoring trainer."); return false; }
+      if(!mathOn && !readingOn){ toast("Pick Math, Reading, or both."); return false; }
     }
     // Extra columns written on each enrollment when this is a monitor schedule (see phase25).
     const monitorFields = monitorMode ? { isMonitor: true, monitorSince: currentCycleKey(), monitorCycle: currentCycleKey() } : {};
@@ -4859,9 +4875,12 @@ window.kumonPtcNav = function(client, role){
     const btn = form.querySelector('button[type="submit"]');
     if(btn && btn.disabled) return;
     if(btn){ btn.dataset.label = btn.textContent; btn.textContent = "Saving…"; btn.disabled = true; }
-    handler(form)
-      // A handler returns false to keep its form open (e.g. a possible-duplicate warning to answer).
-      .then(result => { if(db && result !== false) closeModal(); })
+    writeFailed = false;
+    Promise.resolve().then(() => handler(form))
+      // A handler returns false to keep its form open (a check to fix, or a possible-duplicate warning to answer);
+      // a save that failed keeps it open too, so nothing typed is lost.
+      .then(result => { if(db && result !== false && !writeFailed) closeModal(); })
+      .catch(err => { console.warn(err); toast("Couldn't save that — try again."); })
       .finally(()=>{ if(btn){ btn.disabled = false; btn.textContent = btn.dataset.label; } });
   });
 

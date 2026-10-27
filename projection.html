@@ -582,7 +582,14 @@ window.kumonPtcNav = function(client, role){
   const T = iso => Date.parse(iso + "T00:00:00Z");
   const iso = t => new Date(t).toISOString().slice(0,10);
   const addDays = (s, n) => iso(T(s) + Math.round(n) * MS_DAY);
-  function addMonths(s, n){ const d = new Date(T(s)); d.setUTCMonth(d.getUTCMonth() + n); return iso(d.getTime()); }
+  // Same as the database: Jan 31 + 1 month = Feb 28/29 (the last day of a shorter month), never Mar 3.
+  function addMonths(s, n){
+    const d = new Date(T(s)), day = d.getUTCDate();
+    d.setUTCDate(1); d.setUTCMonth(d.getUTCMonth() + n);
+    const last = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 0)).getUTCDate();
+    d.setUTCDate(Math.min(day, last));
+    return iso(d.getTime());
+  }
   function todayISO(){ return new Date(Date.now() + 8*3600e3).toISOString().slice(0,10); }   // Philippine date
   function fmtDate(s, o){ if(!s) return "—"; return new Date(T(s)).toLocaleDateString("en-US", Object.assign({ timeZone:"UTC", month:"short", day:"numeric", year:"numeric" }, o||{})); }
   function fmtMonth(s){ return new Date(T(s)).toLocaleDateString("en-US", { timeZone:"UTC", month:"short", year:"numeric" }); }
@@ -951,6 +958,8 @@ window.kumonPtcNav = function(client, role){
     const box = (title, n) => {
       if(n === 0) return `<div class="sigbox"><b>${title}</b><div class="sigline"></div><span class="faint">Parent's signature · Date</span><div><span class="pill p-good">${esc(fmtDate(draft.start_date))}</span></div></div>`;
       const done = ptcDone.find(m => m.student_id === e.student_id && m.month_no === n && m.status === "done");
+      const skipped = !done && ptcDone.find(m => m.student_id === e.student_id && m.month_no === n && m.status === "skipped");
+      if(skipped) return `<div class="sigbox"><b>${title}</b><div class="sigline"></div><span class="faint">Parent's signature · Date</span><div><span class="pill p-muted">Skipped</span></div></div>`;
       const open = ptcDue.find(m => m.student_id === e.student_id && m.month_no === n);
       const dueDate = open ? open.due_date : (s.first_day ? addMonths(s.first_day, n) : addMonths(draft.start_date, n));
       const pill = done ? `<span class="pill p-good">Done ${esc(fmtDate(done.done_on || done.due_date))}</span>`

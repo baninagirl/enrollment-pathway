@@ -1195,8 +1195,17 @@ window.kumonPtcNav = function(client, role){
     if(!todays.length){ card.hidden = true; return; }
     card.hidden = false;
 
-    const pending = todays
-      .filter(e => !(attendanceFor(e.scheduleId, e.day)||{}).arrived)
+    // One line per child: a Math + Reading child counts as checked in once either subject is ticked.
+    const byChild = new Map();
+    todays.forEach(e => {
+      const k = e.studentId || ("name:" + (e.studentName || "").toLowerCase());
+      const c = byChild.get(k) || { entry: e, arrived: false, teachers: new Set() };
+      if((attendanceFor(e.scheduleId, e.day)||{}).arrived) c.arrived = true;
+      if(e.teacher) c.teachers.add(e.teacher);
+      byChild.set(k, c);
+    });
+    const pending = [...byChild.values()].filter(c => !c.arrived)
+      .map(c => ({ ...c.entry, teacher: [...c.teachers].join(", ") }))
       .sort((a,b) => lastNameSortKey(a.studentName).localeCompare(lastNameSortKey(b.studentName)));
 
     if(!pending.length){

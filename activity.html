@@ -452,7 +452,7 @@ window.kumonPtcNav = function(client, role){
   function matchesFilters(row){
     if(filters.page !== "all" && row.page !== filters.page) return false;
     if(filters.actor !== "all" && row.actor_email !== filters.actor) return false;
-    if(filters.since && new Date(row.created_at) < new Date(filters.since + "T00:00:00")) return false;
+    if(filters.since && new Date(row.created_at) < new Date(filters.since + "T00:00:00+08:00")) return false;
     if(filters.search.trim()){
       const q = filters.search.trim().toLowerCase();
       if(!(row.summary||"").toLowerCase().includes(q)) return false;
@@ -468,7 +468,7 @@ window.kumonPtcNav = function(client, role){
     let query = sbClient.from("edit_history").select("*").order("created_at", { ascending:false }).range(offset, offset + PAGE_SIZE - 1);
     if(filters.page !== "all") query = query.eq("page", filters.page);
     if(filters.actor !== "all") query = query.eq("actor_email", filters.actor);
-    if(filters.since) query = query.gte("created_at", filters.since + "T00:00:00");
+    if(filters.since) query = query.gte("created_at", filters.since + "T00:00:00+08:00");   // midnight in the Philippines, not 8 AM
     if(filters.search.trim()) query = query.ilike("summary", `%${filters.search.trim()}%`);
     const { data, error } = await query;
     loading = false;
