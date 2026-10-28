@@ -429,8 +429,8 @@ window.kumonPtcNav = function(client, role){
   }
 
   async function loadStudents(){
-    const { data, error } = await sbClient.from("students").select("id,name,age_grade,first_name,last_name").order("name");
-    if(error){ console.warn(error); students = []; return; }
+    const { data, error } = await fetchAll("students", "id,name,age_grade,first_name,last_name", q => q.order("name").order("id"));
+    if(error){ console.warn(error); return; }   // keep what's on screen
     students = data || [];
   }
   async function loadTrainers(){

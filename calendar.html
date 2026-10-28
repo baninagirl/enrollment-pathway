@@ -733,13 +733,13 @@ window.kumonPtcNav = function(client, role){
   }
 
   async function loadSchedules(){
-    const { data, error } = await sbClient.from("schedules").select("*").eq("status","active");
+    const { data, error } = await fetchAll("schedules", "*", q => q.eq("status","active").order("id"));
     if(error){ console.warn(error); return; }   // keep what's on screen; a failed reload must not empty the Calendar
     // Newest first, so when a subject's schedule was saved more than once the latest copy is the one shown.
     schedules = (data || []).slice().sort((a,b) => String(b.created_at || "").localeCompare(String(a.created_at || "")));
   }
   async function loadEnrollments(){
-    const { data, error } = await sbClient.from("subject_enrollments").select("*").eq("status","active");
+    const { data, error } = await fetchAll("subject_enrollments", "*", q => q.eq("status","active").order("id"));
     if(error){ console.warn(error); return; }   // keep what's on screen
     enrollments = data || [];
   }

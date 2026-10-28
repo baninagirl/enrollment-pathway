@@ -687,14 +687,23 @@ window.kumonPtcNav = function(client, role){
     function collection(table){
       return {
         onSnapshot(cb, errCb){
+          // Reads every row, 1,000 at a time (one request stops at the project's row limit). A reload that
+          // started earlier but finishes later is thrown away, so the newest data always wins.
+          let seq = 0, timer = null;
           async function load(){
-            const { data, error } = await sb.from(table).select("*").order("created_at", { ascending: false });
-            if(error){ errCb && errCb(error); return; }
-            cb({ docs: data.map(row => ({ id: row.id, data: () => rowToCamel(row) })) });
+            const mine = ++seq, rows = [];
+            for(let from = 0; ; from += 1000){
+              const { data, error } = await sb.from(table).select("*").order("created_at", { ascending: false }).order("id").range(from, from + 999);
+              if(error){ if(mine === seq) errCb && errCb(error); return; }
+              rows.push(...(data || []));
+              if(!data || data.length < 1000) break;
+            }
+            if(mine !== seq) return;
+            cb({ docs: rows.map(row => ({ id: row.id, data: () => rowToCamel(row) })), complete: true });
           }
           load();
           sb.channel("realtime:" + table)
-            .on("postgres_changes", { event: "*", schema: "public", table }, load)
+            .on("postgres_changes", { event: "*", schema: "public", table }, () => { clearTimeout(timer); timer = setTimeout(load, 300); })
             .subscribe();
         },
         doc(id){ return docRef(table, id); },
@@ -1051,13 +1060,15 @@ window.kumonPtcNav = function(client, role){
     }, err => console.warn("settings sub error", err));
   }
 
+  // A failed reload keeps what's on screen (the previous list) and shows a banner until a reload works.
   function subscribe(colRef, cb){
     colRef.onSnapshot(snap => {
+      if($("#dbBanner").dataset.loadErr){ $("#dbBanner").innerHTML = ""; delete $("#dbBanner").dataset.loadErr; }
       cb(snap.docs.map(d => ({ id: d.id, ...d.data() })));
     }, err => {
       console.warn("db subscribe error", err);
-      writable = false;
-      $("#dbBanner").innerHTML = `<div class="banner">Couldn't reach Supabase — double check the URL/key at the top of index.html, that the tables from SETUP.md exist, and that their policies allow access.</div>`;
+      $("#dbBanner").dataset.loadErr = "1";
+      $("#dbBanner").innerHTML = `<div class="banner">Couldn't load everything from the database — some lists may be out of date. Check the connection and refresh the page.</div>`;
     });
   }
 
@@ -4531,12 +4542,31 @@ window.kumonPtcNav = function(client, role){
     await guardWrite(async ()=>{ await db.collection("trainings").doc(id).update({ status: "cancelled" }); toast("Session cancelled."); });
   }
   async function performDeleteStudentEverywhere(ids){
+    // The student first: if the database refuses (phase109 — they still have Roster subjects), nothing else is touched.
+    await db.collection("students").doc(ids.studentId).delete();
     await Promise.all([
       ...ids.diagIds.map(id => db.collection("diagnostics").doc(id).delete()),
       ...ids.trainIds.map(id => db.collection("trainings").doc(id).delete()),
-      ...ids.schedIds.map(id => db.collection("schedules").doc(id).delete()),
-      db.collection("students").doc(ids.studentId).delete()
+      ...ids.schedIds.map(id => db.collection("schedules").doc(id).delete())
     ]);
+  }
+  // Asks the database (not the list on this page, which may still be loading or cut short) whether this
+  // student has anything a delete would erase for good. Returns a reason to refuse, or null when it's safe.
+  async function rosterDataBlocksDelete(studentId){
+    const count = async (table) => {
+      const { count: n, error } = await sbClient.from(table).select("id", { count: "exact", head: true }).eq("student_id", studentId);
+      if(error) throw error;
+      return n || 0;
+    };
+    try{
+      const [subs, pays, hist, abs] = await Promise.all([count("subject_enrollments"), count("payment_receipts"), count("enrollment_monthly_history"), count("absence_records")]);
+      const what = [subs && `${subs} Roster subject${subs === 1 ? "" : "s"}`, pays && `${pays} payment${pays === 1 ? "" : "s"}`,
+                    hist && `${hist} past month${hist === 1 ? "" : "s"}`, abs && `${abs} absence record${abs === 1 ? "" : "s"}`].filter(Boolean);
+      return what.length ? `this student has ${what.join(", ")}` : null;
+    }catch(err){
+      console.warn(err);
+      return "the Hub couldn't check whether this student is on the Student Roster (connection problem)";
+    }
   }
   async function performRestoreStudentEverywhere(snap){
     // Parent row first — diagnostics/trainings/schedules all reference the student's id.
@@ -4548,6 +4578,8 @@ window.kumonPtcNav = function(client, role){
   async function deleteStudentEverywhere(studentId){
     if(!studentId) return;
     if(STATE.enrollments.some(e => e.studentId === studentId)){ toast("Not deleted — this student has subjects on the Student Roster."); return; }
+    const blocked = await rosterDataBlocksDelete(studentId);
+    if(blocked){ alert(`Not deleted — ${blocked}.\n\nDeleting here would erase that for good. To remove a duplicate, use Possible duplicates → Merge on the Student Roster; to stop a child, set their subjects to inactive there.`); return; }
     const snap = {
       studentSnap: studentById(studentId),
       diagSnap: STATE.diagnostics.filter(d => d.studentId === studentId),

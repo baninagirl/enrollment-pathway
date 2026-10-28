@@ -1110,7 +1110,8 @@ window.kumonPtcNav = function(client, role){
         <button class="btn sm" data-action="week-new">New PTC week</button>
         ${w ? `<button class="btn sm" data-action="week-edit">Days &amp; hours</button>
         <button class="btn sm" data-action="siblings">Siblings</button>
-        <button class="btn sm primary" data-action="draft">${weekSessions().length ? "Add missing students" : "Make draft"}</button>` : ""}` : "";
+        <button class="btn sm primary" data-action="draft">${weekSessions().length ? "Add missing students" : "Make draft"}</button>
+        ${weekSessions().length ? `<button class="btn sm danger" data-action="draft-delete" title="Remove every session in this week; the week's dates stay">Delete draft</button>` : ""}` : ""}` : "";
     if(!w){
       $("#weekSection").innerHTML = `<div class="toolbar">${weekSel}${adminBtns}</div>
         <div class="card"><div class="empty">${isAdmin() ? "No PTC week yet. Click <b>New PTC week</b>, pick the dates and hours, then <b>Make draft</b> — the Hub books every child with each of their teachers, siblings back to back." : "No PTC week has been set up yet."}</div></div>`;
@@ -1417,6 +1418,27 @@ window.kumonPtcNav = function(client, role){
     await loadWeeks(); if(res.data) ui.weekId = res.data.id; lsSet("weekId", ui.weekId);
     await loadSessions(); render();
     toast(s.id ? "Saved." : "PTC week created — now click Make draft.");
+  }
+
+  /* --- deleting sessions (admins) --- */
+  // A new-student PTC marked done only because one of these sessions was marked Done goes back on the due list.
+  async function reopenMilestonesFor(ids){
+    for(let i = 0; i < ids.length; i += 100){
+      const { error } = await sbClient.from("ptc_milestones")
+        .update({ status: "open", done_on: null, ptc_session_id: null, updated_at: new Date().toISOString() })
+        .in("ptc_session_id", ids.slice(i, i + 100)).eq("status", "done");
+      if(error) return { ok:false, message: error.message };
+    }
+    return { ok:true };
+  }
+  async function deleteWeekSessions(ids){
+    const r = await reopenMilestonesFor(ids);
+    if(!r.ok) return r;
+    for(let i = 0; i < ids.length; i += 100){
+      const { error } = await sbClient.from("ptc_sessions").delete().in("id", ids.slice(i, i + 100));
+      if(error) return { ok:false, message: error.message };
+    }
+    return { ok:true };
   }
 
   /* --- draft (admins) --- */
@@ -1807,10 +1829,26 @@ window.kumonPtcNav = function(client, role){
       logHistory("ptc_week_close", `${w.closed_at ? "Reopened" : "Closed"} ${w.name}`, "ptc_week", w.id, null);
       closeModal(); await loadWeeks(); await loadSessions(); render(); return;
     }
+    if(a === "draft-delete"){
+      const w = currentWeek(); if(!w) return;
+      const list = weekSessions();
+      if(!list.length) return;
+      const by = {}; list.forEach(x => { by[x.status] = (by[x.status] || 0) + 1; });
+      const parts = STATUS_ORDER.filter(k => by[k]).map(k => `${by[k]} ${STATUS[k].label.toLowerCase()}`);
+      const warn = (by.invited || by.confirmed || by.done) ? `\n\nSome parents were already invited or confirmed — they'll need to be told if the times change.` : "";
+      if(!confirm(`Delete the whole draft for “${w.name}”?\n\n${list.length} sessions (${parts.join(", ")}) will be removed. The week and its dates stay — click Make draft to start again.${warn}\n\nThis can't be undone.`)) return;
+      const r = await deleteWeekSessions(list.map(x => x.id));
+      if(!r.ok){ alert("Couldn't delete the whole draft: " + r.message + "\n\nSome sessions may be left — refresh and try again."); await loadSessions(); await loadMilestones(); render(); return; }
+      logHistory("ptc_draft_delete", `${w.name}: deleted the draft (${list.length} sessions)`, "ptc_week", w.id, by);
+      await loadSessions(); await loadMilestones(); render();
+      toast(`Draft deleted — ${list.length} sessions removed.`);
+      return;
+    }
     if(a === "week-delete"){
       const w = currentWeek(); if(!w) return;
       const n = weekSessions().length;
       if(!confirm(`Delete “${w.name}”${n ? ` and its ${n} sessions` : ""}? This can't be undone.`)) return;
+      if(n){ const r = await reopenMilestonesFor(weekSessions().map(x => x.id)); if(!r.ok){ alert("Couldn't delete: " + r.message); return; } }
       const { error } = await sbClient.from("ptc_weeks").delete().eq("id", w.id);
       if(error){ alert(error.message); return; }
       logHistory("ptc_week_delete", `Deleted ${w.name} (${n} sessions)`, "ptc_week", w.id, null);

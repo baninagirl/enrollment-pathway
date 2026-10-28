@@ -1068,14 +1068,14 @@ window.kumonPtcNav = function(client, role){
   async function loadStudents(){
     // status/monthly_tuition/billing_group_id are for the Payment tag (paymentStatusFor,
     // below) — Roster otherwise never touched billing fields before.
-    const { data, error } = await sbClient.from("students").select("id,name,age_grade,first_name,last_name,status,monthly_tuition,billing_group_id,origin,created_at").order("name");
-    if(error){ console.warn(error); students = []; return; }
+    const { data, error } = await fetchAll("students", "id,name,age_grade,first_name,last_name,status,monthly_tuition,billing_group_id,origin,created_at", q => q.order("name").order("id"));
+    if(error){ console.warn(error); return; }   // keep what's on screen
     students = data || [];
     dupPairsCache = null;
   }
   async function loadBillingGroups(){
     const { data, error } = await sbClient.from("billing_groups").select("id,name");
-    if(error){ console.warn(error); billingGroups = []; return; }
+    if(error){ console.warn(error); return; }   // keep what's on screen
     billingGroups = data || [];
   }
   // Reads every row, 1,000 at a time (one request stops at the project's row limit). Returns { data, error }.
@@ -1255,8 +1255,8 @@ window.kumonPtcNav = function(client, role){
   // waiting to be closed out) — they belong to the next month's report, not this one.
   function joinsLaterMonth(e){ return !!e.monitor_cycle && e.monitor_cycle > openKey(); }
   async function loadEnrollments(){
-    const { data, error } = await sbClient.from("subject_enrollments").select("*").order("student_name");
-    if(error){ console.warn(error); enrollments = []; return; }
+    const { data, error } = await fetchAll("subject_enrollments", "*", q => q.order("student_name").order("id"));
+    if(error){ console.warn(error); return; }   // keep what's on screen
     enrollments = data || [];
     // Drop any selection that no longer exists (deleted here or by someone else) so a
     // stale id can never sneak into a bulk action.
@@ -1264,8 +1264,8 @@ window.kumonPtcNav = function(client, role){
     [...selectedIds].forEach(id => { if(!validIds.has(id)) selectedIds.delete(id); });
   }
   async function loadSchedules(){
-    const { data, error } = await sbClient.from("schedules").select("*");
-    if(error){ console.warn(error); schedules = []; return; }
+    const { data, error } = await fetchAll("schedules", "*", q => q.order("id"));
+    if(error){ console.warn(error); return; }   // keep what's on screen
     schedules = data || [];
   }
   // The subject's own schedule: an active one first, the most recently saved if there are copies.

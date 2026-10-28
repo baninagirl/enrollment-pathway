@@ -721,18 +721,18 @@ window.kumonPtcNav = function(client, role){
   async function loadStudents(){
     // monthly_tuition is for the Tuition due / Balance columns below — Retention otherwise
     // never touched billing fields before.
-    const { data, error } = await sbClient.from("students").select("id,name,first_name,last_name,age_grade,status,monthly_tuition");
-    if(error){ console.warn(error); students = []; return; }
+    const { data, error } = await fetchAll("students", "id,name,first_name,last_name,age_grade,status,monthly_tuition", q => q.order("id"));
+    if(error){ console.warn(error); return; }   // keep what's on screen
     students = data || [];
   }
   async function loadEnrollments(){
-    const { data, error } = await sbClient.from("subject_enrollments").select("id,student_id,status,subject,teacher,enrollment_type,enrollment_type_set_at");
-    if(error){ console.warn(error); enrollments = []; return; }
+    const { data, error } = await fetchAll("subject_enrollments", "id,student_id,status,subject,teacher,enrollment_type,enrollment_type_set_at", q => q.order("id"));
+    if(error){ console.warn(error); return; }   // keep what's on screen
     enrollments = data || [];
   }
   async function loadAbsences(){
-    const { data, error } = await sbClient.from("absence_records").select("*").order("marked_absent_at", { ascending:false });
-    if(error){ console.warn(error); absences = []; return; }
+    const { data, error } = await fetchAll("absence_records", "*", q => q.order("marked_absent_at", { ascending:false }).order("id"));
+    if(error){ console.warn(error); return; }   // keep what's on screen
     absences = data || [];
   }
   // Reads every row, 1,000 at a time (one request stops at the project's row limit). Returns { data, error }.

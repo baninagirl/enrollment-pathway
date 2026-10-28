@@ -904,19 +904,18 @@ window.kumonPtcNav = function(client, role){
     return keyOf(a).localeCompare(keyOf(b));
   }
   async function loadStudents(){
-    const { data, error } = await sbClient.from("students")
-      .select("id,name,first_name,last_name,age_grade,status,monthly_tuition,billing_group_id");
+    const { data, error } = await fetchAll("students", "id,name,first_name,last_name,age_grade,status,monthly_tuition,billing_group_id", q => q.order("id"));
     if(error){ console.warn(error); return; }   // keep what's on screen
     students = (data || []).sort(byLastName);
   }
   async function loadEnrollments(){
-    const { data, error } = await sbClient.from("subject_enrollments").select("id,student_id,status,subject,teacher");
+    const { data, error } = await fetchAll("subject_enrollments", "id,student_id,status,subject,teacher", q => q.order("id"));
     if(error){ console.warn(error); return; }   // keep what's on screen
     enrollments = data || [];
   }
   async function loadBillingGroups(){
     const { data, error } = await sbClient.from("billing_groups").select("id,name").order("name");
-    if(error){ console.warn(error); billingGroups = []; return; }
+    if(error){ console.warn(error); return; }   // keep what's on screen
     billingGroups = data || [];
   }
   // Reads every row, 1,000 at a time (one request stops at the project's row limit). Returns { data, error }.
@@ -1078,8 +1077,8 @@ window.kumonPtcNav = function(client, role){
   }
 
   async function loadAbsences(){
-    const { data, error } = await sbClient.from("absence_records").select("*").order("marked_absent_at", { ascending:false });
-    if(error){ console.warn(error); absences = []; return; }
+    const { data, error } = await fetchAll("absence_records", "*", q => q.order("marked_absent_at", { ascending:false }).order("id"));
+    if(error){ console.warn(error); return; }   // keep what's on screen
     absences = data || [];
   }
 
