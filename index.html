@@ -4252,6 +4252,7 @@ window.kumonPtcNav = function(client, role){
 
     await guardWrite(async ()=>{
       let studentId = findExistingStudentId(studentName);
+      let createdNow = false;
       const now = new Date().toISOString();
       if(!studentId){
         const ref = await db.collection("students").add({
@@ -4259,17 +4260,25 @@ window.kumonPtcNav = function(client, role){
           notes: "", status: "diagnostic_scheduled", followUpStatus: "", followUpNotes: "",
           createdAt: now
         });
-        studentId = ref.id;
+        studentId = ref.id; createdNow = true;
       } else {
         const patch = { status: "diagnostic_scheduled", firstName, lastName, parentName, parentPhone: contact, ageGrade };
         if(subject && !studentById(studentId).subject) patch.subject = subject;
         await db.collection("students").doc(studentId).update(patch);
       }
-      const diag = await db.collection("diagnostics").add({
-        studentId, studentName, parentName, contact, ageGrade, date, time, examiner, subject, inquiry,
-        status: "scheduled", outcome: "pending", notes,
-        followUpStatus: "", followUpNotes: "", createdAt: now
-      });
+      let diag;
+      try{
+        diag = await db.collection("diagnostics").add({
+          studentId, studentName, parentName, contact, ageGrade, date, time, examiner, subject, inquiry,
+          status: "scheduled", outcome: "pending", notes,
+          followUpStatus: "", followUpNotes: "", createdAt: now
+        });
+      }catch(err){
+        // The booking didn't save: don't leave behind a student record with no booking (it would be invisible
+        // in Pipeline and then flagged as a "possible duplicate" on the next try).
+        if(createdNow){ try{ await db.collection("students").doc(studentId).delete(); }catch(_){ } }
+        throw err;
+      }
       logHistory("book_diagnostic", `Booked a diagnostic for ${studentName} — ${date} ${time} with ${examiner}`, "diagnostic", diag ? diag.id : null);
       toast("Diagnostic booked.");
     });
