@@ -1637,6 +1637,7 @@ window.kumonPtcNav = function(client, role){
   async function setStatus(list, status){
     const mine = list.filter(x => canEditTeacher(x.teacher) && x.status !== status);
     if(!mine.length) return 0;
+    const wasDone = mine.filter(x => x.status === "done").map(x => x.id);   // taken back from Done
     const patch = { status, updated_by_name: myName() };
     if(status !== "draft") patch.moved_at = null;
     const { data, error } = await sbClient.from("ptc_sessions").update(patch).in("id", mine.map(x => x.id)).select();
@@ -1644,7 +1645,18 @@ window.kumonPtcNav = function(client, role){
     (data || []).forEach(r => { const x = sessions.find(y => y.id === r.id); if(x) Object.assign(x, r); });
     logHistory("ptc_status", `${mine.map(sessName).join(", ")} → ${STATUS[status].label}`, "ptc_week", ui.weekId, { ids: mine.map(x => x.id), status });
     if(status === "done") await coverMilestones(mine);
+    else if(wasDone.length) await reopenAfterUndo(wasDone);
     return (data || []).length;
+  }
+  // A session taken back from Done (or removed): the new-student PTC it had marked done goes back on the due list.
+  async function reopenAfterUndo(ids){
+    const linked = milestones.filter(m => ids.includes(m.ptc_session_id) && m.status === "done").length;
+    const r = await reopenMilestonesFor(ids);
+    if(!r.ok){ alert("The session was changed, but its new-student PTC is still marked done (" + r.message + "). Set it back on the Due PTCs tab."); return false; }
+    await Promise.all([loadMilestones(), loadDue()]);
+    if(window.kumonPtcNavRefresh) window.kumonPtcNavRefresh();
+    if(linked) toast(`${linked} new-student PTC${linked === 1 ? "" : "s"} put back on the due list.`);
+    return true;
   }
   // A PTC-week session marked Done also counts for the student's new-student PTC that's due by then (or within 2 weeks after).
   async function coverMilestones(done){
@@ -1892,6 +1904,8 @@ window.kumonPtcNav = function(client, role){
     if(a === "session-delete"){
       const x = sessions.find(y => y.id === modalState.id); if(!x) return;
       if(!confirm(`Remove ${sessName(x)}'s session with ${x.teacher} from this PTC week?`)) return;
+      // First put back any new-student PTC this session had marked done (the link is lost once it's removed).
+      if(milestones.some(m => m.ptc_session_id === x.id && m.status === "done") && !(await reopenAfterUndo([x.id]))) return;
       const { error } = await sbClient.from("ptc_sessions").delete().eq("id", x.id);
       if(error){ alert(error.message); return; }
       logHistory("ptc_remove", `Removed ${sessName(x)} (${x.teacher}) from the PTC week`, "ptc_session", x.id, null);
