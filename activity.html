@@ -460,19 +460,25 @@ window.kumonPtcNav = function(client, role){
     return true;
   }
 
+  // Every new search/filter starts its own load; an older load that finishes later is thrown away, so the list
+  // always matches what's in the boxes. "Load more" waits for nothing else to be loading.
+  let loadSeq = 0, loadError = null;
   async function loadEntries(reset){
-    if(loading) return;
+    if(!reset && loading) return;
+    const mine = ++loadSeq;
     loading = true;
-    if(reset){ offset = 0; entries = []; hasMore = true; pagedFurther = false; }
-    else{ pagedFurther = true; }
-    let query = sbClient.from("edit_history").select("*").order("created_at", { ascending:false }).range(offset, offset + PAGE_SIZE - 1);
+    const from = reset ? 0 : offset;
+    let query = sbClient.from("edit_history").select("*").order("created_at", { ascending:false }).order("id").range(from, from + PAGE_SIZE - 1);
     if(filters.page !== "all") query = query.eq("page", filters.page);
     if(filters.actor !== "all") query = query.eq("actor_email", filters.actor);
     if(filters.since) query = query.gte("created_at", filters.since + "T00:00:00+08:00");   // midnight in the Philippines, not 8 AM
     if(filters.search.trim()) query = query.ilike("summary", `%${filters.search.trim()}%`);
     const { data, error } = await query;
+    if(mine !== loadSeq) return;          // a newer search/filter has started — ignore this older result
     loading = false;
-    if(error){ console.warn(error); return; }
+    if(error){ console.warn(error); loadError = error.message || "connection problem"; if(reset){ entries = []; hasMore = false; } return; }
+    loadError = null;
+    if(reset){ offset = 0; hasMore = true; pagedFurther = false; } else { pagedFurther = true; }
     const rows = data || [];
     entries = reset ? rows : entries.concat(rows);
     hasMore = rows.length === PAGE_SIZE;
@@ -516,7 +522,7 @@ window.kumonPtcNav = function(client, role){
           <table class="stable">
             <thead><tr><th>When</th><th>Page</th><th>Who</th><th>What happened</th></tr></thead>
             <tbody id="activityBodyRows">
-              ${entries.length ? entries.map(rowHtml).join("") : `<tr><td colspan="4"><div class="empty">Nothing logged yet — actions across the hub will start showing up here.</div></td></tr>`}
+              ${entries.length ? entries.map(rowHtml).join("") : loadError ? `<tr><td colspan="4"><div class="empty">Couldn't load the activity (${esc(loadError)}). Check the connection and refresh the page.</div></td></tr>` : `<tr><td colspan="4"><div class="empty">${filters.search.trim() || filters.page !== "all" || filters.actor !== "all" || filters.since ? "Nothing matches these filters." : "Nothing logged yet — actions across the hub will start showing up here."}</div></td></tr>`}
             </tbody>
           </table>
         </div>

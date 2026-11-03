@@ -669,15 +669,25 @@ window.kumonPtcNav = function(client, role){
     if(e.target.dataset && e.target.dataset.action === "change-role"){
       const id = e.target.dataset.id;
       const role = e.target.value;
-      const wasSuperadmin = (profiles.find(p=>p.id===id)||{}).role === "superadmin";
+      const oldRole = (profiles.find(p=>p.id===id)||{}).role || "";
+      const wasSuperadmin = oldRole === "superadmin";
       const isSelf = id === currentUser.id && wasSuperadmin && role !== "superadmin";
       if(isSelf && !confirm("This removes your own superadmin access. Continue?")) {
         e.target.value = "superadmin";
         return;
       }
-      const { error } = await sbClient.from("profiles").update({ role }).eq("id", id);
-      if(error){ alert("Couldn't update that role: " + error.message); return; }
+      const { data: upd, error } = await sbClient.from("profiles").update({ role }).eq("id", id).select("id");
+      if(error || !upd || !upd.length){
+        e.target.value = oldRole;   // show the role it really still has
+        alert("Couldn't update that role" + (error ? ": " + error.message : " — the database didn't allow it") + ". It's still " + (oldRole || "unchanged") + ".");
+        return;
+      }
       const changedProfile = profiles.find(p => p.id === id);
+      // Now a teacher (or trainer-teacher): make sure their name is on the Staff list, like a new login would.
+      if((role === "teacher" || role === "trainer_teacher") && changedProfile && changedProfile.teacher_name){
+        await ensureTrainer(changedProfile.teacher_name, role);
+        trainers = await loadTrainers();
+      }
       logHistory("change_role", `Changed ${changedProfile ? changedProfile.email : "a login"}'s role to ${role}`, "profile", id, { field:"role", to: role });
       if(isSelf) await loadRole();
       profiles = await loadProfiles();
