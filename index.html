@@ -1056,8 +1056,9 @@ window.kumonPtcNav = function(client, role){
       // existed the Trainers list did double duty, so until it's saved once it starts as a copy of Trainers.
       STATE.settings.teachers = Array.isArray(d.teachers) ? d.teachers : STATE.settings.trainers.slice();
       STATE.loaded.settings = true;
+      STATE.staffLoadError = null;
       onData();
-    }, err => console.warn("settings sub error", err));
+    }, err => { console.warn("settings sub error", err); STATE.staffLoadError = (err && err.message) || "connection problem"; onData(); });
   }
 
   // A failed reload keeps what's on screen (the previous list) and shows a banner until a reload works.
@@ -3674,7 +3675,7 @@ window.kumonPtcNav = function(client, role){
                   <td class="staff-name">${esc(n)}</td>
                   ${STAFF_ROLES.map(r => `<td class="c"><input type="checkbox" data-action="staff-role" data-name="${esc(n)}" data-role="${r.key}" aria-label="${esc(n)} — ${r.label}" ${STATE.settings[r.key].includes(n) ? "checked" : ""}></td>`).join("")}
                   <td class="r"><button class="btn sm ghost danger-text" data-action="remove-staff" data-name="${esc(n)}">Remove</button></td>
-                </tr>`).join("") : `<tr><td colspan="${STAFF_ROLES.length + 2}" class="hint">${names.length ? "No one matches that search." : "No staff added yet."}</td></tr>`}
+                </tr>`).join("") : `<tr><td colspan="${STAFF_ROLES.length + 2}" class="hint">${STATE.staffLoadError ? "Couldn't load the Staff list — check the connection and refresh the page before changing anything." : !STATE.loaded.settings ? "Loading the Staff list…" : names.length ? "No one matches that search." : "No staff added yet."}</td></tr>`}
               </tbody>
             </table>
           </div>
@@ -4692,11 +4693,25 @@ window.kumonPtcNav = function(client, role){
 
 
   async function saveStaff(next){
-    const v = { examiners: STATE.settings.examiners, trainers: STATE.settings.trainers, teachers: STATE.settings.teachers, ...next };
+    // Never save the Staff list from a screen that didn't load it: read the saved list fresh first, and only save
+    // when it's the same list this page shows (otherwise the change could replace everyone with one name).
+    const same = (a, b) => JSON.stringify(a || []) === JSON.stringify(b || []);
+    const { data: fresh, error: rdErr } = await sbClient.from("settings").select("value").eq("id", "staff").maybeSingle();
+    if(rdErr){ toast("Not saved — couldn't check the current Staff list (connection problem). Try again."); return false; }
+    const fv = (fresh && fresh.value) || {};
+    const fTrainers = Array.isArray(fv.trainers) ? fv.trainers : (fv.trainer ? [fv.trainer] : []);
+    const cur = { examiners: Array.isArray(fv.examiners) ? fv.examiners : [], trainers: fTrainers, teachers: Array.isArray(fv.teachers) ? fv.teachers : fTrainers.slice() };
+    if(!STATE.loaded.settings || STATE.staffLoadError || !same(cur.examiners, STATE.settings.examiners) || !same(cur.trainers, STATE.settings.trainers) || !same(cur.teachers, STATE.settings.teachers)){
+      Object.assign(STATE.settings, cur); STATE.loaded.settings = true; STATE.staffLoadError = null; renderSettings();
+      toast("Not saved — the Staff list on this page was out of date. It's been refreshed; please make the change again.");
+      return false;
+    }
+    const v = { ...fv, examiners: STATE.settings.examiners, trainers: STATE.settings.trainers, teachers: STATE.settings.teachers, ...next };
     let ok = false;
     await guardWrite(async ()=>{ await db.doc("settings/staff").set(v); ok = true; });
     // Apply right away (the realtime refresh follows) so quick clicks build on each other.
-    if(ok){ Object.assign(STATE.settings, v); renderSettings(); }
+    if(ok){ Object.assign(STATE.settings, { examiners: v.examiners, trainers: v.trainers, teachers: v.teachers }); renderSettings(); }
+    return ok;
   }
   async function addStaff(name, roles){
     name = name.trim();
@@ -4705,7 +4720,7 @@ window.kumonPtcNav = function(client, role){
     if(staffNames().some(n => n.toLowerCase() === name.toLowerCase())){ toast(`${name} is already on the list — tick their boxes in the table.`); return false; }
     const next = {};
     roles.forEach(k => { next[k] = [...STATE.settings[k], name]; });
-    await saveStaff(next);
+    if(!(await saveStaff(next))) return false;
     logHistory("add_staff", `Added ${name} to staff (${roles.map(k => STAFF_ROLES.find(r=>r.key===k).label).join(", ")})`, "settings", "staff");
     return true;
   }
@@ -4718,7 +4733,7 @@ window.kumonPtcNav = function(client, role){
     if(!confirm(`Remove ${name} from staff?\n\nTheir name comes off every picker. Students already under their name keep it until you change it.`)) return;
     const next = {};
     STAFF_ROLES.forEach(r => { next[r.key] = STATE.settings[r.key].filter(x => x !== name); });
-    await saveStaff(next);
+    if(!(await saveStaff(next))) return;
     logHistory("remove_staff", `Removed ${name} from staff`, "settings", "staff");
     toast(`${name} removed.`);
   }
