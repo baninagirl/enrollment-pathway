@@ -1360,26 +1360,36 @@ window.kumonPtcNav = function(client, role){
   // Keeps the `schedules` row for one enrollment in sync with what's in the modal —
   // inserts one if this enrollment never had a schedule before, updates it if it did,
   // and deletes it if every day was cleared out (rather than leaving an empty row).
+  // Saves one subject's class days. Checked (a write the database silently refuses counts as a failure) and retried,
+  // so weak Wi-Fi doesn't lose a change. Returns null when saved, or the reason it couldn't be.
   async function saveScheduleForEnrollment(enrollmentId, studentId, studentName, slots){
     const existing = scheduleFor(enrollmentId);
-    if(!slots.length){
-      if(existing){
-        const { error } = await sbClient.from("schedules").delete().eq("id", existing.id);
-        if(error) console.warn("couldn't clear schedule", error);
+    const once = async () => {
+      let res;
+      if(!slots.length){
+        if(!existing) return null;
+        res = await sbClient.from("schedules").delete().eq("id", existing.id).select("id");
+      }else if(existing){
+        res = await sbClient.from("schedules").update({ slots, status:"active" }).eq("id", existing.id).select("id");
+      }else{
+        res = await sbClient.from("schedules").insert({
+          student_id: studentId, student_name: studentName, subject_enrollment_id: enrollmentId,
+          slots, status:"active", start_date: new Date().toISOString().slice(0,10)
+        }).select("id");
       }
-      return;
+      if(res.error) return res.error.message || "error";
+      if(!res.data || !res.data.length) return "the database didn't allow this change";
+      return null;
+    };
+    let why = null;
+    for(let attempt = 0; attempt < 3; attempt++){
+      if(attempt){ await new Promise(r => setTimeout(r, 800 * attempt)); try{ await sbClient.auth.refreshSession(); }catch(_){ } }
+      why = await once();
+      if(!why || /didn't allow/.test(why)) break;   // saved, or refused (retrying won't help)
     }
-    if(existing){
-      const { error } = await sbClient.from("schedules").update({ slots, status:"active" }).eq("id", existing.id);
-      if(error) console.warn("couldn't update schedule", error);
-    }else{
-      const { error } = await sbClient.from("schedules").insert({
-        student_id: studentId, student_name: studentName, subject_enrollment_id: enrollmentId,
-        slots, status:"active", start_date: new Date().toISOString().slice(0,10)
-      });
-      if(error) console.warn("couldn't save schedule", error);
-    }
+    if(why) console.warn("schedule not saved:", why);
     await loadSchedules();
+    return why;
   }
 
   // Miss Mira's imported roster already has each student's days transcribed as plain
@@ -2353,7 +2363,9 @@ window.kumonPtcNav = function(client, role){
         };
         // Schedule first: if a teacher moves the child to a teacher outside her group, she can't see the row afterwards.
         if(editingEnrollment){
-          await saveScheduleForEnrollment(editingId, editingEnrollment.student_id, editingEnrollment.student_name, readScheduleRowsFromForm(fd));
+          const why = await saveScheduleForEnrollment(editingId, editingEnrollment.student_id, editingEnrollment.student_name, readScheduleRowsFromForm(fd));
+          // Nothing else is saved yet, so the form stays open with what was typed.
+          if(why){ alert(`Couldn't save the class days (${why}). Nothing was changed — check the connection and press Save again.`); return; }
         }
         const { data: savedRows, error } = await sbClient.from("subject_enrollments").update(patch).eq("id", editingId).select("id");
         if(error){ alert("Couldn't save: " + error.message); return; }
@@ -2456,7 +2468,8 @@ window.kumonPtcNav = function(client, role){
 
       const slots = readScheduleRowsFromForm(fd);
       if(newEnrollment && slots.length){
-        await saveScheduleForEnrollment(newEnrollment.id, studentId, name, slots);
+        const why = await saveScheduleForEnrollment(newEnrollment.id, studentId, name, slots);
+        if(why) alert(`${name} — ${subject} was added, but the class days didn't save (${why}).\n\nOpen this subject with Edit and set the days again.`);
       }
 
       logHistory("add_enrollment", `Added ${name} — ${subject} (${(enrollPayload.enrollment_type || "").toUpperCase()})${enrollPayload.is_monitor ? " on monitor" : ""}`, "subject_enrollment", newEnrollment ? newEnrollment.id : null);

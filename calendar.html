@@ -1289,9 +1289,11 @@ window.kumonPtcNav = function(client, role){
 
   async function ccLoad(){
     if(!ccCanUse()){ cc.rows = []; return; }
-    const { data, error } = await sbClient.from("calendar_comments").select("*").order("created_at", { ascending:true });
+    // Every comment, 1,000 at a time (one request stops at the row limit and would drop the newest).
+    const { data, error } = await fetchAll("calendar_comments", "*", q => q.order("created_at", { ascending:true }).order("id"));
     if(error){
       console.warn("comments:", error);
+      if(cc.rows && cc.rows.length){ return; }   // a failed reload keeps the comments on screen
       cc.rows = [];
       cc.loadError = /does not exist|schema cache/i.test(error.message || "") ? "Comments aren't switched on yet — run phase92 in Supabase." : "Couldn't load comments: " + error.message;
       return;
