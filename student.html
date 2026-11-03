@@ -1,0 +1,1410 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Kumon Hub — Student profile</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700&family=Inter:wght@400;500;600;700;800&display=swap">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  :root{
+    --bg:#F5F6FA; --surface:#FFFFFF; --surface-2:#FBFBFE; --border:#E1E4EB;
+    --ink:#1B1F27; --ink-muted:#636C7C; --ink-faint:#9AA1AF;
+    --accent:#3454D1; --accent-ink:#FFFFFF; --accent-soft:#E9EDFC; --accent-soft-ink:#2A41A8;
+    --good:#1E8E5A; --good-soft:#E4F5EC; --warn:#C2831F; --warn-soft:#FBF0E1; --bad:#C23B2B; --bad-soft:#FBE8E5;
+    --shadow: 0 1px 2px rgba(16,20,30,.04), 0 2px 8px rgba(16,20,30,.06), 0 20px 40px -20px rgba(16,20,30,.25);
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#14161C; --surface:#1C1F27; --surface-2:#20232C; --border:#2C303B;
+      --ink:#EDEFF4; --ink-muted:#9BA3B2; --ink-faint:#6B7280;
+      --accent:#6C86F0; --accent-ink:#0E1220; --accent-soft:#232A47; --accent-soft-ink:#B7C3FA;
+      --good:#4FC48A; --good-soft:#173226; --warn:#E0A23F; --warn-soft:#332711; --bad:#F0796A; --bad-soft:#3A1F1C;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#14161C; --surface:#1C1F27; --surface-2:#20232C; --border:#2C303B;
+    --ink:#EDEFF4; --ink-muted:#9BA3B2; --ink-faint:#6B7280;
+    --accent:#6C86F0; --accent-ink:#0E1220; --accent-soft:#232A47; --accent-soft-ink:#B7C3FA;
+    --good:#4FC48A; --good-soft:#173226; --warn:#E0A23F; --warn-soft:#332711; --bad:#F0796A; --bad-soft:#3A1F1C;
+    color-scheme: dark;
+  }
+
+  *{box-sizing:border-box;}
+  body{
+    background:var(--bg); color:var(--ink); margin:0;
+    font-family:"Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  h1,h2,h3,.brand{ font-family:"Sora", system-ui, sans-serif; }
+  h1,h2,h3{ text-wrap:balance; margin:0; }
+  button{ font-family:inherit; }
+  a{ color:var(--accent); }
+
+  .app{ display:grid; grid-template-columns: 216px 1fr; min-height:100vh; min-height:100dvh; }
+  .rail{
+    background:var(--surface); border-right:1px solid var(--border);
+    padding:20px 12px; display:flex; flex-direction:column; gap:4px;
+    position:sticky; top:0; align-self:start; height:100vh; height:100dvh;
+  }
+  .brand{ font-weight:700; font-size:16px; padding:6px 10px 18px; display:flex; align-items:center; gap:8px; color:var(--ink); }
+  .brand .dot{ width:9px;height:9px;border-radius:50%;background:var(--accent); flex:none; }
+  .navbtn{
+    display:flex; align-items:center; gap:10px; padding:9px 10px; border-radius:9px;
+    border:none; background:transparent; color:var(--ink-muted); font-size:14px; font-weight:600;
+    cursor:pointer; text-align:left; width:100%; text-decoration:none;
+    transition: background-color .15s ease, color .15s ease, box-shadow .15s ease;
+  }
+  .navbtn:focus-visible{ outline:none; box-shadow: 0 0 0 3px var(--accent-soft); }
+  .navbtn:hover{ background:var(--surface-2); color:var(--ink); }
+  .navbtn svg{ width:17px; height:17px; flex:none; }
+  .navbtn.active{ background:var(--accent-soft); color:var(--accent-soft-ink); box-shadow: inset 3px 0 0 var(--accent); }
+  .rail-pages{ display:flex; flex-direction:column; gap:4px; margin-bottom:8px; }
+  .rail-divider{ height:1px; background:var(--border); margin:4px 10px 10px; }
+  .rail-account{ padding:0 10px 10px; }
+  .account-row{ display:flex; align-items:center; justify-content:space-between; gap:8px; padding:8px 8px; border-top:1px solid var(--border); font-size:12px; color:var(--ink-muted); }
+  .account-email{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .rail-foot{ margin-top:auto; padding:10px; font-size:12px; color:var(--ink-faint); line-height:1.5; }
+
+  .main{ padding:26px 30px 60px; max-width:1100px; width:100%; min-width:0; }
+  .page-head{ display:flex; align-items:flex-end; justify-content:space-between; gap:16px; margin-bottom:18px; flex-wrap:wrap; }
+  .page-head h1{ font-size:22px; font-weight:700; }
+  .page-sub{ color:var(--ink-muted); font-size:13.5px; margin-top:4px; }
+
+  .btn{
+    display:inline-flex; align-items:center; gap:7px; padding:9px 14px; border-radius:9px;
+    font-size:13.5px; font-weight:600; border:1px solid var(--border); background:var(--surface);
+    color:var(--ink); cursor:pointer; white-space:nowrap;
+    transition: background-color .15s ease, border-color .15s ease, color .15s ease, box-shadow .15s ease, transform .08s ease;
+  }
+  .btn:hover{ background:var(--surface-2); }
+  .btn:active{ transform:scale(.96); }
+  .btn:focus-visible{ outline:none; box-shadow: 0 0 0 3px var(--accent-soft); }
+  .btn.primary{ background:var(--accent); color:var(--accent-ink); border-color:var(--accent); box-shadow: 0 1px 2px rgba(0,0,0,.08); }
+  .btn.good{ color:var(--good); border-color:var(--good-soft); }
+  .btn.good:hover{ background:var(--good-soft); }
+  .btn.ghost{ border-color:transparent; background:transparent; }
+  .btn.sm{ padding:6px 10px; font-size:12.5px; border-radius:7px; }
+  .btn:disabled{ opacity:.5; cursor:not-allowed; }
+
+  .card{ background:var(--surface); border:1px solid var(--border); border-radius:14px; margin-bottom:18px; }
+  .card-head{ display:flex; align-items:center; justify-content:space-between; padding:14px 16px; border-bottom:1px solid var(--border); gap:10px; flex-wrap:wrap; }
+  .card-head h3{ font-size:14.5px; font-weight:700; }
+  .empty{ padding:30px 16px; text-align:center; color:var(--ink-muted); font-size:13.5px; }
+
+  .stats{ display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin-bottom:12px; }
+  .stat{ background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:13px 14px; display:flex; flex-direction:column; gap:6px; }
+  .stat .n{ font-size:22px; font-weight:700; font-family:"Sora",sans-serif; }
+  .stat .l{ font-size:12px; color:var(--ink-muted); font-weight:600; }
+  .stat.warn .n{ color:var(--warn); }
+  .stat.bad .n{ color:var(--bad); }
+  button.stat{ cursor:pointer; text-align:left; font:inherit; transition: border-color .15s ease, box-shadow .15s ease, background-color .15s ease; }
+  button.stat:hover{ border-color:var(--accent); }
+  button.stat.selected{ border-color:var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); background:var(--accent-soft); }
+  button.stat.selected .l{ color:var(--accent-soft-ink); }
+  .filter-note{ display:flex; align-items:center; gap:8px; font-size:12.5px; color:var(--ink-muted); margin:-6px 0 12px; }
+  .filter-note button{ border:none; background:transparent; color:var(--accent); font-weight:600; cursor:pointer; padding:0; font-size:12.5px; }
+
+  .cal-toolbar{ display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; flex-wrap:wrap; gap:10px; }
+  .cal-nav{ display:flex; align-items:center; gap:8px; }
+  .cal-nav h2{ font-size:16px; font-weight:700; min-width:160px; text-align:center; }
+  .month-head{ display:flex; flex-direction:column; align-items:center; }
+  .month-head h2{ margin:0; }
+  .month-range{ font-size:11px; color:var(--ink-muted); margin-top:1px; }
+  @media (max-width: 640px){ .cal-nav h2{ font-size:14px; min-width:0; flex:1; } }
+
+  .seg{ display:inline-flex; background:var(--surface-2); border:1px solid var(--border); border-radius:9px; padding:2px; }
+  .seg button{ border:none; background:transparent; padding:6px 11px; border-radius:7px; font-size:12.5px; font-weight:600; color:var(--ink-muted); cursor:pointer; }
+  .seg button:active{ transform:scale(.94); }
+  .seg button.active{ background:var(--surface); color:var(--ink); box-shadow:var(--shadow); }
+
+  .search-row{ display:flex; gap:8px; margin-bottom:14px; flex-wrap:wrap; align-items:center; }
+  .search-row input, .search-row select{ font-size:13.5px; width:auto; flex:0 0 auto; }
+  .search-row select{ min-width:132px; }
+  .table-scroll{ overflow-x:auto; }
+  .stable{ min-width:100%; width:auto; border-collapse:collapse; }
+  .stable th{ text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--ink-muted); padding:8px 16px; border-bottom:1px solid var(--border); white-space:nowrap; }
+  .stable td{ padding:10px 16px; border-bottom:1px solid var(--border); font-size:13px; vertical-align:middle; white-space:nowrap; }
+  .stable .empty{ white-space:normal; }
+  .stable tr:last-child td{ border-bottom:none; }
+  .stable tbody tr td{ transition: background-color .12s ease; }
+  .stable tbody tr:hover td{ background:var(--surface-2); }
+  .stable tr.clickrow{ cursor:pointer; }
+  .stable tr.clickrow:hover{ background:var(--surface-2); }
+  .muted{ color:var(--ink-muted); }
+  .hint{ font-size:12px; color:var(--ink-muted); font-weight:500; }
+  .faint{ color:var(--ink-faint); }
+  .money{ font-variant-numeric:tabular-nums; font-weight:600; }
+  .money.good{ color:var(--good); }
+  .pill{ display:inline-flex; align-items:center; gap:5px; padding:3px 9px; border-radius:99px; font-size:11.5px; font-weight:700; white-space:nowrap; transition: background-color .15s ease, color .15s ease; }
+  .pill.subj-math{ background:var(--accent-soft); color:var(--accent-soft-ink); }
+  .pill.subj-reading{ background:var(--bad-soft); color:var(--bad); }
+  .pill.m1, .pill.m2{ background:var(--warn-soft); color:var(--warn); }
+  .pill.m3, .pill.m4{ background:var(--bad-soft); color:var(--bad); }
+  .pill.resumed{ background:var(--good-soft); color:var(--good); }
+  .pill.pending{ background:var(--accent-soft); color:var(--accent-soft-ink); }
+  .pill.flagged{ background:var(--warn-soft); color:var(--warn); }
+  .pill.verified{ background:var(--good-soft); color:var(--good); }
+  .pill.rejected{ background:var(--surface-2); color:var(--ink-faint); }
+  .field-row{ display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  .lvl.empty-lvl{ color:var(--ink-faint); }
+  .pill.beyond{ background:var(--surface-2); color:var(--ink-faint); }
+  .name-subj-pill{ margin-left:6px; vertical-align:middle; padding:2px 7px; }
+  .row-actions{ display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end; }
+
+  select, input[type=text], input[type=search], textarea{
+    font-family:inherit; font-size:13.5px; padding:8px 10px; border-radius:8px; border:1px solid var(--border);
+    background:var(--surface); color:var(--ink); width:100%;
+  }
+  select, input, textarea{ transition: border-color .15s ease, box-shadow .15s ease; }
+  select:focus, input:focus, textarea:focus{ outline:none; border-color:var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+  label.field{ display:flex; flex-direction:column; gap:5px; font-size:12.5px; font-weight:600; color:var(--ink-muted); }
+
+  .modal-backdrop{ position:fixed; inset:0; background:rgba(10,12,18,.5); display:flex; align-items:flex-start; justify-content:center; padding:5vh 16px; overflow-y:auto; z-index:50; }
+  .modal{ background:var(--surface); border-radius:16px; width:100%; max-width:460px; box-shadow:var(--shadow); }
+  .modal-head{ display:flex; align-items:center; justify-content:space-between; padding:16px 18px; border-bottom:1px solid var(--border); }
+  .modal-head h3{ font-size:15.5px; font-weight:700; }
+  .modal-body{ padding:16px 18px; display:flex; flex-direction:column; gap:12px; max-height:66vh; overflow-y:auto; }
+  .modal-foot{ display:flex; justify-content:flex-end; gap:8px; padding:14px 18px; border-top:1px solid var(--border); }
+  .iconbtn{ border:none; background:transparent; cursor:pointer; color:var(--ink-muted); padding:4px; border-radius:6px; transition: background-color .15s ease, color .15s ease, transform .08s ease; }
+  .iconbtn:hover{ background:var(--surface-2); color:var(--ink); }
+  .iconbtn:active{ transform:scale(.9); }
+
+  .note-item{ border:1px solid var(--border); border-radius:10px; padding:10px 12px; background:var(--surface-2); }
+  .note-item .note-meta{ font-size:11px; color:var(--ink-muted); margin-bottom:4px; }
+  .note-item .note-text{ font-size:13px; white-space:pre-wrap; }
+  .note-form{ display:flex; flex-direction:column; gap:8px; }
+
+  .banner{ background:var(--warn-soft); color:var(--warn); border-radius:11px; padding:11px 14px; font-size:13px; font-weight:600; margin-bottom:16px; }
+  .banner.info{ background:var(--accent-soft); color:var(--accent-soft-ink); }
+
+  .toast{ position:fixed; left:50%; bottom:22px; transform:translateX(-50%); background:var(--ink); color:var(--bg); font-size:13px; font-weight:600; padding:10px 16px; border-radius:10px; z-index:95; box-shadow:var(--shadow); }
+
+  .login-screen{ position:fixed; inset:0; display:flex; align-items:center; justify-content:center; background:var(--bg); z-index:100; padding:20px; }
+  .login-card{ width:100%; max-width:360px; background:var(--surface); border:1px solid var(--border); border-radius:16px; padding:28px 26px; box-shadow:var(--shadow); display:flex; flex-direction:column; gap:14px; }
+  .login-brand{ font-family:"Sora", system-ui, sans-serif; font-weight:700; font-size:18px; display:flex; align-items:center; gap:8px; color:var(--ink); }
+  .login-brand .dot{ width:9px; height:9px; border-radius:50%; background:var(--accent); flex:none; }
+  .login-sub{ font-size:13px; color:var(--ink-muted); margin:-6px 0 4px; }
+  .login-error{ background:var(--bad-soft); color:var(--bad); border-radius:9px; padding:9px 12px; font-size:12.5px; font-weight:600; }
+
+  [hidden]{ display:none !important; }
+
+  @media (max-width: 860px){
+    .app{ grid-template-columns:1fr; }
+    .rail{ position:fixed; bottom:0; left:0; right:0; top:auto; height:auto; flex-direction:row; padding:8px; border-right:none; border-top:1px solid var(--border); z-index:40; }
+    .brand, .rail-foot, .rail-account{ display:none; }
+    .rail-pages{ flex-direction:row; flex:1; margin-bottom:0; }
+    .rail-divider{ display:none; }
+    .navbtn{ text-align:center; justify-content:center; }
+    .main{ padding:16px 14px calc(70px + env(safe-area-inset-bottom)); }
+    .stats{ grid-template-columns:repeat(2,1fr); }
+    .stable th, .stable td{ padding:9px 8px; font-size:12.5px; }
+    .modal-backdrop{ padding:0; align-items:flex-end; }
+    .modal{ max-width:none; border-radius:16px 16px 0 0; max-height:92vh; }
+    .field-row{ grid-template-columns:1fr; }
+  }
+
+  /* ===== Shared across pages: collapsible sidebar + fit-to-screen ===== */
+  :root{ --rail-w:216px; --z:1; }
+  html.rail-collapsed{ --rail-w:68px; }
+  .rail-toggle{ display:none; }
+  .rail-pipeline .rail-section-label{ font-size:10.5px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:var(--ink-faint); padding:2px 10px 6px; }
+  .rail-pipeline{ display:flex; flex-direction:column; gap:4px; margin-bottom:8px; }
+  @media (min-width:1600px){ :root{ --z:1.1; } }
+  @media (min-width:1900px){ :root{ --z:1.2; } }
+  @media (min-width:2300px){ :root{ --z:1.4; } }
+  @media (min-width:2800px){ :root{ --z:1.7; } }
+  @media (min-width:3400px){ :root{ --z:2; } }
+  @media (min-width:861px){
+    /* Big screens: the page fills the window and everything scales up together (steps above), instead of
+       sitting in a narrow column with tiny text and empty space on the right. */
+    body{ zoom:var(--z); }
+    .app{ grid-template-columns:var(--rail-w) minmax(0,1fr); min-height:calc(100dvh / var(--z)); transition:grid-template-columns .18s ease; }
+    .rail{ height:calc(100dvh / var(--z)); overflow-y:auto; overflow-x:hidden; }
+    .main{ max-width:none; }
+    .rail-pipeline-mobile{ display:none !important; }
+    .rail-toggle{ display:inline-flex; position:absolute; top:20px; right:10px; width:28px; height:28px; align-items:center; justify-content:center; border:1px solid var(--border); background:var(--surface); color:var(--ink-muted); border-radius:8px; cursor:pointer; padding:0; }
+    .rail-toggle:hover{ background:var(--surface-2); color:var(--ink); }
+    .rail-toggle svg{ width:15px; height:15px; transition:transform .18s ease; }
+    html.rail-collapsed .rail-toggle svg{ transform:rotate(180deg); }
+    html.rail-collapsed .rail{ padding:20px 8px; }
+    html.rail-collapsed .rail-toggle{ position:static; align-self:center; margin-bottom:12px; }
+    html.rail-collapsed .brand{ display:none; }
+    html.rail-collapsed .navbtn{ font-size:0; justify-content:center; padding:10px 0; position:relative; gap:0; }
+    html.rail-collapsed .navbtn svg{ width:19px; height:19px; }
+    html.rail-collapsed .navbtn .badge{ position:absolute; top:3px; right:8px; font-size:10px; margin:0; padding:0 4px; min-width:15px; line-height:15px; }
+    html.rail-collapsed .rail-section-label, html.rail-collapsed .rail-account, html.rail-collapsed .rail-foot{ display:none; }
+    html.rail-collapsed .rail-divider{ margin:6px 8px; }
+  }
+  @media (max-width:860px){ .rail-pipeline{ display:none !important; } }
+
+
+  /* ===== Projection page ===== */
+  :root{ --kis:#7A8394; --bronze:#B5703A; --silver:#8E98A8; --gold:#D4A21A; --proj:#3454D1; --actual:#1E8E5A; --grid:#E8EAF0; }
+  @media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){ --proj:#6C86F0; --actual:#4FC48A; --grid:#2C303B; --kis:#9BA3B2; } }
+  :root[data-theme="dark"]{ --proj:#6C86F0; --actual:#4FC48A; --grid:#2C303B; --kis:#9BA3B2; }
+  .stats{ grid-template-columns:repeat(5,1fr); }
+  .stat.good .n{ color:var(--good); }
+  .toolbar{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:12px; }
+  .toolbar select, .toolbar input[type=text]{ width:auto; min-width:150px; }
+  .grow{ flex:1; }
+  .pill.p-good{ background:var(--good-soft); color:var(--good); } .pill.p-bad{ background:var(--bad-soft); color:var(--bad); }
+  .pill.p-warn{ background:var(--warn-soft); color:var(--warn); } .pill.p-accent{ background:var(--accent-soft); color:var(--accent-soft-ink); }
+  .pill.p-muted{ background:var(--surface-2); color:var(--ink-muted); border:1px solid var(--border); }
+  a.btn{ text-decoration:none; }
+  .btn.danger{ color:var(--bad); border-color:var(--bad-soft); } .btn.danger:hover{ background:var(--bad-soft); }
+  .detail-top{ display:flex; gap:8px; align-items:center; margin-bottom:12px; flex-wrap:wrap; }
+  .sp-card{ overflow:hidden; }
+  .sp-head{ display:flex; justify-content:space-between; align-items:flex-start; gap:12px; padding:18px 20px; border-bottom:1px solid var(--border); flex-wrap:wrap; }
+  .sp-head h2{ font-size:19px; }
+  .sp-body{ padding:18px 20px; display:flex; flex-direction:column; gap:18px; }
+  .inputs{ display:grid; grid-template-columns:repeat(6, minmax(0,1fr)); gap:10px; }
+  .f{ display:flex; flex-direction:column; gap:5px; font-size:11px; font-weight:700; color:var(--ink-muted); text-transform:uppercase; letter-spacing:.03em; }
+  .f input, .f select{ text-transform:none; letter-spacing:0; font-size:14px; font-weight:600; padding:8px 9px; }
+  .f .pair{ display:flex; gap:6px; } .f .pair select{ flex:1; min-width:0; } .f .pair input{ width:72px; }
+  input[type=number], input[type=date]{ font-family:inherit; font-size:13.5px; padding:8px 10px; border-radius:8px; border:1px solid var(--border); background:var(--surface); color:var(--ink); width:100%; }
+  .insights{ display:grid; grid-template-columns:repeat(4,1fr); gap:10px; }
+  .ins{ border:1px solid var(--border); border-radius:12px; padding:12px 14px; background:var(--surface-2); }
+  .ins .k{ font-size:11.5px; color:var(--ink-muted); font-weight:600; }
+  .ins .n{ font-family:"Sora",sans-serif; font-weight:700; font-size:17px; margin-top:4px; }
+  .ins .n .pill{ font-family:"Inter",sans-serif; font-size:12.5px; }
+  .ins .d{ font-size:12px; color:var(--ink-muted); margin-top:3px; }
+  .sec h3{ font-size:14px; }
+  .sec-h{ display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:10px; }
+  .sec > h3{ margin-bottom:10px; }
+  .legend{ display:flex; gap:6px; flex-wrap:wrap; }
+  .lg{ display:inline-flex; align-items:center; gap:6px; border:1px solid var(--border); border-radius:99px; padding:4px 10px; font:600 12px "Inter",sans-serif; background:var(--surface); cursor:pointer; color:var(--ink); }
+  .lg i{ width:14px; height:3px; border-radius:2px; display:inline-block; } .lg.off{ opacity:.4; }
+  .chart{ border:1px solid var(--border); border-radius:12px; padding:8px 8px 4px; background:var(--surface); }
+  .chart svg{ display:block; width:100%; height:auto; }
+  .tip{ position:fixed; pointer-events:none; background:var(--ink); color:var(--bg); font-size:12px; padding:7px 9px; border-radius:8px; line-height:1.45; display:none; z-index:90; }
+  .tbl{ border:1px solid var(--border); border-radius:12px; overflow-x:auto; }
+  .stable.plan td{ vertical-align:top; white-space:normal; }
+  .topic{ color:var(--ink-muted); font-size:12px; margin-top:2px; max-width:420px; }
+  .cellin{ width:64px !important; padding:5px 7px !important; font-weight:700; border-style:dashed !important; }
+  .cellin.set{ border-style:solid !important; border-color:var(--accent) !important; background:var(--accent-soft) !important; }
+  .tnum{ font-variant-numeric:tabular-nums; white-space:nowrap; }
+  .cols{ display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+  .box{ border:1px solid var(--border); border-radius:12px; padding:12px 14px; display:flex; flex-direction:column; gap:8px; align-items:flex-start; }
+  .box textarea{ width:100%; font-family:inherit; font-size:13px; padding:8px 10px; border-radius:8px; border:1px solid var(--border); background:var(--surface); color:var(--ink); }
+  .box .t{ font-size:11.5px; font-weight:700; color:var(--ink-muted); text-transform:uppercase; letter-spacing:.03em; }
+  .slist{ margin:0; padding-left:18px; font-size:13px; line-height:1.5; }
+  .sig{ display:grid; grid-template-columns:repeat(4,1fr); gap:10px; }
+  .sigbox{ border:1px solid var(--border); border-radius:10px; padding:10px 12px; font-size:12px; display:flex; flex-direction:column; gap:5px; }
+  .sigbox b{ font-size:12.5px; } .sigline{ border-bottom:1px solid var(--ink-faint); height:26px; }
+  .skill-opt{ display:flex; gap:10px; align-items:flex-start; font-size:13px; line-height:1.45; padding:8px 10px; border:1px solid var(--border); border-radius:10px; cursor:pointer; }
+  .skill-opt input{ margin-top:3px; }
+  .modal.wide{ max-width:640px; }
+  .clickrow td{ cursor:pointer; }
+  .print-only{ display:none; }
+  .print-title{ font-family:"Sora",sans-serif; font-weight:700; font-size:12px; color:var(--ink-muted); letter-spacing:.06em; }
+  @media (max-width: 1100px){ .insights{ grid-template-columns:repeat(2,1fr); } .inputs{ grid-template-columns:repeat(3,minmax(0,1fr)); } }
+  @media (max-width: 860px){ .inputs{ grid-template-columns:repeat(2,minmax(0,1fr)); } .insights, .cols, .sig{ grid-template-columns:1fr; } .stats{ grid-template-columns:repeat(2,1fr); } }
+  @media print{
+    body{ zoom:1 !important; background:#fff; }
+    .rail, .no-print, .rail-toggle, #pageHead, .toast, .tip{ display:none !important; }
+    .app{ display:block !important; }
+    .main{ padding:0 !important; max-width:none !important; }
+    .card{ border:none; box-shadow:none; }
+    .print-only{ display:block; }
+    input, select, textarea{ border:none !important; background:transparent !important; padding:0 !important; -webkit-appearance:none; appearance:none; }
+    .cellin{ border:none !important; background:transparent !important; }
+    .sec, .sig, .cols{ break-inside:avoid; }
+    .inputs{ grid-template-columns:repeat(6,minmax(0,1fr)) !important; }
+    .insights, .sig{ grid-template-columns:repeat(4,1fr) !important; }
+    .cols{ grid-template-columns:1fr 1fr !important; }
+    .stats{ display:none !important; }
+    .lg{ border:none; padding:2px 6px; }
+    .lg.off{ display:none; }
+    input::-webkit-calendar-picker-indicator{ display:none; }
+    textarea::placeholder{ color:transparent; }
+    .sp-body{ gap:12px; padding:10px 0; } .sp-head{ padding:6px 0 10px; }
+  }
+
+  /* ===== Student profile page ===== */
+  #profileSheet{ display:flex; flex-direction:column; gap:14px; }
+  .prof-head{ padding:22px 24px 6px; }
+  .prof-top{ display:flex; justify-content:space-between; align-items:flex-start; gap:14px; flex-wrap:wrap; }
+  .prof-head h2{ font-size:26px; letter-spacing:-.01em; }
+  /* Facts: a value with a plain-language caption under it, split by thin rules. Colour only when something needs attention. */
+  .facts{ display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); margin:18px 0 0; border-top:1px solid var(--border); }
+  .fact{ padding:14px 18px 14px 0; min-width:0; }
+  .fact + .fact{ padding-left:18px; border-left:1px solid var(--border); }
+  .fv{ font-family:"Sora",sans-serif; font-weight:700; font-size:24px; line-height:1.15; color:var(--ink); }
+  .fc{ font-size:12.5px; color:var(--ink-muted); margin-top:4px; line-height:1.35; }
+  .f-good .fv{ color:var(--good); } .f-warn .fv{ color:var(--warn); } .f-bad .fv{ color:var(--bad); }
+  .facts-sm{ grid-template-columns:repeat(5, minmax(0,1fr)); margin-top:6px; border-top:none; }
+  .facts-sm .fact{ padding-top:8px; padding-bottom:8px; } .facts-sm .fv{ font-size:17px; }
+  .stands{ border-top:1px solid var(--border); }
+  .stand{ padding:16px 0 12px; } .stand + .stand{ border-top:1px dashed var(--border); }
+  .stand-h{ display:flex; align-items:center; gap:10px; }
+  .stand-t{ font-weight:600; font-size:14px; }
+  /* Award medal — the only place medal colours appear. */
+  .medal{ display:flex; align-items:center; gap:9px; }
+  .medal .disc{ width:30px; height:30px; border-radius:50%; display:grid; place-items:center; font:700 13px "Sora",sans-serif; color:#fff; box-shadow:inset 0 -3px 0 rgba(0,0,0,.18), 0 0 0 3px var(--surface), 0 0 0 4px currentColor; }
+  .medal b{ display:block; font-size:13.5px; } .medal small{ display:block; font-size:11.5px; color:var(--ink-muted); }
+  .medal-gold{ color:#C9971A; } .medal-gold .disc{ background:#D9A520; }
+  .medal-silver{ color:#8E98A8; } .medal-silver .disc{ background:#9AA3B2; }
+  .medal-bronze{ color:#B5703A; } .medal-bronze .disc{ background:#B9763F; }
+  .medal-kis{ color:var(--accent); } .medal-kis .disc{ background:var(--accent); }
+  .medal-none{ color:var(--border); } .medal-none .disc{ background:var(--surface-2); box-shadow:inset 0 0 0 2px var(--border); }
+  .medal b, .medal small{ color:var(--ink); } .medal small{ color:var(--ink-muted); }
+  /* Level ladder */
+  .ladder{ position:relative; margin:30px 0 26px; }
+  .lad-track{ display:flex; gap:3px; }
+  .rung{ flex:1; height:30px; border-radius:6px; background:var(--surface-2); border:1px solid var(--border); display:grid; place-items:center; font-size:12px; font-weight:600; color:var(--ink-faint); position:relative; overflow:hidden; }
+  .rung span{ position:relative; }
+  .rung.done{ background:var(--accent-soft); border-color:transparent; color:var(--accent-soft-ink); }
+  .rung.cur{ border-color:var(--accent); color:var(--ink); background:linear-gradient(90deg, var(--accent-soft) var(--p), var(--surface-2) var(--p)); }
+  .lad-pin{ position:absolute; top:-26px; transform:translateX(-50%); display:flex; flex-direction:column; align-items:center; z-index:2; pointer-events:none; }
+  .lad-pin span{ background:var(--accent); color:var(--accent-ink); font:700 11.5px "Inter",sans-serif; padding:2px 8px; border-radius:999px; white-space:nowrap; }
+  .lad-pin::after{ content:""; width:2px; height:36px; background:var(--accent); margin-top:-1px; }
+  .lad-marks{ position:relative; height:18px; }
+  .lad-mark{ position:absolute; top:0; transform:translateX(-50%); font-size:11px; font-weight:600; white-space:nowrap; display:flex; flex-direction:column; align-items:center; }
+  .lad-mark::before{ content:""; width:2px; height:7px; background:currentColor; margin-top:-4px; margin-bottom:1px; }
+  .m-kis{ color:var(--ink-muted); } .m-bronze{ color:#A9682F; } .m-silver{ color:#7D8797; } .m-gold{ color:#B8890F; }
+  @media (max-width:1100px){ .facts-sm{ grid-template-columns:repeat(3, minmax(0,1fr)); } .facts-sm .fact:nth-child(4){ border-left:none; padding-left:0; } }
+  @media (max-width:640px){
+    .prof-head{ padding:18px 16px 4px; }
+    .facts, .facts-sm{ grid-template-columns:1fr 1fr; } .fact:nth-child(odd){ border-left:none !important; padding-left:0 !important; } .fact:nth-child(even){ padding-left:14px; border-left:1px solid var(--border); }
+    .rung{ font-size:10.5px; } .lad-mark span{ font-size:10px; } .stand-h{ flex-wrap:wrap; }
+    .lad-marks{ height:32px; } .lad-mark.m-bronze, .lad-mark.m-gold{ top:14px; } .lad-mark.m-bronze::before, .lad-mark.m-gold::before{ height:21px; margin-top:-18px; }
+  }
+  .ptc-note{ width:100%; font-family:inherit; font-size:12.5px; padding:7px 9px; border-radius:8px; border:1px solid var(--border); background:var(--surface); color:var(--ink); resize:vertical; }
+  .ptc-note-foot{ display:flex; justify-content:space-between; align-items:center; gap:8px; width:100%; font-size:11.5px; }
+  .sect{ padding:16px 20px; }
+  .sect h3, .subj-b h4{ font-size:14.5px; margin:0; }
+  .subj-card{ overflow:hidden; }
+  .subj-h{ display:flex; align-items:center; gap:8px; padding:12px 20px; border-bottom:1px solid var(--border); background:var(--surface-2); flex-wrap:wrap; }
+  .subj-b{ padding:14px 20px; display:flex; flex-direction:column; gap:12px; }
+  .now-row td{ background:var(--accent-soft); }
+  .mini-ins{ display:flex; gap:12px; flex-wrap:wrap; align-items:center; font-size:12.5px; color:var(--ink-muted); }
+  .att-sum{ display:flex; align-items:baseline; gap:10px; margin-bottom:10px; font-size:13px; }
+  .att-sum .big{ font-family:"Sora",sans-serif; font-weight:700; font-size:24px; color:var(--ink); }
+  table.att{ border-collapse:collapse; width:100%; font-size:12.5px; }
+  table.att th{ text-align:left; font-size:11px; color:var(--ink-muted); text-transform:uppercase; letter-spacing:.04em; padding:6px 10px; border-bottom:1px solid var(--border); }
+  table.att td{ padding:5px 10px; border-bottom:1px solid var(--border); white-space:nowrap; }
+  .a{ display:inline-flex; align-items:center; justify-content:center; min-width:28px; height:22px; border-radius:6px; font-weight:700; font-size:12px; padding:0 6px; }
+  .a-in{ background:var(--good-soft); color:var(--good); } .a-miss{ background:var(--bad-soft); color:var(--bad); }
+  .a-off{ background:var(--warn-soft); color:var(--warn); font-weight:600; } .a-today{ border:1px dashed var(--border); color:var(--ink-muted); font-weight:600; }
+  .a-future, .a-before{ background:transparent; color:var(--ink-faint); font-weight:500; }
+  .pgrid{ display:grid; grid-template-columns:repeat(3,1fr); gap:10px; }
+  .pbox{ border:1px solid var(--border); border-radius:10px; padding:10px 12px; display:flex; flex-direction:column; gap:6px; align-items:flex-start; font-size:12.5px; }
+  body.exporting .no-print, body.exporting .no-print-pay{ display:none !important; }
+  @media (max-width:860px){ .pgrid{ grid-template-columns:1fr; } }
+  @media print{ .card{ break-inside:avoid; } .no-print-pay{ display:none !important; } .ptc-note{ border:none; padding:0; resize:none; } .facts-sm{ grid-template-columns:repeat(5, minmax(0,1fr)) !important; } .rung.cur{ -webkit-print-color-adjust:exact; print-color-adjust:exact; } }
+</style>
+<script>try{if(localStorage.getItem("kumonRailCollapsed")==="1")document.documentElement.classList.add("rail-collapsed")}catch(e){}</script>
+<script>
+/* PTC menu link + "due" number (phase97). Each page calls kumonPtcNav(sbClient, role) once the role is known. */
+window.kumonPtcNav = function(client, role){
+  var link = document.getElementById("navPtcLink"); if(!link) return;
+  var ok = ["admin","superadmin","teacher","trainer_teacher"].indexOf(role) >= 0;
+  link.hidden = !ok;
+  var proj = document.getElementById("navProjLink"); if(proj) proj.hidden = !ok;
+  if(!ok || !client) return;
+  if(!document.getElementById("ptcBadgeStyle")){
+    var st = document.createElement("style"); st.id = "ptcBadgeStyle";
+    st.textContent = ".navbtn .ptc-badge{margin-left:auto;background:var(--bad);color:#fff;font-size:11px;font-weight:700;border-radius:99px;padding:1px 6px;min-width:18px;text-align:center;line-height:16px;}";
+    document.head.appendChild(st);
+  }
+  var refresh = function(){
+    client.rpc("ptc_due_count").then(function(r){
+      var b = document.getElementById("navPtcBadge"); if(!b) return;
+      var n = (r && !r.error && typeof r.data === "number") ? r.data : 0;
+      b.textContent = n > 99 ? "99+" : String(n); b.hidden = !n;
+      link.title = n ? ("PTC — " + n + " due") : "PTC";
+    }, function(){});
+  };
+  refresh();
+  window.kumonPtcNavRefresh = refresh;
+  if(!window.__ptcNavTimer) window.__ptcNavTimer = setInterval(refresh, 5 * 60 * 1000);
+};
+</script>
+<script>
+/* Sign-in resilience (Oct 23). A slow or dropped connection used to make the page think the account had no role
+   ("waiting for approval — ask a superadmin"), and a hiccup while renewing the sign-in could log people out.
+   kumonFetchProfile retries, renews the sign-in if it expired, and — only if the Hub still can't be reached —
+   uses the last role this account had on this browser instead of "pending". */
+(function(){
+  var sleep = function(ms){ return new Promise(function(r){ setTimeout(r, ms); }); };
+  function notice(msg){
+    var el = document.getElementById("kumonNetNotice");
+    if(!msg){ if(el) el.remove(); return; }
+    if(!el){
+      el = document.createElement("div"); el.id = "kumonNetNotice";
+      el.style.cssText = "position:fixed;left:50%;top:14px;transform:translateX(-50%);z-index:200;background:#1B1F27;color:#fff;font:600 13px Inter,system-ui,sans-serif;padding:9px 14px;border-radius:10px;box-shadow:0 8px 24px -10px rgba(0,0,0,.4)";
+      (document.body || document.documentElement).appendChild(el);
+    }
+    el.textContent = msg;
+  }
+  window.kumonFetchProfile = async function(client, uid, cols){
+    var key = "kumonProfile:" + uid, cached = null;
+    try{ cached = JSON.parse(localStorage.getItem(key) || "null"); }catch(e){}
+    var want = String(cols).split(",").map(function(s){ return s.trim(); }).filter(Boolean);
+    var cacheOk = cached && cached.role && cached.role !== "pending" && want.every(function(k){ return k in cached; });
+    var once = async function(){ try{ return await client.from("profiles").select(cols).eq("id", uid).maybeSingle(); }catch(e){ return { data:null, error:e }; } };
+    for(var attempt = 0; ; attempt++){
+      var r = await once();
+      if(!r.error && !r.data && attempt === 0){
+        // An expired sign-in can read as "no profile" instead of an error: renew it and ask once more.
+        try{ await client.auth.refreshSession(); }catch(e){}
+        r = await once();
+      }
+      if(!r.error){
+        if(r.data){ try{ localStorage.setItem(key, JSON.stringify(Object.assign({}, cached || {}, r.data))); }catch(e){} }
+        notice(null);
+        return { data: r.data, error: null };
+      }
+      var msg = String((r.error && (r.error.message || r.error.code)) || "");
+      if(/jwt|token|expired|401|auth/i.test(msg)){ try{ await client.auth.refreshSession(); }catch(e){} }
+      if(cacheOk && attempt >= 2){ notice(null); return { data: cached, error: null, fromCache: true }; }
+      notice("Can't reach the Kumon Hub right now — trying again…");
+      await sleep(Math.min(8000, 800 * (attempt + 1)));
+    }
+  };
+  // Before treating a "signed out" event as real, make sure the sign-in is really gone (not a hiccup while renewing it).
+  window.kumonStillSignedIn = async function(client, uid){
+    if(window.__kumonLoggingOut) return false;
+    await sleep(1200);
+    try{ var a = await client.auth.getSession(); if(a && a.data && a.data.session && a.data.session.user.id === uid) return true; }catch(e){}
+    if(window.__kumonLoggingOut) return false;
+    try{ var b = await client.auth.refreshSession(); if(b && b.data && b.data.session && b.data.session.user.id === uid) return true; }catch(e){}
+    return false;
+  };
+  // Mark a deliberate "Log out" click so it isn't second-guessed above; forget the remembered role on log out.
+  document.addEventListener("click", function(e){
+    var b = e.target && e.target.closest && e.target.closest('[data-action="logout"]');
+    if(!b) return;
+    window.__kumonLoggingOut = true;
+    try{ Object.keys(localStorage).forEach(function(k){ if(k.indexOf("kumonProfile:") === 0) localStorage.removeItem(k); }); }catch(err){}
+  }, true);
+})();
+</script>
+</head>
+<body>
+
+<!-- While the page checks who's signed in: a quiet loading screen instead of flashing the login form. -->
+<div class="login-screen" id="bootSplash" aria-live="polite">
+  <div class="login-brand" style="opacity:.85"><span class="dot"></span>Kumon Hub</div>
+</div>
+<div class="login-screen" id="loginScreen" hidden>
+  <form class="login-card" id="loginForm">
+    <div class="login-brand"><span class="dot"></span>Kumon Hub</div>
+    <div class="login-sub">Sign in with your team account.</div>
+    <div class="login-error" id="loginError" hidden></div>
+    <label class="field">Email<input type="email" name="email" required autocomplete="username" autofocus></label>
+    <label class="field">Password<input type="password" name="password" required autocomplete="current-password"></label>
+    <button class="btn primary" type="submit" style="justify-content:center;">Log in</button>
+  </form>
+</div>
+
+<script>
+  // No saved sign-in on this browser at all → show the login form right away (no splash).
+  (function(){ try{ var has = Object.keys(localStorage).some(function(k){ return /^sb-.*-auth-token$/.test(k); });
+    if(!has){ document.getElementById("bootSplash").hidden = true; document.getElementById("loginScreen").hidden = false; } }catch(e){} })();
+</script>
+<div class="app" id="appRoot" hidden>
+  <nav class="rail">
+    <button type="button" class="rail-toggle" id="railToggle" aria-label="Collapse sidebar" title="Collapse sidebar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg></button>
+    <div class="brand"><span class="dot"></span>Kumon Hub</div>
+    <div class="rail-pages">
+      <a class="navbtn rail-pipeline-mobile" href="index.html" id="navPipelineLink" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16l-6.5 8.5V19l-3 1.5v-8L4 4z"/></svg>Pipeline</a>
+      <a class="navbtn active" href="roster.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3L2 8l10 5 10-5-10-5z"/><path d="M6 10.5V15c0 1.5 2.5 3 6 3s6-1.5 6-3v-4.5"/></svg>Student roster</a>
+      <a class="navbtn" href="calendar.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>Calendar</a>
+      <a class="navbtn" href="ptc.html" id="navPtcLink" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="7.5" r="3.2"/><circle cx="17" cy="9.5" r="2.4"/><path d="M3 20c0-3.6 2.7-6.3 6-6.3s6 2.7 6 6.3"/><path d="M15.2 14.4c.6-.2 1.2-.3 1.8-.3 2.5 0 4.4 1.9 4.4 4.6"/></svg>PTC<span class="badge ptc-badge" id="navPtcBadge" hidden></span></a>
+      <a class="navbtn" href="projection.html" id="navProjLink" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 20h18"/><path d="M4 16l5-5 4 3 7-8"/><path d="M15 6h5v5"/></svg>Projection</a>
+      <a class="navbtn" href="payments.html" id="navPaymentsLink" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20M6 15h4"/></svg>Payments</a>
+      <a class="navbtn" href="absent.html" id="navAbsentLink" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.5-7 8-7s8 3 8 7"/><path d="M2 2l20 20" stroke="currentColor"/></svg>Retention</a>
+      <a class="navbtn" href="admin.html" id="navAdminLink" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v6c0 5-3.5 8-7 9-3.5-1-7-4-7-9V6l7-3z"/></svg>Admin</a>
+      <a class="navbtn" href="activity.html" id="navActivityLink" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></svg>Activity</a>
+      <a class="navbtn" href="reports.html" id="navReportsLink" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a9 9 0 1 0 9 9h-9z"/><path d="M15 3.5A9 9 0 0 1 20.5 9H15z"/></svg>Reports</a>
+    </div>
+    <div class="rail-divider"></div>
+    <div class="rail-pipeline" id="navPipelineGroup" hidden>
+      <div class="rail-section-label">Pipeline views</div>
+      <a class="navbtn" href="index.html#calendar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 3v3h6V3"/><path d="M9 12l2 2 4-4"/></svg>DT &amp; Training</a>
+      <a class="navbtn" href="index.html#enrollment"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 12l2 2 4-4"/><circle cx="12" cy="12" r="9"/></svg>Enrollment</a>
+      <a class="navbtn" href="index.html#students"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-7 8-7s8 3 8 7"/></svg>New students</a>
+      <a class="navbtn" href="index.html#settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M19 5l-2 2M7 17l-2 2"/></svg>Settings</a>
+    </div>
+    <div class="rail-account" id="railAccount"></div>
+    <div class="rail-foot">Each child's progress, projection and attendance.</div>
+  </nav>
+
+  <main class="main">
+    <div id="pendingGate" hidden></div>
+    <div class="page-head" id="pageHead">
+      <div>
+        <h1 id="pageTitle">Student profile</h1>
+        <div class="page-sub">Each child's progress, study projection and attendance in one place.</div>
+      </div>
+    </div>
+    <div id="view"></div>
+  </main>
+</div>
+
+<div class="modal-backdrop" id="modalBackdrop" hidden>
+  <div class="modal" id="modal"></div>
+</div>
+<div class="tip" id="tip"></div>
+<div class="toast" id="toast" hidden></div>
+
+<script>
+(function(){
+  "use strict";
+
+  const SUPABASE_URL = "https://bcnmsryahczapnxbpkve.supabase.co";
+  const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJjbm1zcnlhaGN6YXBueGJwa3ZlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTAyMDQ4NzksImV4cCI6MjEwNTc4MDg3OX0.VgCX3CR7YCJxR9-vwD8HlYcCx0MxlY7atgD_0h3F3to";
+
+  const $ = (sel, el) => (el||document).querySelector(sel);
+  const $$ = (sel, el) => Array.from((el||document).querySelectorAll(sel));
+  function esc(s){ return String(s==null?"":s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+
+  /* ======================= Study projection rules (from the Digital Study Projection sheet) =======================
+     Chart scale: 1 notch = 10 worksheets, so one level (200 pages) = 20 notches. Level n (0-based on the ladder)
+     runs from n*20 to n*20+20. A starting point "3A 71" sits at 3A's start + floor((71-1)/10) = 60 + 7 = 67.
+     Each level: Total WS = 200 × repeats (first level: (200 − (start page − 1)) × repeats);
+     Months = ROUNDUP(Total ÷ pages a day ÷ 30, 1 decimal); Target = previous target + months × 30 days.
+     KIS (grade-level line) starts each school year (June) at a point set by the grade and climbs month by month;
+     Math: +5/3 a month (1 level a year), Bronze/Silver/Gold = KIS + 10 / + 40 / + 60.
+     Reading: its own month-by-month curves per grade for KIS, Bronze, Silver and Gold (copied from the sheet). */
+  const LADDER = {
+    Math: ["6A","5A","4A","3A","2A","A","B","C","D","E","F","G","H","I","J","K","L","M","N","O"],
+    Reading: ["7A","6A","5A","4A","3A","2A","AI","AII","BI","BII","CI","CII","DI","DII","EI","EII","FI","FII","GI","GII","HI","HII","I-I","I-II","J","K","L"]
+  };
+  const LEVEL_ALIAS = { Reading: { "G":"GI", "H":"HI", "II":"I-I", "III":"I-II", "I":"I-I", "I-1":"I-I", "I-2":"I-II" } };
+  const TOPICS = {
+    Math: { "6A":"Counting, Number Reading Exercises, Number of Dots", "5A":"Number Reading Exercises and Sequence of Numbers",
+      "4A":"Number Reading and Writing Exercises", "3A":"Number Reading and Writing Exercises, Introduction to Addition", "2A":"Addition",
+      "A":"Addition and Subtraction I", "B":"Addition and Subtraction II", "C":"Elementary Multiplication and Division",
+      "D":"Multiplication and Division, Introduction to Fractions", "E":"Operations on Fractions and Decimals", "F":"Order of Operations",
+      "G":"Positive and Negative Numbers, Elementary Algebraic Expressions", "H":"Simultaneous Linear Equations in Two, Three, or Four Variables, Linear Functions",
+      "I":"Factorization, Quadratic Equations", "J":"Advanced Factorization, Quadratic Equations" },
+    Reading: { "7A":"Connecting Words to familiar Objects, Saying Words with the same Sound, Putting Words Together",
+      "6A":"Recognizing Familiar Words, Saying Rhyming Words and Phrases", "5A":"Saying the Sounds of Letters, Putting Sounds Together",
+      "4A":"Consonant Combinations, Changing Letter Sounds", "3A":"Sound Patterns, Compound Words", "2A":"Word Puzzles, Function of Words",
+      "AI":"Simple Sentences, Basic Expressions, Sentence Topics, Thought Sequence", "AII":"Simple Sentences, Basic Expressions, Sentence Topics, Thought Sequence",
+      "BI":"Subject and Predicate, Expressions in the Past, Modifiers, Defining Words, Identifying Ideas, Comparing and Contrasting",
+      "BII":"Subject and Predicate, Expressions in the Past, Modifiers, Defining Words, Identifying Ideas, Comparing and Contrasting",
+      "CI":"Parts of a Sentence, Expressions of Language, Elements of Statements, Organizing Information, Synthesizing Ideas",
+      "CII":"Parts of a Sentence, Expressions of Language, Elements of Statements, Organizing Information, Synthesizing Ideas",
+      "DI":"Combining Sentences, Statements from Paragraphs, Topic, Main Idea, Understanding Paragraphs",
+      "DII":"Combining Sentences, Statements from Paragraphs, Topic, Main Idea, Understanding Paragraphs" }
+  };
+  const SKILLS = {"Math": [{"section": "WORK SKILLS", "obs": "Poor pencil grip", "skill": "Good Pencil Grip / Improved Pencil Skills", "plan": "Training through the Pencil Skills Program"}, {"section": "WORK SKILLS", "obs": "Counts from the beginning to know the next number", "skill": "Determine the next number automatically", "plan": "Number Board Activity, Number Recitation"}, {"section": "WORK SKILLS", "obs": "Not following instructions (performs wrong operation)", "skill": "Ability to follow instruction. To become observant in changes in questions/operation.", "plan": "Training students to always read instructions, examples and questions (including operation)."}, {"section": "WORK SKILLS", "obs": "Uses Finger Counting, Nagbabakod etc.", "skill": "To be able to add and subtract without using finger counting", "plan": "Oral Drills"}, {"section": "WORK SKILLS", "obs": "Adds without finger counting, but not automatic", "skill": "Automaticity in Mental Addition / Subtraction", "plan": "Oral Drills"}, {"section": "WORK SKILLS", "obs": "Add vertically but writes carry over", "skill": "Adding vertically without carry over", "plan": "Training addition without carry over in Level B"}, {"section": "STUDY ATTITUDE", "obs": "Easily distracted", "skill": "Improved concentration ability", "plan": "Pen Pacing. More number of pages to answer to develop endurance."}, {"section": "STUDY ATTITUDE", "obs": "Lacks motivation to answer the test", "skill": "Develop eagerness in answering worksheets", "plan": "Share target Monthly GOALS and Study Projection to the student."}, {"section": "STUDY ATTITUDE", "obs": "Poor confidence level. Too SHY.", "skill": "Develop confidence level.", "plan": "Start from easy starting point and ALWAYS PRAISE and Encourage the student. SPE!"}], "Reading": [{"section": "WORK SKILLS", "obs": "Poor pencil grip", "skill": "Good Pencil Grip / Improved Pencil Skills", "plan": "Training through the Pencil Skills Program"}, {"section": "WORK SKILLS", "obs": "Limited Vocabulary  in English", "skill": "Increase in Students Vocabulary", "plan": "Flashcard. Remind parent to use the vocabulary everyday."}, {"section": "WORK SKILLS", "obs": "Not following instructions.", "skill": "Ability to follow instruction well.", "plan": "Training students to always READ ALOUD instructions, examples and questions before starting to answer. Untimed reading."}, {"section": "WORK SKILLS", "obs": "Not familiar with Alphabet.", "skill": "Familiarization with Alphabet.", "plan": "Alphabet Flashcard both at the center & at home."}, {"section": "WORK SKILLS", "obs": "Not familiar with Phonics.", "skill": "Ability to sound out phonics (sounds of letters).", "plan": "Through Level 5A worksheets and CD listening of the sounds of phonics."}, {"section": "STUDY ATTITUDE", "obs": "Easily distracted", "skill": "", "plan": "Pen Pacing. More number of pages to answer to develop endurance."}, {"section": "STUDY ATTITUDE", "obs": "Lacks motivation to answer the test", "skill": "Develop eagerness in answering worksheets", "plan": "Share target Monthly GOALS and Study Projection to the student."}, {"section": "STUDY ATTITUDE", "obs": "Poor confidence level. Too SHY.", "skill": "Develop confidence level.", "plan": "Start from easy starting point and ALWAYS PRAISE and Encourage the student. SPE!"}]};
+  const READING_CURVES = {"kis":{"PK3":[40,41.67,43.33,45,46.67,48.33,50,51.67,53.33,55,56.67,58.33,60,61.67,63.33,65,66.67,68.33,70,71.67,73.33,75,76.67,78.33,80,81.67,83.33,85,86.67,88.33,90],"PK2":[60,61.67,63.33,65,66.67,68.33,70,71.67,73.33,75,76.67,78.33,80,81.67,83.33,85.0,86.67,88.33,90.0,91.67,93.33,95.0,96.67,98.33,100,101.67,103.33,105,106.67,108.33,110],"PK1":[80,81.67,83.33,85,86.67,88.33,90,91.67,93.33,95,96.67,98.33,100,101.67,103.33,105,106.67,108.33,110,111.67,113.33,115,116.67,118.33,120,121.67,123.33,125,126.67,128.33,130],"K":[100,101.67,103.33,105,106.67,108.33,110,111.67,113.33,115,116.67,118.33,120,121.67,123.33,125,126.67,128.33,130,131.67,133.33,135,136.67,138.33,140,141.67,143.33,145,146.67,148.33,150],"P1":[120,123.33,126.67,130,133.33,136.67,140,143.33,146.67,150,153.33,156.67,160,163.33,166.67,170,173.33,176.67,180,183.33,186.67,190,193.33,196.67,200,203.33,206.67,210,213.33,216.67,220],"P2":[160,163.33,166.67,170,173.33,176.67,180,183.33,186.67,190,193.33,196.67,200,203.33,206.67,210,213.33,216.67,220,223.33,226.67,230,233.33,236.67,240,243.33,246.67,250,253.33,256.67,260],"P3":[200,203.33,206.67,210,213.33,216.67,220,223.33,226.67,230,233.33,236.67,240,243.33,246.67,250,253.33,256.67,260,263.33,266.67,270,273.33,276.67,280,283.33,286.67,290,293.33,296.67,300],"P4":[240,243.33,246.67,250,253.33,256.67,260,263.33,266.67,270,273.33,276.67,280,283.33,286.67,290,293.33,296.67,300,303.33,306.67,310,313.33,316.67,320,323.33,326.67,330,333.33,336.67,340],"P5":[280,283.33,286.67,290,293.33,296.67,300,303.33,306.67,310,313.33,316.67,320,323.33,326.67,330,333.33,336.67,340,343.33,346.67,350,353.33,356.67,360,363.33,366.67,370,373.33,376.67,380.0],"P6":[320,323.33,326.67,330,333.33,336.67,340,343.33,346.67,350,353.33,356.67,360,363.33,366.67,370,373.33,376.67,380,383.33,386.67,390,393.33,396.67,400,403.33,406.67,410,413.33,416.67,420.0],"P7":[360,361.67,363.33,365,366.67,368.33,370,371.67,373.33,375,376.67,378.33,380,381.67,383.33,385,386.67,388.33,390,391.67,393.33,395,396.67,398.33,400,401.67,403.33,405.0,406.67,408.33,410.0],"P8":[380,381.67,383.33,385,386.67,388.33,390,391.67,393.33,395,396.67,398.33,400,401.67,403.33,405,406.67,408.33,410,411.67,413.33,415,416.67,418.33,420,421.67,423.33,425.0,426.67,428.33,430.0],"P9":[400,401.67,403.33,405,406.67,408.33,410,411.67,413.33,415,416.67,418.33,420,421.67,423.33,425,426.67,428.33,430,431.67,433.33,435,436.67,438.33,440,441.67,443.33,445.0,446.67,448.33,450.0]},"bronze":{"PK3":[50,51.67,53.33,55,56.67,58.33,60,61.67,63.33,65,66.67,68.33,70,71.67,73.33,75,76.67,78.33,80,81.67,83.33,85,86.67,88.33,90.0,91.67,93.33,95.0,96.67,98.33,100],"PK2":[70,71.67,73.33,75,76.67,78.33,80,81.67,83.33,85,86.67,88.33,90.0,91.67,93.33,95.0,96.67,98.33,100,101.67,103.33,105,106.67,108.33,110,111.67,113.33,115,116.67,118.33,120],"PK1":[90,91.67,93.33,95,96.67,98.33,100,101.67,103.33,105,106.67,108.33,110,111.67,113.33,115,116.67,118.33,120,123.33,126.67,130,133.33,136.67,140,143.33,146.67,150,153.33,156.67,160],"K":[110,111.67,113.33,115,116.67,118.33,120,123.33,126.67,130,133.33,136.67,140,143.33,146.67,150,153.33,156.67,160,163.33,166.67,170,173.33,176.67,180,183.33,186.67,190,193.33,196.67,200],"P1":[140,143.33,146.67,150,153.33,156.67,160,163.33,166.67,170,173.33,176.67,180,183.33,186.67,190,193.33,196.67,200,203.33,206.67,210,213.33,216.67,220,223.33,226.67,230,233.33,236.67,240],"P2":[180,183.33,186.67,190,193.33,196.67,200,203.33,206.67,210,213.33,216.67,220,223.33,226.67,230,233.33,236.67,240,243.33,246.67,250,253.33,256.67,260,263.33,266.67,270,273.33,276.67,280],"P3":[220,223.33,226.67,230,233.33,236.67,240,243.33,246.67,250,253.33,256.67,260,263.33,266.67,270,273.33,276.67,280,283.33,286.67,290,293.33,296.67,300,303.33,306.67,310,313.33,316.67,320],"P4":[260,263.33,266.67,270,273.33,276.67,280,283.33,286.67,290,293.33,296.67,300,303.33,306.67,310,313.33,316.67,320,323.33,326.67,330,333.33,336.67,340,343.33,346.67,350,353.33,356.67,360.0],"P5":[300,303.33,306.67,310,313.33,316.67,320,323.33,326.67,330,333.33,336.67,340,343.33,346.67,350,353.33,356.67,360,361.67,363.33,365,366.67,368.33,370,371.67,373.33,375,376.67,378.33,380],"P6":[340,343.33,346.67,350,353.33,356.67,360,361.67,363.33,365,366.67,368.33,370,371.67,373.33,375,376.67,378.33,380,381.67,383.33,385,386.67,388.33,390,391.67,393.33,395,396.67,398.33,400],"P7":[360,361.67,363.33,365,366.67,368.33,370,371.67,373.33,375,376.67,378.33,380,381.67,383.33,385,386.67,388.33,390,391.67,393.33,395,396.67,398.33,400,401.67,403.33,405.0,406.67,408.33,410.0],"P8":[380,381.67,383.33,385,386.67,388.33,390,391.67,393.33,395,396.67,398.33,400,401.67,403.33,405,406.67,408.33,410,411.67,413.33,415,416.67,418.33,420,421.67,423.33,425.0,426.67,428.33,430.0],"P9":[400,401.67,403.33,405,406.67,408.33,410,411.67,413.33,415,416.67,418.33,420,421.67,423.33,425,426.67,428.33,430,431.67,433.33,435,436.67,438.33,440,441.67,443.33,445.0,446.67,448.33,450.0]},"silver":{"PK3":[80,81.67,83.33,85,86.67,88.33,90,91.67,93.33,95,96.67,98.33,100,101.67,103.33,105,106.67,108.33,110,111.67,113.33,115,116.67,118.33,120,123.33,126.67,130,133.33,136.67,140],"PK2":[100,101.67,103.33,105,106.67,108.33,110,111.67,113.33,115,116.67,118.33,120,123.33,126.67,130,133.33,136.67,140,143.33,146.67,150,153.33,156.67,160,163.33,166.67,170,173.33,176.67,180],"PK1":[120,123.33,126.67,130,133.33,136.67,140,143.33,146.67,150,153.33,156.67,160,163.33,166.67,170,173.33,176.67,180,183.33,186.67,190,193.33,196.67,200,203.33,206.67,210,213.33,216.67,220],"K":[160,163.33,166.67,170,173.33,176.67,180,183.33,186.67,190,193.33,196.67,200,203.33,206.67,210,213.33,216.67,220,223.33,226.67,230,233.33,236.67,240,243.33,246.67,250,253.33,256.67,260],"P1":[200,203.33,206.67,210,213.33,216.67,220,223.33,226.67,230,233.33,236.67,240,243.33,246.67,250,253.33,256.67,260,263.33,266.67,270,273.33,276.67,280,283.33,286.67,290,293.33,296.67,300],"P2":[240,243.33,246.67,250,253.33,256.67,260,263.33,266.67,270,273.33,276.67,280,283.33,286.67,290,293.33,296.67,300,303.33,306.67,310,313.33,316.67,320,323.33,326.67,330,333.33,336.67,340],"P3":[280,283.33,286.67,290,293.33,296.67,300,303.33,306.67,310,313.33,316.67,320,323.33,326.67,330,333.33,336.67,340,343.33,346.67,350,353.33,356.67,360,361.67,363.33,365,366.67,368.33,370],"P4":[320,323.33,326.67,330,333.33,336.67,340,343.33,346.67,350,353.33,356.67,360,361.67,363.33,365,366.67,368.33,370,371.67,373.33,375,376.67,378.33,380,381.67,383.33,385,386.67,388.33,390],"P5":[360,361.67,363.33,365,366.67,368.33,370,371.67,373.33,375,376.67,378.33,380,381.67,383.33,385,386.67,388.33,390,391.67,393.33,395,396.67,398.33,400,401.67,403.33,405.0,406.67,408.33,410.0],"P6":[380,381.67,383.33,385,386.67,388.33,390,391.67,393.33,395,396.67,398.33,400,401.67,403.33,405,406.67,408.33,410,411.67,413.33,415,416.67,418.33,420,421.67,423.33,425.0,426.67,428.33,430.0],"P7":[380,381.67,383.33,385,386.67,388.33,390,391.67,393.33,395,396.67,398.33,400,401.67,403.33,405,406.67,408.33,410,411.67,413.33,415,416.67,418.33,420,421.67,423.33,425.0,426.67,428.33,430.0],"P8":[400,401.67,403.33,405,406.67,408.33,410,411.67,413.33,415,416.67,418.33,420,421.67,423.33,425,426.67,428.33,430,431.67,433.33,435,436.67,438.33,440,441.67,443.33,445.0,446.67,448.33,450.0],"P9":[420,421.67,423.33,425,426.67,428.33,430,431.67,433.33,435,436.67,438.33,440,441.67,443.33,445,446.67,448.33,450,451.67,453.33,455,456.67,458.33,460,461.67,463.33,465.0,466.67,468.33,470.0]},"gold":{"PK3":[100,101.67,103.33,105,106.67,108.33,110,111.67,113.33,115,116.67,118.33,120,123.33,126.67,130,133.33,136.67,140,143.33,146.67,150,153.33,156.67,160,163.33,166.67,170,173.33,176.67,180],"PK2":[120,123.33,126.67,130,133.33,136.67,140,143.33,146.67,150,153.33,156.67,160,163.33,166.67,170,173.33,176.67,180,183.33,186.67,190,193.33,196.67,200,203.33,206.67,210,213.33,216.67,220],"PK1":[160,163.33,166.67,170,173.33,176.67,180,183.33,186.67,190,193.33,196.67,200,203.33,206.67,210,213.33,216.67,220,223.33,226.67,230,233.33,236.67,240,243.33,246.67,250,253.33,256.67,260],"K":[200,203.33,206.67,210,213.33,216.67,220,223.33,226.67,230,233.33,236.67,240,243.33,246.67,250,253.33,256.67,260,263.33,266.67,270,273.33,276.67,280,283.33,286.67,290,293.33,296.67,300],"P1":[240,243.33,246.67,250,253.33,256.67,260,263.33,266.67,270,273.33,276.67,280,283.33,286.67,290,293.33,296.67,300,303.33,306.67,310,313.33,316.67,320,323.33,326.67,330,333.33,336.67,340],"P2":[280,283.33,286.67,290,293.33,296.67,300,303.33,306.67,310,313.33,316.67,320,323.33,326.67,330,333.33,336.67,340,343.33,346.67,350,353.33,356.67,360,361.67,363.33,365,366.67,368.33,370],"P3":[320,323.33,326.67,330,333.33,336.67,340,343.33,346.67,350,353.33,356.67,360,361.67,363.33,365,366.67,368.33,370,371.67,373.33,375,376.67,378.33,380,381.67,383.33,385,386.67,388.33,390],"P4":[360,361.67,363.33,365,366.67,368.33,370,371.67,373.33,375,376.67,378.33,380,381.67,383.33,385,386.67,388.33,390,391.67,393.33,395,396.67,398.33,400,401.67,403.33,405.0,406.67,408.33,410.0],"P5":[380,381.67,383.33,385,386.67,388.33,390,391.67,393.33,395,396.67,398.33,400,401.67,403.33,405,406.67,408.33,410,411.67,413.33,415,416.67,418.33,420,421.67,423.33,425.0,426.67,428.33,430.0],"P6":[400,401.67,403.33,405,406.67,408.33,410,411.67,413.33,415,416.67,418.33,420,421.67,423.33,425,426.67,428.33,430,431.67,433.33,435,436.67,438.33,440,441.67,443.33,445.0,446.67,448.33,450.0],"P7":[420,421.67,423.33,425,426.67,428.33,430,431.67,433.33,435,436.67,438.33,440,441.67,443.33,445,446.67,448.33,450,451.67,453.33,455,456.67,458.33,460,461.67,463.33,465.0,466.67,468.33,470.0],"P8":[440,441.67,443.33,445,446.67,448.33,450,451.67,453.33,455,456.67,458.33,460,461.67,463.33,465,466.67,468.33,470,471.67,473.33,475,476.67,478.33,480,481.67,483.33,485.0,486.67,488.33,490.0],"P9":[460,461.67,463.33,465,466.67,468.33,470,471.67,473.33,475,476.67,478.33,480,481.67,483.33,485,486.67,488.33,490,491.67,493.33,495,496.67,498.33,500,501.67,503.33,505.0,506.67,508.33,510.0]}};     // {kis|bronze|silver|gold: {grade: [31 monthly values from the school-year start]}}
+  // Grade order as the sheet has it (PK3 is the youngest there).
+  const GRADES = ["PK3","PK2","PK1","K","P1","P2","P3","P4","P5","P6","P7","P8","P9","P10","P11","P12"];
+  const gradeIdx = g => GRADES.indexOf(g) + 1;      // PK3 = 1 … P1 = 5 … P5 = 9
+  const DEFAULTS = { Math: { rate: 3, ppd: 10 }, Reading: { rate: 2, ppd: 10 } };
+  const MS_DAY = 86400e3;
+
+  function normGrade(g){
+    const t = String(g || "").trim().toUpperCase().replace(/\s+/g, " ");
+    if(!t) return "";
+    let m = t.match(/^(?:GRADE ?|GR\.? ?|G ?)?(\d{1,2})(?:ST|ND|RD|TH)?(?: GRADE)?$/); if(m) return "P" + Number(m[1]);
+    m = t.match(/^P ?(\d{1,2})$/); if(m) return "P" + Number(m[1]);
+    m = t.match(/^PK ?(\d)$/); if(m) return "PK" + m[1];
+    if(/^(K|KG|KINDER|KINDERGARTEN|KINDER ?\d?)$/.test(t)) return "K";
+    return t;
+  }
+  function normLevel(subject, lv){
+    let t = String(lv || "").trim().toUpperCase().replace(/\s+/g, "");
+    if(!t) return "";
+    const al = LEVEL_ALIAS[subject] || {};
+    if(al[t]) t = al[t];
+    return t;
+  }
+  function levelIndex(subject, lv){ return (LADDER[subject] || []).indexOf(normLevel(subject, lv)); }
+  function yOf(subject, lv, page){
+    const i = levelIndex(subject, lv); if(i < 0) return null;
+    const p = Math.max(0, Math.min(200, parseInt(page, 10) || 0));
+    return i * 20 + p / 10;
+  }
+  // LWC is free text ("3A 80", "3A80", "BII-200") → { level, page } or null.
+  function parseLwc(subject, txt){
+    const m = String(txt || "").trim().match(/^(.*?[A-Za-z])\s*[-–]?\s*(\d{1,3})$/);
+    if(!m || levelIndex(subject, m[1]) < 0) return null;
+    return { level: normLevel(subject, m[1]), page: m[2] };
+  }
+  // Where a row says the child is: the roster's Current level/page or the report's LWC — whichever is further along.
+  function bestPos(subject, row){
+    const a = yOf(subject, row.current_level, row.current_page);
+    const l = parseLwc(subject, row.lwc), b = l ? yOf(subject, l.level, l.page) : null;
+    if(b != null && (a == null || b > a)) return { y: b, txt: `${l.level} ${l.page}`, src: "lwc" };
+    if(a != null) return { y: a, txt: `${row.current_level} ${row.current_page || ""}`.trim(), src: "level" };
+    return null;
+  }
+  function bandName(subject, y){
+    const L = LADDER[subject] || [];
+    const i = Math.max(0, Math.min(L.length - 1, Math.floor((y + 1e-9) / 20)));
+    return L[i] || "";
+  }
+  function levelAndPage(subject, y){
+    const L = LADDER[subject] || [];
+    let i = Math.floor((y + 1e-9) / 20), p = Math.round((y - i * 20) * 10);
+    if(p === 0 && i > 0){ i -= 1; p = 200; }
+    if(i >= L.length) return (L[L.length-1] || "") + " 200";
+    return (L[Math.max(0,i)] || "") + " " + Math.max(1, p);
+  }
+
+  /* dates (ISO yyyy-mm-dd, worked out in UTC so nothing shifts by a day) */
+  const T = iso => Date.parse(iso + "T00:00:00Z");
+  const iso = t => new Date(t).toISOString().slice(0,10);
+  const addDays = (s, n) => iso(T(s) + Math.round(n) * MS_DAY);
+  // Same as the database: Jan 31 + 1 month = Feb 28/29 (the last day of a shorter month), never Mar 3.
+  function addMonths(s, n){
+    const d = new Date(T(s)), day = d.getUTCDate();
+    d.setUTCDate(1); d.setUTCMonth(d.getUTCMonth() + n);
+    const last = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 0)).getUTCDate();
+    d.setUTCDate(Math.min(day, last));
+    return iso(d.getTime());
+  }
+  function todayISO(){ return new Date(Date.now() + 8*3600e3).toISOString().slice(0,10); }   // Philippine date
+  function fmtDate(s, o){ if(!s) return "—"; return new Date(T(s)).toLocaleDateString("en-US", Object.assign({ timeZone:"UTC", month:"short", day:"numeric", year:"numeric" }, o||{})); }
+  function fmtMonth(s){ return new Date(T(s)).toLocaleDateString("en-US", { timeZone:"UTC", month:"short", year:"numeric" }); }
+  const monthsBetween = (a, b) => (T(b) - T(a)) / (30.4375 * MS_DAY);
+  function syStartFor(date){ const y = Number(date.slice(0,4)); return (date.slice(5) >= "06-01" ? y : y - 1) + "-06-01"; }
+
+  /* the KIS / award lines for one projection: value at a date */
+  function standardLines(subject, grade, sy){
+    const gi = gradeIdx(grade);
+    if(!gi) return null;
+    if(subject === "Math"){
+      const base = 20 * gi;
+      const kis = d => base + monthsBetween(sy, d) * 5 / 3;
+      return { kis, bronze: d => kis(d) + 10, silver: d => kis(d) + 40, gold: d => kis(d) + 60 };
+    }
+    const curve = (key) => {
+      let arr = READING_CURVES[key][grade], shift = 0;
+      if(!arr){ arr = READING_CURVES[key]["P9"]; shift = 20 * (gi - gradeIdx("P9")); }   // the sheet stops at P9
+      return d => {
+        const m = monthsBetween(sy, d), n = arr.length - 1;
+        if(m <= 0) return arr[0] + (arr[1] - arr[0]) * m + shift;
+        if(m >= n) return arr[n] + (arr[n] - arr[n-1]) * (m - n) + shift;
+        const k = Math.floor(m); return arr[k] + (arr[k+1] - arr[k]) * (m - k) + shift;
+      };
+    };
+    return { kis: curve("kis"), bronze: curve("bronze"), silver: curve("silver"), gold: curve("gold") };
+  }
+
+  /* the whole projection, worked out */
+  function compute(p, enr){
+    const subject = p.subject, L = LADDER[subject] || [];
+    const si = levelIndex(subject, p.start_level);
+    const out = { ok: si >= 0, rows: [], proj: [], actual: [], lines: null, subject };
+    if(!out.ok) return out;
+    const startPage = Math.max(1, Math.min(200, parseInt(p.start_page, 10) || 1));
+    const over = new Map((p.levels || []).map(r => [r.level, r]));
+    let t = p.start_date;
+    out.proj.push({ d: p.start_date, y: si * 20 + Math.floor((startPage - 1) / 10) });
+    for(let k = 0; k < (p.level_count || 8) && si + k < L.length; k++){
+      const lv = L[si + k], o = over.get(lv) || {};
+      const rate = Number(o.rate) || Number(p.default_rate) || 1, ppd = Number(o.ppd) || Number(p.default_ppd) || 10;
+      const total = (k === 0 ? (200 - (startPage - 1)) : 200) * rate;
+      const months = Math.ceil(total / ppd / 30 * 10 - 1e-9) / 10;
+      t = addDays(t, months * 30);
+      out.rows.push({ level: lv, topic: (TOPICS[subject] || {})[lv] || "", rate, ppd, total, months, target: t, endY: (si + k + 1) * 20,
+                      rateSet: o.rate != null, ppdSet: o.ppd != null });
+      out.proj.push({ d: t, y: (si + k + 1) * 20 });
+    }
+    // Actual: starts at the starting point (on its date), then every closed-out month (Monthly History) and
+    // today's level on the roster.
+    out.actual.push({ d: p.start_date, y: out.proj[0].y, label: "Starting point", start: true, txt: `${normLevel(subject, p.start_level)} ${startPage}` });
+    if(enr){
+      const hist = histRows.filter(h => h.subject_enrollment_id === enr.id && h.cycle_key).sort((a,b) => a.cycle_key < b.cycle_key ? -1 : 1);
+      for(const h of hist){
+        const b = bestPos(subject, h); if(!b) continue;
+        const d = h.cycle_key + "-20";
+        if(d <= p.start_date) continue;
+        out.actual.push({ d, y: b.y, label: (h.cycle_label || fmtMonth(d)) + " close-out", txt: b.txt });
+      }
+      const b = bestPos(subject, enr);
+      const td = todayISO();
+      if(b && td > p.start_date && (!out.actual.length || out.actual[out.actual.length-1].d < td)) out.actual.push({ d: td, y: b.y, label: "LWC today", txt: b.txt });
+    }
+    out.rows.forEach(r => { const a = out.actual.find(x => !x.start && x.y >= r.endY - 1e-9); r.actual = a ? a.d : null; r.actualLabel = a ? a.label : ""; });
+    out.lines = standardLines(subject, p.grade, p.sy_start);
+    return out;
+  }
+  function projAt(c, d){
+    const P = c.proj; if(!P.length) return null;
+    if(d <= P[0].d) return P[0].y;
+    for(let i = 1; i < P.length; i++) if(d <= P[i].d){ const a = P[i-1], b = P[i]; return a.y + (b.y - a.y) * (T(d) - T(a.d)) / Math.max(1, T(b.d) - T(a.d)); }
+    return P[P.length-1].y;
+  }
+  function projDateFor(c, y){
+    const P = c.proj; if(P.length < 2) return null;
+    if(y <= P[0].y) return P[0].d;
+    for(let i = 1; i < P.length; i++) if(y <= P[i].y){ const a = P[i-1], b = P[i]; return iso(T(a.d) + (T(b.d) - T(a.d)) * (y - a.y) / Math.max(1e-9, b.y - a.y)); }
+    const a = P[P.length-2], b = P[P.length-1];
+    return iso(T(b.d) + (T(b.d) - T(a.d)) * (y - b.y) / Math.max(1e-9, b.y - a.y));
+  }
+  // Ahead / on track / behind: when the projection expected them to reach the level they're at now, vs when they got there.
+  function statusOf(c){
+    if(!c.ok) return { key:"bad", label:"Unknown starting point" };
+    const last = c.actual[c.actual.length - 1];
+    if(c.actual.length < 2) return { key:"new", label:"No progress recorded yet" };
+    const exp = projDateFor(c, last.y);
+    const diff = (T(last.d) - T(exp)) / MS_DAY;
+    const mo = Math.abs(diff) / 30.4375;
+    const txt = mo >= 1 ? `${mo.toFixed(1).replace(/\.0$/,"")} month${mo >= 1.05 ? "s" : ""}` : `${Math.round(Math.abs(diff))} days`;
+    if(diff <= -15) return { key:"ahead", label:`Ahead by ${txt}`, diff };
+    if(diff >= 15) return { key:"behind", label:`Behind by ${txt}`, diff };
+    return { key:"ontrack", label:"On track", diff };
+  }
+
+
+  // Chart colours: the page uses the theme's CSS colours; a saved JPEG / PDF uses fixed light colours.
+  const LIVE_COLORS = { proj:"var(--proj)", actual:"var(--actual)", kis:"var(--kis)", bronze:"var(--bronze)", silver:"var(--silver)", gold:"var(--gold)",
+    grid:"var(--grid)", ink:"var(--ink)", muted:"var(--ink-muted)", faint:"var(--ink-faint)", surface:"var(--surface)" };
+  const PRINT_COLORS = { proj:"#3454D1", actual:"#1E8E5A", kis:"#7A8394", bronze:"#B5703A", silver:"#8E98A8", gold:"#D4A21A",
+    grid:"#E8EAF0", ink:"#1B1F27", muted:"#636C7C", faint:"#9AA1AF", surface:"#FFFFFF" };
+  function chartSeries(c, C){
+    const today = todayISO();
+    const x0d = [draft.sy_start, draft.start_date].sort()[0];
+    const x1d = [c.proj[c.proj.length-1].d, addMonths(today, 1)].sort().pop();
+    const x0 = T(x0d), x1 = T(addMonths(x1d, 1));
+    const mk = (fn) => { const pts = []; for(let t = x0; t <= x1; t += 15 * MS_DAY){ const d = iso(t); pts.push({ d, y: fn(d) }); } return pts; };
+    const series = [
+      { key:"proj", name:"Projection", color:C.proj, w:3, pts:c.proj, dots:true },
+      { key:"actual", name:"Actual", color:C.actual, w:3, pts:c.actual, dots:true },
+    ];
+    if(c.lines){
+      series.push({ key:"kis", name:"KIS (grade level)", color:C.kis, w:2, dash:"6 5", pts: mk(c.lines.kis) });
+      series.push({ key:"bronze", name:"Bronze", color:C.bronze, w:2, pts: mk(c.lines.bronze) });
+      series.push({ key:"silver", name:"Silver", color:C.silver, w:2, pts: mk(c.lines.silver) });
+      series.push({ key:"gold", name:"Gold", color:C.gold, w:2, pts: mk(c.lines.gold) });
+    }
+    return { series, x0, x1, today };
+  }
+  function chartSvg(c, C){
+    const subj = c.subject;
+    const { series, x0, x1, today } = chartSeries(c, C);
+    const vis = series.filter(s => !chartOff.has(s.key));
+    const ys = vis.flatMap(s => s.pts.filter(p => T(p.d) >= x0 && T(p.d) <= x1).map(p => p.y));
+    if(!ys.length) ys.push(c.proj[0].y);
+    const maxY = (LADDER[subj].length) * 20;
+    let ymin = Math.max(0, Math.floor(Math.min(...ys) / 20) * 20), ymax = Math.min(maxY, Math.ceil(Math.max(...ys) / 20) * 20);
+    if(ymax <= ymin) ymax = ymin + 20;
+    const Lp = 62, R = 985, Tp = 14, B = 390;
+    const X = t => Lp + (t - x0) / (x1 - x0) * (R - Lp), Y = y => B - (Math.min(ymax, Math.max(ymin, y)) - ymin) / (ymax - ymin) * (B - Tp);
+    let g = "";
+    const step = (ymax - ymin) / 20 > 14 ? 40 : 20;
+    for(let y = ymin; y <= ymax; y += 20){
+      g += `<line x1="${Lp}" x2="${R}" y1="${Y(y)}" y2="${Y(y)}" stroke="${C.grid}"/>`;
+      if(y < ymax && ((y - ymin) % step === 0)) g += `<text x="${Lp-10}" y="${(Y(y)+Y(y+20))/2+4}" text-anchor="end" font-size="12" font-weight="700" font-family="Inter, Arial, sans-serif" fill="${C.muted}">${esc(LADDER[subj][y/20] || "")}</text>`;
+    }
+    const months = Math.round((x1 - x0) / (30.4375 * MS_DAY));
+    const every = months > 36 ? 6 : months > 18 ? 3 : months > 9 ? 2 : 1;
+    const first = new Date(x0); first.setUTCDate(1); if(first.getTime() < x0) first.setUTCMonth(first.getUTCMonth() + 1);
+    for(let k = 0, d = new Date(first); d.getTime() <= x1; k++, d.setUTCMonth(d.getUTCMonth() + 1)){
+      const x = X(d.getTime());
+      g += `<line x1="${x}" x2="${x}" y1="${B}" y2="${B+5}" stroke="${C.faint}"/>`;
+      if(d.getUTCMonth() % every === 0) g += `<text x="${x}" y="${B+20}" text-anchor="middle" font-size="11.5" font-family="Inter, Arial, sans-serif" fill="${C.muted}">${d.toLocaleDateString("en-US",{timeZone:"UTC",month:"short"})}${d.getUTCMonth() === 0 || k === 0 ? " ’" + String(d.getUTCFullYear()).slice(2) : ""}</text>`;
+    }
+    const tx = X(T(today));
+    if(tx >= Lp && tx <= R) g += `<line x1="${tx}" x2="${tx}" y1="${Tp}" y2="${B}" stroke="${C.ink}" stroke-dasharray="3 4" opacity=".35"/><text x="${tx+5}" y="${Tp+12}" font-size="11" font-family="Inter, Arial, sans-serif" fill="${C.muted}">Today</text>`;
+    const clipId = "plot" + Math.random().toString(36).slice(2, 8);
+    g += `<clipPath id="${clipId}"><rect x="${Lp}" y="${Tp-2}" width="${R-Lp}" height="${B-Tp+4}"/></clipPath><g clip-path="url(#${clipId})">`;
+    for(const s of vis.slice().reverse()){
+      const pts = s.pts.filter(p => T(p.d) >= x0 - 20 * MS_DAY && T(p.d) <= x1 + 20 * MS_DAY);
+      if(!pts.length) continue;
+      g += `<polyline fill="none" stroke="${s.color}" stroke-width="${s.w}" ${s.dash ? `stroke-dasharray="${s.dash}"` : ""} stroke-linejoin="round" points="${pts.map(p => X(T(p.d)).toFixed(1) + "," + Y(p.y).toFixed(1)).join(" ")}"/>`;
+    }
+    g += `</g>`;
+    for(const s of vis) if(s.dots) for(const p of s.pts){
+      if(T(p.d) < x0 || T(p.d) > x1) continue;
+      g += `<circle cx="${X(T(p.d)).toFixed(1)}" cy="${Y(p.y).toFixed(1)}" r="${s.key === "actual" ? 5.5 : 4.5}" fill="${C.surface}" stroke="${s.color}" stroke-width="2.5" data-tip="${esc(s.name)}: ${esc(p.txt || levelAndPage(subj, p.y))}<br>${esc(fmtDate(p.d))}${p.label ? " · " + esc(p.label) : ""}"/>`;
+    }
+    g += `<line x1="${Lp}" x2="${R}" y1="${B}" y2="${B}" stroke="${C.faint}"/>`;
+    return { svg: g, series, vis };
+  }
+  function drawChart(c){
+    const svg = $("#chart"); if(!svg) return;
+    const r = chartSvg(c, LIVE_COLORS);
+    const lg = $("#legend");
+    if(lg) lg.innerHTML = r.series.map(s => `<button class="lg${chartOff.has(s.key) ? " off" : ""}" data-action="toggle-line" data-k="${s.key}"><i style="background:${s.color}"></i>${esc(s.name)}</button>`).join("");
+    svg.innerHTML = r.svg;
+  }
+
+  /* ======================= save as JPEG / one-page PDF ======================= */
+  // Builds a clean, fixed-width goal sheet (no inputs or buttons) off screen, turns it into a picture with
+  // html2canvas, then saves it as a JPEG, or as a PDF squeezed onto one A4 page with jsPDF.
+  const LIBS = {
+    html2canvas: "https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js",
+    jspdf: "https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"
+  };
+  const libLoads = {};
+  function loadLib(name){
+    if(libLoads[name]) return libLoads[name];
+    libLoads[name] = new Promise((res, rej) => { const s = document.createElement("script"); s.src = LIBS[name]; s.onload = res; s.onerror = () => { delete libLoads[name]; rej(new Error("Couldn't load " + name)); }; document.head.appendChild(s); });
+    return libLoads[name];
+  }
+
+  /* ======================= data ======================= */
+  let sbClient = null, currentUser = null, currentRole = null, currentTeacherName = null;
+  let students = [], studentById = new Map(), enrollments = [], histRows = [];
+  const ui = { search:"", teacher:"all" };
+  let draft = null, chartOff = new Set();
+  let prof = null;           // the open child's records
+
+  function isAdmin(){ return currentRole === "admin" || currentRole === "superadmin"; }
+  function isTeacherScoped(){ return currentRole === "teacher" || currentRole === "trainer_teacher"; }
+  function isAuthorized(){ return isAdmin() || isTeacherScoped(); }
+  function displayName(id, fallback){
+    const s = studentById.get(id) || (prof && prof.student && prof.student.id === id ? prof.student : null);
+    if(s && s.last_name && s.first_name) return `${s.last_name}, ${s.first_name}`;
+    return (s && s.name) || fallback || "—";
+  }
+  function toast(msg){ const el = $("#toast"); if(!el) return; el.textContent = msg; el.hidden = false; clearTimeout(toast._t); toast._t = setTimeout(() => { el.hidden = true; }, 3200); }
+  function logHistory(action, summary, entityId, details){
+    if(!sbClient || !currentUser) return;
+    sbClient.from("edit_history").insert({ actor_email: currentUser.email || null, actor_role: currentRole || null, page: "profile", action, summary,
+      entity_type: "student", entity_id: entityId || null, details: details || null }).then(() => {}, () => {});
+  }
+
+  function showLogin(errMsg){ { const sp = document.getElementById("bootSplash"); if(sp) sp.hidden = true; }
+    $("#loginScreen").hidden = false; $("#appRoot").hidden = true;
+    const err = $("#loginError"); if(errMsg){ err.textContent = errMsg; err.hidden = false; } else { err.hidden = true; } }
+  function showApp(){ { const sp = document.getElementById("bootSplash"); if(sp) sp.hidden = true; } $("#loginScreen").hidden = true; $("#appRoot").hidden = false; }
+  function renderAccount(){
+    if(window.kumonPtcNav) window.kumonPtcNav(sbClient, currentRole);
+    const el = $("#railAccount");
+    if(el) el.innerHTML = currentUser ? `<div class="account-row"><span class="account-email">${esc(currentUser.email)}</span><button class="btn sm ghost" data-action="logout">Log out</button></div>` : "";
+    const show = (id, on) => { const a = document.getElementById(id); if(a) a.hidden = !on; };
+    const r = currentRole;
+    show("navPipelineLink", !(r === "teacher" || r === "pending"));
+    show("navPaymentsLink", ["admin","superadmin","teacher","trainer_teacher"].includes(r));
+    show("navAbsentLink", ["admin","superadmin","teacher","trainer_teacher"].includes(r));
+    show("navAdminLink", r === "superadmin");
+    show("navActivityLink", r === "admin" || r === "superadmin");
+    show("navReportsLink", r === "superadmin");
+    const gate = $("#pendingGate"), blocked = !isAuthorized();
+    if(gate){ gate.hidden = !blocked; gate.innerHTML = blocked ? `<div class="banner">${currentRole === "pending" ? `Your account is waiting for approval. Ask a superadmin to set your role in <a href="admin.html">Admin</a>.` : "Student profiles aren't available for your account role."}</div>` : ""; }
+    $$("#pageHead, #view").forEach(x => { x.style.display = blocked ? "none" : ""; });
+  }
+  async function loadRole(){
+    if(!sbClient || !currentUser){ currentRole = null; currentTeacherName = null; return; }
+    try{
+      const { data, error } = await window.kumonFetchProfile(sbClient, currentUser.id, "role,teacher_name");
+      if(error) throw error;
+      currentRole = data ? data.role : "pending"; currentTeacherName = data ? data.teacher_name : null;
+    }catch(e){ console.warn("couldn't load role", e); currentRole = "pending"; currentTeacherName = null; }
+  }
+  let shownUserId = null;
+  async function boot(){
+    if(!window.supabase){ showLogin("Couldn't load Supabase."); return; }
+    try{ sbClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY); }catch(e){ showLogin("Couldn't connect to Supabase."); return; }
+    const { data:{ session } } = await sbClient.auth.getSession();
+    if(session){ currentUser = session.user; shownUserId = session.user.id; await loadRole(); showApp(); renderAccount(); startApp(); }
+    else showLogin();
+    sbClient.auth.onAuthStateChange(async (event, session)=>{
+      if(session){
+        if(shownUserId === session.user.id) return;
+        if(shownUserId){ location.reload(); return; }
+        currentUser = session.user; shownUserId = session.user.id; await loadRole(); showApp(); renderAccount(); startApp();
+      }else{ if(shownUserId){ if(window.kumonStillSignedIn && await window.kumonStillSignedIn(sbClient, shownUserId)) return; location.reload(); return; } currentUser = null; currentRole = null; showLogin(); }
+    });
+  }
+  // Reads every row, 1,000 at a time. Returns { data, error }.
+  async function fetchAll(table, cols, build){
+    const out = [];
+    for(let from = 0; ; from += 1000){
+      let q = sbClient.from(table).select(cols);
+      if(build) q = build(q);
+      const { data, error } = await q.range(from, from + 999);
+      if(error) return { data: null, error };
+      out.push(...(data || []));
+      if(!data || data.length < 1000) break;
+    }
+    return { data: out, error: null };
+  }
+
+  /* ---- the list of children (light: names + active subjects only) ---- */
+  let listError = null;
+  async function loadList(){
+    const [s, e] = await Promise.all([
+      fetchAll("students", "id,name,first_name,last_name,age_grade,status", q => q.order("id")),
+      fetchAll("subject_enrollments", "id,student_id,student_name,subject,teacher,status,current_level,current_page,lwc", q => q.eq("status","active").order("id"))
+    ]);
+    if(s.error || e.error){ listError = (s.error || e.error).message || "connection problem"; return; }
+    listError = null;
+    students = s.data; studentById = new Map(students.map(x => [x.id, x]));
+    enrollments = e.data;
+  }
+
+  let started = false;
+  async function startApp(){
+    if(started || !isAuthorized()) return;
+    started = true;
+    if(isTeacherScoped() && currentTeacherName) ui.teacher = currentTeacherName;
+    $("#view").innerHTML = `<div class="empty">Loading…</div>`;
+    route();
+    window.addEventListener("hashchange", route);
+  }
+  function currentStudentId(){ const m = (location.hash || "").match(/^#s=([\w-]+)/); return m ? m[1] : null; }
+  function route(){
+    const id = currentStudentId();
+    if(id) openProfile(id); else { location.replace("roster.html"); }
+    window.scrollTo(0, 0);
+  }
+
+  function renderList(){
+    $("#pageTitle").textContent = "Student profiles";
+    if(listError){ $("#view").innerHTML = `<div class="card"><div class="empty">Couldn't load the list (${esc(listError)}). Check the connection and refresh the page.</div></div>`; return; }
+    const kids = new Map();
+    enrollments.filter(e => e.subject === "Math" || e.subject === "Reading").forEach(e => {
+      if(ui.teacher !== "all" && e.teacher !== ui.teacher) return;
+      const k = kids.get(e.student_id) || { id: e.student_id, subs: [] };
+      k.subs.push(e); kids.set(e.student_id, k);
+    });
+    const q = ui.search.trim().toLowerCase();
+    const rows = [...kids.values()].map(k => ({ ...k, name: displayName(k.id, k.subs[0].student_name), s: studentById.get(k.id) || {} }))
+      .filter(k => !q || k.name.toLowerCase().includes(q) || (k.s.name || "").toLowerCase().includes(q))
+      .sort((a, b) => a.name.localeCompare(b.name));
+    const teachers = [...new Set(enrollments.map(e => e.teacher).filter(Boolean))].sort();
+    $("#view").innerHTML = `
+      <div class="toolbar">
+        <input type="text" id="fSearch" placeholder="Search a child…" value="${esc(ui.search)}" autocomplete="off">
+        <select id="fTeacher"><option value="all">All teachers</option>${teachers.map(t => `<option${t === ui.teacher ? " selected" : ""}>${esc(t)}</option>`).join("")}</select>
+        <span class="faint" style="font-size:12.5px;">${rows.length} child${rows.length === 1 ? "" : "ren"}</span>
+      </div>
+      <div class="card"><div class="table-scroll"><table class="stable"><thead><tr><th>Child</th><th>Grade</th><th>Subjects</th><th>LWC</th><th></th></tr></thead><tbody>
+      ${rows.length ? rows.slice(0, 400).map(k => `<tr class="clickrow" data-href="#s=${esc(k.id)}">
+          <td><b>${esc(k.name)}</b></td>
+          <td>${esc(normGrade(k.s.age_grade) || k.s.age_grade || "—")}</td>
+          <td>${k.subs.map(e => `<span class="pill ${e.subject === "Reading" ? "subj-reading" : "subj-math"}">${esc(e.subject)}</span> <span class="faint" style="font-size:12px;">${esc(e.teacher || "")}</span>`).join("<br>")}</td>
+          <td class="tnum">${k.subs.map(e => esc(e.lwc || [e.current_level, e.current_page].filter(Boolean).join(" ") || "—")).join("<br>")}</td>
+          <td><a class="btn sm" href="#s=${esc(k.id)}">Open</a></td></tr>`).join("")
+        : `<tr><td colspan="5"><div class="empty">No children match.</div></td></tr>`}
+      </tbody></table></div>${rows.length > 400 ? `<div class="empty">Showing the first 400 — search to narrow it.</div>` : ""}</div>`;
+    const box = $("#fSearch"); if(box && document.activeElement !== box && ui.search){ box.focus(); box.setSelectionRange(box.value.length, box.value.length); }
+  }
+
+  /* ---- one child's profile: only their own records are read ---- */
+  function weekStartOf(d){   // Monday of that week (center's local date), "YYYY-MM-DD"
+    const x = new Date(d.getFullYear(), d.getMonth(), d.getDate()); const dow = x.getDay();
+    x.setDate(x.getDate() + ((dow === 0 ? -6 : 1) - dow));
+    return x.getFullYear() + "-" + String(x.getMonth()+1).padStart(2,"0") + "-" + String(x.getDate()).padStart(2,"0");
+  }
+  function prevDayISO(s){ const d = new Date(s + "T00:00:00Z"); d.setUTCDate(d.getUTCDate() - 1); return d.toISOString().slice(0,10); }
+  const WEEKS = 12;
+  async function loadProfile(sid){
+    const one = (p) => p.then(r => r, err => ({ data:null, error: err }));
+    const [st, en, sc, hi, pr, ab, ms, pay] = await Promise.all([
+      one(sbClient.from("students").select("*").eq("id", sid).maybeSingle()),
+      one(sbClient.from("subject_enrollments").select("*").eq("student_id", sid)),
+      one(sbClient.from("schedules").select("*").eq("student_id", sid)),
+      one(sbClient.from("enrollment_monthly_history").select("*").eq("student_id", sid).order("cycle_key")),
+      one(sbClient.from("study_projections").select("*").eq("student_id", sid)),
+      one(sbClient.from("absence_records").select("*").eq("student_id", sid)),
+      one(sbClient.from("ptc_milestones").select("*").eq("student_id", sid)),
+      one(sbClient.from("payment_receipts").select("id,covers_month,amount,status,created_at,reference_number").eq("student_id", sid).order("created_at", { ascending:false }).limit(12))
+    ]);
+    if(st.error || en.error) return { error: (st.error || en.error).message || "connection problem" };
+    if(!st.data) return { error: "This child isn't on your list (they may be another group's, or were removed)." };
+    const schedules = sc.data || [];
+    const since = weekStartOf(new Date(Date.now() - (WEEKS + 1) * 7 * 86400e3));
+    let att = { data: [], error: null };
+    if(schedules.length){
+      att = await one(sbClient.from("schedule_attendance").select("schedule_id,day,week_start,arrived,arrived_at")
+        .in("schedule_id", schedules.map(x => x.id)).gte("week_start", prevDayISO(since)).limit(1000));
+    }
+    return {
+      student: st.data, enrollments: en.data || [], schedules, history: hi.data || [], projections: pr.data || [],
+      absences: ab.data || [], milestones: ms.data || [], payments: pay.data || [], attendance: att.data || [],
+      partial: [hi, pr, ab, ms, pay, sc, att].some(r => r.error)
+    };
+  }
+  async function openProfile(sid){
+    $("#view").innerHTML = `<div class="empty">Loading…</div>`;
+    const p = await loadProfile(sid);
+    if(currentStudentId() !== sid) return;   // moved on meanwhile
+    if(p.error){ $("#view").innerHTML = `<div class="card"><div class="empty">${esc(p.error)} <a href="roster.html">Back to the Student roster</a></div></div>`; return; }
+    prof = p;
+    if(!studentById.has(sid)) studentById.set(sid, p.student);
+    histRows = p.history;
+    renderProfile();
+  }
+
+  function pillSubj(s){ return `<span class="pill ${s === "Reading" ? "subj-reading" : "subj-math"}">${esc(s)}</span>`; }
+  function fmt12(t){ if(!t) return ""; const [h, m] = String(t).split(":").map(Number); if(isNaN(h)) return esc(t); return `${((h + 11) % 12) + 1}:${String(m || 0).padStart(2,"0")} ${h < 12 ? "AM" : "PM"}`; }
+  function slotsText(sc){ return (sc && Array.isArray(sc.slots) ? sc.slots : []).map(x => `${x.day}${x.time ? " " + fmt12(x.time) : ""}${x.mode === "RI" ? " (Remote)" : ""}`).join(" · "); }
+  const DAY_ORDER = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
+
+  // Weeks × class days, one line for the child (Math + Reading on the same day count as one visit).
+  function attendanceModel(){
+    const active = prof.enrollments.filter(e => e.status === "active");
+    const schedOf = id => prof.schedules.find(x => x.subject_enrollment_id === id && x.status === "active");
+    const mine = active.map(e => schedOf(e.id)).filter(Boolean);
+    const days = [...new Set(mine.flatMap(sc => (sc.slots || []).map(x => x.day)).filter(Boolean))].sort((a, b) => DAY_ORDER.indexOf(a) - DAY_ORDER.indexOf(b));
+    const ids = new Set(prof.schedules.map(x => x.id));
+    const ticked = new Set(prof.attendance.filter(a => a.arrived && ids.has(a.schedule_id)).map(a => a.week_start + "|" + a.day));
+    const startISO = prof.student.first_day || (active.map(e => String(e.created_at || "").slice(0,10)).filter(Boolean).sort()[0]) || "";
+    const today = new Date(); const todayISOlocal = weekStartOf(today) && (today.getFullYear() + "-" + String(today.getMonth()+1).padStart(2,"0") + "-" + String(today.getDate()).padStart(2,"0"));
+    // Weeks before this child's first tick were before ticking was in use for them: shown as "not tracked", not ✗.
+    const myTicks = prof.attendance.filter(a => ids.has(a.schedule_id)).map(a => a.week_start).sort();
+    const trackedFrom = myTicks.length ? myTicks[0] : (mine.map(sc => String(sc.created_at || "").slice(0,10)).filter(Boolean).sort()[0] || "");
+    const absentRanges = prof.absences.map(a => [String(a.marked_absent_at || "").slice(0,10), a.resumed_at ? String(a.resumed_at).slice(0,10) : "9999-12-31"]);
+    const weeks = [];
+    for(let i = WEEKS - 1; i >= 0; i--){
+      const ws = weekStartOf(new Date(today.getFullYear(), today.getMonth(), today.getDate() - i * 7));
+      const cells = days.map(day => {
+        const d = new Date(ws + "T00:00:00"); d.setDate(d.getDate() + DAY_ORDER.indexOf(day));
+        const dISO = d.getFullYear() + "-" + String(d.getMonth()+1).padStart(2,"0") + "-" + String(d.getDate()).padStart(2,"0");
+        const arrived = ticked.has(ws + "|" + day) || ticked.has(prevDayISO(ws) + "|" + day);
+        let state = arrived ? "in" : dISO > todayISOlocal ? "future" : dISO === todayISOlocal ? "today" : "miss";
+        if(!arrived && startISO && dISO < startISO) state = "before";
+        if(!arrived && state === "miss" && trackedFrom && dISO < trackedFrom) state = "before";
+        if(!arrived && absentRanges.some(([a, b]) => a && dISO >= a && dISO <= b)) state = "off";
+        return { day, date: dISO, state };
+      });
+      weeks.push({ ws, cells });
+    }
+    const counted = weeks.slice(-8).flatMap(w => w.cells).filter(c => c.state === "in" || c.state === "miss");
+    const came = counted.filter(c => c.state === "in").length;
+    return { days, weeks, came, total: counted.length };
+  }
+
+  // Level over time from each month's close-out + today's LWC (works with or without a projection).
+  function progressPoints(e){
+    const pts = [];
+    prof.history.filter(h => h.subject_enrollment_id === e.id && h.cycle_key).sort((a, b) => a.cycle_key < b.cycle_key ? -1 : 1).forEach(h => {
+      const b = bestPos(e.subject, h); if(b) pts.push({ d: h.cycle_key + "-20", y: b.y, txt: b.txt, label: (h.cycle_label || fmtMonth(h.cycle_key + "-01")) + " close-out" });
+    });
+    const now = bestPos(e.subject, e);
+    if(now && (!pts.length || pts[pts.length-1].d < todayISO())) pts.push({ d: todayISO(), y: now.y, txt: now.txt, label: "LWC today" });
+    return pts;
+  }
+  function progressSvg(subject, pts){
+    if(!pts.length) return "";
+    const C = LIVE_COLORS;
+    const x0 = T(pts[0].d) - 20 * MS_DAY, x1 = Math.max(T(pts[pts.length-1].d), x0 + 60 * MS_DAY) + 20 * MS_DAY;
+    let ymin = Math.max(0, Math.floor(Math.min(...pts.map(p => p.y)) / 20) * 20), ymax = Math.ceil(Math.max(...pts.map(p => p.y)) / 20) * 20;
+    if(ymax <= ymin) ymax = ymin + 20;
+    const Lp = 58, R = 985, Tp = 12, B = 210;
+    const X = t => Lp + (t - x0) / (x1 - x0) * (R - Lp), Y = y => B - (y - ymin) / (ymax - ymin) * (B - Tp);
+    let g = "";
+    for(let y = ymin; y <= ymax; y += 20){
+      g += `<line x1="${Lp}" x2="${R}" y1="${Y(y)}" y2="${Y(y)}" stroke="${C.grid}"/>`;
+      if(y < ymax) g += `<text x="${Lp-10}" y="${(Y(y)+Y(y+20))/2+4}" text-anchor="end" font-size="12" font-weight="700" font-family="Inter, Arial, sans-serif" fill="${C.muted}">${esc((LADDER[subject] || [])[y/20] || "")}</text>`;
+    }
+    const first = new Date(x0); first.setUTCDate(1); first.setUTCMonth(first.getUTCMonth() + 1);
+    const months = Math.round((x1 - x0) / (30.4375 * MS_DAY)), every = months > 18 ? 3 : months > 9 ? 2 : 1;
+    for(let d = new Date(first); d.getTime() <= x1; d.setUTCMonth(d.getUTCMonth() + 1)){
+      if(d.getUTCMonth() % every) continue;
+      g += `<text x="${X(d.getTime())}" y="${B+18}" text-anchor="middle" font-size="11.5" font-family="Inter, Arial, sans-serif" fill="${C.muted}">${d.toLocaleDateString("en-US",{timeZone:"UTC",month:"short"})}${d.getUTCMonth() === 0 ? " ’" + String(d.getUTCFullYear()).slice(2) : ""}</text>`;
+    }
+    g += `<polyline fill="none" stroke="${C.actual}" stroke-width="3" stroke-linejoin="round" points="${pts.map(p => X(T(p.d)).toFixed(1) + "," + Y(p.y).toFixed(1)).join(" ")}"/>`;
+    pts.forEach(p => { g += `<circle cx="${X(T(p.d)).toFixed(1)}" cy="${Y(p.y).toFixed(1)}" r="5" fill="${C.surface}" stroke="${C.actual}" stroke-width="2.5" data-tip="${esc(p.txt)}<br>${esc(fmtDate(p.d))} · ${esc(p.label)}"/>`; });
+    g += `<line x1="${Lp}" x2="${R}" y1="${B}" y2="${B}" stroke="${C.faint}"/>`;
+    return `<svg viewBox="0 0 1000 232" role="img" aria-label="Level over time">${g}</svg>`;
+  }
+
+  function ptcLine(){
+    const first = prof.student.first_day;
+    const box = (title, n) => {
+      const m = prof.milestones.find(x => x.month_no === n);
+      const due = first ? addMonths(first, n) : null;
+      const pill = m && m.status === "done" ? `<span class="pill p-good">Done ${esc(fmtDate(m.done_on || m.due_date))}</span>`
+        : m && m.status === "skipped" ? `<span class="pill p-muted">Skipped</span>`
+        : m && m.status === "scheduled" && m.scheduled_on ? `<span class="pill p-accent">Booked ${esc(fmtDate(m.scheduled_on))}</span>`
+        : !due ? `<span class="pill p-muted">No first day yet</span>`
+        : due <= todayISO() ? `<span class="pill p-warn">Due ${esc(fmtDate(due))}</span>` : `<span class="pill p-muted">${esc(fmtDate(due))}</span>`;
+      return `<div class="pbox"><b>${title}</b>${pill}
+        <textarea class="ptc-note" data-ptc-note="${n}" rows="3" placeholder="PTC notes — what was discussed, parent's concerns, agreed next steps…">${esc((m && m.note) || "")}</textarea>
+        <div class="ptc-note-foot no-print"><span class="faint" data-ptc-saved="${n}">${m && m.note && m.by_name ? "Last saved by " + esc(m.by_name) : ""}</span><button class="btn sm" data-action="ptc-note-save" data-month="${n}">Save note</button></div></div>`;
+    };
+    return `<div class="pgrid">${box("1st month PTC", 1)}${box("6th month PTC", 6)}${box("12th month PTC", 12)}</div>`;
+  }
+  // Saves one PTC's notes onto the same record the PTC page uses (so they show on both pages).
+  async function savePtcNote(n, text){
+    const sid = prof.student.id;
+    const m = prof.milestones.find(x => x.month_no === n);
+    const by = (currentUser && currentUser.email) || "";
+    const patch = { note: text.trim() || null, by_name: by, updated_at: new Date().toISOString() };
+    let res;
+    if(m) res = await sbClient.from("ptc_milestones").update(patch).eq("id", m.id).select();
+    else res = await sbClient.from("ptc_milestones").insert({ student_id: sid, month_no: n, status: "open",
+      due_date: prof.student.first_day ? addMonths(prof.student.first_day, n) : null, ...patch }).select();
+    if(res.error || !res.data || !res.data.length){ alert("Couldn't save the PTC note" + (res.error ? ": " + res.error.message : " — the database didn't allow it") + "."); return false; }
+    if(m) Object.assign(m, res.data[0]); else prof.milestones.push(res.data[0]);
+    logHistory("ptc_note", `Saved the ${n === 1 ? "1st" : n + "th"} month PTC note: ${displayName(sid, prof.student.name)}`, sid, null);
+    return true;
+  }
+
+  /* ---- at-a-glance numbers ---- */
+  // Months on the current level: the report's own figure if a teacher typed it, otherwise counted from close-outs.
+  function monthsOnLevel(e){
+    if(e.no_of_months_current_level) return e.no_of_months_current_level;
+    const lv = normLevel(e.subject, e.current_level); if(!lv) return "—";
+    const hist = prof.history.filter(h => h.subject_enrollment_id === e.id && h.cycle_key).sort((a, b) => a.cycle_key < b.cycle_key ? 1 : -1);
+    let since = null;
+    for(const h of hist){ if(normLevel(e.subject, h.current_level) === lv) since = h.cycle_key; else break; }
+    if(!since) return "under 1 month";
+    const mo = Math.max(1, Math.round(monthsBetween(since + "-01", todayISO())));
+    return `about ${mo} month${mo === 1 ? "" : "s"}`;
+  }
+  // Where today's level sits against the grade lines (KIS / Bronze / Silver / Gold) for the child's grade.
+  function standing(e, grade){
+    const now = bestPos(e.subject, e); if(!now || !grade) return null;
+    const lines = standardLines(e.subject, grade, syStartFor(todayISO())); if(!lines) return null;
+    const t = todayISO(), y = now.y, kis = lines.kis(t);
+    const award = y >= lines.gold(t) ? "Gold" : y >= lines.silver(t) ? "Silver" : y >= lines.bronze(t) ? "Bronze" : y >= kis ? "KIS" : null;
+    return { vsKis: (y - kis) / 20, award };
+  }
+  function fact(v, cap, tone){ return `<div class="fact${tone ? " f-" + tone : ""}"><div class="fv">${v}</div><div class="fc">${cap}</div></div>`; }
+  function medal(name, src){
+    const k = /gold/i.test(name) ? "gold" : /silver/i.test(name) ? "silver" : /bronze/i.test(name) ? "bronze" : /kis/i.test(name) ? "kis" : "";
+    if(!name) return `<div class="medal medal-none"><span class="disc"></span><span><b>No award band yet</b><small>${src}</small></span></div>`;
+    return `<div class="medal medal-${k}"><span class="disc">${k === "kis" ? "K" : esc(name.charAt(0).toUpperCase())}</span><span><b>${esc(name)}${/award|level/i.test(name) ? "" : " award"}</b><small>${src}</small></span></div>`;
+  }
+  // A strip of the level ladder around the child: where they are, and where grade level / Bronze / Silver / Gold sit today.
+  function ladder(e, grade){
+    const L = LADDER[e.subject] || []; const now = bestPos(e.subject, e); if(!now || !L.length) return "";
+    const lines = grade ? standardLines(e.subject, grade, syStartFor(todayISO())) : null, t = todayISO();
+    const marks = lines ? [["Grade level", lines.kis(t), "kis"], ["Bronze", lines.bronze(t), "bronze"], ["Silver", lines.silver(t), "silver"], ["Gold", lines.gold(t), "gold"]] : [];
+    const ys = [now.y, ...marks.map(m => m[1])];
+    let lo = Math.max(0, Math.floor(Math.min(...ys) / 20) - 1), hi = Math.min(L.length - 1, Math.floor(Math.max(...ys) / 20) + 1);
+    while(hi - lo < 6 && (lo > 0 || hi < L.length - 1)){ if(hi < L.length - 1) hi++; if(hi - lo < 6 && lo > 0) lo--; }
+    const y0 = lo * 20, span = (hi - lo + 1) * 20, X = y => Math.max(0, Math.min(100, (y - y0) / span * 100));
+    const segs = []; for(let i = lo; i <= hi; i++){
+      const done = now.y >= (i + 1) * 20, cur = !done && now.y >= i * 20;
+      segs.push(`<div class="rung${done ? " done" : ""}${cur ? " cur" : ""}"${cur ? ` style="--p:${((now.y - i * 20) / 20 * 100).toFixed(1)}%"` : ""}><span>${esc(L[i])}</span></div>`);
+    }
+    return `<div class="ladder" aria-label="Level ladder">
+      <div class="lad-pin" style="left:${X(now.y).toFixed(2)}%"><span>${esc(now.txt)}</span></div>
+      <div class="lad-track">${segs.join("")}</div>
+      <div class="lad-marks">${marks.map(m => `<div class="lad-mark m-${m[2]}" style="left:${X(m[1]).toFixed(2)}%"><span>${m[0]}</span></div>`).join("")}</div>
+    </div>`;
+  }
+  function subjectGlance(e){
+    const p = prof.projections.find(x => x.subject_enrollment_id === e.id);
+    const grade = (p && p.grade) || normGrade(prof.student.age_grade);
+    const st = standing(e, grade);
+    const awardName = e.award || (st && st.award ? (st.award === "KIS" ? "At grade level (KIS)" : st.award + " level") : "");
+    const awardSrc = e.award ? "from the teacher's report" : st ? "worked out from today's level" : "add the child's grade to see this";
+    const fmtLv = n => n.toFixed(1).replace(/\.0$/, "");
+    const vs = !st ? ["—", "no grade set", ""] : Math.abs(st.vsKis) < 0.25 ? ["At grade level", "for " + esc(grade), "good"]
+      : st.vsKis > 0 ? [`${fmtLv(st.vsKis)} level${st.vsKis >= 1.05 ? "s" : ""} ahead`, "of " + esc(grade) + " grade level", "good"]
+      : [`${fmtLv(-st.vsKis)} level${-st.vsKis >= 1.05 ? "s" : ""} behind`, "" + esc(grade) + " grade level", "bad"];
+    let plan = ["Not set", "study plan · set one in Projection", ""];
+    if(p){ draft = JSON.parse(JSON.stringify(p)); const sp = statusOf(compute(p, e));
+      plan = [esc(sp.label), "against the study plan", sp.key === "behind" ? "bad" : sp.key === "ahead" ? "good" : sp.key === "ontrack" ? "good" : ""]; }
+    const lastTest = [e, ...prof.history.filter(h => h.subject_enrollment_id === e.id).sort((a, b) => a.cycle_key < b.cycle_key ? 1 : -1)].find(r => r.test_level || r.test_score);
+    const lvl = normLevel(e.subject, e.current_level);
+    const now = bestPos(e.subject, e);
+    return `<section class="stand">
+      <div class="stand-h">${pillSubj(e.subject)}<span class="stand-t">${esc(e.teacher || "No teacher")}</span><span class="grow"></span>${medal(awardName, awardSrc)}</div>
+      ${ladder(e, grade)}
+      <div class="facts facts-sm">
+        ${fact(e.nwu ? esc(e.nwu) : "—", "worksheets this month (NWU)")}
+        ${fact(esc(monthsOnLevel(e)), lvl ? "on level " + esc(lvl) : "on this level")}
+        ${fact(vs[0], vs[1], vs[2])}
+        ${fact(plan[0], plan[1], plan[2])}
+        ${fact(lastTest ? esc([lastTest.test_level, lastTest.test_score].filter(Boolean).join(" · ")) : "—", lastTest && lastTest.test_date ? "last test, " + esc(lastTest.test_date) : "last achievement test")}
+      </div></section>`;
+  }
+
+  function renderProfile(){
+    const s = prof.student, sid = s.id;
+    const name = displayName(sid, s.name);
+    $("#pageTitle").textContent = name;
+    const active = prof.enrollments.filter(e => e.status === "active" && (e.subject === "Math" || e.subject === "Reading"))
+      .sort((a, b) => a.subject.localeCompare(b.subject));
+    const past = prof.enrollments.filter(e => e.status !== "active");
+    const schedOf = id => prof.schedules.find(x => x.subject_enrollment_id === id && x.status === "active");
+    const A = attendanceModel();
+    const pct = A.total ? Math.round(A.came / A.total * 100) : null;
+    const lastPay = prof.payments[0] || null;
+    const nextPtc = (() => {
+      if(!s.first_day) return { txt: "—", sub: "next PTC · no first day yet", tone: "" };
+      for(const n of [1, 6, 12]){
+        const m = prof.milestones.find(x => x.month_no === n);
+        if(m && (m.status === "done" || m.status === "skipped")) continue;
+        const due = addMonths(s.first_day, n);
+        const label = n === 1 ? "1st month" : n + "th month";
+        if(m && m.status === "scheduled" && m.scheduled_on) return { txt: esc(fmtDate(m.scheduled_on)), sub: "next PTC · " + label + ", booked", tone: "accent" };
+        return { txt: esc(fmtDate(due)), sub: "next PTC · " + label + (due <= todayISO() ? ", overdue — not booked" : ", not booked yet"), tone: due <= todayISO() ? "bad" : "" };
+      }
+      return { txt: "All done", sub: "PTCs · 1st, 6th and 12th month", tone: "good" };
+    })();
+    const firstDay = s.first_day || active.map(e => String(e.created_at || "").slice(0,10)).sort()[0] || "";
+
+    const subjectBlock = (e) => {
+      const p = prof.projections.find(x => x.subject_enrollment_id === e.id);
+      let projHtml;
+      if(p){
+        draft = JSON.parse(JSON.stringify(p));
+        const c = compute(p, e);
+        const st = statusOf(c);
+        const r = c.ok ? chartSvg(c, LIVE_COLORS) : null;
+        const last = c.actual[c.actual.length - 1];
+        projHtml = c.ok ? `
+          <div class="sec-h"><h4>Study projection</h4><span class="legend">${r.series.map(x => `<span class="lg"><i style="background:${x.color}"></i>${esc(x.name)}</span>`).join("")}</span></div>
+          <div class="mini-ins"><span>${statusPill(st)}</span><span>Started ${esc(normLevel(p.subject, p.start_level))} ${esc(p.start_page)} · ${esc(fmtDate(p.start_date))}</span>${last && !last.start ? `<span>Now ${esc(last.txt || "")}</span>` : ""}${c.rows.length ? `<span>Plan: finishes ${esc(c.rows[c.rows.length-1].level)} by ${esc(fmtMonth(c.rows[c.rows.length-1].target))}</span>` : ""}</div>
+          <div class="chart"><svg viewBox="0 0 1000 430" role="img" aria-label="Study projection">${r.svg}</svg></div>
+          <div class="hint no-print"><a href="projection.html#e=${esc(e.id)}">Open in Projection</a> to change the plan.</div>`
+          : `<div class="hint">The projection's starting point isn't set. <a class="no-print" href="projection.html#e=${esc(e.id)}">Open in Projection</a></div>`;
+      }else{
+        projHtml = `<div class="hint">No study projection yet. <a class="no-print" href="projection.html#e=${esc(e.id)}">Set one up</a></div>`;
+      }
+      const pts = progressPoints(e);
+      const hist = prof.history.filter(h => h.subject_enrollment_id === e.id).sort((a, b) => a.cycle_key < b.cycle_key ? 1 : -1);
+      const test = r => r.test_level || r.test_score ? `${esc(r.test_level || "")} ${esc(r.test_score || "")}${r.test_time ? " · " + esc(r.test_time) : ""}${r.test_date ? `<div class="faint" style="font-size:11px;">${esc(r.test_date)}</div>` : ""}` : "—";
+      return `<div class="card subj-card">
+        <div class="subj-h">${pillSubj(e.subject)} <b>${esc(e.teacher || "No teacher")}</b> <span class="faint">· ${esc(e.mode || "—")}</span>
+          <span class="grow"></span><span class="faint" style="font-size:12.5px;">${esc(slotsText(schedOf(e.id)) || "No class days set")}</span></div>
+        <div class="subj-b">
+          <div class="sec-h"><h4>Progress</h4><span class="faint" style="font-size:12.5px;">Now: <b>${esc(e.lwc || [e.current_level, e.current_page].filter(Boolean).join(" ") || "—")}</b></span></div>
+          ${pts.length > 1 ? `<div class="chart">${progressSvg(e.subject, pts)}</div>` : `<div class="hint">The progress line fills in as months are closed out.</div>`}
+          <div class="tbl"><table class="stable"><thead><tr><th>Month</th><th>LWC</th><th>NWU</th><th>Days</th><th>Months on level</th><th>Achievement test</th></tr></thead><tbody>
+            <tr class="now-row"><td><b>This month</b></td><td class="tnum">${esc(e.lwc || [e.current_level, e.current_page].filter(Boolean).join(" ") || "—")}</td><td>${esc(e.nwu || "—")}</td><td>${esc(e.no_of_days || "—")}</td><td>${esc(e.no_of_months_current_level || "—")}</td><td>${test(e)}</td></tr>
+            ${hist.map(h => `<tr><td>${esc(h.cycle_label || fmtMonth(h.cycle_key + "-01"))}</td><td class="tnum">${esc(h.lwc || [h.current_level, h.current_page].filter(Boolean).join(" ") || "—")}</td><td>${esc(h.nwu || "—")}</td><td>${esc(h.no_of_days || "—")}</td><td>${esc(h.no_of_months_current_level || "—")}</td><td>${test(h)}</td></tr>`).join("")}
+          </tbody></table></div>
+          ${projHtml}
+        </div></div>`;
+    };
+
+    const attHtml = !A.days.length ? `<div class="hint">No class days set, so there's nothing to show yet.</div>` : `
+      <div class="att-sum"><span class="big">${pct == null ? "—" : pct + "%"}</span><span>${A.total ? `came to <b>${A.came} of ${A.total}</b> classes in the last 8 weeks` : "no classes yet in the last 8 weeks"}</span></div>
+      <div class="tbl"><table class="att"><thead><tr><th>Week of</th>${A.days.map(d => `<th>${esc(d)}</th>`).join("")}</tr></thead><tbody>
+        ${A.weeks.slice().reverse().map(w => `<tr><td>${esc(fmtDate(w.ws, { year: undefined }))}</td>${w.cells.map(c => `<td><span class="a a-${c.state}" title="${esc(fmtDate(c.date))}">${c.state === "in" ? "✓" : c.state === "miss" ? "✗" : c.state === "off" ? "absent" : c.state === "today" ? "today" : c.state === "before" ? "–" : ""}</span></td>`).join("")}</tr>`).join("")}
+      </tbody></table></div>
+      <div class="hint">✓ = arrived (ticked on the Calendar) · ✗ = class day with no tick · “absent” = marked absent on Payments · – = before ticks were kept for this child. A ✗ can also mean nobody ticked them.</div>`;
+
+    const payHtml = prof.payments.length ? `<div class="tbl"><table class="stable"><thead><tr><th>For</th><th>Amount</th><th>Paid on</th><th>Reference</th><th>Status</th></tr></thead><tbody>
+      ${prof.payments.slice(0, 6).map(r => `<tr><td>${esc(r.covers_month ? fmtMonth(String(r.covers_month).slice(0,10)) : "—")}</td><td class="tnum">₱${Number(r.amount || 0).toLocaleString("en-US")}</td><td class="tnum">${r.created_at ? esc(fmtDate(String(r.created_at).slice(0,10))) : "—"}</td><td class="faint" style="font-size:12px;">${esc(r.reference_number || "—")}</td><td>${r.status === "verified" ? `<span class="pill p-good">Verified</span>` : r.status === "pending" ? `<span class="pill p-warn">Pending</span>` : `<span class="pill p-muted">${esc(r.status || "")}</span>`}</td></tr>`).join("")}
+      </tbody></table></div>` : `<div class="hint">No payments recorded.</div>`;
+
+    $("#view").innerHTML = `
+      <div class="detail-top no-print"><a class="btn sm ghost" href="roster.html" data-action="back-roster">‹ Student roster</a><span class="grow"></span>
+        <button class="btn sm" data-action="dl-jpeg">Save as JPEG</button><button class="btn sm" data-action="dl-pdf">Save as PDF</button><button class="btn sm" data-action="print">Print</button></div>
+      ${prof.partial ? `<div class="banner no-print">Some parts couldn't load (connection problem) — refresh to try again.</div>` : ""}
+      <div id="profileSheet">
+        <div class="card prof-head">
+          <div class="prof-top"><div><div class="print-only print-title">STUDENT PROFILE · Kumon Iligan City</div>
+            <h2>${esc(name)}</h2>
+            <div class="page-sub">${esc(normGrade(s.age_grade) || s.age_grade || "Grade —")}${firstDay ? ` · first day ${esc(fmtDate(firstDay))}` : ""}${s.parent_name ? ` · parent: ${esc(s.parent_name)}` : ""}</div>
+            <div style="margin-top:8px; display:flex; gap:6px; flex-wrap:wrap;">${active.map(e => `${pillSubj(e.subject)}`).join("")}${!active.length ? `<span class="pill p-muted">No active subjects</span>` : ""}${past.length ? `<span class="faint" style="font-size:12px;">Past: ${past.map(e => esc(e.subject + (e.teacher ? " (" + e.teacher + ")" : ""))).join(", ")}</span>` : ""}</div></div>
+          </div>
+          <div class="facts facts-head">
+            ${fact(pct == null ? "—" : pct + "%", A.total ? `attendance · came to ${A.came} of ${A.total} classes in 8 weeks` : "attendance · no classes yet", pct == null ? "" : pct >= 85 ? "good" : pct >= 70 ? "warn" : "bad")}
+            ${fact(nextPtc.txt, nextPtc.sub, nextPtc.tone === "accent" ? "" : nextPtc.tone)}
+            ${fact(lastPay ? esc(lastPay.covers_month ? fmtMonth(String(lastPay.covers_month).slice(0,10)) : "—") : "—", lastPay ? `last payment · paid ${esc(fmtDate(String(lastPay.created_at).slice(0,10)))}${lastPay.status !== "verified" ? ", not yet verified" : ""}` : "last payment · none recorded", lastPay && lastPay.status !== "verified" ? "warn" : "")}
+          </div>
+          ${active.length ? `<div class="stands">${active.map(subjectGlance).join("")}</div>` : ""}
+        </div>
+        <div class="card sect"><div class="sec-h"><h3>Attendance</h3><span class="faint" style="font-size:12.5px;">last ${WEEKS} weeks · ${esc(A.days.join(" & ") || "no class days")}</span></div>${attHtml}</div>
+        ${active.map(subjectBlock).join("")}
+        <div class="card sect"><div class="sec-h"><h3>PTC</h3></div>${ptcLine()}</div>
+        <div class="card sect no-print-pay"><div class="sec-h"><h3>Payments</h3><a class="no-print" href="payments.html" style="font-size:12.5px;">Open Payments</a></div>${payHtml}</div>
+      </div>`;
+  }
+  function statusPill(st){
+    const cls = { ahead:"p-good", ontrack:"p-accent", behind:"p-bad", new:"p-muted", bad:"p-muted" }[st.key] || "p-muted";
+    return `<span class="pill ${cls}">${esc(st.label)}</span>`;
+  }
+
+  /* ---- save as JPEG / PDF (one page) ---- */
+  async function downloadProfile(kind){
+    const node = $("#profileSheet"); if(!node || !prof) return;
+    toast(kind === "pdf" ? "Making the PDF…" : "Making the image…");
+    try{ await loadLib("html2canvas"); if(kind === "pdf") await loadLib("jspdf"); }
+    catch(err){ alert("Couldn't load the download tools — check the internet connection and try again."); return; }
+    document.body.classList.add("exporting");
+    try{
+      const canvas = await window.html2canvas(node, { scale: 2, backgroundColor: "#ffffff", useCORS: true, logging: false, windowWidth: 1100 });
+      const base = `Student profile - ${displayName(prof.student.id, prof.student.name).replace(/[\\/:*?"<>|,]+/g, " ").replace(/\s+/g, " ").trim()}`;
+      if(kind === "jpeg"){
+        const a = document.createElement("a"); a.href = canvas.toDataURL("image/jpeg", 0.92); a.download = base + ".jpg";
+        document.body.appendChild(a); a.click(); a.remove();
+      }else{
+        const { jsPDF } = window.jspdf;
+        const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+        const pw = 210, ph = 297, m = 8, w = pw - 2*m, pageH = ph - 2*m;
+        const pxPerMm = canvas.width / w, slice = Math.floor(pageH * pxPerMm);
+        for(let y = 0, page = 0; y < canvas.height; y += slice, page++){   // long profiles continue on more pages
+          const part = document.createElement("canvas"); part.width = canvas.width; part.height = Math.min(slice, canvas.height - y);
+          part.getContext("2d").drawImage(canvas, 0, y, canvas.width, part.height, 0, 0, canvas.width, part.height);
+          if(page) pdf.addPage();
+          pdf.addImage(part.toDataURL("image/jpeg", 0.92), "JPEG", m, m, w, part.height / pxPerMm);
+        }
+        pdf.save(base + ".pdf");
+      }
+      logHistory("profile_download", `Downloaded the student profile (${kind.toUpperCase()}): ${displayName(prof.student.id, prof.student.name)}`, prof.student.id, null);
+    }catch(err){ console.warn(err); alert("Couldn't make the file: " + err.message); }
+    finally{ document.body.classList.remove("exporting"); }
+  }
+
+  /* ======================= events ======================= */
+  document.addEventListener("input", e => {
+    if(e.target.id === "fSearch"){ ui.search = e.target.value; clearTimeout(renderList._t); renderList._t = setTimeout(renderList, 200); }
+  });
+  document.addEventListener("change", e => {
+    if(e.target.id === "fTeacher"){ ui.teacher = e.target.value; renderList(); }
+  });
+  document.addEventListener("click", async (e)=>{
+    const row = e.target.closest("tr.clickrow");
+    const btn = e.target.closest("[data-action]");
+    if(row && !btn && !e.target.closest("a")){ location.hash = row.dataset.href; return; }
+    if(!btn) return;
+    const a = btn.dataset.action;
+    if(a === "logout"){ await sbClient.auth.signOut(); return; }
+    if(a === "back-roster"){ if(document.referrer && /roster\.html/.test(document.referrer)){ e.preventDefault(); history.back(); } return; }
+    if(a === "print"){ window.print(); return; }
+    if(a === "ptc-note-save"){
+      const n = Number(btn.dataset.month), box = document.querySelector(`[data-ptc-note="${n}"]`);
+      btn.disabled = true; btn.textContent = "Saving…";
+      const ok = await savePtcNote(n, box ? box.value : "");
+      btn.disabled = false; btn.textContent = "Save note";
+      if(ok){ const sv = document.querySelector(`[data-ptc-saved="${n}"]`); if(sv) sv.textContent = "Saved ✓"; toast("PTC note saved."); }
+      return;
+    }
+    if(a === "dl-jpeg" || a === "dl-pdf"){ btn.disabled = true; try{ await downloadProfile(a === "dl-pdf" ? "pdf" : "jpeg"); } finally { btn.disabled = false; } return; }
+  });
+  document.addEventListener("mousemove", (e) => {
+    const tip = $("#tip"); if(!tip) return;
+    const c = e.target.closest && e.target.closest("circle[data-tip]");
+    if(!c){ tip.style.display = "none"; return; }
+    tip.innerHTML = c.dataset.tip; tip.style.display = "block"; tip.style.left = (e.clientX + 12) + "px"; tip.style.top = (e.clientY + 12) + "px";
+  });
+
+  boot();
+})();
+</script>
+
+<script>
+(function(){
+  var KEY = "kumonRailCollapsed", root = document.documentElement;
+  function apply(c){
+    root.classList.toggle("rail-collapsed", c);
+    var b = document.getElementById("railToggle");
+    if(b){ var t = c ? "Expand sidebar" : "Collapse sidebar"; b.title = t; b.setAttribute("aria-label", t); b.setAttribute("aria-expanded", String(!c)); }
+  }
+  apply(root.classList.contains("rail-collapsed"));
+  var b = document.getElementById("railToggle");
+  if(b) b.addEventListener("click", function(){
+    var c = !root.classList.contains("rail-collapsed"); apply(c);
+    try{ localStorage.setItem(KEY, c ? "1" : "0"); }catch(e){}
+  });
+  // Collapsed rail is icons only, so every link gets a tooltip with its name.
+  document.querySelectorAll(".rail .navbtn").forEach(function(a){
+    if(a.title) return;
+    var t = (a.textContent || "").replace(/\s+/g, " ").trim().replace(/\s*\d+$/, "");
+    if(t) a.title = t;
+  });
+  // The Pipeline views group follows the same who-can-see-Pipeline flag as the single Pipeline link.
+  var link = document.getElementById("navPipelineLink"), grp = document.getElementById("navPipelineGroup");
+  if(link && grp){
+    var sync = function(){ grp.hidden = link.hidden; };
+    sync(); new MutationObserver(sync).observe(link, { attributes:true, attributeFilter:["hidden"] });
+  }
+})();
+</script>
+</body>
+</html>

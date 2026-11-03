@@ -1002,6 +1002,7 @@ window.kumonPtcNav = function(client, role){
         <span class="grow"></span>
         ${draftDirty ? `<span class="pill p-warn">${projectionFor(draft.subject_enrollment_id) ? "Unsaved changes" : "Not saved yet"}</span>` : ""}
         ${projectionFor(draft.subject_enrollment_id) ? `<button class="btn sm danger" data-action="delete">Delete</button>` : ""}
+        <a class="btn sm" href="student.html#s=${esc(e.student_id)}">Profile</a>
         <button class="btn sm" data-action="dl-jpeg">Save as JPEG</button>
         <button class="btn sm" data-action="dl-pdf">Save as PDF</button>
         <button class="btn sm" data-action="print">Print</button>
