@@ -267,6 +267,9 @@
   .mp-btn{ display:flex; align-items:center; justify-content:space-between; gap:8px; min-width:140px; max-width:240px; font:inherit; font-size:13.5px; font-weight:500; color:var(--ink); background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:8px 10px; cursor:pointer; text-align:left; }
   .mp-btn:focus{ outline:none; border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-soft); }
   .mp.mp-on .mp-btn{ border-color:var(--accent); }
+  .mp-item.mp-group{ border-top:1px solid var(--border); margin-top:2px; }
+  .mp-item.mp-sub{ padding-left:28px; }
+  .mp-sep{ font-size:11.5px; color:var(--ink-muted); text-transform:uppercase; letter-spacing:.04em; padding:8px 12px 2px; border-top:1px solid var(--border); }
   .mp-text{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .mp-caret{ color:var(--ink-muted); font-size:11px; }
   .mp-menu{ position:absolute; top:100%; left:0; margin-top:4px; z-index:60; min-width:220px; background:var(--surface); border:1px solid var(--border); border-radius:10px; box-shadow:0 8px 24px rgba(0,0,0,.12); padding:6px; }
@@ -437,6 +440,7 @@ window.kumonPtcNav = function(client, role){
   /* ---------- Multi-pick filter (tick any number; none ticked = all) ---------- */
   // MP[id] = { allText, noun, options: () => [{value, label, count}], selected: Set, onChange(set) }
   const MP = {};
+  let teacherGroups = [];
   const LEVEL_SORT = ["7A","6A","5A","4A","3A","2A","A","AI","AII","B","BI","BII","C","CI","CII","D","DI","DII","E","EI","EII","F","FI","FII","G","GI","GII","H","HI","HII","I","I-I","I-II","J","K","L","M","N","O"];
   const NO_LEVEL = "__none";
   function levelKey(lv){ const s = String(lv || "").trim().toUpperCase(); return s || NO_LEVEL; }
@@ -464,12 +468,31 @@ window.kumonPtcNav = function(client, role){
     if(!c || !root) return;
     const opts = c.options();
     const list = root.querySelector(".mp-list");
-    list.innerHTML = opts.length
-      ? opts.map(o => `<label class="mp-item"><input type="checkbox" data-mp-item="${id}" value="${esc(o.value)}" ${c.selected.has(o.value) ? "checked" : ""}><span>${esc(o.label)}</span>${o.count != null ? `<span class="n">${o.count}</span>` : ""}</label>`).join("")
-      : `<div class="mp-item" style="cursor:default;color:var(--ink-muted)">Nothing to pick yet</div>`;
+    const item = (o, indent) => `<label class="mp-item${indent ? " mp-sub" : ""}"><input type="checkbox" data-mp-item="${id}" value="${esc(o.value)}" ${c.selected.has(o.value) ? "checked" : ""}><span>${esc(o.label)}</span>${o.count != null ? `<span class="n">${o.count}</span>` : ""}</label>`;
+    const groups = c.groups ? c.groups().map(g => ({ ...g, opts: opts.filter(o => g.members.includes(o.value)) })).filter(g => g.opts.length) : [];
+    if(!opts.length) list.innerHTML = `<div class="mp-item" style="cursor:default;color:var(--ink-muted)">Nothing to pick yet</div>`;
+    else if(!groups.length) list.innerHTML = opts.map(o => item(o)).join("");
+    else{
+      // Teacher groups: one box ticks the whole group (same groups as the other pages), members listed under it.
+      const inGroup = new Set(groups.flatMap(g => g.opts.map(o => o.value)));
+      const rest = opts.filter(o => !inGroup.has(o.value));
+      list.innerHTML = groups.map(g => {
+        const n = g.opts.reduce((t, o) => t + (o.count || 0), 0);
+        return `<label class="mp-item mp-group"><input type="checkbox" data-mp-group="${id}" data-members="${esc(JSON.stringify(g.opts.map(o => o.value)))}"><span><b>All of ${esc(g.label)}</b></span><span class="n">${n}</span></label>`
+          + g.opts.map(o => item(o, true)).join("");
+      }).join("") + (rest.length ? `<div class="mp-sep">Not in a group</div>` + rest.map(o => item(o, true)).join("") : "");
+      list.querySelectorAll("[data-mp-group]").forEach(cb => {
+        const m = JSON.parse(cb.dataset.members), k = m.filter(v => c.selected.has(v)).length;
+        cb.checked = k > 0 && k === m.length; cb.indeterminate = k > 0 && k < m.length;
+      });
+    }
     const labelOf = v => (opts.find(o => o.value === v) || { label: v }).label;
     const picked = [...c.selected];
-    const text = !picked.length ? c.allText : picked.length <= 3 ? picked.map(labelOf).join(", ") : `${picked.length} ${c.noun}`;
+    // A whole group ticked (and nothing else) reads as the group's name.
+    const whole = groups.filter(g => g.opts.every(o => c.selected.has(o.value)));
+    const covered = new Set(whole.flatMap(g => g.opts.map(o => o.value)));
+    const groupText = whole.length && picked.every(v => covered.has(v)) ? whole.map(g => g.label).join(", ") : null;
+    const text = !picked.length ? c.allText : groupText ? groupText : picked.length <= 3 ? picked.map(labelOf).join(", ") : `${picked.length} ${c.noun}`;
     root.querySelector(".mp-text").textContent = text;
     root.querySelector(".mp-btn").title = picked.length ? picked.map(labelOf).join(", ") : c.allText;
     root.classList.toggle("mp-on", picked.length > 0);
@@ -499,6 +522,13 @@ window.kumonPtcNav = function(client, role){
     if(!e.target.closest(".mp")) mpCloseAll();
   });
   document.addEventListener("change", e => {
+    const gid = e.target.dataset && e.target.dataset.mpGroup;
+    if(gid && MP[gid]){
+      const set = new Set(MP[gid].selected);
+      JSON.parse(e.target.dataset.members).forEach(v => e.target.checked ? set.add(v) : set.delete(v));
+      mpSet(gid, set);
+      return;
+    }
     const id = e.target.dataset && e.target.dataset.mpItem;
     if(!id || !MP[id]) return;
     const set = new Set(MP[id].selected);
@@ -614,6 +644,10 @@ window.kumonPtcNav = function(client, role){
     if(started) return;
     started = true;
     try{
+      try{   // teacher groups (Settings → teacher_groups), so a whole group can be picked like on the other pages
+        const { data: tg } = await sbClient.from("settings").select("value").eq("id","teacher_groups").maybeSingle();
+        teacherGroups = (tg && tg.value && Array.isArray(tg.value.groups)) ? tg.value.groups.filter(g => g && Array.isArray(g.teachers)) : [];
+      }catch(_){ teacherGroups = []; }
       const [enr, studs, scheds] = await Promise.all([
         fetchAll("subject_enrollments", "id,student_id,student_name,subject,teacher,current_level,current_page,mode,status,is_monitor,schedule", q => q.eq("status","active")),
         fetchAll("students", "id,name,first_name,last_name,age_grade"),
@@ -862,7 +896,8 @@ window.kumonPtcNav = function(client, role){
     const tCounts = {}; rows.filter(r => (F.subject === "all" || r.subject === F.subject)).forEach(r => tCounts[r.teacher] = (tCounts[r.teacher] || 0) + 1);
     MP.mpRepTeachers = { allText:"All teachers", noun:"teachers", selected:F.teachers,
       onChange: s => { F.teachers = s; savePick("teachers"); render(); },
-      options: () => teachersAll.map(t => ({ value:t, label:t, count: tCounts[t] || 0 })) };
+      options: () => teachersAll.map(t => ({ value:t, label:t, count: tCounts[t] || 0 })),
+      groups: () => teacherGroups.map(g => ({ key: g.key, label: g.name || g.key, members: g.teachers || [] })) };
     const gCounts = {}; b.forEach(r => gCounts[r.group] = (gCounts[r.group] || 0) + 1);
     mpRender("mpRepTeachers");
     if(openId){ const r = document.getElementById(openId); if(r){ r.querySelector(".mp-menu").hidden = false; r.querySelector(".mp-btn").setAttribute("aria-expanded","true"); } }
