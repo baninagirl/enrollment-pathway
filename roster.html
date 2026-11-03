@@ -1030,6 +1030,7 @@ window.kumonPtcNav = function(client, role){
   async function startApp(){
     if(started) return;
     started = true;
+    viewMonth = monthFromKey(openKey());   // a placeholder until the open month has loaded (some lists render early)
     await Promise.all([loadStudents(), loadSettings(), loadEnrollments(), loadSchedules(), loadHistory(), loadBillingGroups(), loadReceipts()]);
     viewMonth = monthFromKey(openKey());
     populateTeacherFilter();
@@ -1237,11 +1238,24 @@ window.kumonPtcNav = function(client, role){
   // value {"key":"YYYY-MM"}) and only moves when an admin closes it out — it no longer rolls over by
   // itself on the 21st. Falls back to the date-based month if the row doesn't exist yet.
   let openMonthKey = null;
+  // Which month is still open. "Couldn't load it" is NOT the same as "none saved yet": on a failed load the
+  // last known value stays, and Close out re-checks with the database before doing anything (readOpenMonth).
+  let openMonthLoaded = false;
+  async function readOpenMonth(){
+    let res;
+    for(let i = 0; i < 3; i++){
+      if(i) await new Promise(r => setTimeout(r, 800 * i));
+      res = await sbClient.from("settings").select("value").eq("id","open_month").maybeSingle();
+      if(!res.error) break;
+    }
+    if(res.error) return { ok:false, error: res.error };
+    const k = res.data && res.data.value && res.data.value.key;
+    return { ok:true, key: /^\d{4}-\d{2}$/.test(k || "") ? k : null };
+  }
   async function loadOpenMonth(){
-    const { data, error } = await sbClient.from("settings").select("value").eq("id","open_month").maybeSingle();
-    if(error) console.warn("couldn't load open month", error);
-    const k = data && data.value && data.value.key;
-    openMonthKey = /^\d{4}-\d{2}$/.test(k || "") ? k : null;
+    const r = await readOpenMonth();
+    if(!r.ok){ console.warn("couldn't load open month", r.error); return; }   // keep what we had
+    openMonthKey = r.key; openMonthLoaded = true;
   }
   function openKey(){ return openMonthKey || cycleKeyOf(new Date()); }
   function monthFromKey(key){ const [y,m] = key.split("-").map(Number); return new Date(y, m-1, 1); }
@@ -1686,6 +1700,16 @@ window.kumonPtcNav = function(client, role){
 
   async function closeOutMonth(){
     if(!canCloseOut()) return;
+    // Ask the database which month is open right now — never close out a month guessed from today's date.
+    const fresh = await readOpenMonth();
+    if(!fresh.ok){ alert("Couldn't check which month is open (connection problem), so nothing was closed out.\n\nCheck the connection and try again."); return; }
+    if(!fresh.key){ alert("No open month is saved yet, so the Hub can't tell which month to close out.\n\nNothing was changed — ask Claude to set the open month first."); return; }
+    if(!openMonthLoaded || fresh.key !== openMonthKey){
+      openMonthKey = fresh.key; openMonthLoaded = true;
+      viewMonth = monthFromKey(openKey()); renderBoth();
+      alert(`The open month is ${monthLabel(monthFromKey(fresh.key))} — the page has been updated to show it.\n\nCheck the report, then click Close out again.`);
+      return;
+    }
     const cycleKey = openKey();
     const cycleLabel = monthLabel(monthFromKey(cycleKey));
     const nextLabel = monthLabel(monthFromKey(nextKey(cycleKey)));
