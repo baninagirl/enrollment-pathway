@@ -1392,16 +1392,32 @@ window.kumonPtcNav = function(client, role){
     const ids = new FormData(form).getAll("enrollment");
     if(!ids.length){ alert("Pick at least one subject."); return; }
     const picked = enrollments.filter(e => ids.includes(e.id));
-    const { error } = await sbClient.from("subject_enrollments").update({ status:"inactive", updated_at: new Date().toISOString() }).in("id", ids);
-    if(error){ alert("Couldn't mark absent: " + error.message); return; }
+    const retry = async (fn) => { let r; for(let i = 0; i < 3; i++){ if(i){ await new Promise(z => setTimeout(z, 800 * i)); try{ await sbClient.auth.refreshSession(); }catch(_){ } } r = await fn(); if(!r.error) return r; } return r; };
+    // 1) The absence record FIRST — it's what Retention / the Absent tab and Resume work from. If this can't be
+    //    saved, nothing is changed (the child stays active), so no one can drop out of the follow-up list.
     const records = picked.map(e => ({
       student_id: studentId,
       last_paid_month: lastFullyPaidMonthForSubject(studentId, e.subject, selectedMonth),
       subject_enrollment_ids: [e.id],
       marked_absent_by: currentUser ? currentUser.email : null
     }));
-    const { error: absErr } = await sbClient.from("absence_records").insert(records);
-    if(absErr) console.warn("Marked inactive, but couldn't create the absence record:", absErr);
+    const ins = await retry(() => sbClient.from("absence_records").insert(records).select("id"));
+    if(ins.error || !ins.data || ins.data.length !== records.length){
+      if(ins.data && ins.data.length) await sbClient.from("absence_records").delete().in("id", ins.data.map(r => r.id));
+      alert("Couldn't mark absent — nothing was changed" + (ins.error ? " (" + ins.error.message + ")" : "") + ".\n\nCheck the connection and try again.");
+      return;
+    }
+    // 2) Then switch the subjects off. If that fails, the absence record is taken back, so nothing half-done is left.
+    const upd = await retry(() => sbClient.from("subject_enrollments").update({ status:"inactive", updated_at: new Date().toISOString() }).in("id", ids).select("id"));
+    if(upd.error || !upd.data || upd.data.length !== ids.length){
+      await sbClient.from("absence_records").delete().in("id", ins.data.map(r => r.id));
+      if(upd.data && upd.data.length && !upd.error){   // some switched off, some not: put those back to active
+        await sbClient.from("subject_enrollments").update({ status:"active", updated_at: new Date().toISOString() }).in("id", upd.data.map(r => r.id));
+      }
+      alert("Couldn't mark absent — nothing was changed" + (upd.error ? " (" + upd.error.message + ")" : " (the database didn't allow it)") + ".\n\nCheck the connection and try again.");
+      await Promise.all([loadEnrollments(), loadAbsences()]); render();
+      return;
+    }
     logHistory("mark_absent", `Marked ${s ? displayName(s) : "a student"} absent — ${picked.map(e => e.subject).join(" + ")}`, "student", studentId);
     closeModal();
     await Promise.all([loadEnrollments(), loadAbsences()]);
