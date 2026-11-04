@@ -331,10 +331,20 @@ window.kumonPtcNav = function(client, role){
     st.textContent = ".navbtn .ptc-badge{margin-left:auto;background:var(--bad);color:#fff;font-size:11px;font-weight:700;border-radius:99px;padding:1px 6px;min-width:18px;text-align:center;line-height:16px;}";
     document.head.appendChild(st);
   }
+  // An expired sign-in (a tab left open in the background) is renewed and the count asked again once;
+  // with no sign-in at all it doesn't ask. A failed check keeps the last number instead of hiding it.
+  var expired = function(r){ var e = r && r.error; return !!e && (e.status === 401 || /jwt|expired|401/i.test(String(e.message || e.code || ""))); };
   var refresh = function(){
-    client.rpc("ptc_due_count").then(function(r){
-      var b = document.getElementById("navPtcBadge"); if(!b) return;
-      var n = (r && !r.error && typeof r.data === "number") ? r.data : 0;
+    var ask = function(){ return client.rpc("ptc_due_count"); };
+    client.auth.getSession().then(function(s){
+      if(!s || !s.data || !s.data.session) return null;
+      return ask().then(function(r){
+        if(!expired(r)) return r;
+        return client.auth.refreshSession().then(function(x){ return (x && x.data && x.data.session) ? ask() : null; }, function(){ return null; });
+      });
+    }).then(function(r){
+      var b = document.getElementById("navPtcBadge"); if(!b || !r || r.error || typeof r.data !== "number") return;
+      var n = r.data;
       b.textContent = n > 99 ? "99+" : String(n); b.hidden = !n;
       link.title = n ? ("PTC — " + n + " due") : "PTC";
     }, function(){});
@@ -1431,14 +1441,46 @@ window.kumonPtcNav = function(client, role){
     }
     return { ok:true };
   }
-  async function deleteWeekSessions(ids){
-    const r = await reopenMilestonesFor(ids);
-    if(!r.ok) return r;
+  // Which new-student PTCs these sessions marked done (read from the database, so a failed delete can put them back).
+  async function doneMilestonesFor(ids){
+    const rows = [];
     for(let i = 0; i < ids.length; i += 100){
-      const { error } = await sbClient.from("ptc_sessions").delete().in("id", ids.slice(i, i + 100));
+      const { data, error } = await sbClient.from("ptc_milestones").select("id,ptc_session_id,done_on")
+        .in("ptc_session_id", ids.slice(i, i + 100)).eq("status", "done");
       if(error) return { ok:false, message: error.message };
+      rows.push(...(data || []).map(x => ({ id: x.id, ptc_session_id: x.ptc_session_id, done_on: x.done_on })));   // a copy, not the live row
     }
-    return { ok:true };
+    return { ok:true, rows };
+  }
+  // Puts back the "done" link for sessions that still exist after a failed delete.
+  async function restoreMilestones(rows, stillThere){
+    for(const m of rows){
+      if(!stillThere(m.ptc_session_id)) continue;
+      await sbClient.from("ptc_milestones").update({ status: "done", done_on: m.done_on, ptc_session_id: m.ptc_session_id, updated_at: new Date().toISOString() }).eq("id", m.id);
+    }
+  }
+  async function refreshDue(){
+    await Promise.all([loadMilestones(), loadDue()]);
+    if(window.kumonPtcNavRefresh) window.kumonPtcNavRefresh();
+  }
+  // Deletes sessions; any new-student PTC they had marked done goes back on the due list.
+  // If the delete fails (or the database refuses it), the PTCs of sessions that are still there are marked done again.
+  async function deleteWeekSessions(ids){
+    const snap = await doneMilestonesFor(ids);
+    if(!snap.ok) return snap;
+    const r = await reopenMilestonesFor(ids);
+    if(!r.ok){ await restoreMilestones(snap.rows, () => true); return r; }
+    const gone = new Set(); let message = "";
+    for(let i = 0; i < ids.length; i += 100){
+      const { data, error } = await sbClient.from("ptc_sessions").delete().in("id", ids.slice(i, i + 100)).select("id");
+      (data || []).forEach(x => gone.add(x.id));
+      if(error){ message = error.message; break; }
+    }
+    if(gone.size < ids.length){
+      await restoreMilestones(snap.rows, sid => !gone.has(sid));
+      return { ok:false, message: message || "the database didn't allow it", removed: gone.size };
+    }
+    return { ok:true, reopened: snap.rows.length };
   }
 
   /* --- draft (admins) --- */
@@ -1850,9 +1892,9 @@ window.kumonPtcNav = function(client, role){
       const warn = (by.invited || by.confirmed || by.done) ? `\n\nSome parents were already invited or confirmed — they'll need to be told if the times change.` : "";
       if(!confirm(`Delete the whole draft for “${w.name}”?\n\n${list.length} sessions (${parts.join(", ")}) will be removed. The week and its dates stay — click Make draft to start again.${warn}\n\nThis can't be undone.`)) return;
       const r = await deleteWeekSessions(list.map(x => x.id));
-      if(!r.ok){ alert("Couldn't delete the whole draft: " + r.message + "\n\nSome sessions may be left — refresh and try again."); await loadSessions(); await loadMilestones(); render(); return; }
+      if(!r.ok){ alert("Couldn't delete the whole draft: " + r.message + (r.removed ? `\n\n${r.removed} of ${list.length} sessions were removed; the rest are still there.` : "\n\nNothing was removed.") + " Refresh and try again."); await loadSessions(); await refreshDue(); render(); return; }
       logHistory("ptc_draft_delete", `${w.name}: deleted the draft (${list.length} sessions)`, "ptc_week", w.id, by);
-      await loadSessions(); await loadMilestones(); render();
+      await loadSessions(); await refreshDue(); render();
       toast(`Draft deleted — ${list.length} sessions removed.`);
       return;
     }
@@ -1860,11 +1902,20 @@ window.kumonPtcNav = function(client, role){
       const w = currentWeek(); if(!w) return;
       const n = weekSessions().length;
       if(!confirm(`Delete “${w.name}”${n ? ` and its ${n} sessions` : ""}? This can't be undone.`)) return;
-      if(n){ const r = await reopenMilestonesFor(weekSessions().map(x => x.id)); if(!r.ok){ alert("Couldn't delete: " + r.message); return; } }
-      const { error } = await sbClient.from("ptc_weeks").delete().eq("id", w.id);
-      if(error){ alert(error.message); return; }
+      const sids = weekSessions().map(x => x.id);
+      let snap = { ok:true, rows:[] };
+      if(n){
+        snap = await doneMilestonesFor(sids); if(!snap.ok){ alert("Couldn't delete: " + snap.message); return; }
+        const r = await reopenMilestonesFor(sids); if(!r.ok){ await restoreMilestones(snap.rows, () => true); alert("Couldn't delete: " + r.message); return; }
+      }
+      const { data: delRows, error } = await sbClient.from("ptc_weeks").delete().eq("id", w.id).select("id");
+      if(error || !delRows || !delRows.length){
+        await restoreMilestones(snap.rows, () => true);
+        alert("Couldn't delete the week: " + (error ? error.message : "the database didn't allow it") + ". Nothing was changed.");
+        if(n) await refreshDue(); return;
+      }
       logHistory("ptc_week_delete", `Deleted ${w.name} (${n} sessions)`, "ptc_week", w.id, null);
-      closeModal(); ui.weekId = null; await loadWeeks(); pickDefaultWeek(); await loadSessions(); render(); return;
+      closeModal(); ui.weekId = null; await loadWeeks(); pickDefaultWeek(); await loadSessions(); if(n) await refreshDue(); render(); return;
     }
     if(a === "week-view"){ ui.weekView = btn.dataset.view; lsSet("weekView", ui.weekView); renderWeek(); return; }
     if(a === "week-day"){ ui.weekDay = btn.dataset.day; renderWeek(); return; }
@@ -1904,12 +1955,13 @@ window.kumonPtcNav = function(client, role){
     if(a === "session-delete"){
       const x = sessions.find(y => y.id === modalState.id); if(!x) return;
       if(!confirm(`Remove ${sessName(x)}'s session with ${x.teacher} from this PTC week?`)) return;
-      // First put back any new-student PTC this session had marked done (the link is lost once it's removed).
-      if(milestones.some(m => m.ptc_session_id === x.id && m.status === "done") && !(await reopenAfterUndo([x.id]))) return;
-      const { error } = await sbClient.from("ptc_sessions").delete().eq("id", x.id);
-      if(error){ alert(error.message); return; }
+      // Any new-student PTC this session had marked done goes back on the due list (put back if the remove fails).
+      const r = await deleteWeekSessions([x.id]);
+      if(!r.ok){ alert("Couldn't remove the session: " + r.message + ". Nothing was changed."); return; }
       logHistory("ptc_remove", `Removed ${sessName(x)} (${x.teacher}) from the PTC week`, "ptc_session", x.id, null);
-      closeModal(); await loadSessions(); render(); return;
+      closeModal(); await loadSessions(); await refreshDue(); render();
+      if(r.reopened) toast(`Removed. ${r.reopened} new-student PTC${r.reopened === 1 ? "" : "s"} put back on the due list.`);
+      return;
     }
     if(a === "move-family"){ openModal({ kind:"moveFamily", family: btn.dataset.family, day:"all", live:true }); return; }
     if(a === "mf-day"){ modalState.day = btn.dataset.day; renderModal(); return; }

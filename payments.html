@@ -274,10 +274,20 @@ window.kumonPtcNav = function(client, role){
     st.textContent = ".navbtn .ptc-badge{margin-left:auto;background:var(--bad);color:#fff;font-size:11px;font-weight:700;border-radius:99px;padding:1px 6px;min-width:18px;text-align:center;line-height:16px;}";
     document.head.appendChild(st);
   }
+  // An expired sign-in (a tab left open in the background) is renewed and the count asked again once;
+  // with no sign-in at all it doesn't ask. A failed check keeps the last number instead of hiding it.
+  var expired = function(r){ var e = r && r.error; return !!e && (e.status === 401 || /jwt|expired|401/i.test(String(e.message || e.code || ""))); };
   var refresh = function(){
-    client.rpc("ptc_due_count").then(function(r){
-      var b = document.getElementById("navPtcBadge"); if(!b) return;
-      var n = (r && !r.error && typeof r.data === "number") ? r.data : 0;
+    var ask = function(){ return client.rpc("ptc_due_count"); };
+    client.auth.getSession().then(function(s){
+      if(!s || !s.data || !s.data.session) return null;
+      return ask().then(function(r){
+        if(!expired(r)) return r;
+        return client.auth.refreshSession().then(function(x){ return (x && x.data && x.data.session) ? ask() : null; }, function(){ return null; });
+      });
+    }).then(function(r){
+      var b = document.getElementById("navPtcBadge"); if(!b || !r || r.error || typeof r.data !== "number") return;
+      var n = r.data;
       b.textContent = n > 99 ? "99+" : String(n); b.hidden = !n;
       link.title = n ? ("PTC — " + n + " due") : "PTC";
     }, function(){});
@@ -1386,7 +1396,21 @@ window.kumonPtcNav = function(client, role){
       </form>`;
     $("#modalBackdrop").hidden = false;
   }
+  let markAbsentBusy = false;
   async function submitMarkAbsent(form){
+    if(markAbsentBusy) return;   // a second click while saving would make a second absence record
+    markAbsentBusy = true;
+    const btn = form.querySelector('button[type="submit"]'); if(btn){ btn.disabled = true; btn.textContent = "Saving…"; }
+    try{ await submitMarkAbsentNow(form); }
+    finally{ markAbsentBusy = false; if(btn && btn.isConnected){ btn.disabled = false; btn.textContent = "Mark absent"; } }
+  }
+  // Takes back absence records this save just made. Returns true only if every one was really removed.
+  async function undoAbsenceRecords(ids){
+    if(!ids.length) return true;
+    const { data, error } = await sbClient.from("absence_records").delete().in("id", ids).select("id");
+    return !error && data && data.length === ids.length;
+  }
+  async function submitMarkAbsentNow(form){
     const studentId = form.dataset.student;
     const s = students.find(x => x.id === studentId);
     const ids = new FormData(form).getAll("enrollment");
@@ -1403,18 +1427,23 @@ window.kumonPtcNav = function(client, role){
     }));
     const ins = await retry(() => sbClient.from("absence_records").insert(records).select("id"));
     if(ins.error || !ins.data || ins.data.length !== records.length){
-      if(ins.data && ins.data.length) await sbClient.from("absence_records").delete().in("id", ins.data.map(r => r.id));
+      const cleaned = await undoAbsenceRecords((ins.data || []).map(r => r.id));
+      if(!cleaned){ alert("Couldn't mark absent, and part of it was saved: an absence record was made but the subjects are still active.\n\nOpen the Absent tab and resume this child to clear it, then try again."); await loadAbsences(); render(); return; }
       alert("Couldn't mark absent — nothing was changed" + (ins.error ? " (" + ins.error.message + ")" : "") + ".\n\nCheck the connection and try again.");
       return;
     }
     // 2) Then switch the subjects off. If that fails, the absence record is taken back, so nothing half-done is left.
     const upd = await retry(() => sbClient.from("subject_enrollments").update({ status:"inactive", updated_at: new Date().toISOString() }).in("id", ids).select("id"));
     if(upd.error || !upd.data || upd.data.length !== ids.length){
-      await sbClient.from("absence_records").delete().in("id", ins.data.map(r => r.id));
+      const cleaned = await undoAbsenceRecords(ins.data.map(r => r.id));
+      let reverted = true;
       if(upd.data && upd.data.length && !upd.error){   // some switched off, some not: put those back to active
-        await sbClient.from("subject_enrollments").update({ status:"active", updated_at: new Date().toISOString() }).in("id", upd.data.map(r => r.id));
+        const back = await sbClient.from("subject_enrollments").update({ status:"active", updated_at: new Date().toISOString() }).in("id", upd.data.map(r => r.id)).select("id");
+        reverted = !back.error && back.data && back.data.length === upd.data.length;
       }
-      alert("Couldn't mark absent — nothing was changed" + (upd.error ? " (" + upd.error.message + ")" : " (the database didn't allow it)") + ".\n\nCheck the connection and try again.");
+      const why = upd.error ? " (" + upd.error.message + ")" : " (the database didn't allow it)";
+      if(cleaned && reverted) alert("Couldn't mark absent — nothing was changed" + why + ".\n\nCheck the connection and try again.");
+      else alert("Couldn't mark absent" + why + ", and the clean-up didn't fully work: " + (!cleaned ? "an absence record was left behind" : "") + (!cleaned && !reverted ? " and " : "") + (!reverted ? "some subjects are still switched off" : "") + ".\n\nCheck this child on the Absent tab and the Roster before trying again.");
       await Promise.all([loadEnrollments(), loadAbsences()]); render();
       return;
     }

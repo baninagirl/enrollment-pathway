@@ -324,10 +324,20 @@ window.kumonPtcNav = function(client, role){
     st.textContent = ".navbtn .ptc-badge{margin-left:auto;background:var(--bad);color:#fff;font-size:11px;font-weight:700;border-radius:99px;padding:1px 6px;min-width:18px;text-align:center;line-height:16px;}";
     document.head.appendChild(st);
   }
+  // An expired sign-in (a tab left open in the background) is renewed and the count asked again once;
+  // with no sign-in at all it doesn't ask. A failed check keeps the last number instead of hiding it.
+  var expired = function(r){ var e = r && r.error; return !!e && (e.status === 401 || /jwt|expired|401/i.test(String(e.message || e.code || ""))); };
   var refresh = function(){
-    client.rpc("ptc_due_count").then(function(r){
-      var b = document.getElementById("navPtcBadge"); if(!b) return;
-      var n = (r && !r.error && typeof r.data === "number") ? r.data : 0;
+    var ask = function(){ return client.rpc("ptc_due_count"); };
+    client.auth.getSession().then(function(s){
+      if(!s || !s.data || !s.data.session) return null;
+      return ask().then(function(r){
+        if(!expired(r)) return r;
+        return client.auth.refreshSession().then(function(x){ return (x && x.data && x.data.session) ? ask() : null; }, function(){ return null; });
+      });
+    }).then(function(r){
+      var b = document.getElementById("navPtcBadge"); if(!b || !r || r.error || typeof r.data !== "number") return;
+      var n = r.data;
       b.textContent = n > 99 ? "99+" : String(n); b.hidden = !n;
       link.title = n ? ("PTC — " + n + " due") : "PTC";
     }, function(){});
@@ -717,7 +727,7 @@ window.kumonPtcNav = function(client, role){
 
     if(ccCanUse()){
       sbClient.channel("realtime:calendar-comments")
-        .on("postgres_changes", { event:"*", schema:"public", table:"calendar_comments" }, async ()=>{ await ccLoad(); renderCalendar(); ccRenderCount(); ccRenderPanel(); })
+        .on("postgres_changes", { event:"*", schema:"public", table:"calendar_comments" }, ()=>ccLiveReload())
         .subscribe();
     }
 
@@ -1433,7 +1443,20 @@ window.kumonPtcNav = function(client, role){
     return true;
   }
 
+  // Live updates arrive one per changed comment (the weekly reset sends dozens at once):
+  // wait for them to settle, then reload once; never run two reloads at the same time.
+  let ccLiveTimer = null, ccLiveRunning = false, ccLiveAgain = false;
+  function ccLiveReload(){
+    clearTimeout(ccLiveTimer);
+    ccLiveTimer = setTimeout(async ()=>{
+      if(ccLiveRunning){ ccLiveAgain = true; return; }
+      ccLiveRunning = true;
+      try{ await ccLoad(); renderCalendar(); ccRenderCount(); ccRenderPanel(); }
+      finally{ ccLiveRunning = false; if(ccLiveAgain){ ccLiveAgain = false; ccLiveReload(); } }
+    }, 400);
+  }
   async function ccPostNew(){
+    if(cc.busy) return;   // double click / Ctrl+Enter twice would post the comment twice
     const body = (cc.drafts["new-body"] || "").trim();
     if(!body){ cc.errors.new = "Write something first."; ccRenderPanel(); return; }
     const k = cc.composer.cell, [day, time] = k.split("|");
@@ -1457,8 +1480,12 @@ window.kumonPtcNav = function(client, role){
     const key = "reply-" + id, body = (cc.drafts[key] || "").trim();
     if(!body) return;
     const root = cc.rows.find(r => r.id === id); if(!root) return;
-    const { error } = await sbClient.from("calendar_comments")
-      .insert({ thread_id: id, day: root.day, time: root.time, body, author_name: ccMyName() });
+    if(cc.busy) return;   // double click / Ctrl+Enter twice would send the reply twice
+    cc.busy = true;
+    let error;
+    try{ ({ error } = await sbClient.from("calendar_comments")
+      .insert({ thread_id: id, day: root.day, time: root.time, body, author_name: ccMyName() })); }
+    finally{ cc.busy = false; }
     if(error){ cc.errors[key] = "Couldn't send: " + error.message; ccRenderPanel(); return; }
     delete cc.errors[key]; delete cc.drafts[key]; cc.focusKey = null;
     logHistory("comment_reply", `Replied on ${ccCellLabel(root.day + "|" + root.time)}`, "calendar_comment", id, { body });

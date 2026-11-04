@@ -296,10 +296,20 @@ window.kumonPtcNav = function(client, role){
     st.textContent = ".navbtn .ptc-badge{margin-left:auto;background:var(--bad);color:#fff;font-size:11px;font-weight:700;border-radius:99px;padding:1px 6px;min-width:18px;text-align:center;line-height:16px;}";
     document.head.appendChild(st);
   }
+  // An expired sign-in (a tab left open in the background) is renewed and the count asked again once;
+  // with no sign-in at all it doesn't ask. A failed check keeps the last number instead of hiding it.
+  var expired = function(r){ var e = r && r.error; return !!e && (e.status === 401 || /jwt|expired|401/i.test(String(e.message || e.code || ""))); };
   var refresh = function(){
-    client.rpc("ptc_due_count").then(function(r){
-      var b = document.getElementById("navPtcBadge"); if(!b) return;
-      var n = (r && !r.error && typeof r.data === "number") ? r.data : 0;
+    var ask = function(){ return client.rpc("ptc_due_count"); };
+    client.auth.getSession().then(function(s){
+      if(!s || !s.data || !s.data.session) return null;
+      return ask().then(function(r){
+        if(!expired(r)) return r;
+        return client.auth.refreshSession().then(function(x){ return (x && x.data && x.data.session) ? ask() : null; }, function(){ return null; });
+      });
+    }).then(function(r){
+      var b = document.getElementById("navPtcBadge"); if(!b || !r || r.error || typeof r.data !== "number") return;
+      var n = r.data;
       b.textContent = n > 99 ? "99+" : String(n); b.hidden = !n;
       link.title = n ? ("PTC — " + n + " due") : "PTC";
     }, function(){});
@@ -1701,8 +1711,14 @@ window.kumonPtcNav = function(client, role){
     wrap.innerHTML = [dupHtml, addBtnHtml, closeOutHtml].filter(Boolean).join("");
   }
 
+  let closingOut = false;
   async function closeOutMonth(){
     if(!canCloseOut()) return;
+    if(closingOut) return;   // a second click while the first close-out is still saving
+    closingOut = true;
+    try{ await closeOutMonthNow(); } finally{ closingOut = false; }
+  }
+  async function closeOutMonthNow(){
     // Ask the database which month is open right now — never close out a month guessed from today's date.
     const fresh = await readOpenMonth();
     if(!fresh.ok){ alert("Couldn't check which month is open (connection problem), so nothing was closed out.\n\nCheck the connection and try again."); return; }
@@ -2356,19 +2372,14 @@ window.kumonPtcNav = function(client, role){
       const fd = new FormData(e.target);
       if(editingId){
         const editingEnrollment = enrollments.find(en => en.id === editingId);
-        // Name change (phase35): one database call updates the student and every copy of the name.
-        let renamedTo = null;
+        // Name change (phase35): checked here, saved after the class days so a failed class-day save changes nothing.
+        let renamedTo = null, renameTo = null;
         if(editingEnrollment && fd.get("editFirstName") !== null){
           const tidy = v => (v||"").toString().replace(/\s+/g," ").trim();
           const nf = tidy(fd.get("editFirstName")), nl = tidy(fd.get("editLastName"));
           const was = studentNameParts(editingEnrollment.student_id, editingEnrollment.student_name);
           if(!nf || !nl){ alert("First and last name are both needed."); return; }
-          if(nf !== tidy(was.first) || nl !== tidy(was.last)){
-            const { error: rnErr } = await sbClient.rpc("rename_student", { p_student_id: editingEnrollment.student_id, p_first: nf, p_last: nl });
-            if(rnErr){ alert("Couldn't change the name: " + rnErr.message); return; }
-            renamedTo = `${nf} ${nl}`;
-            logHistory("rename_student", `Renamed ${editingEnrollment.student_name || "a student"} to ${renamedTo}`, "student", editingEnrollment.student_id);
-          }
+          if(nf !== tidy(was.first) || nl !== tidy(was.last)) renameTo = { nf, nl };
         }
         const patch = {
           current_level: fd.get("current_level") || null,
@@ -2394,9 +2405,16 @@ window.kumonPtcNav = function(client, role){
           // Nothing else is saved yet, so the form stays open with what was typed.
           if(why){ alert(`Couldn't save the class days (${why}). Nothing was changed — check the connection and press Save again.`); return; }
         }
+        if(renameTo){
+          const { error: rnErr } = await sbClient.rpc("rename_student", { p_student_id: editingEnrollment.student_id, p_first: renameTo.nf, p_last: renameTo.nl });
+          if(rnErr){ alert("The class days were saved, but the name couldn't be changed (" + rnErr.message + "). Nothing else was changed — press Save again."); return; }
+          renamedTo = `${renameTo.nf} ${renameTo.nl}`;
+          logHistory("rename_student", `Renamed ${editingEnrollment.student_name || "a student"} to ${renamedTo}`, "student", editingEnrollment.student_id);
+        }
         const { data: savedRows, error } = await sbClient.from("subject_enrollments").update(patch).eq("id", editingId).select("id");
-        if(error){ alert("Couldn't save: " + error.message); return; }
-        if(!savedRows || !savedRows.length){ alert("Couldn't save — the database didn't allow this change."); return; }
+        const savedSoFar = "The class days" + (renamedTo ? " and the new name" : "") + " were saved, but ";
+        if(error){ alert(savedSoFar + "the level / mode / tags couldn't save: " + error.message + "\n\nPress Save again."); if(renamedTo) await Promise.all([loadStudents(), loadEnrollments()]); return; }
+        if(!savedRows || !savedRows.length){ alert(savedSoFar + "the level / mode / tags weren't — the database didn't allow this change."); if(renamedTo) await Promise.all([loadStudents(), loadEnrollments()]); return; }
         const monitorChanged = "is_monitor" in patch;
         // Teacher change last, through the checked database function (phase107) — teachers can move students too.
         const newTeacher = (fd.get("teacher") || "").toString();
@@ -2429,7 +2447,7 @@ window.kumonPtcNav = function(client, role){
       const name = `${firstName} ${lastName}`;
       const subject = fd.get("subject");
 
-      let studentId = findExistingStudentId(name);
+      let studentId = findExistingStudentId(name), createdStudentNow = false;
       if(!studentId && blockIfLookAlike(e.target, name, students, describeStudentForDup,
           s => `<button type="button" class="btn sm" data-action="use-existing-student" data-id="${esc(s.id)}">Use this student</button>`)) return;
       if(studentId){
@@ -2459,7 +2477,7 @@ window.kumonPtcNav = function(client, role){
         };
         const { data, error } = await sbClient.from("students").insert(payload).select().single();
         if(error){ alert("Couldn't add student: " + error.message); return; }
-        studentId = data.id;
+        studentId = data.id; createdStudentNow = true;
       }
 
       // NEW vs EO for reporting: whether this student already has ANY subject_enrollments row,
@@ -2491,7 +2509,16 @@ window.kumonPtcNav = function(client, role){
         monitor_since: fd.get("is_monitor") ? cycleKeyOf(new Date()) : null
       };
       const { data: newEnrollment, error: enrollError } = await sbClient.from("subject_enrollments").insert(enrollPayload).select().single();
-      if(enrollError){ alert("Couldn't save: " + enrollError.message); return; }
+      if(enrollError){
+        // Take back the student record this save just made, so pressing Save again doesn't create a second one.
+        let note = "Nothing was added — press Save again.";
+        if(createdStudentNow){
+          const { data: gone } = await sbClient.from("students").delete().eq("id", studentId).select("id");
+          if(!gone || !gone.length){ await loadStudents(); note = `${name} was added as a student but without the subject. Press Save again to add the subject to the same student.`; }
+        }
+        alert("Couldn't save: " + enrollError.message + "\n\n" + note);
+        return;
+      }
 
       const slots = readScheduleRowsFromForm(fd);
       if(newEnrollment && slots.length){

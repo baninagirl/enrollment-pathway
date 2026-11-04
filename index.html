@@ -460,10 +460,20 @@ window.kumonPtcNav = function(client, role){
     st.textContent = ".navbtn .ptc-badge{margin-left:auto;background:var(--bad);color:#fff;font-size:11px;font-weight:700;border-radius:99px;padding:1px 6px;min-width:18px;text-align:center;line-height:16px;}";
     document.head.appendChild(st);
   }
+  // An expired sign-in (a tab left open in the background) is renewed and the count asked again once;
+  // with no sign-in at all it doesn't ask. A failed check keeps the last number instead of hiding it.
+  var expired = function(r){ var e = r && r.error; return !!e && (e.status === 401 || /jwt|expired|401/i.test(String(e.message || e.code || ""))); };
   var refresh = function(){
-    client.rpc("ptc_due_count").then(function(r){
-      var b = document.getElementById("navPtcBadge"); if(!b) return;
-      var n = (r && !r.error && typeof r.data === "number") ? r.data : 0;
+    var ask = function(){ return client.rpc("ptc_due_count"); };
+    client.auth.getSession().then(function(s){
+      if(!s || !s.data || !s.data.session) return null;
+      return ask().then(function(r){
+        if(!expired(r)) return r;
+        return client.auth.refreshSession().then(function(x){ return (x && x.data && x.data.session) ? ask() : null; }, function(){ return null; });
+      });
+    }).then(function(r){
+      var b = document.getElementById("navPtcBadge"); if(!b || !r || r.error || typeof r.data !== "number") return;
+      var n = r.data;
       b.textContent = n > 99 ? "99+" : String(n); b.hidden = !n;
       link.title = n ? ("PTC — " + n + " due") : "PTC";
     }, function(){});
@@ -3033,7 +3043,7 @@ window.kumonPtcNav = function(client, role){
     const schedRows = STATE.schedules.filter(x => x.studentId === s.id && x.status === "active");
     const slotSig = row => JSON.stringify((row.slots || []).map(x => [x.day || "", x.time || ""]));
     const schedSame = schedRows.length > 0 && schedRows.every(r => slotSig(r) === slotSig(schedRows[0]) && (r.slots || []).length <= 2);
-    const schedOrig = JSON.stringify([slot1 ? slot1.day : "Tue", slot1 ? slot1.time : "16:00", slot2 ? slot2.day : "Thu", slot2 ? slot2.time : "16:00", (sched && sched.startDate) || todayISO()]);
+    const schedOrig = JSON.stringify([slot1 ? slot1.day : "Tue", slot1 ? slot1.time : "16:00", slot2 ? slot2.day : "", slot2 ? slot2.time : "", (sched && sched.startDate) || todayISO()]);
     // NEW/EO/RETURNEE is normally set automatically (see enrollmentTagFor above) — this is
     // just an override for when it was mistagged, one dropdown per subject enrollment this
     // student actually has (a student can carry both a Math and a Reading enrollment, each
@@ -3172,8 +3182,8 @@ window.kumonPtcNav = function(client, role){
               <label class="field">Time<input type="time" name="time1" value="${esc(slot1?slot1.time:"16:00")}"></label>
             </div>
             <div class="field-row">
-              <label class="field">Day 2<select name="day2">${daySelectOptions(slot2?slot2.day:"Thu")}</select></label>
-              <label class="field">Time<input type="time" name="time2" value="${esc(slot2?slot2.time:"16:00")}"></label>
+              <label class="field">Day 2<select name="day2">${daySelectOptions(slot2?slot2.day:"", true)}</select></label>
+              <label class="field">Time<input type="time" name="time2" value="${esc(slot2?slot2.time:"")}"></label>
             </div>
             <label class="field">Start date<input type="date" name="startDate" value="${esc(sched.startDate||todayISO())}"></label>
             <div class="hint">Updates every linked schedule row for this student (Math and Reading move together).</div>
@@ -3313,7 +3323,8 @@ window.kumonPtcNav = function(client, role){
         for(const row of linked){
           // Each day keeps its own In-center / Remote setting.
           const modeAt = i => row.slots && row.slots[i] && row.slots[i].mode ? row.slots[i].mode : undefined;
-          const slots = [[day1, time1, modeAt(0)], [day2, time2, modeAt(1)]].map(([day, time, mode]) => mode ? { day, time, mode } : { day, time });
+          // Day 2 set to "— none —" means a once-a-week class: only Day 1 is saved.
+          const slots = [[day1, time1, modeAt(0)], [day2, time2, modeAt(1)]].filter(([day]) => day).map(([day, time, mode]) => mode ? { day, time, mode } : { day, time });
           await db.collection("schedules").doc(row.id).update({ slots, startDate });
         }
       }
@@ -3955,8 +3966,8 @@ window.kumonPtcNav = function(client, role){
   }
 
   const WEEK_ORDER = [1,2,3,4,5,6,0]; // Mon..Sun
-  function daySelectOptions(selected){
-    return WEEK_ORDER.map(i => `<option value="${DOW[i]}" ${selected===DOW[i]?"selected":""}>${DOW_FULL[i]}</option>`).join("");
+  function daySelectOptions(selected, allowNone){
+    return (allowNone ? `<option value="" ${!selected ? "selected" : ""}>— none —</option>` : "") + WEEK_ORDER.map(i => `<option value="${DOW[i]}" ${selected===DOW[i]?"selected":""}>${DOW_FULL[i]}</option>`).join("");
   }
 
   // Subjects a student was enrolled in (off their diagnostic) that don't have a subject_enrollments
@@ -4262,10 +4273,6 @@ window.kumonPtcNav = function(client, role){
           createdAt: now
         });
         studentId = ref.id; createdNow = true;
-      } else {
-        const patch = { status: "diagnostic_scheduled", firstName, lastName, parentName, parentPhone: contact, ageGrade };
-        if(subject && !studentById(studentId).subject) patch.subject = subject;
-        await db.collection("students").doc(studentId).update(patch);
       }
       let diag;
       try{
@@ -4279,6 +4286,14 @@ window.kumonPtcNav = function(client, role){
         // in Pipeline and then flagged as a "possible duplicate" on the next try).
         if(createdNow){ try{ await db.collection("students").doc(studentId).delete(); }catch(_){ } }
         throw err;
+      }
+      // An existing child is only changed once the booking itself is saved (a failed booking changes nothing).
+      if(!createdNow){
+        const patch = { status: "diagnostic_scheduled", firstName, lastName, parentName, parentPhone: contact, ageGrade };
+        if(subject && !studentById(studentId).subject) patch.subject = subject;
+        try{ await db.collection("students").doc(studentId).update(patch); }
+        catch(err){ logHistory("book_diagnostic", `Booked a diagnostic for ${studentName} — ${date} ${time} with ${examiner}`, "diagnostic", diag ? diag.id : null);
+          toast("Diagnostic booked, but the child's details/status couldn't be updated — open Edit details to fix them."); return; }
       }
       logHistory("book_diagnostic", `Booked a diagnostic for ${studentName} — ${date} ${time} with ${examiner}`, "diagnostic", diag ? diag.id : null);
       toast("Diagnostic booked.");
@@ -4692,7 +4707,15 @@ window.kumonPtcNav = function(client, role){
   }
 
 
-  async function saveStaff(next){
+  // Staff changes save one at a time, each built from the list as the previous one left it,
+  // so two quick ticks can't overwrite each other. `next` can be a function of the current lists.
+  let staffQueue = Promise.resolve();
+  function saveStaff(next){
+    const run = staffQueue.then(() => saveStaffNow(typeof next === "function" ? next(STATE.settings) : next));
+    staffQueue = run.catch(() => false);
+    return run;
+  }
+  async function saveStaffNow(next){
     // Never save the Staff list from a screen that didn't load it: read the saved list fresh first, and only save
     // when it's the same list this page shows (otherwise the change could replace everyone with one name).
     const same = (a, b) => JSON.stringify(a || []) === JSON.stringify(b || []);
@@ -4718,21 +4741,17 @@ window.kumonPtcNav = function(client, role){
     if(!name) return false;
     if(!roles.length){ toast("Tick at least one: Teacher, Trainer or DT teacher."); return false; }
     if(staffNames().some(n => n.toLowerCase() === name.toLowerCase())){ toast(`${name} is already on the list — tick their boxes in the table.`); return false; }
-    const next = {};
-    roles.forEach(k => { next[k] = [...STATE.settings[k], name]; });
+    const next = st => { const n = {}; roles.forEach(k => { n[k] = [...st[k].filter(x => x !== name), name]; }); return n; };
     if(!(await saveStaff(next))) return false;
     logHistory("add_staff", `Added ${name} to staff (${roles.map(k => STAFF_ROLES.find(r=>r.key===k).label).join(", ")})`, "settings", "staff");
     return true;
   }
   async function setStaffRole(name, key, on){
-    const list = STATE.settings[key].filter(x => x !== name);
-    if(on) list.push(name);
-    await saveStaff({ [key]: list });
+    await saveStaff(st => { const list = st[key].filter(x => x !== name); if(on) list.push(name); return { [key]: list }; });
   }
   async function removeStaff(name){
     if(!confirm(`Remove ${name} from staff?\n\nTheir name comes off every picker. Students already under their name keep it until you change it.`)) return;
-    const next = {};
-    STAFF_ROLES.forEach(r => { next[r.key] = STATE.settings[r.key].filter(x => x !== name); });
+    const next = st => { const n = {}; STAFF_ROLES.forEach(r => { n[r.key] = st[r.key].filter(x => x !== name); }); return n; };
     if(!(await saveStaff(next))) return;
     logHistory("remove_staff", `Removed ${name} from staff`, "settings", "staff");
     toast(`${name} removed.`);

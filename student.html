@@ -279,7 +279,7 @@
   .lg i{ width:14px; height:3px; border-radius:2px; display:inline-block; } .lg.off{ opacity:.4; }
   .chart{ border:1px solid var(--border); border-radius:12px; padding:8px 8px 4px; background:var(--surface); }
   .chart svg{ display:block; width:100%; height:auto; }
-  .tip{ position:fixed; pointer-events:none; background:var(--ink); color:var(--bg); font-size:12px; padding:7px 9px; border-radius:8px; line-height:1.45; display:none; z-index:90; }
+  .tip{ position:fixed; pointer-events:none; background:var(--ink); color:var(--bg); font-size:12px; padding:7px 9px; border-radius:8px; line-height:1.45; display:none; z-index:90; white-space:pre-line; }
   .tbl{ border:1px solid var(--border); border-radius:12px; overflow-x:auto; }
   .stable.plan td{ vertical-align:top; white-space:normal; }
   .topic{ color:var(--ink-muted); font-size:12px; margin-top:2px; max-width:420px; }
@@ -373,6 +373,8 @@
     .lad-marks{ height:32px; } .lad-mark.m-bronze, .lad-mark.m-gold{ top:14px; } .lad-mark.m-bronze::before, .lad-mark.m-gold::before{ height:21px; margin-top:-18px; }
   }
   .ptc-note{ width:100%; font-family:inherit; font-size:12.5px; padding:7px 9px; border-radius:8px; border:1px solid var(--border); background:var(--surface); color:var(--ink); resize:vertical; }
+  .ptc-note-print{ display:none; white-space:pre-wrap; font-size:12.5px; width:100%; }
+  body.exporting .ptc-note{ display:none; } body.exporting .ptc-note-print{ display:block; }
   .ptc-note-foot{ display:flex; justify-content:space-between; align-items:center; gap:8px; width:100%; font-size:11.5px; }
   .sect{ padding:16px 20px; }
   .sect h3, .subj-b h4{ font-size:14.5px; margin:0; }
@@ -394,7 +396,7 @@
   .pbox{ border:1px solid var(--border); border-radius:10px; padding:10px 12px; display:flex; flex-direction:column; gap:6px; align-items:flex-start; font-size:12.5px; }
   body.exporting .no-print, body.exporting .no-print-pay{ display:none !important; }
   @media (max-width:860px){ .pgrid{ grid-template-columns:1fr; } }
-  @media print{ .card{ break-inside:avoid; } .no-print-pay{ display:none !important; } .ptc-note{ border:none; padding:0; resize:none; } .facts-sm{ grid-template-columns:repeat(5, minmax(0,1fr)) !important; } .rung.cur{ -webkit-print-color-adjust:exact; print-color-adjust:exact; } }
+  @media print{ .card{ break-inside:avoid; } .no-print-pay{ display:none !important; } .ptc-note{ display:none !important; } .ptc-note-print{ display:block !important; } .facts-sm{ grid-template-columns:repeat(5, minmax(0,1fr)) !important; } .rung.cur{ -webkit-print-color-adjust:exact; print-color-adjust:exact; } }
 </style>
 <script>try{if(localStorage.getItem("kumonRailCollapsed")==="1")document.documentElement.classList.add("rail-collapsed")}catch(e){}</script>
 <script>
@@ -410,10 +412,20 @@ window.kumonPtcNav = function(client, role){
     st.textContent = ".navbtn .ptc-badge{margin-left:auto;background:var(--bad);color:#fff;font-size:11px;font-weight:700;border-radius:99px;padding:1px 6px;min-width:18px;text-align:center;line-height:16px;}";
     document.head.appendChild(st);
   }
+  // An expired sign-in (a tab left open in the background) is renewed and the count asked again once;
+  // with no sign-in at all it doesn't ask. A failed check keeps the last number instead of hiding it.
+  var expired = function(r){ var e = r && r.error; return !!e && (e.status === 401 || /jwt|expired|401/i.test(String(e.message || e.code || ""))); };
   var refresh = function(){
-    client.rpc("ptc_due_count").then(function(r){
-      var b = document.getElementById("navPtcBadge"); if(!b) return;
-      var n = (r && !r.error && typeof r.data === "number") ? r.data : 0;
+    var ask = function(){ return client.rpc("ptc_due_count"); };
+    client.auth.getSession().then(function(s){
+      if(!s || !s.data || !s.data.session) return null;
+      return ask().then(function(r){
+        if(!expired(r)) return r;
+        return client.auth.refreshSession().then(function(x){ return (x && x.data && x.data.session) ? ask() : null; }, function(){ return null; });
+      });
+    }).then(function(r){
+      var b = document.getElementById("navPtcBadge"); if(!b || !r || r.error || typeof r.data !== "number") return;
+      var n = r.data;
       b.textContent = n > 99 ? "99+" : String(n); b.hidden = !n;
       link.title = n ? ("PTC — " + n + " due") : "PTC";
     }, function(){});
@@ -1009,15 +1021,23 @@ window.kumonPtcNav = function(client, role){
     if(!st.data) return { error: "This child isn't on your list (they may be another group's, or were removed)." };
     const schedules = sc.data || [];
     const since = weekStartOf(new Date(Date.now() - (WEEKS + 1) * 7 * 86400e3));
-    let att = { data: [], error: null };
+    let att = { data: [], error: null }, firstTick = { data: [], error: null };
+    const fd = one(sbClient.rpc("ptc_first_day", { p_student: sid }));   // same first day the PTC page uses
     if(schedules.length){
-      att = await one(sbClient.from("schedule_attendance").select("schedule_id,day,week_start,arrived,arrived_at")
-        .in("schedule_id", schedules.map(x => x.id)).gte("week_start", prevDayISO(since)).limit(1000));
+      [att, firstTick] = await Promise.all([
+        one(sbClient.from("schedule_attendance").select("schedule_id,day,week_start,arrived,arrived_at")
+          .in("schedule_id", schedules.map(x => x.id)).gte("week_start", prevDayISO(since)).limit(1000)),
+        // The first tick ever kept for this child (not just in the last 12 weeks): weeks before it weren't tracked.
+        one(sbClient.from("schedule_attendance").select("week_start").in("schedule_id", schedules.map(x => x.id)).order("week_start", { ascending:true }).limit(1))
+      ]);
     }
+    const fdr = await fd;
+    const ptcFirstDay = (!fdr.error && fdr.data) ? String(fdr.data).slice(0,10) : (st.data.first_day || null);
     return {
       student: st.data, enrollments: en.data || [], schedules, history: hi.data || [], projections: pr.data || [],
       absences: ab.data || [], milestones: ms.data || [], payments: pay.data || [], attendance: att.data || [],
-      partial: [hi, pr, ab, ms, pay, sc, att].some(r => r.error)
+      firstTick: firstTick.error ? null : ((firstTick.data || [])[0] || {}).week_start || null, firstDay: ptcFirstDay,
+      partial: [hi, pr, ab, ms, pay, sc, att, firstTick].some(r => r.error)
     };
   }
   async function openProfile(sid){
@@ -1028,7 +1048,8 @@ window.kumonPtcNav = function(client, role){
     prof = p;
     if(!studentById.has(sid)) studentById.set(sid, p.student);
     histRows = p.history;
-    renderProfile();
+    try{ renderProfile(); }
+    catch(err){ console.error(err); $("#view").innerHTML = `<div class="card"><div class="empty">Something in this child's records couldn't be shown (${esc(err.message || String(err))}). <a href="roster.html">Back to the Student roster</a></div></div>`; }
   }
 
   function pillSubj(s){ return `<span class="pill ${s === "Reading" ? "subj-reading" : "subj-math"}">${esc(s)}</span>`; }
@@ -1044,11 +1065,11 @@ window.kumonPtcNav = function(client, role){
     const days = [...new Set(mine.flatMap(sc => (sc.slots || []).map(x => x.day)).filter(Boolean))].sort((a, b) => DAY_ORDER.indexOf(a) - DAY_ORDER.indexOf(b));
     const ids = new Set(prof.schedules.map(x => x.id));
     const ticked = new Set(prof.attendance.filter(a => a.arrived && ids.has(a.schedule_id)).map(a => a.week_start + "|" + a.day));
-    const startISO = prof.student.first_day || (active.map(e => String(e.created_at || "").slice(0,10)).filter(Boolean).sort()[0]) || "";
+    const startISO = prof.firstDay || (active.map(e => String(e.created_at || "").slice(0,10)).filter(Boolean).sort()[0]) || "";
     const today = new Date(); const todayISOlocal = weekStartOf(today) && (today.getFullYear() + "-" + String(today.getMonth()+1).padStart(2,"0") + "-" + String(today.getDate()).padStart(2,"0"));
     // Weeks before this child's first tick were before ticking was in use for them: shown as "not tracked", not ✗.
     const myTicks = prof.attendance.filter(a => ids.has(a.schedule_id)).map(a => a.week_start).sort();
-    const trackedFrom = myTicks.length ? myTicks[0] : (mine.map(sc => String(sc.created_at || "").slice(0,10)).filter(Boolean).sort()[0] || "");
+    const trackedFrom = prof.firstTick || (myTicks.length ? myTicks[0] : (mine.map(sc => String(sc.created_at || "").slice(0,10)).filter(Boolean).sort()[0] || ""));
     const absentRanges = prof.absences.map(a => [String(a.marked_absent_at || "").slice(0,10), a.resumed_at ? String(a.resumed_at).slice(0,10) : "9999-12-31"]);
     const weeks = [];
     for(let i = WEEKS - 1; i >= 0; i--){
@@ -1105,11 +1126,20 @@ window.kumonPtcNav = function(client, role){
     return `<svg viewBox="0 0 1000 232" role="img" aria-label="Level over time">${g}</svg>`;
   }
 
+  // A timestamp's date in the Philippines (a payment at 7 AM Manila is still "today", not yesterday in UTC).
+  function manilaDate(ts){
+    if(!ts) return "";
+    const d = new Date(ts); if(isNaN(d)) return String(ts).slice(0,10);
+    return d.toLocaleDateString("en-CA", { timeZone: "Asia/Manila" });
+  }
+  const PTC_MONTHS = [1, 2, 3, 6, 9, 12];   // same as the PTC page
+  const ordinalMonth = n => n + (n === 1 ? "st" : n === 2 ? "nd" : n === 3 ? "rd" : "th");
+  function ptcDue(n, m){ return (m && m.due_date) || (prof.firstDay ? addMonths(prof.firstDay, n) : null); }
+  function myName(){ return currentTeacherName || (currentUser && currentUser.email) || ""; }
   function ptcLine(){
-    const first = prof.student.first_day;
     const box = (title, n) => {
-      const m = prof.milestones.find(x => x.month_no === n);
-      const due = first ? addMonths(first, n) : null;
+      const m = prof.milestones.find(x => x.student_id === prof.student.id && x.month_no === n);
+      const due = ptcDue(n, m);
       const pill = m && m.status === "done" ? `<span class="pill p-good">Done ${esc(fmtDate(m.done_on || m.due_date))}</span>`
         : m && m.status === "skipped" ? `<span class="pill p-muted">Skipped</span>`
         : m && m.status === "scheduled" && m.scheduled_on ? `<span class="pill p-accent">Booked ${esc(fmtDate(m.scheduled_on))}</span>`
@@ -1117,23 +1147,32 @@ window.kumonPtcNav = function(client, role){
         : due <= todayISO() ? `<span class="pill p-warn">Due ${esc(fmtDate(due))}</span>` : `<span class="pill p-muted">${esc(fmtDate(due))}</span>`;
       return `<div class="pbox"><b>${title}</b>${pill}
         <textarea class="ptc-note" data-ptc-note="${n}" rows="3" placeholder="PTC notes — what was discussed, parent's concerns, agreed next steps…">${esc((m && m.note) || "")}</textarea>
-        <div class="ptc-note-foot no-print"><span class="faint" data-ptc-saved="${n}">${m && m.note && m.by_name ? "Last saved by " + esc(m.by_name) : ""}</span><button class="btn sm" data-action="ptc-note-save" data-month="${n}">Save note</button></div></div>`;
+        <div class="ptc-note-print" data-ptc-print="${n}">${esc((m && m.note) || "")}</div>
+        <div class="ptc-note-foot no-print"><span class="faint" data-ptc-saved="${n}">${m && m.note && m.by_name && m.status !== "done" && m.status !== "skipped" ? "Last saved by " + esc(m.by_name) : ""}</span><button class="btn sm" data-action="ptc-note-save" data-month="${n}">Save note</button></div></div>`;
     };
-    return `<div class="pgrid">${box("1st month PTC", 1)}${box("6th month PTC", 6)}${box("12th month PTC", 12)}</div>`;
+    return `<div class="pgrid">${PTC_MONTHS.map(n => box(ordinalMonth(n) + " month PTC", n)).join("")}</div>`;
   }
   // Saves one PTC's notes onto the same record the PTC page uses (so they show on both pages).
   async function savePtcNote(n, text){
-    const sid = prof.student.id;
-    const m = prof.milestones.find(x => x.month_no === n);
-    const by = (currentUser && currentUser.email) || "";
-    const patch = { note: text.trim() || null, by_name: by, updated_at: new Date().toISOString() };
+    const P = prof, sid = P.student.id;   // this child, even if the page moves to another child while saving
+    const find = () => P.milestones.find(x => x.student_id === sid && x.month_no === n);
+    const m = find();
+    const patch = { note: text.trim() || null, updated_at: new Date().toISOString() };
+    // "by" on a done/skipped PTC says who held it — a note added later doesn't change that.
+    if(!m || (m.status !== "done" && m.status !== "skipped")) patch.by_name = myName();
     let res;
-    if(m) res = await sbClient.from("ptc_milestones").update(patch).eq("id", m.id).select();
-    else res = await sbClient.from("ptc_milestones").insert({ student_id: sid, month_no: n, status: "open",
-      due_date: prof.student.first_day ? addMonths(prof.student.first_day, n) : null, ...patch }).select();
+    if(m) res = await sbClient.from("ptc_milestones").update(patch).eq("id", m.id).eq("student_id", sid).select();
+    else{
+      res = await sbClient.from("ptc_milestones").insert({ student_id: sid, month_no: n, status: "open", due_date: ptcDue(n, null), ...patch }).select();
+      if(res.error && (res.error.code === "23505" || /duplicate key/i.test(res.error.message || ""))){
+        // Someone (or the PTC page) made this PTC's record meanwhile: add the note to it instead.
+        res = await sbClient.from("ptc_milestones").update(patch).eq("student_id", sid).eq("month_no", n).select();
+      }
+    }
     if(res.error || !res.data || !res.data.length){ alert("Couldn't save the PTC note" + (res.error ? ": " + res.error.message : " — the database didn't allow it") + "."); return false; }
-    if(m) Object.assign(m, res.data[0]); else prof.milestones.push(res.data[0]);
-    logHistory("ptc_note", `Saved the ${n === 1 ? "1st" : n + "th"} month PTC note: ${displayName(sid, prof.student.name)}`, sid, null);
+    const cur = find();
+    if(cur) Object.assign(cur, res.data[0]); else P.milestones.push(res.data[0]);
+    logHistory("ptc_note", `Saved the ${ordinalMonth(n)} month PTC note: ${displayName(sid, P.student.name)}`, sid, null);
     return true;
   }
 
@@ -1141,21 +1180,37 @@ window.kumonPtcNav = function(client, role){
   // Months on the current level: the report's own figure if a teacher typed it, otherwise counted from close-outs.
   function monthsOnLevel(e){
     if(e.no_of_months_current_level) return e.no_of_months_current_level;
-    const lv = normLevel(e.subject, e.current_level); if(!lv) return "—";
+    const lvOf = r => { const b = bestPos(e.subject, r); return b ? bandName(e.subject, b.y) : normLevel(e.subject, r.current_level); };
+    const lv = lvOf(e); if(!lv) return "—";
     const hist = prof.history.filter(h => h.subject_enrollment_id === e.id && h.cycle_key).sort((a, b) => a.cycle_key < b.cycle_key ? 1 : -1);
     let since = null;
-    for(const h of hist){ if(normLevel(e.subject, h.current_level) === lv) since = h.cycle_key; else break; }
+    for(const h of hist){ if(lvOf(h) === lv) since = h.cycle_key; else break; }
     if(!since) return "under 1 month";
     const mo = Math.max(1, Math.round(monthsBetween(since + "-01", todayISO())));
     return `about ${mo} month${mo === 1 ? "" : "s"}`;
   }
   // Where today's level sits against the grade lines (KIS / Bronze / Silver / Gold) for the child's grade.
+  // The child's grade THIS school year: the student card first; a projection's grade is the grade when it was made,
+  // so it's moved on one grade for every school year since.
+  function currentGrade(p){
+    const g = normGrade(prof.student.age_grade);
+    if(g && gradeIdx(g)) return g;
+    if(p && p.grade && gradeIdx(p.grade)){
+      const yrs = p.sy_start ? Number(syStartFor(todayISO()).slice(0,4)) - Number(String(p.sy_start).slice(0,4)) : 0;
+      const i = gradeIdx(p.grade) - 1 + Math.max(0, yrs || 0);
+      return GRADES[Math.min(i, GRADES.length - 1)];
+    }
+    return g || "";
+  }
   function standing(e, grade){
-    const now = bestPos(e.subject, e); if(!now || !grade) return null;
-    const lines = standardLines(e.subject, grade, syStartFor(todayISO())); if(!lines) return null;
-    const t = todayISO(), y = now.y, kis = lines.kis(t);
-    const award = y >= lines.gold(t) ? "Gold" : y >= lines.silver(t) ? "Silver" : y >= lines.bronze(t) ? "Bronze" : y >= kis ? "KIS" : null;
-    return { vsKis: (y - kis) / 20, award };
+    const now = bestPos(e.subject, e);
+    if(!now) return { why: "noLevel" };
+    if(!grade || !gradeIdx(grade)) return { why: "noGrade" };
+    const lines = standardLines(e.subject, grade, syStartFor(todayISO())); if(!lines) return { why: "noGrade" };
+    const t = todayISO(), y = now.y, kis = lines.kis(t), vsKis = (y - kis) / 20;
+    // "At grade level" allows a quarter of a level either side — the KIS band uses the same rule, so the two always agree.
+    const award = y >= lines.gold(t) ? "Gold" : y >= lines.silver(t) ? "Silver" : y >= lines.bronze(t) ? "Bronze" : vsKis > -0.25 ? "KIS" : null;
+    return { ok: true, vsKis, award };
   }
   function fact(v, cap, tone){ return `<div class="fact${tone ? " f-" + tone : ""}"><div class="fv">${v}</div><div class="fc">${cap}</div></div>`; }
   function medal(name, src){
@@ -1184,20 +1239,21 @@ window.kumonPtcNav = function(client, role){
   }
   function subjectGlance(e){
     const p = prof.projections.find(x => x.subject_enrollment_id === e.id);
-    const grade = (p && p.grade) || normGrade(prof.student.age_grade);
-    const st = standing(e, grade);
+    const grade = currentGrade(p);
+    const sr = standing(e, grade), st = sr.ok ? sr : null;
     const awardName = e.award || (st && st.award ? (st.award === "KIS" ? "At grade level (KIS)" : st.award + " level") : "");
-    const awardSrc = e.award ? "from the teacher's report" : st ? "worked out from today's level" : "add the child's grade to see this";
+    const awardSrc = e.award ? "from the teacher's report" : st ? "worked out from today's level"
+      : sr.why === "noLevel" ? "no level recorded yet" : grade ? `grade “${esc(grade)}” isn't on the award chart` : "add the child's grade to see this";
     const fmtLv = n => n.toFixed(1).replace(/\.0$/, "");
-    const vs = !st ? ["—", "no grade set", ""] : Math.abs(st.vsKis) < 0.25 ? ["At grade level", "for " + esc(grade), "good"]
+    const vs = !st ? ["—", sr.why === "noLevel" ? "no level recorded yet" : grade ? `grade “${esc(grade)}” isn't on the chart` : "no grade set", ""] : Math.abs(st.vsKis) < 0.25 ? ["At grade level", "for " + esc(grade), "good"]
       : st.vsKis > 0 ? [`${fmtLv(st.vsKis)} level${st.vsKis >= 1.05 ? "s" : ""} ahead`, "of " + esc(grade) + " grade level", "good"]
       : [`${fmtLv(-st.vsKis)} level${-st.vsKis >= 1.05 ? "s" : ""} behind`, "" + esc(grade) + " grade level", "bad"];
     let plan = ["Not set", "study plan · set one in Projection", ""];
     if(p){ draft = JSON.parse(JSON.stringify(p)); const sp = statusOf(compute(p, e));
       plan = [esc(sp.label), "against the study plan", sp.key === "behind" ? "bad" : sp.key === "ahead" ? "good" : sp.key === "ontrack" ? "good" : ""]; }
     const lastTest = [e, ...prof.history.filter(h => h.subject_enrollment_id === e.id).sort((a, b) => a.cycle_key < b.cycle_key ? 1 : -1)].find(r => r.test_level || r.test_score);
-    const lvl = normLevel(e.subject, e.current_level);
     const now = bestPos(e.subject, e);
+    const lvl = now ? bandName(e.subject, now.y) : normLevel(e.subject, e.current_level);
     return `<section class="stand">
       <div class="stand-h">${pillSubj(e.subject)}<span class="stand-t">${esc(e.teacher || "No teacher")}</span><span class="grow"></span>${medal(awardName, awardSrc)}</div>
       ${ladder(e, grade)}
@@ -1220,20 +1276,20 @@ window.kumonPtcNav = function(client, role){
     const schedOf = id => prof.schedules.find(x => x.subject_enrollment_id === id && x.status === "active");
     const A = attendanceModel();
     const pct = A.total ? Math.round(A.came / A.total * 100) : null;
-    const lastPay = prof.payments[0] || null;
+    const lastPay = prof.payments.find(r => r.status !== "rejected") || null;
     const nextPtc = (() => {
-      if(!s.first_day) return { txt: "—", sub: "next PTC · no first day yet", tone: "" };
-      for(const n of [1, 6, 12]){
+      if(!prof.firstDay) return { txt: "—", sub: "next PTC · no first day yet", tone: "" };
+      for(const n of PTC_MONTHS){
         const m = prof.milestones.find(x => x.month_no === n);
         if(m && (m.status === "done" || m.status === "skipped")) continue;
-        const due = addMonths(s.first_day, n);
-        const label = n === 1 ? "1st month" : n + "th month";
+        const due = ptcDue(n, m);
+        const label = ordinalMonth(n) + " month";
         if(m && m.status === "scheduled" && m.scheduled_on) return { txt: esc(fmtDate(m.scheduled_on)), sub: "next PTC · " + label + ", booked", tone: "accent" };
         return { txt: esc(fmtDate(due)), sub: "next PTC · " + label + (due <= todayISO() ? ", overdue — not booked" : ", not booked yet"), tone: due <= todayISO() ? "bad" : "" };
       }
-      return { txt: "All done", sub: "PTCs · 1st, 6th and 12th month", tone: "good" };
+      return { txt: "All done", sub: "PTCs · 1st to 12th month", tone: "good" };
     })();
-    const firstDay = s.first_day || active.map(e => String(e.created_at || "").slice(0,10)).sort()[0] || "";
+    const firstDay = prof.firstDay || active.map(e => String(e.created_at || "").slice(0,10)).sort()[0] || "";
 
     const subjectBlock = (e) => {
       const p = prof.projections.find(x => x.subject_enrollment_id === e.id);
@@ -1278,7 +1334,7 @@ window.kumonPtcNav = function(client, role){
       <div class="hint">✓ = arrived (ticked on the Calendar) · ✗ = class day with no tick · “absent” = marked absent on Payments · – = before ticks were kept for this child. A ✗ can also mean nobody ticked them.</div>`;
 
     const payHtml = prof.payments.length ? `<div class="tbl"><table class="stable"><thead><tr><th>For</th><th>Amount</th><th>Paid on</th><th>Reference</th><th>Status</th></tr></thead><tbody>
-      ${prof.payments.slice(0, 6).map(r => `<tr><td>${esc(r.covers_month ? fmtMonth(String(r.covers_month).slice(0,10)) : "—")}</td><td class="tnum">₱${Number(r.amount || 0).toLocaleString("en-US")}</td><td class="tnum">${r.created_at ? esc(fmtDate(String(r.created_at).slice(0,10))) : "—"}</td><td class="faint" style="font-size:12px;">${esc(r.reference_number || "—")}</td><td>${r.status === "verified" ? `<span class="pill p-good">Verified</span>` : r.status === "pending" ? `<span class="pill p-warn">Pending</span>` : `<span class="pill p-muted">${esc(r.status || "")}</span>`}</td></tr>`).join("")}
+      ${prof.payments.slice(0, 6).map(r => `<tr><td>${esc(r.covers_month ? fmtMonth(String(r.covers_month).slice(0,10)) : "—")}</td><td class="tnum">₱${Number(r.amount || 0).toLocaleString("en-US")}</td><td class="tnum">${r.created_at ? esc(fmtDate(manilaDate(r.created_at))) : "—"}</td><td class="faint" style="font-size:12px;">${esc(r.reference_number || "—")}</td><td>${r.status === "verified" ? `<span class="pill p-good">Verified</span>` : r.status === "pending" ? `<span class="pill p-warn">Pending</span>` : `<span class="pill p-muted">${esc(r.status || "")}</span>`}</td></tr>`).join("")}
       </tbody></table></div>` : `<div class="hint">No payments recorded.</div>`;
 
     $("#view").innerHTML = `
@@ -1295,7 +1351,7 @@ window.kumonPtcNav = function(client, role){
           <div class="facts facts-head">
             ${fact(pct == null ? "—" : pct + "%", A.total ? `attendance · came to ${A.came} of ${A.total} classes in 8 weeks` : "attendance · no classes yet", pct == null ? "" : pct >= 85 ? "good" : pct >= 70 ? "warn" : "bad")}
             ${fact(nextPtc.txt, nextPtc.sub, nextPtc.tone === "accent" ? "" : nextPtc.tone)}
-            ${fact(lastPay ? esc(lastPay.covers_month ? fmtMonth(String(lastPay.covers_month).slice(0,10)) : "—") : "—", lastPay ? `last payment · paid ${esc(fmtDate(String(lastPay.created_at).slice(0,10)))}${lastPay.status !== "verified" ? ", not yet verified" : ""}` : "last payment · none recorded", lastPay && lastPay.status !== "verified" ? "warn" : "")}
+            ${fact(lastPay ? esc(lastPay.covers_month ? fmtMonth(String(lastPay.covers_month).slice(0,10)) : "—") : "—", lastPay ? `last payment · ${lastPay.created_at ? "paid " + esc(fmtDate(manilaDate(lastPay.created_at))) : "date not recorded"}${lastPay.status !== "verified" ? ", not yet verified" : ""}` : "last payment · none recorded", lastPay && lastPay.status !== "verified" ? "warn" : "")}
           </div>
           ${active.length ? `<div class="stands">${active.map(subjectGlance).join("")}</div>` : ""}
         </div>
@@ -1367,11 +1423,16 @@ window.kumonPtcNav = function(client, role){
     }
     if(a === "dl-jpeg" || a === "dl-pdf"){ btn.disabled = true; try{ await downloadProfile(a === "dl-pdf" ? "pdf" : "jpeg"); } finally { btn.disabled = false; } return; }
   });
+  // Keeps the printed copy of each PTC note in step with the box (a textarea prints only its first rows).
+  document.addEventListener("input", (e) => {
+    const t = e.target; if(!t || !t.dataset || !t.dataset.ptcNote) return;
+    const pr = document.querySelector(`[data-ptc-print="${t.dataset.ptcNote}"]`); if(pr) pr.textContent = t.value;
+  });
   document.addEventListener("mousemove", (e) => {
     const tip = $("#tip"); if(!tip) return;
     const c = e.target.closest && e.target.closest("circle[data-tip]");
     if(!c){ tip.style.display = "none"; return; }
-    tip.innerHTML = c.dataset.tip; tip.style.display = "block"; tip.style.left = (e.clientX + 12) + "px"; tip.style.top = (e.clientY + 12) + "px";
+    tip.textContent = c.dataset.tip.replace(/<br>/g, "\n"); tip.style.display = "block"; tip.style.left = (e.clientX + 12) + "px"; tip.style.top = (e.clientY + 12) + "px";
   });
 
   boot();
