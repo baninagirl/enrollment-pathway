@@ -1436,7 +1436,7 @@ window.kumonPtcNav = function(client, role){
     for(let i = 0; i < ids.length; i += 100){
       const { error } = await sbClient.from("ptc_milestones")
         .update({ status: "open", done_on: null, ptc_session_id: null, updated_at: new Date().toISOString() })
-        .in("ptc_session_id", ids.slice(i, i + 100)).eq("status", "done");
+        .in("ptc_session_id", ids.slice(i, i + 100)).eq("status", "done").select("id");
       if(error) return { ok:false, message: error.message };
     }
     return { ok:true };
@@ -1446,7 +1446,7 @@ window.kumonPtcNav = function(client, role){
     const rows = [];
     for(let i = 0; i < ids.length; i += 100){
       const { data, error } = await sbClient.from("ptc_milestones").select("id,ptc_session_id,done_on")
-        .in("ptc_session_id", ids.slice(i, i + 100)).eq("status", "done");
+        .in("ptc_session_id", ids.slice(i, i + 100)).eq("status", "done").select("id");
       if(error) return { ok:false, message: error.message };
       rows.push(...(data || []).map(x => ({ id: x.id, ptc_session_id: x.ptc_session_id, done_on: x.done_on })));   // a copy, not the live row
     }
@@ -1686,8 +1686,11 @@ window.kumonPtcNav = function(client, role){
     if(error){ alert("Couldn't update: " + error.message); return 0; }
     (data || []).forEach(r => { const x = sessions.find(y => y.id === r.id); if(x) Object.assign(x, r); });
     logHistory("ptc_status", `${mine.map(sessName).join(", ")} → ${STATUS[status].label}`, "ptc_week", ui.weekId, { ids: mine.map(x => x.id), status });
-    if(status === "done") await coverMilestones(mine);
-    else if(wasDone.length) await reopenAfterUndo(wasDone);
+    // Only sessions the database really changed count (a refused update returns no rows).
+    const changed = new Set((data || []).map(r => r.id));
+    if(status === "done") await coverMilestones(mine.filter(x => changed.has(x.id)));
+    else{ const back = wasDone.filter(id => changed.has(id)); if(back.length) await reopenAfterUndo(back); }
+    if(changed.size < mine.length) alert(`${mine.length - changed.size} of ${mine.length} session${mine.length === 1 ? "" : "s"} couldn't be changed — the database didn't allow it.`);
     return (data || []).length;
   }
   // A session taken back from Done (or removed): the new-student PTC it had marked done goes back on the due list.

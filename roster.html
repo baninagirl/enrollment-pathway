@@ -1079,10 +1079,17 @@ window.kumonPtcNav = function(client, role){
     renderPageHeadActions();
   }
 
+  // Live updates can start a second reload before the first one finishes; only the newest one's result is kept,
+  // so a slow older read can't put old data back on screen.
+  const loadSeq = {};
+  function nextLoad(k){ loadSeq[k] = (loadSeq[k] || 0) + 1; return loadSeq[k]; }
+  function isLatestLoad(k, n){ return loadSeq[k] === n; }
   async function loadStudents(){
     // status/monthly_tuition/billing_group_id are for the Payment tag (paymentStatusFor,
     // below) — Roster otherwise never touched billing fields before.
+    const mine = nextLoad("students");
     const { data, error } = await fetchAll("students", "id,name,age_grade,first_name,last_name,status,monthly_tuition,billing_group_id,origin,created_at", q => q.order("name").order("id"));
+    if(!isLatestLoad("students", mine)) return;   // a newer reload started meanwhile — its result wins
     if(error){ console.warn(error); return; }   // keep what's on screen
     students = data || [];
     dupPairsCache = null;
@@ -1282,7 +1289,9 @@ window.kumonPtcNav = function(client, role){
   // waiting to be closed out) — they belong to the next month's report, not this one.
   function joinsLaterMonth(e){ return !!e.monitor_cycle && e.monitor_cycle > openKey(); }
   async function loadEnrollments(){
+    const mine = nextLoad("enrollments");
     const { data, error } = await fetchAll("subject_enrollments", "*", q => q.order("student_name").order("id"));
+    if(!isLatestLoad("enrollments", mine)) return;
     if(error){ console.warn(error); return; }   // keep what's on screen
     enrollments = data || [];
     // Drop any selection that no longer exists (deleted here or by someone else) so a
@@ -1291,7 +1300,9 @@ window.kumonPtcNav = function(client, role){
     [...selectedIds].forEach(id => { if(!validIds.has(id)) selectedIds.delete(id); });
   }
   async function loadSchedules(){
+    const mine = nextLoad("schedules");
     const { data, error } = await fetchAll("schedules", "*", q => q.order("id"));
+    if(!isLatestLoad("schedules", mine)) return;
     if(error){ console.warn(error); return; }   // keep what's on screen
     schedules = data || [];
   }
@@ -1597,7 +1608,9 @@ window.kumonPtcNav = function(client, role){
   }
 
   async function loadHistory(){
+    const mine = nextLoad("history");
     const { data, error } = await fetchAll("enrollment_monthly_history", "*", q => q.order("cycle_key", { ascending:false }).order("id"));
+    if(!isLatestLoad("history", mine)) return;
     if(error){ console.warn(error); return; }   // keep what's on screen
     history = data || [];
   }
@@ -1780,8 +1793,16 @@ window.kumonPtcNav = function(client, role){
       test_date: null, test_level: null, test_time: null, test_score: null, test_group: null,
       updated_at: new Date().toISOString()
     };
-    const { error: clearError } = await sbClient.from("subject_enrollments").update(clearedFields).in("id", candidateIds);
-    if(clearError){ alert(`Archived, but couldn't clear this cycle's fields: ${clearError.message}`); }
+    // Cleared in chunks and checked: a refused update returns no rows, so count what really cleared.
+    let clearError = null, clearedN = 0;
+    for(let i = 0; i < candidateIds.length && !clearError; i += 200){
+      const res = await sbClient.from("subject_enrollments").update(clearedFields).in("id", candidateIds.slice(i, i + 200)).select("id");
+      if(res.error) clearError = res.error; else clearedN += (res.data || []).length;
+    }
+    if(clearError || clearedN < candidateIds.length){
+      const left = candidateIds.length - clearedN;
+      alert(`Archived, but ${clearError ? "clearing the numbers stopped partway (" + clearError.message + ")" : "the database didn't allow clearing some of them"}: ${left} of ${candidateIds.length} enrollments still show last month's NWU / days / test numbers.\n\nThe archive is saved. Clear those numbers on the Reporting page before teachers fill in the new month.`);
+    }
 
     // Move the open month on (phase38).
     const prevOpenKey = openMonthKey;

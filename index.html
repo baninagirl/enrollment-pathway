@@ -690,7 +690,14 @@ window.kumonPtcNav = function(client, role){
             e.code = "no_rows"; throw e;
           }
         },
-        async delete(){ const { error } = await sb.from(table).delete().eq("id", id); if(error) throw error; }
+        // mustExist: a delete the database refused (no error, nothing removed) is reported, not taken as done.
+        async delete(opts){
+          const { data, error } = await sb.from(table).delete().eq("id", id).select("id");
+          if(error) throw error;
+          if(opts && opts.mustExist && Array.isArray(data) && data.length === 0){
+            const e = new Error("Nothing was removed — the database didn't allow deleting this " + table.replace(/_/g," ").replace(/s$/,"") + "."); e.code = "no_rows"; throw e;
+          }
+        }
       };
     }
 
@@ -4568,7 +4575,7 @@ window.kumonPtcNav = function(client, role){
   }
   async function performDeleteStudentEverywhere(ids){
     // The student first: if the database refuses (phase109 — they still have Roster subjects), nothing else is touched.
-    await db.collection("students").doc(ids.studentId).delete();
+    await db.collection("students").doc(ids.studentId).delete({ mustExist: true });
     await Promise.all([
       ...ids.diagIds.map(id => db.collection("diagnostics").doc(id).delete()),
       ...ids.trainIds.map(id => db.collection("trainings").doc(id).delete()),

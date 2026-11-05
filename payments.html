@@ -1251,7 +1251,13 @@ window.kumonPtcNav = function(client, role){
     return { alloc, total: Math.round(Object.values(alloc).reduce((a,b)=>a+b,0) * 100) / 100 };
   }
   function markPaidLeft(studentId){ return markPaidAllocation(studentId, selectedMonth).total; }
+  const markPaidBusy = new Set();
   async function markPaid(studentId){
+    if(markPaidBusy.has(studentId)) return;   // a second click while the first is still open/saving would pay twice
+    markPaidBusy.add(studentId);
+    try{ await markPaidNow(studentId); } finally{ markPaidBusy.delete(studentId); }
+  }
+  async function markPaidNow(studentId){
     const s = students.find(x => x.id === studentId);
     if(!s) return;
     // Fresh list first, so a payment someone just logged isn't counted twice.
@@ -1263,6 +1269,9 @@ window.kumonPtcNav = function(client, role){
     const verifiedNow = isSuperadmin();
     if(!confirm(`Mark ${displayName(s)} paid for ${fmtBillLabel(selectedMonth)}?\n\n${parts} = ${peso(total)}\n\n` +
       (verifiedNow ? "This counts as paid right away." : "It counts once a superadmin verifies it."))) return;
+    // Someone may have logged a payment while the box was open: check again before saving.
+    if(!(await loadReceipts())){ toast("Couldn't check the latest payments — nothing was saved. Try again."); return; }
+    if(markPaidAllocation(studentId, selectedMonth).total !== total){ render(); toast("The amount changed meanwhile (another payment came in) — nothing was saved. Click Mark paid again."); return; }
     const row = { student_id: studentId, amount: total, allocation: alloc, covers_month: monthToDate(selectedMonth),
       reference_number: "Marked paid (no receipt)", uploaded_by: currentUser ? currentUser.email : null,
       receipt_path: null, status: verifiedNow ? "verified" : "pending" };
@@ -1573,7 +1582,9 @@ window.kumonPtcNav = function(client, role){
     const summary = await fetchBillingSummary(studentIds, ym);
     const subjectsOf = sid => summary && summary[sid] ? summary[sid].subjects : activeSubjectsFor(sid);
     const paidOf = sid => summary && summary[sid] ? summary[sid].paid : verifiedPaidFor(sid, ym);
-    const dueOf = s => tuitionRateFor(s) * (subjectsOf(s.id).length || 1);
+    // A sibling with no active subjects (absent) owes nothing this month and isn't listed (unless they paid something).
+    if(studentIds.length > 1) studentIds = studentIds.filter(sid => subjectsOf(sid).length || paidOf(sid));
+    const dueOf = s => tuitionRateFor(s) * (subjectsOf(s.id).length || (studentIds.length === 1 ? 1 : 0));
     const totals = (()=>{ let due = 0, paid = 0;
       studentIds.forEach(sid => { const s = students.find(x => x.id === sid); if(!s) return; due += dueOf(s); paid += paidOf(sid); });
       return { due, paid, balance: due - paid }; })();
@@ -1806,7 +1817,7 @@ window.kumonPtcNav = function(client, role){
     const rows = billableStudents().map(s => rowFor(s, ym));
     const totalDue = rows.reduce((n,r)=>n+r.due, 0);
     const totalPaid = rows.reduce((n,r)=>n+r.paid, 0);
-    const outstanding = Math.max(0, totalDue - totalPaid);
+    const outstanding = rows.reduce((n,r)=>n+Math.max(0, r.due - r.paid), 0);   // one child's overpayment doesn't cancel another's balance
     // Counted per subject, not per student: a Math + Reading student who hasn't paid is two unpaid
     // subjects. (Payment itself is still one tuition per student, so both subjects are unpaid together.)
     // With a teacher filter on, only that teacher's subjects count, so Miss Queenie's number is
@@ -1915,7 +1926,7 @@ window.kumonPtcNav = function(client, role){
       <td>${esc(displayName(s))}${subjectBadgesFor(s.id)}<button class="iconbtn" data-action="download-tuition" data-student="${esc(s.id)}" title="Download tuition image">⬇</button></td>
       <td class="muted">${esc(s.age_grade || "—")}</td>
       <td class="muted">${esc(groupNameFor(s.billing_group_id) || "—")}</td>
-      <td class="money">${peso(r.due)} <button class="iconbtn" data-action="edit-tuition" data-id="${esc(s.id)}" title="Edit tuition">✎</button></td>
+      <td class="money">${peso(r.due)}${currentRole === "teacher" ? "" : ` <button class="iconbtn" data-action="edit-tuition" data-id="${esc(s.id)}" title="Edit tuition">✎</button>`}</td>
       <td class="money">${peso(r.paid)}</td>
       <td class="money">${peso(r.balance)}</td>
       <td>${statusPill(r.status)}</td>
@@ -2145,7 +2156,7 @@ window.kumonPtcNav = function(client, role){
     if(!a) return "";
     const catchUpYm = shiftMonth(a.last_paid_month, 1);
     const due = tuitionDueForAbsence(a);
-    const paid = verifiedPaidFor(studentId, catchUpYm);
+    const paid = paidForAbsence(a, catchUpYm);   // only what was paid for the absent subject(s), same as auto-resume
     const balance = due - paid;
     return `<div class="hint" style="margin-bottom:12px;">
       Currently absent since ${esc(new Date(a.marked_absent_at).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"}))} — last paid through ${esc(fmtBillLabel(a.last_paid_month))}.
@@ -2284,14 +2295,14 @@ window.kumonPtcNav = function(client, role){
   // them, or null otherwise — callers fold that into whatever toast they show, rather than
   // this function toasting on its own and getting immediately overwritten by the caller's.
   async function setReceiptStatus(id, status, note){
-    if(!isSuperadmin()){ toast("Only a superadmin can verify, flag or reject payments."); return null; }
+    if(!isSuperadmin()){ toast("Only a superadmin can verify, flag or reject payments."); return false; }
     const before = receipts.find(x => x.id === id);
     const s = before ? students.find(x => x.id === before.student_id) : null;
     const patch = { status, reviewed_by: currentUser ? currentUser.id : null, reviewed_at: new Date().toISOString() };
     if(note !== undefined) patch.status_note = note;
     const { data: changed, error } = await sbClient.from("payment_receipts").update(patch).eq("id", id).select("id");
-    if(error){ toast("Couldn't update that receipt: " + error.message); return null; }
-    if(!changed || !changed.length){ toast("Couldn't update that receipt — the database didn't allow it."); return null; }
+    if(error){ toast("Couldn't update that receipt: " + error.message); return false; }
+    if(!changed || !changed.length){ toast("Couldn't update that receipt — the database didn't allow it."); return false; }
     logHistory(
       `${status}_receipt`,
       `${status.charAt(0).toUpperCase() + status.slice(1)} ${before ? peso(before.amount) : ""} payment for ${s ? displayName(s) : "a student"}${note ? " — " + note : ""}`,
@@ -2300,7 +2311,7 @@ window.kumonPtcNav = function(client, role){
     await loadReceipts();
     const autoResumedName = status === "verified" ? await maybeAutoResumeFromReceipt(id) : null;
     render();
-    return autoResumedName;
+    return { ok: true, autoResumedName };
   }
 
   // Same subject count basis as Retention's own tuitionDueForAbsence — an absent student's
@@ -2465,8 +2476,9 @@ window.kumonPtcNav = function(client, role){
       const id = e.target.dataset.id;
       const fd = new FormData(e.target);
       const tuition = Number(fd.get("tuition"));
-      const { error } = await sbClient.from("students").update({ monthly_tuition: tuition }).eq("id", id);
+      const { data: tRows, error } = await sbClient.from("students").update({ monthly_tuition: tuition }).eq("id", id).select("id");
       if(error){ toast("Couldn't save: " + error.message); return; }
+      if(!tRows || !tRows.length){ toast("Couldn't save — only an admin can change tuition."); return; }
       const tuitionStudent = students.find(x => x.id === id);
       logHistory("edit_tuition", `Set ${tuitionStudent ? displayName(tuitionStudent) : "a student"}'s tuition to ${peso(tuition)}/subject`, "student", id);
       closeModal();
@@ -2587,22 +2599,22 @@ window.kumonPtcNav = function(client, role){
     else if(action === "view-receipt"){ e.preventDefault(); await viewReceipt(btn.dataset.id); }
     else if(action === "verify-receipt"){
       if(!isSuperadmin()) return;
-      const autoResumedName = await setReceiptStatus(btn.dataset.id, "verified");
-      toast(autoResumedName ? `Marked verified — ${autoResumedName} automatically resumed, payment covers their return.` : "Marked verified.");
+      const r = await setReceiptStatus(btn.dataset.id, "verified");
+      if(r && r.ok) toast(r.autoResumedName ? `Marked verified — ${r.autoResumedName} automatically resumed, payment covers their return.` : "Marked verified.");
     }
     else if(action === "reject-receipt"){
       if(!isSuperadmin()) return;
       const note = prompt("Optional — why is this being rejected?");
       if(note === null) return;
-      await setReceiptStatus(btn.dataset.id, "rejected", note || null);
-      toast("Marked rejected.");
+      const r = await setReceiptStatus(btn.dataset.id, "rejected", note || null);
+      if(r && r.ok) toast("Marked rejected.");
     }
     else if(action === "flag-receipt"){
       if(!isSuperadmin()) return;
       const note = prompt("What's off about this one?");
       if(note === null) return;
-      await setReceiptStatus(btn.dataset.id, "flagged", note || null);
-      toast("Flagged for follow-up.");
+      const r = await setReceiptStatus(btn.dataset.id, "flagged", note || null);
+      if(r && r.ok) toast("Flagged for follow-up.");
     }
     else if(action === "delete-receipt"){ await deleteReceipt(btn.dataset.id); }
   });

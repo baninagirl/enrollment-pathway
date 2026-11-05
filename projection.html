@@ -279,7 +279,7 @@
   .lg i{ width:14px; height:3px; border-radius:2px; display:inline-block; } .lg.off{ opacity:.4; }
   .chart{ border:1px solid var(--border); border-radius:12px; padding:8px 8px 4px; background:var(--surface); }
   .chart svg{ display:block; width:100%; height:auto; }
-  .tip{ position:fixed; pointer-events:none; background:var(--ink); color:var(--bg); font-size:12px; padding:7px 9px; border-radius:8px; line-height:1.45; display:none; z-index:90; }
+  .tip{ position:fixed; pointer-events:none; background:var(--ink); color:var(--bg); font-size:12px; padding:7px 9px; border-radius:8px; line-height:1.45; display:none; z-index:90; white-space:pre-line; }
   .tbl{ border:1px solid var(--border); border-radius:12px; overflow-x:auto; }
   .stable.plan td{ vertical-align:top; white-space:normal; }
   .topic{ color:var(--ink-muted); font-size:12px; margin-top:2px; max-width:420px; }
@@ -817,7 +817,7 @@ window.kumonPtcNav = function(client, role){
       let q = sbClient.from(table).select(cols).range(from, from + 999);
       if(build) q = build(q);
       const { data, error } = await q;
-      if(error){ console.warn(table, error); return out; }
+      if(error){ console.warn(table, error); const err = new Error(error.message || "load failed"); err.loadFailed = true; throw err; }
       out = out.concat(data || []);
       if(!data || data.length < 1000) return out;
       from += 1000;
@@ -825,18 +825,24 @@ window.kumonPtcNav = function(client, role){
   }
   async function loadAll(){
     const tasks = [
-      (async () => { try{ const { data } = await sbClient.from("settings").select("value").eq("id","staff").maybeSingle(); const v = data ? data.value : {}; staffTeachers = Array.isArray(v.teachers) ? v.teachers : (Array.isArray(v.trainers) ? v.trainers : []); }catch(e){} await loadTeacherGroups(); })(),
-      (async () => { students = await selectAll("students", "id,name,first_name,last_name,age_grade,first_day,status", q => q.order("id")); studentById = new Map(students.map(s => [s.id, s])); })(),
-      (async () => { enrollments = await selectAll("subject_enrollments", "id,student_id,student_name,subject,teacher,status,current_level,current_page,lwc,created_at", q => q.eq("status","active").order("id")); })(),
-      (async () => { histRows = await selectAll("enrollment_monthly_history", "id,subject_enrollment_id,cycle_key,cycle_label,current_level,current_page,lwc", q => q.order("id")); })(),
+      (async () => { try{ const { data } = await sbClient.from("settings").select("value").eq("id","staff").maybeSingle(); const v = (data && data.value) || {}; staffTeachers = Array.isArray(v.teachers) ? v.teachers : (Array.isArray(v.trainers) ? v.trainers : []); }catch(e){} await loadTeacherGroups(); })(),
+      (async () => { try{ students = await selectAll("students", "id,name,first_name,last_name,age_grade,first_day,status", q => q.order("id")); studentById = new Map(students.map(s => [s.id, s])); }catch(e){ loadProblem = true; } })(),
+      (async () => { try{ enrollments = await selectAll("subject_enrollments", "id,student_id,student_name,subject,teacher,status,current_level,current_page,lwc,created_at", q => q.eq("status","active").order("id")); }catch(e){ loadProblem = true; } })(),
+      (async () => { try{ histRows = await selectAll("enrollment_monthly_history", "id,subject_enrollment_id,cycle_key,cycle_label,current_level,current_page,lwc", q => q.order("id")); }catch(e){ loadProblem = true; } })(),
       loadProjections(),
-      (async () => { diagnostics = await selectAll("diagnostics", "id,student_id,date,subject,start_point,outcome", q => q.order("id")); })(),
-      (async () => { ptcDone = await selectAll("ptc_milestones", "student_id,month_no,status,done_on,due_date", q => q.order("student_id")); })(),
+      (async () => { try{ diagnostics = await selectAll("diagnostics", "id,student_id,date,subject,start_point,outcome", q => q.order("id")); }catch(e){ loadProblem = true; } })(),
+      (async () => { try{ ptcDone = await selectAll("ptc_milestones", "student_id,month_no,status,done_on,due_date", q => q.order("student_id")); }catch(e){ loadProblem = true; } })(),
       (async () => { try{ const { data } = await sbClient.rpc("ptc_due", { p_days_ahead: 400 }); ptcDue = data || []; }catch(e){ ptcDue = []; } })()
     ];
     await Promise.all(tasks);
   }
-  async function loadProjections(){ projections = await selectAll("study_projections", "*", q => q.order("id")); }
+  // A failed read keeps what's already on screen (and is remembered): an empty list would make every saved
+  // projection look missing, and saving a fresh one over it would wipe the real plan.
+  let projectionsLoaded = false, loadProblem = false;
+  async function loadProjections(){
+    try{ projections = await selectAll("study_projections", "*", q => q.order("id")); projectionsLoaded = true; return true; }
+    catch(e){ loadProblem = true; return false; }
+  }
 
   let started = false;
   async function startApp(){
@@ -846,10 +852,11 @@ window.kumonPtcNav = function(client, role){
     $("#view").innerHTML = `<div class="empty">Loading…</div>`;
     await loadAll();
     route();
+    if(loadProblem) toast("Some of the data couldn't load (connection problem). Refresh the page before making changes.");
     window.addEventListener("hashchange", () => { if(draftTouched && !confirm("You have unsaved changes to this projection. Leave without saving?")){ history_back_guard(); return; } route(); });
     sbClient.channel("realtime:projection-page")
       .on("postgres_changes", { event:"*", schema:"public", table:"study_projections" }, async () => { await loadProjections(); if(!currentEnrollmentId()) renderList(); })
-      .on("postgres_changes", { event:"*", schema:"public", table:"subject_enrollments" }, async () => { enrollments = await selectAll("subject_enrollments", "id,student_id,student_name,subject,teacher,status,current_level,current_page,lwc,created_at", q => q.eq("status","active").order("id")); if(!currentEnrollmentId()) renderList(); else if(!draftDirty) renderDetail(); })
+      .on("postgres_changes", { event:"*", schema:"public", table:"subject_enrollments" }, async () => { try{ enrollments = await selectAll("subject_enrollments", "id,student_id,student_name,subject,teacher,status,current_level,current_page,lwc,created_at", q => q.eq("status","active").order("id")); }catch(e){ return; } if(!currentEnrollmentId()) renderList(); else if(!draftDirty) renderDetail(); })
       .subscribe();
   }
   let lastHash = "";
@@ -1269,9 +1276,19 @@ window.kumonPtcNav = function(client, role){
       levels: draft.levels || [], skills: draft.skills || [], plan_note: (draft.plan_note || "").trim() || null, notes: draft.notes || null,
       updated_by_name: myName(), updated_at: new Date().toISOString()
     };
-    const { data, error } = await sbClient.from("study_projections").upsert([row], { onConflict: "subject_enrollment_id" }).select();
-    if(error){ alert("Couldn't save: " + error.message); return; }
     const isNew = !projectionFor(draft.subject_enrollment_id);
+    let data, error;
+    if(isNew){
+      // Never overwrite a plan the page couldn't see (a failed load, or someone else just saved one): ask the database first.
+      const ex = await sbClient.from("study_projections").select("id").eq("subject_enrollment_id", row.subject_enrollment_id).limit(1);
+      if(ex.error){ alert("Couldn't save — the Hub couldn't check for an existing projection (connection problem). Try again."); return; }
+      if(ex.data && ex.data.length){ alert("This subject already has a saved projection that this page didn't load. Refresh the page to see it before making changes."); return; }
+      ({ data, error } = await sbClient.from("study_projections").insert([row]).select());
+    }else{
+      ({ data, error } = await sbClient.from("study_projections").update(row).eq("subject_enrollment_id", row.subject_enrollment_id).select());
+      if(!error && (!data || !data.length)) error = { message: "the database didn't allow it" };
+    }
+    if(error){ alert("Couldn't save: " + error.message); return; }
     logHistory(isNew ? "projection_new" : "projection_edit", `${isNew ? "Set up" : "Updated"} ${draft.subject} projection: ${displayName(draft.student_id, e && e.student_name)} (${row.start_level} ${row.start_page})`, data && data[0] && data[0].id, row);
     await loadProjections();
     draft = JSON.parse(JSON.stringify(projectionFor(row.subject_enrollment_id) || row));
@@ -1306,6 +1323,7 @@ window.kumonPtcNav = function(client, role){
       if(["start_page","default_rate","default_ppd","level_count"].includes(f)){ v = Number(v); if(!v || v < 1){ renderDetail(); return; } }
       if(f === "start_page") v = Math.min(200, Math.round(v));
       if(f === "level_count") v = Math.min(30, Math.round(v));
+      if((f === "start_date" || f === "sy_start") && !/^\d{4}-\d{2}-\d{2}$/.test(v || "")){ renderDetail(); return; }   // a cleared or half-typed date keeps the old one
       if(f === "start_date" && v && draft.sy_start === syStartFor(draft.start_date)) draft.sy_start = syStartFor(v);   // keep the school year in step
       draft[f] = v; markDirty(true); return;
     }
@@ -1330,7 +1348,7 @@ window.kumonPtcNav = function(client, role){
     if(a === "logout"){ await sbClient.auth.signOut(); return; }
     if(a === "f-status"){ ui.status = ui.status === btn.dataset.status ? "all" : btn.dataset.status; renderList(); return; }
     if(a === "toggle-line"){ const k = btn.dataset.k; chartOff.has(k) ? chartOff.delete(k) : chartOff.add(k); renderDetail(); return; }
-    if(a === "save"){ btn.disabled = true; await save(); return; }
+    if(a === "save"){ btn.disabled = true; try{ await save(); } finally{ if(btn.isConnected && draftDirty) btn.disabled = false; } return; }
     if(a === "print"){ window.print(); return; }
     if(a === "dl-jpeg" || a === "dl-pdf"){ btn.disabled = true; try{ await downloadSheet(a === "dl-pdf" ? "pdf" : "jpeg"); } finally { btn.disabled = false; } return; }
     if(a === "skills"){ openSkills(); return; }
@@ -1349,7 +1367,7 @@ window.kumonPtcNav = function(client, role){
     const tip = $("#tip"); if(!tip) return;
     const c = e.target.closest && e.target.closest("circle[data-tip]");
     if(!c){ tip.style.display = "none"; return; }
-    tip.innerHTML = c.dataset.tip; tip.style.display = "block"; tip.style.left = (e.clientX + 12) + "px"; tip.style.top = (e.clientY + 12) + "px";
+    tip.textContent = c.dataset.tip.replace(/<br>/g, "\n"); tip.style.display = "block"; tip.style.left = (e.clientX + 12) + "px"; tip.style.top = (e.clientY + 12) + "px";
   });
   window.addEventListener("beforeunload", (e) => { if(draftTouched){ e.preventDefault(); e.returnValue = ""; } });
 

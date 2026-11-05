@@ -498,7 +498,7 @@ window.kumonPtcNav = function(client, role){
     const sharedTrainerList = $("#trainerNamesListInline");
     if(sharedTrainerList) sharedTrainerList.innerHTML = trainers.map(t=>`<option value="${esc(t)}">`).join("");
     body.innerHTML = `
-      <div class="banner info">"+ New login" creates their account right here. They can log in right away with the password you set — tell them their password yourself. Everyone can have a name. For a teacher, just type their name — new teacher names are added to Staff (Pipeline → Settings) automatically.</div>
+      <div class="banner info">"+ New login" creates their account right here — tell them their password yourself (if they get a "confirm your email" message, they click it once first). Everyone can have a name. For a teacher, just type their name — new teacher names are added to Staff (Pipeline → Settings) automatically.</div>
       <div class="card">
         <div class="card-head"><h3>Team accounts</h3><span class="hint">${profiles.length}</span></div>
         <div class="table-scroll">
@@ -553,7 +553,7 @@ window.kumonPtcNav = function(client, role){
           <label class="field">Temporary password
             <input type="text" name="password" required value="${genPassword()}">
           </label>
-          <div class="hint">Share this password with them yourself — text, call, whatever's easiest. They can change it anytime from the login screen's "Forgot password" link.</div>
+          <div class="hint">Share this password with them yourself — text, call, whatever's easiest. </div>
           <label class="field">Role
             <select name="role" data-action="new-login-role">
               <option value="admin" selected>Admin</option>
@@ -590,7 +590,15 @@ window.kumonPtcNav = function(client, role){
     }
     if(e.target.id === "newLoginForm"){
       e.preventDefault();
-      const fd = new FormData(e.target);
+      if(e.target.dataset.busy) return;   // a second click would try to sign the same email up again
+      e.target.dataset.busy = "1";
+      const subBtn = e.target.querySelector('button[type="submit"]'); if(subBtn) subBtn.disabled = true;
+      try{ await createLogin(e.target); } finally{ if(e.target.isConnected){ delete e.target.dataset.busy; if(subBtn) subBtn.disabled = false; } }
+    }
+  });
+  async function createLogin(form){
+    {
+      const fd = new FormData(form);
       const email = fd.get("email").toString().trim();
       const password = fd.get("password").toString();
       const role = fd.get("role").toString();
@@ -609,6 +617,10 @@ window.kumonPtcNav = function(client, role){
       });
       const { data, error } = await signupClient.auth.signUp({ email, password, options: { emailRedirectTo: location.origin + "/index.html" } });
       if(error){ errBox.textContent = error.message; errBox.hidden = false; return; }
+      // Supabase answers an email that already has an account with a stand-in user (no identities) instead of an error.
+      if(data && data.user && Array.isArray(data.user.identities) && data.user.identities.length === 0){
+        errBox.textContent = `${email} already has a login. Find it in the list below and change its role there.`; errBox.hidden = false; return;
+      }
       const newId = data && data.user ? data.user.id : null;
       if(newId){
         // New signups default to "pending" (no access) until someone sets a real role —
@@ -639,9 +651,9 @@ window.kumonPtcNav = function(client, role){
         [profiles, trainers] = await Promise.all([loadProfiles(), loadTrainers()]);
         renderAdmin();
       }
-      alert(`Login created for ${email}. They can log in right away with the password you set — tell them their password yourself.`);
+      alert(`Login created for ${email}. Tell them their password yourself.\n\nIf Supabase sends them a "confirm your email" message, they need to click that link once before they can log in.`);
     }
-  });
+  }
 
   document.addEventListener("click", async (e)=>{
     const btn = e.target.closest("[data-action]");

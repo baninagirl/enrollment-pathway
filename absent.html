@@ -486,16 +486,19 @@ window.kumonPtcNav = function(client, role){
     return y + "-" + String(m+1).padStart(2,"0");
   }
   function fmtMonthLabel(ym){
+    if(!ym) return "—";   // an absence saved without a last paid month
     const [y,m] = ym.split("-").map(Number);
     return new Date(y, m-1, 1).toLocaleDateString("en-US", { month:"long", year:"numeric" });
   }
   function monthRangeLabel(ym){
+    if(!ym) return "—";
     const [y,m] = ym.split("-").map(Number);
     const start = new Date(y, m-1, 1);
     const end = new Date(y, m, 0);
     return `${start.toLocaleDateString("en-US",{month:"short",day:"numeric"})} – ${end.toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"})}`;
   }
   function shiftMonth(ym, delta){
+    if(!ym) return monthKeyOfToday();   // no last paid month: the catch-up starts this month
     const [y,m] = ym.split("-").map(Number);
     const d = new Date(y, m-1+delta, 1);
     return d.getFullYear() + "-" + String(d.getMonth()+1).padStart(2,"0");
@@ -1007,16 +1010,24 @@ window.kumonPtcNav = function(client, role){
     if(!ok) return;
     const nowIso = new Date().toISOString();
     const ids = a.subject_enrollment_ids || [];
-    if(ids.length){
-      const { error: e1 } = await sbClient.from("subject_enrollments")
-        .update({ status:"active", enrollment_type:"resume", enrollment_type_set_at: nowIso, updated_at: nowIso })
-        .in("id", ids);
-      if(e1){ alert("Couldn't resume: " + e1.message); return; }
-    }
-    const { error: e2 } = await sbClient.from("absence_records")
+    // Close the absence record first, and only if it's still open — if someone already resumed it (another tab,
+    // or a verified payment did), nothing else is touched.
+    const { data: closed, error: e2 } = await sbClient.from("absence_records")
       .update({ resumed_at: nowIso, resumed_by: currentUser ? currentUser.email : null })
-      .eq("id", absenceId);
-    if(e2){ alert("Reactivated the enrollment, but couldn't close out the absence record: " + e2.message); }
+      .eq("id", absenceId).is("resumed_at", null).select("id");
+    if(e2){ alert("Couldn't resume: " + e2.message); return; }
+    if(!closed || !closed.length){ alert(`${displayName(s)} was already resumed (or this record was removed). The list has been refreshed.`); await Promise.all([loadEnrollments(), loadAbsences()]); render(); return; }
+    if(ids.length){
+      const { data: back, error: e1 } = await sbClient.from("subject_enrollments")
+        .update({ status:"active", enrollment_type:"resume", enrollment_type_set_at: nowIso, updated_at: nowIso })
+        .in("id", ids).select("id");
+      if(e1 || !back || back.length !== ids.length){
+        // Put the record back to open so the child doesn't drop off the follow-up list half-resumed.
+        await sbClient.from("absence_records").update({ resumed_at: null, resumed_by: null }).eq("id", absenceId);
+        alert("Couldn't resume — the subjects couldn't be switched back on" + (e1 ? " (" + e1.message + ")" : " (the database didn't allow it)") + ". Nothing was changed.");
+        await Promise.all([loadEnrollments(), loadAbsences()]); render(); return;
+      }
+    }
     logHistory("resume_absence", `Resumed ${displayName(s)} (tagged RESUME)`, "absence_record", absenceId);
     await Promise.all([loadEnrollments(), loadAbsences()]);
     render();
@@ -1084,6 +1095,11 @@ window.kumonPtcNav = function(client, role){
     `;
   }
   async function submitNote(form){
+    if(form.dataset.busy) return;   // a double click would save the note twice
+    form.dataset.busy = "1"; const sb = form.querySelector('button[type="submit"]'); if(sb) sb.disabled = true;
+    try{ await submitNoteNow(form); } finally{ delete form.dataset.busy; if(sb && sb.isConnected) sb.disabled = false; }
+  }
+  async function submitNoteNow(form){
     const fd = new FormData(form);
     const text = (fd.get("note")||"").toString().trim();
     if(!text) return;
@@ -1132,6 +1148,11 @@ window.kumonPtcNav = function(client, role){
     $("#modalBackdrop").hidden = false;
   }
   async function submitLogPayment(form){
+    if(form.dataset.busy) return;   // a double click would log the payment twice
+    form.dataset.busy = "1"; const sb = form.querySelector('button[type="submit"]'); if(sb) sb.disabled = true;
+    try{ await submitLogPaymentNow(form); } finally{ delete form.dataset.busy; if(sb && sb.isConnected) sb.disabled = false; }
+  }
+  async function submitLogPaymentNow(form){
     const absenceId = form.dataset.absence;
     const a = absences.find(x => x.id === absenceId);
     if(!a) return;
