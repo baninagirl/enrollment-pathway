@@ -183,6 +183,26 @@
   .chip-row input:hover{ opacity:.85; }
   .chip-row input:checked{ background:currentColor; opacity:.9; }
   .mode-tag{ font-size:9.5px; font-weight:700; opacity:.7; letter-spacing:.02em; }
+  /* One-week moves */
+  .cal-chip{ position:relative; }
+  .cal-chip[draggable="true"]{ cursor:grab; }
+  .cal-chip.moved{ outline:1.5px dashed currentColor; outline-offset:-1.5px; }
+  .cal-chip .moved-sub{ font-weight:600; font-size:10px; opacity:.85; margin-left:22px; }
+  .mv-btn{ position:absolute; top:3px; right:3px; width:18px; height:18px; padding:2px; border:none; border-radius:5px; background:transparent; color:inherit; opacity:0; cursor:pointer; }
+  .mv-btn svg{ width:100%; height:100%; display:block; }
+  .cal-chip:hover .mv-btn, .mv-btn:focus-visible{ opacity:.7; } .mv-btn:hover{ opacity:1; background:rgba(0,0,0,.06); }
+  @media (hover:none){ .mv-btn{ opacity:.6; } }
+  .cal-ghost{ font-size:10.5px; font-weight:600; padding:3px 8px; margin-top:4px; border-radius:7px; border:1px dashed currentColor; opacity:.55; background:transparent !important; }
+  .cal-ghost.subj-math{ color:var(--accent-soft-ink); } .cal-ghost.subj-reading{ color:var(--bad); }
+  body.cal-dragging .cal-cell[data-cell]{ transition:background-color .1s; }
+  .cal-cell.drop-here{ background:var(--accent-soft) !important; box-shadow:inset 0 0 0 2px var(--accent); }
+  .move-dlg-back{ position:fixed; inset:0; background:rgba(15,18,30,.35); display:flex; align-items:center; justify-content:center; z-index:96; padding:16px; }
+  .move-dlg-back[hidden]{ display:none; }
+  .move-dlg{ background:var(--surface); color:var(--ink); border:1px solid var(--border); border-radius:14px; box-shadow:var(--shadow); padding:18px; width:100%; max-width:380px; display:flex; flex-direction:column; gap:10px; font-size:13px; }
+  .move-sub{ color:var(--ink-muted); font-size:12.5px; }
+  .move-row{ display:flex; gap:10px; } .move-row label{ flex:1; display:flex; flex-direction:column; gap:4px; font-size:12px; font-weight:600; color:var(--ink-muted); }
+  .move-row select, .move-row input{ font:inherit; font-size:13.5px; padding:7px 9px; border-radius:8px; border:1px solid var(--border); background:var(--surface); color:var(--ink); }
+  .move-foot{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
 
   .login-screen{ position:fixed; inset:0; display:flex; align-items:center; justify-content:center; background:var(--bg); z-index:100; padding:20px; }
   .login-card{ width:100%; max-width:360px; background:var(--surface); border:1px solid var(--border); border-radius:16px; padding:28px 26px; box-shadow:var(--shadow); display:flex; flex-direction:column; gap:14px; }
@@ -595,7 +615,7 @@ window.kumonPtcNav = function(client, role){
   }
 
   let sbClient = null, currentUser = null, currentRole = null, currentTeacherName = null;
-  let schedules = [], enrollments = [], trainers = [], attendance = [];
+  let schedules = [], enrollments = [], trainers = [], attendance = [], moves = [];
   // teachers: empty Set = everyone; otherwise only those names (pick as many as you like).
   // Each Set: empty = everything; otherwise only those (tick as many as you like).
   let filters = { teachers: new Set(), groups: new Set(), levels: new Set(), mode:"all" };
@@ -708,19 +728,20 @@ window.kumonPtcNav = function(client, role){
     calReloadKinds.add(kind); clearTimeout(calReloadTimer);
     calReloadTimer = setTimeout(async () => {
       const kinds = new Set(calReloadKinds); calReloadKinds.clear();
-      await Promise.all([kinds.has("schedules") && loadSchedules(), kinds.has("enrollments") && loadEnrollments(), kinds.has("attendance") && loadAttendance()].filter(Boolean));
+      await Promise.all([kinds.has("schedules") && loadSchedules(), kinds.has("enrollments") && loadEnrollments(), kinds.has("attendance") && loadAttendance(), kinds.has("moves") && loadMoves()].filter(Boolean));
       renderCalendar();
     }, 700);
   }
   // A new week (or a tab left open overnight): reload this week's ticks.
   let calWeekShown = null;
-  setInterval(async () => { if(!started) return; const wk = currentWeekStart(); if(calWeekShown && wk !== calWeekShown){ calWeekShown = wk; await loadAttendance(); renderCalendar(); } else calWeekShown = wk; }, 60 * 1000);
+  // Moves switch over on Sunday (to the coming week), ticks on Monday — both are part of what's shown.
+  setInterval(async () => { if(!started) return; const wk = currentWeekStart() + "|" + moveWeekStart(); if(calWeekShown && wk !== calWeekShown){ calWeekShown = wk; await Promise.all([loadAttendance(), loadMoves()]); renderCalendar(); } else calWeekShown = wk; }, 60 * 1000);
 
   let started = false;
   async function startApp(){
     if(started) return;
     started = true;
-    await Promise.all([loadSchedules(), loadEnrollments(), loadSettings(), loadAttendance(), ccLoad()]);
+    await Promise.all([loadSchedules(), loadEnrollments(), loadSettings(), loadAttendance(), loadMoves(), ccLoad()]);
     populateFilters();
     renderCalendar();
     ccRenderCount();
@@ -736,6 +757,9 @@ window.kumonPtcNav = function(client, role){
       .subscribe();
     sbClient.channel("realtime:calendar-enrollments")
       .on("postgres_changes", { event:"*", schema:"public", table:"subject_enrollments" }, () => calReload("enrollments"))
+      .subscribe();
+    sbClient.channel("realtime:calendar-moves")
+      .on("postgres_changes", { event:"*", schema:"public", table:"schedule_moves" }, () => calReload("moves"))
       .subscribe();
     sbClient.channel("realtime:calendar-attendance")
       .on("postgres_changes", { event:"*", schema:"public", table:"schedule_attendance" }, () => calReload("attendance"))
@@ -785,6 +809,89 @@ window.kumonPtcNav = function(client, role){
     const diff = (dow === 0 ? -6 : 1) - dow; // shift back to Monday
     const mon = new Date(now.getFullYear(), now.getMonth(), now.getDate() + diff);
     return mon.getFullYear() + "-" + String(mon.getMonth() + 1).padStart(2, "0") + "-" + String(mon.getDate()).padStart(2, "0");
+  }
+  /* ---------- One-week class moves (phase117: schedule_moves) ----------
+     "Can I come tomorrow instead?" — drag the child to the new day/time. It only applies to this week:
+     from Sunday the Calendar shows the coming week, which has no moves, so the regular days come back.
+     The arrived tick of a moved class is saved under its ORIGINAL day, so attendance counts it. */
+  function moveWeekStart(){
+    const now = new Date();
+    if(now.getDay() !== 0) return currentWeekStart();
+    const mon = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);   // Sunday: the coming week
+    return mon.getFullYear() + "-" + String(mon.getMonth() + 1).padStart(2, "0") + "-" + String(mon.getDate()).padStart(2, "0");
+  }
+  let movesReady = true;
+  async function loadMoves(){
+    const { data, error } = await fetchAll("schedule_moves", "*", q => q.eq("week_start", moveWeekStart()).order("id"));
+    if(error){
+      console.warn("moves:", error);
+      if(/does not exist|schema cache/i.test(error.message || "")) movesReady = false;
+      return;   // keep what's on screen
+    }
+    movesReady = true;
+    moves = data || [];
+  }
+  function canMove(){ return movesReady && ["admin","superadmin","teacher","trainer_teacher"].includes(currentRole); }
+  function withMove(e){
+    const m = e.scheduleId ? moves.find(x => x.schedule_id === e.scheduleId && x.from_day === e.day) : null;
+    if(!m) return e;
+    return Object.assign({}, e, { day: m.to_day, time: m.to_time, origDay: e.day, origTime: e.time, moved: true });
+  }
+  const toMin = t => { const [h, m] = String(t || "").split(":").map(Number); return h * 60 + (m || 0); };
+  const fromMin = x => { x = Math.max(0, Math.min(23 * 60 + 59, x)); return String(Math.floor(x / 60)).padStart(2, "0") + ":" + String(x % 60).padStart(2, "0"); };
+  // Moves the whole visit (Math + Reading together, keeping their gap) of one child from one day to toDay/toTime.
+  // Moving back onto the regular day and time removes the move.
+  async function moveVisit(kidKey, fromDay, fromTime, toDay, toTime){
+    const kid = x => x.studentId || x.studentName;
+    const seen = new Set();
+    const visit = buildEntries().map(withMove).filter(x => !x.cont && x.scheduleId && kid(x) === kidKey && x.day === fromDay)
+      .filter(x => { const k = x.scheduleId + "|" + (x.origDay || x.day); if(seen.has(k)) return false; seen.add(k); return true; });
+    if(!visit.length) return;
+    const delta = toMin(toTime) - toMin(fromTime);
+    const wk = moveWeekStart(), by = (currentUser && currentUser.email) || null;
+    let failed = null;
+    for(const x of visit){
+      const od = x.origDay || x.day, ot = x.origTime || x.time, nt = fromMin(toMin(x.time) + delta);
+      let res;
+      if(toDay === od && nt === ot) res = await sbClient.from("schedule_moves").delete().eq("schedule_id", x.scheduleId).eq("week_start", wk).eq("from_day", od).select("id");
+      else{
+        res = await sbClient.from("schedule_moves").upsert([{ schedule_id: x.scheduleId, week_start: wk, from_day: od, to_day: toDay, to_time: nt, moved_by: by }], { onConflict: "schedule_id,week_start,from_day" }).select("id");
+        if(!res.error && (!res.data || !res.data.length)) res = { error: { message: "the database didn't allow it" } };
+      }
+      if(res.error){ failed = res.error.message || "connection problem"; break; }
+    }
+    await loadMoves(); renderCalendar();
+    const name = visit[0].studentName || "the student", od = visit[0].origDay || visit[0].day, ot = visit[0].origTime || visit[0].time;
+    if(failed){ calToast(/row-level security|permission/i.test(failed) ? "Couldn't move that class — this student isn't in your group." : "Couldn't move that class (" + failed + ")."); return; }
+    const back = toDay === od && fromMin(toMin(visit[0].time) + delta) === ot;
+    logHistory(back ? "class_move_undo" : "class_move", back ? `Put ${name} back on ${od} ${fmtTime(ot)} this week` : `Moved ${name} from ${od} ${fmtTime(ot)} to ${toDay} ${fmtTime(fromMin(toMin(visit[0].time) + delta))} for this week`, "schedule", visit[0].scheduleId);
+    calToast(back ? `${chipDisplayName(name)} is back on ${od} ${fmtTime(ot)}.` : `${chipDisplayName(name)} moved to ${toDay} ${fmtTime(fromMin(toMin(visit[0].time) + delta))} for this week only. Next week is back to ${od}.`);
+  }
+  // Small dialog for moving to any day/time (and on phones, where dragging doesn't work).
+  function openMoveDialog(kidKey, fromDay, fromTime){
+    const it = buildEntries().map(withMove).find(x => (x.studentId || x.studentName) === kidKey && x.day === fromDay && x.time === fromTime && !x.cont);
+    if(!it) return;
+    let el = document.getElementById("moveDlg");
+    if(!el){ el = document.createElement("div"); el.id = "moveDlg"; el.className = "move-dlg-back"; document.body.appendChild(el); }
+    const od = it.origDay || it.day, ot = it.origTime || it.time;
+    const dayOpts = DAY_ORDER.map(d => `<option value="${d}" ${d === it.day ? "selected" : ""}>${d}</option>`).join("");
+    el.innerHTML = `<div class="move-dlg" role="dialog" aria-label="Move class this week">
+      <b>Move ${esc(chipDisplayName(it.studentName))} for this week</b>
+      <div class="move-sub">Regular class: ${esc(od)} ${esc(fmtTime(ot))}. Next week goes back to that automatically.${moves.length || it.moved ? "" : ""}</div>
+      <div class="move-row"><label>Day<select id="mvDay">${dayOpts}</select></label><label>Time<input type="time" id="mvTime" value="${esc(it.time)}"></label></div>
+      <div class="move-foot">${it.moved ? `<button type="button" class="btn sm" data-mv="back">Put back to ${esc(od)} ${esc(fmtTime(ot))}</button>` : ""}<span style="flex:1"></span>
+        <button type="button" class="btn sm ghost" data-mv="cancel">Cancel</button><button type="button" class="btn sm primary" data-mv="go">Move</button></div></div>`;
+    el.hidden = false;
+    el.onclick = async (ev) => {
+      const b = ev.target.closest("[data-mv]");
+      if(ev.target === el || (b && b.dataset.mv === "cancel")){ el.hidden = true; return; }
+      if(!b) return;
+      b.disabled = true;
+      if(b.dataset.mv === "back"){ el.hidden = true; await moveVisit(kidKey, it.day, it.time, od, ot); return; }
+      const d = $("#mvDay").value, t = $("#mvTime").value;
+      if(!d || !t){ b.disabled = false; return; }
+      el.hidden = true; await moveVisit(kidKey, it.day, it.time, d, t);
+    };
   }
   function legacyWeekStart(wk){ const d = new Date(wk + "T00:00:00Z"); d.setUTCDate(d.getUTCDate() - 1); return d.toISOString().slice(0,10); }
   async function loadSettings(){
@@ -1075,7 +1182,7 @@ window.kumonPtcNav = function(client, role){
   // Teacher + mode only — what the Level picker counts from.
   function baseEntries(){
     const scope = isTeacherScoped() ? new Set(myGroupTeachers()) : null;
-    return buildEntries().filter(en => {
+    return buildEntries().map(withMove).filter(en => {
       if(scope && !scope.has(en.teacher)) return false;
       if(filters.teachers.size && !filters.teachers.has(en.teacher)) return false;
       if(filters.mode !== "all" && en.mode !== filters.mode) return false;
@@ -1126,7 +1233,11 @@ window.kumonPtcNav = function(client, role){
         contEntries.push(Object.assign({}, first, { time: plus30(first.time), cont: true, fromTime: first.time, subjects, scheduleId: null }));
       });
     }
-    const times = [...new Set(entries.map(e => e.time).concat(contEntries.map(e => e.time)))].sort();
+    // Classes moved away this week leave a faint note at their regular slot ("moved to Wed 5:00 PM").
+    const ghostByCell = {};
+    { const seenG = new Set();
+      for(const e of entries){ if(!e.moved) continue; const k = e.origDay + "|" + e.origTime, kk = (e.studentId || e.studentName) + "|" + k; if(seenG.has(kk)) continue; seenG.add(kk); (ghostByCell[k] = ghostByCell[k] || []).push(e); } }
+    const times = [...new Set(entries.map(e => e.time).concat(contEntries.map(e => e.time), Object.keys(ghostByCell).map(k => k.split("|")[1])))].sort();
     const showTeacherLabel = filters.teachers.size !== 1;
 
     const byCell = {};
@@ -1172,20 +1283,26 @@ window.kumonPtcNav = function(client, role){
           const cls = it.subject === "Reading" ? "subj-reading" : "subj-math";
           const teacherLine = showTeacherLabel && it.teacher ? `<span class="teacher-sub">${esc(it.teacher)}</span>` : "";
           const titleBits = [it.studentName, it.subject, it.level ? "Level " + it.level : "", it.teacher].filter(Boolean).join(" — ");
-          const rec = it.scheduleId ? attendanceFor(it.scheduleId, it.day) : null;
+          const rec = it.scheduleId ? attendanceFor(it.scheduleId, it.origDay || it.day) : null;
           const arrived = !!(rec && rec.arrived);
           const modeTag = it.mode === "RI" ? `<span class="mode-tag">RI</span>` : "";
           const lvlTag = it.level ? `<span class="lvl-tag" title="Level">${esc(String(it.level).toUpperCase())}</span>` : "";
           // Only today's column ever gets the toggle — yesterday's is done, tomorrow's
           // hasn't happened yet, so there's nothing useful to check off either way.
-          const checkbox = (isToday && it.scheduleId)
-            ? `<input type="checkbox" data-action="toggle-arrived" data-schedule="${esc(it.scheduleId)}" data-day="${esc(it.day)}" ${arrived?"checked":""}>`
+          // A class moved to an earlier day this week can still be ticked afterwards (the teacher may only hear about it later).
+          const movedPast = it.moved && today !== "Sun" && DAY_ORDER.indexOf(d) < DAY_ORDER.indexOf(today);
+          const checkbox = ((isToday || movedPast) && it.scheduleId)
+            ? `<input type="checkbox" data-action="toggle-arrived" data-schedule="${esc(it.scheduleId)}" data-day="${esc(it.origDay || it.day)}" ${arrived?"checked":""}>`
             : "";
-          return `<div class="cal-chip ${cls} ${isToday && arrived?"arrived":""}" title="${esc(titleBits)}">
+          const mv = canMove() && it.scheduleId;
+          const dragAttrs = mv ? ` draggable="true" data-kid="${esc(kidKey(it))}" data-day="${esc(it.day)}" data-time="${esc(it.time)}"` : "";
+          const moveBtn = mv && firstOfKid ? `<button type="button" class="mv-btn" data-mvopen="1" title="Move this class to another day/time, this week only" aria-label="Move this week"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 9l-3 3 3 3M19 9l3 3-3 3M2 12h20"/></svg></button>` : "";
+          const movedLine = it.moved && firstOfKid ? `<span class="moved-sub">moved from ${esc(it.origDay)} ${esc(fmtTime(it.origTime))} · this week</span>` : "";
+          return `<div class="cal-chip ${cls} ${(isToday || movedPast) && arrived?"arrived":""}${it.moved ? " moved" : ""}" title="${esc(titleBits)}${it.moved ? esc(" — moved this week from " + it.origDay + " " + fmtTime(it.origTime)) : ""}"${dragAttrs}>
             <label class="chip-row">${numTag}${checkbox}<span class="chip-name">${esc(chipDisplayName(it.studentName))}${lvlTag} ${modeTag}${ccCells.chips.has(ccChipKey(it.scheduleId, it.day, it.time, it.subject)) ? `<span class="cc-chip-dot" title="Has an open comment"></span>` : ""}</span></label>
-            ${teacherLine}
+            ${teacherLine}${movedLine}${moveBtn}
           </div>`;
-        }).join("")}</div>`;
+        }).join("")}${(ghostByCell[ck] || []).map(g => `<div class="cal-ghost ${g.subject === "Reading" ? "subj-reading" : "subj-math"}" title="Moved for this week only">${esc(chipDisplayName(g.studentName))} → ${esc(g.day)} ${esc(fmtTime(g.time))}</div>`).join("")}</div>`;
       }
     }
     grid.style.gridTemplateColumns = `84px repeat(${days.length}, minmax(150px, 1fr))`;
@@ -1210,7 +1327,7 @@ window.kumonPtcNav = function(client, role){
     todays.forEach(e => {
       const k = e.studentId || ("name:" + (e.studentName || "").toLowerCase());
       const c = byChild.get(k) || { entry: e, arrived: false, teachers: new Set() };
-      if((attendanceFor(e.scheduleId, e.day)||{}).arrived) c.arrived = true;
+      if((attendanceFor(e.scheduleId, e.origDay || e.day)||{}).arrived) c.arrived = true;
       if(e.teacher) c.teachers.add(e.teacher);
       byChild.set(k, c);
     });
@@ -1593,6 +1710,41 @@ window.kumonPtcNav = function(client, role){
       toggleArrived(e.target.dataset.schedule, e.target.dataset.day, e.target.checked);
     }
   });
+
+  /* drag a child's chip onto another cell = move that visit for this week */
+  let dragKid = null;
+  document.addEventListener("dragstart", (e) => {
+    const chip = e.target.closest && e.target.closest(".cal-chip[draggable]");
+    if(!chip) return;
+    dragKid = { kid: chip.dataset.kid, day: chip.dataset.day, time: chip.dataset.time };
+    try{ e.dataTransfer.setData("text/plain", chip.dataset.kid); e.dataTransfer.effectAllowed = "move"; }catch(_){ }
+    document.body.classList.add("cal-dragging");
+  });
+  document.addEventListener("dragend", () => { dragKid = null; document.body.classList.remove("cal-dragging"); $$(".cal-cell.drop-here").forEach(x => x.classList.remove("drop-here")); });
+  document.addEventListener("dragover", (e) => {
+    if(!dragKid) return;
+    const cell = e.target.closest && e.target.closest("#calGrid .cal-cell[data-cell]");
+    if(!cell) return;
+    e.preventDefault();
+    if(!cell.classList.contains("drop-here")){ $$(".cal-cell.drop-here").forEach(x => x.classList.remove("drop-here")); cell.classList.add("drop-here"); }
+  });
+  document.addEventListener("drop", async (e) => {
+    if(!dragKid) return;
+    const cell = e.target.closest && e.target.closest("#calGrid .cal-cell[data-cell]");
+    const d = dragKid; dragKid = null; document.body.classList.remove("cal-dragging");
+    $$(".cal-cell.drop-here").forEach(x => x.classList.remove("drop-here"));
+    if(!cell) return;
+    e.preventDefault();
+    const [toDay, toTime] = cell.dataset.cell.split("|");
+    if(toDay === d.day && toTime === d.time) return;
+    await moveVisit(d.kid, d.day, d.time, toDay, toTime);
+  });
+  document.addEventListener("click", (e) => {
+    const b = e.target.closest && e.target.closest("[data-mvopen]");
+    if(!b) return;
+    e.preventDefault(); e.stopPropagation();
+    const chip = b.closest(".cal-chip"); if(chip) openMoveDialog(chip.dataset.kid, chip.dataset.day, chip.dataset.time);
+  }, true);
 
   document.addEventListener("click", async (e)=>{
     const btn = e.target.closest("[data-action]");
