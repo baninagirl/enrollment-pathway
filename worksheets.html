@@ -7,6 +7,7 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700&family=Inter:wght@400;500;600;700;800&display=swap">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>if(window.pdfjsLib) window.pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";</script>
 <style>
   :root{
@@ -1089,12 +1090,13 @@ window.kumonPtcNav = function(client, role){
       const s = suggestionFor(sub);
       const noCount = !s.stock;
       return `<div class="card sect"><div class="sec-h"><h3>${WS_NAME[sub]}</h3><span class="faint">${s.total ? fmtN(s.total) + " copies" : ""}</span><span class="grow"></span>
-          ${s.total ? `<button class="btn sm" data-action="csv" data-sub="${sub}">Download (CSV)</button>` : ""}</div>
+</div>
         ${noCount ? `<div class="banner">No shelf count for ${WS_NAME[sub]} yet, so this assumes the shelf is empty — it's the full need for the next ${s.weeks} weeks. Do a <a href="#" data-tab="count" data-sub="${sub}">shelf count</a> to get a real suggestion.</div>` : ""}
         ${gridHtml(sub, s.lines, { empty: noCount ? "No child needs this subject's worksheets in that time." : "Nothing to order — the shelf covers the next " + s.weeks + " weeks." })}
         <div class="hint">${s.demand.kids} children · ${esc(factorLine(sub))}</div></div>`;
     }).join("");
     body.innerHTML = `<div class="card sect"><div class="ws-set">
+        <span class="grow" style="order:2"></span><button class="btn primary sm" data-action="xlsx" style="order:3">Download Excel</button>
         <label class="field inline">Plan for <select id="coverWeeks">${[2,3,4,5,6,8].map(w => `<option value="${w}"${Number(wsSettings.cover_weeks) === w ? " selected" : ""}>${w} weeks</option>`).join("")}</select></label>
         <div class="hint" style="margin:0;">You order twice a month, so 4 weeks = two weeks until the next order + about a week for delivery + a week spare. The suggestion is what each block needs for that time, minus what's on the shelf and what's already ordered but not yet received — rounded up to tens.</div></div></div>
       ${parts}
@@ -1222,6 +1224,33 @@ window.kumonPtcNav = function(client, role){
     logHistory("ws_count", `Shelf count for ${WS_NAME[sub]}: ${fmtN(n)} copies (${date})`, data[0].id);
     await loadCounts(); wsUi.tab = "stock"; wsUi.stockSubject = sub; render(); toast("Count saved.");
   }
+  // One Excel file: a sheet per subject laid out like Kumon's order screen (every level, blocks 1…191), plus a notes sheet.
+  function downloadXlsx(){
+    if(!window.XLSX){ alert("The Excel maker didn't load — check the connection and refresh the page."); return; }
+    const wb = XLSX.utils.book_new(); const weeks = Math.max(1, Number(wsSettings.cover_weeks) || 4);
+    for(const sub of ["ME","EEU"]){
+      const s = suggestionFor(sub); const blocks = blocksOf(sub);
+      const rows = [["Level", ...blocks, "Total"]];
+      for(const lv of WS_LEVELS[sub]){ const l = s.lines[lv] || {}; const vals = blocks.map(b => l[b] || 0); const t = vals.reduce((a, b) => a + b, 0); rows.push([lv, ...vals.map(v => v || null), t || null]); }
+      rows.push(["Total", ...blocks.map(b => WS_LEVELS[sub].reduce((a, lv) => a + ((s.lines[lv] || {})[b] || 0), 0) || null), s.total || null]);
+      const ws = XLSX.utils.aoa_to_sheet(rows);
+      ws["!cols"] = [{ wch: 7 }, ...blocks.map(() => ({ wch: 6 })), { wch: 8 }];
+      ws["!freeze"] = { xSplit: 1, ySplit: 1 };
+      XLSX.utils.book_append_sheet(wb, ws, sub === "ME" ? "ME (Math)" : "EEU (English)");
+    }
+    const notes = [
+      ["Worksheet order suggestion"], ["Made", todayISO()], ["Plans for", weeks + " weeks"],
+      ["Math repeat factor", factorOf("ME").f.toFixed(2)], ["English repeat factor", factorOf("EEU").f.toFixed(2)],
+      ["Math shelf count", latestCount("ME") ? latestCount("ME").counted_on : "none — assumes an empty shelf"],
+      ["English shelf count", latestCount("EEU") ? latestCount("EEU").counted_on : "none — assumes an empty shelf"],
+      [], ["Each number is copies of a 10-worksheet block (1 = sheets 1–10, 11 = sheets 11–20 …), rounded up to tens."],
+      ["It is what the children need for the weeks above, minus what's on the shelf and what's ordered but not yet received."]
+    ];
+    const nws = XLSX.utils.aoa_to_sheet(notes); nws["!cols"] = [{ wch: 24 }, { wch: 40 }];
+    XLSX.utils.book_append_sheet(wb, nws, "Notes");
+    XLSX.writeFile(wb, `worksheet-order-${todayISO()}.xlsx`);
+    logHistory("ws_export", `Downloaded the worksheet order suggestion (${weeks} weeks)`, null);
+  }
   function downloadCsv(sub){
     const s = suggestionFor(sub); const blocks = blocksOf(sub);
     const rows = [["Level", ...blocks, "Total"]];
@@ -1238,6 +1267,7 @@ window.kumonPtcNav = function(client, role){
     const a = t.dataset.action;
     if(a === "logout"){ await sbClient.auth.signOut(); return; }
     if(a === "csv"){ downloadCsv(t.dataset.sub); return; }
+    if(a === "xlsx"){ downloadXlsx(); return; }
     if(a === "check"){ wsUi.checkId = t.dataset.id; render(); return; }
     if(a === "receive"){ const inp = document.querySelector(`[data-recv="${t.dataset.id}"]`); await setReceived(t.dataset.id, (inp && inp.value) || todayISO()); return; }
     if(a === "unreceive"){ if(confirm("Mark this order as not received? Its worksheets come off the stock.")) await setReceived(t.dataset.id, null); return; }
