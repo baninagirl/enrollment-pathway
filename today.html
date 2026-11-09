@@ -246,7 +246,6 @@
 
 
   /* ===== Today page ===== */
-  .main{ max-width:1180px; }
   #pageHead{ display:block; margin-bottom:0; }
   .td-top{ display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; }
   .td-date{ font-size:13px; color:var(--ink-faint); font-weight:500; }
@@ -317,7 +316,7 @@
   .td-week .col i.over{ background:var(--bad); }
   .td-week .now{ color:var(--ink); font-weight:700; }
 
-  .td-metrics{ display:grid; grid-template-columns:repeat(4, minmax(0,1fr)); gap:14px; margin:16px 0 10px; }
+  .td-metrics{ display:grid; grid-template-columns:repeat(auto-fill, minmax(210px, 1fr)); gap:14px; margin:16px 0 10px; }
   .td-metric{ padding:18px; display:flex; flex-direction:column; gap:10px; border:none; text-align:left; cursor:pointer; font:inherit; color:inherit; transition:transform .25s var(--spring, ease), box-shadow .25s var(--spring, ease); }
   .td-metric .r1{ display:flex; align-items:center; gap:14px; }
   .td-big{ font-family:"Sora", system-ui, sans-serif; font-size:26px; font-weight:700; letter-spacing:-.035em; line-height:1; }
@@ -359,7 +358,7 @@
   .td-links a{ background:var(--surface); padding:10px 14px; border-radius:12px; font-size:13.5px; font-weight:600; box-shadow:var(--shadow); text-decoration:none; }
   .td-empty{ padding:14px 4px; color:var(--ink-muted); font-size:13.5px; }
 
-  @media (max-width:1000px){ .td-metrics{ grid-template-columns:repeat(2, minmax(0,1fr)); } }
+  @media (max-width:520px){ .td-metrics{ grid-template-columns:repeat(2, minmax(0,1fr)); } }
   @media (max-width:900px){
     .td-mast{ grid-template-columns:1fr; gap:22px; }
     .td-stories{ grid-template-columns:1fr; }
@@ -1031,6 +1030,14 @@ window.kumonPtcNav = function(client, role){
     metric({ k:"ptc", name:"PTC done", n: done.length, of: done.length + late.length, goal: 100, unit:"PTCs",
       how:"PTCs done this month, out of those done plus the ones due this month that are still open past their date.", missLabel:"Overdue PTC", miss: late.map(d => ({ sid: d.student_id, note: `${ordinal(d.month_no)} month · was due ${fmtDate(d.due_date, { year: undefined })}` })) });
 
+    // Achievement tests this cycle: out of every test recorded (not every student), how many came out Group 1
+    const filled = v => v != null && String(v).trim() !== "" && String(v).trim() !== "—";
+    const tests = enrs.filter(e => filled(e.test_date) || filled(e.test_level) || filled(e.test_score) || filled(e.test_group));
+    const g1 = tests.filter(e => /^\s*(group\s*)?1\s*$/i.test(String(e.test_group || "")));
+    metric({ k:"at", name:"Achievement test Group 1", n: g1.length, of: tests.length, goal: 100, unit:"tests",
+      how:"Achievement tests recorded this cycle (on the Student roster), and how many of them came out Group 1. Counts tests, not students.",
+      missLabel:"Not Group 1", miss: tests.filter(e => !g1.includes(e)).map(e => ({ sid: e.student_id, e, note: `${e.test_level ? e.test_level + " test" : "Test"}${filled(e.test_score) ? " · " + e.test_score : ""} · ${filled(e.test_group) ? "Group " + String(e.test_group).replace(/^\s*group\s*/i, "") : "no group yet"}` })) });
+
     // Absences (lower is better)
     const absIds = new Set();
     for(const a of D.abs){
@@ -1137,7 +1144,7 @@ window.kumonPtcNav = function(client, role){
     return `<section class="td-sec"><div class="td-kicker">Your day</div><h2 class="td-title">${esc(title)}</h2>
       <div class="card td-day"><div class="td-ring">${ring([[arr, "var(--good)"], [uniq.length - arr, "var(--accent)"]], uniq.length, `${arr}<tspan font-size="${180 * 0.11}" fill="var(--ink-faint)">/${uniq.length}</tspan>`, "arrived so far")}
         <div class="td-legend"><span><i style="background:var(--good)"></i>Arrived</span><span><i style="background:var(--accent)"></i>Not yet</span></div></div>
-      <div style="min-width:0">${slots.length ? `<div class="td-tl"><div class="td-tl-track"></div>${slots.map(s => `<button class="td-tl-block${now >= s.m + 60 ? " past" : ""}${s.m === tdUi.slot ? " on" : ""}" data-slot="${s.m}" style="left:${X(s.m)}%;width:${Math.max(4, 60 / (B - A) * 100 * (0.7 + 0.3 * s.kids.length / max))}%" title="${fmtT(s.m)}: ${plural(s.kids.length, "child", "children")}">${s.kids.length}</button>`).join("")}
+      <div style="min-width:0">${slots.length ? `<div class="td-tl"><div class="td-tl-track"></div>${slots.map((s, i) => `<button class="td-tl-block${now >= s.m + 60 ? " past" : ""}${s.m === tdUi.slot ? " on" : ""}" data-slot="${s.m}" style="left:${X(s.m)}%;width:calc(${Math.min(60, (slots[i + 1] ? slots[i + 1].m : s.m + 60) - s.m) / (B - A) * 100}% - 4px)" title="${fmtT(s.m)}: ${plural(s.kids.length, "child", "children")}">${s.kids.length}</button>`).join("")}
           ${now >= A && now <= B ? `<div class="td-tl-now" style="left:${X(now)}%"></div>` : ""}<div class="td-tl-axis">${hours.map(h => `<span style="left:${X(h * 60)}%">${fmtT(h * 60)}</span>`).join("")}</div></div>` : ""}
         ${sl ? `<div class="td-slot-h"><b>${fmtT(sl.m)}</b><span>${plural(sl.kids.length, "child", "children")}${slots.length > 1 ? " · tap another time above to switch" : ""}</span></div>${sl.kids.map(k => kidRow(k.studentId, { tick: true, kid: k, items: k.items })).join("")}` : `<div class="td-empty">Nobody is scheduled today. Center visits come from the Calendar.</div>`}
       </div></div></section>`;
@@ -1169,7 +1176,7 @@ window.kumonPtcNav = function(client, role){
       <div class="td-metrics">${ms.map(m => { const st = metricState(m);
         return `<button class="card td-metric" data-metric="${m.k}"><div class="r1">${metricRing(m, st)}<div><div class="td-big">${st.pct == null ? "—" : st.pct + "%"}</div><div class="td-goal">goal ${m.lower ? "under " : ""}${m.goal}%</div></div></div>
           <div><div class="td-mname">${esc(m.name)}</div><div class="td-sub">${m.n} of ${m.of} · <span style="color:${st.col};font-weight:600">${esc(st.text)}</span></div></div></button>`; }).join("")}</div>
-      <p class="td-note">Not in the Hub, so not shown: self-marking (CW and HW), undone daily worksheets, achievement test group 1, and the staff ratings (punctuality, teamwork, tasks, entries, study approach).</p></section>`;
+</section>`;
   }
   function renderKis(){
     const pts = scopeEnrollments().filter(e => tdUi.kisSub === "all" || e.subject === tdUi.kisSub).map(e => ({ e, k: kisInfo(e) })).filter(o => o.k);
@@ -1282,7 +1289,7 @@ window.kumonPtcNav = function(client, role){
     const wk = weekStart(), legacy = addDays(wk, -1);
     await Promise.all([
       tdLoad("students", async () => { D.students = await selectAll("students", "id,name,first_name,last_name,age_grade,mode,status,first_day", q => q.order("id")); }),
-      tdLoad("enrollments", async () => { D.enr = await selectAll("subject_enrollments", "id,student_id,student_name,subject,teacher,status,current_level,current_page,lwc,created_at", q => q.eq("status", "active").order("id")); }),
+      tdLoad("enrollments", async () => { D.enr = await selectAll("subject_enrollments", "id,student_id,student_name,subject,teacher,status,current_level,current_page,lwc,created_at,test_date,test_level,test_score,test_group", q => q.eq("status", "active").order("id")); }),
       tdLoad("schedules", async () => { D.sched = await selectAll("schedules", "id,student_id,subject_enrollment_id,slots,status", q => q.eq("status", "active").order("id")); }),
       tdLoad("history", async () => { D.hist = await selectAll("enrollment_monthly_history", "id,subject_enrollment_id,cycle_key,current_level,current_page,lwc", q => q.order("id")); }),
       tdLoad("projections", async () => { D.proj = await selectAll("study_projections", "subject_enrollment_id", q => q.order("subject_enrollment_id")); }),
