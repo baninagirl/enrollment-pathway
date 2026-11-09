@@ -1010,7 +1010,7 @@ window.kumonPtcNav = function(client, role){
     for(const lv of WS_LEVELS[sub]) for(const b of blocksOf(sub)){
       const need = getN(d.map, lv, b); if(need <= 0.05) continue;
       const have = st ? Math.max(0, getN(st.map, lv, b)) : 0;
-      const n = round10(Math.max(0, need - have - getN(inc, lv, b)));
+      const n = Math.ceil(Math.max(0, need - have - getN(inc, lv, b)) - 1e-9);   // exact copies (Kumon takes any number)
       if(n > 0){ (out[lv] = out[lv] || {})[b] = n; total += n; }
     }
     return { lines: out, total, weeks, stock: st, demand: d };
@@ -1068,7 +1068,7 @@ window.kumonPtcNav = function(client, role){
       const need = atDemand(sub, weeks * 7);
       for(const lv of AT_LEVELS[sub]){
         const n = need[lv] || 0, have = st ? Math.max(0, Math.round((st.map[sub] || {})[lv] || 0)) : null, coming = inc[sub][lv] || 0;
-        const order = n > 0.05 ? round10(Math.max(0, n - (have || 0) - coming)) : 0;
+        const order = n > 0.05 ? Math.ceil(Math.max(0, n - (have || 0) - coming) - 1e-9) : 0;   // exact number of tests (no rounding to tens)
         if(n > 0.05 || have) rows.push({ sub, lv, item: atItem(sub, lv), need: n, have, coming, order });
       }
     }
@@ -1175,7 +1175,7 @@ window.kumonPtcNav = function(client, role){
     body.innerHTML = `<div class="card sect"><div class="ws-set">
         <span class="grow" style="order:2"></span><button class="btn primary sm" data-action="xlsx" style="order:3">Download Excel</button>
         <label class="field inline">Plan for <select id="coverWeeks">${[2,3,4,5,6,8].map(w => `<option value="${w}"${Number(wsSettings.cover_weeks) === w ? " selected" : ""}>${w} weeks</option>`).join("")}</select></label>
-        <div class="hint" style="margin:0;">You order twice a month, so 4 weeks = two weeks until the next order + about a week for delivery + a week spare. The suggestion is what each block needs for that time, minus what's on the shelf and what's already ordered but not yet received — rounded up to tens.</div></div></div>
+        <div class="hint" style="margin:0;">You order twice a month, so 4 weeks = two weeks until the next order + about a week for delivery + a week spare. The suggestion is what each block needs for that time, minus what's on the shelf and what's already ordered but not yet received — rounded up to whole copies.</div></div></div>
       ${parts}
       ${calibCard()}
       <div class="card sect"><div class="sec-h"><h3>Pre-school (PSE · Z1, Z2)</h3></div><div class="hint">The Hub has no pre-school students, so there's no suggestion for Z1/Z2. Their stock still shows on Stock per level once they're counted.</div></div>`;
@@ -1190,7 +1190,7 @@ window.kumonPtcNav = function(client, role){
       ${rows.length ? `<div class="ws-grid-wrap"><table class="ws-grid at-grid"><thead><tr><th>Level</th><th>Order</th><th>Tests needed</th><th>On the shelf</th><th>On the way</th></tr></thead><tbody>
         ${rows.map(r => `<tr><th>${esc(r.lv)}</th><td class="tot">${r.order ? fmtN(r.order) : ""}</td><td>${r.need >= 0.5 ? fmtN(r.need) : ""}</td><td>${r.have == null ? "—" : r.have ? fmtN(r.have) : ""}</td><td>${r.coming ? fmtN(r.coming) : ""}</td></tr>`).join("")}
       </tbody></table></div>` : `<div class="empty">No child finishes a level in the next ${a.weeks} weeks.</div>`}
-      <div class="hint">One test per child reaching page 200 of a level, plus 20% for retakes, rounded up to tens. Order under <b>Non-Chargeable Items</b>: search "${esc(name)}" and the level.</div></div>`;
+      <div class="hint">One test per child reaching page 200 of a level in that time, plus 20% for retakes, minus what's on the shelf and on the way — the exact number, rounded up to whole tests. Order under <b>Non-Chargeable Items</b>: search "${esc(name)}" and the level.</div></div>`;
   }
   function atCard(){
     const a = atSuggestion(); const toOrder = a.rows.filter(r => r.order > 0);
@@ -1198,7 +1198,7 @@ window.kumonPtcNav = function(client, role){
     return `<div class="card sect"><div class="sec-h"><h3>Achievement tests</h3><span class="faint">${toOrder.length ? toOrder.reduce((x, r) => x + r.order, 0) + " tests" : ""}</span></div>
       ${a.stock ? "" : `<div class="banner">No shelf count for the tests yet, so this is the full need for the next ${a.weeks} weeks. <a href="#" data-tab="count" data-sub="AT">Count the tests</a> to get a real suggestion.</div>`}
       ${rows ? `<div class="tbl"><table class="stable"><thead><tr><th>Kumon item</th><th>Tests needed (next ${a.weeks} wks)</th><th>On the shelf</th><th>On the way</th><th>Order</th></tr></thead><tbody>${rows}</tbody></table></div>` : `<div class="empty">No child finishes a level in the next ${a.weeks} weeks.</div>`}
-      <div class="hint">One test for each child who reaches the end of a level (page 200), plus 20% for retakes, rounded up to tens. Order these under <b>Non-Chargeable Items</b> (search "AT").</div></div>`;
+      <div class="hint">One test for each child who reaches the end of a level (page 200), plus 20% for retakes, rounded up to whole tests. Order these under <b>Non-Chargeable Items</b> (search "AT").</div></div>`;
   }
   // Kumon's Stock Summary "Used" for a closed month teaches the Hub how many copies a child really uses
   // per 10 pages of progress (repeats, re-dos, spares).
@@ -1368,7 +1368,7 @@ window.kumonPtcNav = function(client, role){
       ["Math repeat factor", factorOf("ME").f.toFixed(2)], ["English repeat factor", factorOf("EEU").f.toFixed(2)],
       ["Math shelf count", latestCount("ME") ? latestCount("ME").counted_on : "none — assumes an empty shelf"],
       ["English shelf count", latestCount("EEU") ? latestCount("EEU").counted_on : "none — assumes an empty shelf"],
-      [], ["Each number is copies of a 10-worksheet block (1 = sheets 1–10, 11 = sheets 11–20 …), rounded up to tens."],
+      [], ["Each number is copies of a 10-worksheet block (1 = sheets 1–10, 11 = sheets 11–20 …), rounded up to whole copies."],
       ["It is what the children need for the weeks above, minus what's on the shelf and what's ordered but not yet received."]
     ];
     const nws = XLSX.utils.aoa_to_sheet(notes); nws["!cols"] = [{ wch: 24 }, { wch: 40 }];
