@@ -412,7 +412,7 @@ window.kumonPtcNav = function(client, role){
   // at the bottom of the menu so teachers' links aren't mixed with them. On phones they stay in the bottom bar.
   if(!window.__kumonAdminGroup){
     window.__kumonAdminGroup = true;
-    var ids = ["navAdminLink", "navActivityLink", "navReportsLink", "navWsLink"];
+    var ids = ["navReportsLink", "navWsLink", "navAdminLink", "navActivityLink"];   // the order they show in
     var place = function(){
       var pages = document.querySelector(".rail-pages"); if(!pages) return;
       var grp = document.getElementById("navAdminGroup");
@@ -423,7 +423,7 @@ window.kumonPtcNav = function(client, role){
         if(acct && acct.parentNode) acct.parentNode.insertBefore(grp, acct); else pages.parentNode.appendChild(grp);
       }
       var wide = !window.matchMedia || window.matchMedia("(min-width: 861px)").matches;
-      ids.forEach(function(id){ var a = document.getElementById(id); if(!a) return; var target = wide ? grp : pages; if(a.parentNode !== target) target.appendChild(a); });
+      ids.forEach(function(id){ var a = document.getElementById(id); if(!a) return; if(wide) grp.appendChild(a); else if(a.parentNode !== pages) pages.appendChild(a); });
       // Settings (from Pipeline views) goes last in the Admin section; same people see it as before (whoever sees Pipeline)
       var st = document.getElementById("navSettingsLink") || document.querySelector('.rail a.navbtn[href="index.html#settings"], .rail button.navbtn[data-tab="settings"]');
       if(st){
