@@ -1090,7 +1090,7 @@ window.kumonPtcNav = function(client, role){
       const s = suggestionFor(sub);
       const noCount = !s.stock;
       return `<div class="card sect"><div class="sec-h"><h3>${WS_NAME[sub]}</h3><span class="faint">${s.total ? fmtN(s.total) + " copies" : ""}</span><span class="grow"></span>
-</div>
+          ${s.total ? `<button class="btn sm" data-action="kumon-file" data-sub="${sub}" title="Upload this on Kumon's Order screen with Import (${sub} tab)">File for Kumon's Import</button>` : ""}</div>
         ${noCount ? `<div class="banner">No shelf count for ${WS_NAME[sub]} yet, so this assumes the shelf is empty — it's the full need for the next ${s.weeks} weeks. Do a <a href="#" data-tab="count" data-sub="${sub}">shelf count</a> to get a real suggestion.</div>` : ""}
         ${gridHtml(sub, s.lines, { empty: noCount ? "No child needs this subject's worksheets in that time." : "Nothing to order — the shelf covers the next " + s.weeks + " weeks." })}
         <div class="hint">${s.demand.kids} children · ${esc(factorLine(sub))}</div></div>`;
@@ -1251,6 +1251,18 @@ window.kumonPtcNav = function(client, role){
     XLSX.writeFile(wb, `worksheet-order-${todayISO()}.xlsx`);
     logHistory("ws_export", `Downloaded the worksheet order suggestion (${weeks} weeks)`, null);
   }
+  // The file Kumon's order screen takes in with Import: same shape as its own Export (Worksheet_ME_261109.xlsx) —
+  // one subject, sheet "Sheet1", header "Level" + block numbers, every level in Kumon's order, empty = none.
+  function downloadKumonFile(sub){
+    if(!window.XLSX){ alert("The Excel maker didn't load — check the connection and refresh the page."); return; }
+    const s = suggestionFor(sub); const blocks = blocksOf(sub);
+    const rows = [["Level", ...blocks]];
+    for(const lv of WS_LEVELS[sub]){ const l = s.lines[lv] || {}; rows.push([lv, ...blocks.map(b => l[b] || null)]); }
+    const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rows), "Sheet1");
+    const ymd = todayISO().slice(2).replace(/-/g, "");
+    XLSX.writeFile(wb, `Worksheet_${sub}_${ymd}.xlsx`);
+    logHistory("ws_export", `Downloaded the Kumon import file for ${sub} (${s.total} copies)`, null);
+  }
   function downloadCsv(sub){
     const s = suggestionFor(sub); const blocks = blocksOf(sub);
     const rows = [["Level", ...blocks, "Total"]];
@@ -1268,6 +1280,7 @@ window.kumonPtcNav = function(client, role){
     if(a === "logout"){ await sbClient.auth.signOut(); return; }
     if(a === "csv"){ downloadCsv(t.dataset.sub); return; }
     if(a === "xlsx"){ downloadXlsx(); return; }
+    if(a === "kumon-file"){ downloadKumonFile(t.dataset.sub); return; }
     if(a === "check"){ wsUi.checkId = t.dataset.id; render(); return; }
     if(a === "receive"){ const inp = document.querySelector(`[data-recv="${t.dataset.id}"]`); await setReceived(t.dataset.id, (inp && inp.value) || todayISO()); return; }
     if(a === "unreceive"){ if(confirm("Mark this order as not received? Its worksheets come off the stock.")) await setReceived(t.dataset.id, null); return; }
