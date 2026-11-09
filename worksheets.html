@@ -1,0 +1,1310 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Kumon Hub — Worksheets</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700&family=Inter:wght@400;500;600;700;800&display=swap">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script>if(window.pdfjsLib) window.pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";</script>
+<style>
+  :root{
+    --bg:#F5F6FA; --surface:#FFFFFF; --surface-2:#FBFBFE; --border:#E1E4EB;
+    --ink:#1B1F27; --ink-muted:#636C7C; --ink-faint:#9AA1AF;
+    --accent:#3454D1; --accent-ink:#FFFFFF; --accent-soft:#E9EDFC; --accent-soft-ink:#2A41A8;
+    --good:#1E8E5A; --good-soft:#E4F5EC; --warn:#C2831F; --warn-soft:#FBF0E1; --bad:#C23B2B; --bad-soft:#FBE8E5;
+    --shadow: 0 1px 2px rgba(16,20,30,.04), 0 2px 8px rgba(16,20,30,.06), 0 20px 40px -20px rgba(16,20,30,.25);
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#14161C; --surface:#1C1F27; --surface-2:#20232C; --border:#2C303B;
+      --ink:#EDEFF4; --ink-muted:#9BA3B2; --ink-faint:#6B7280;
+      --accent:#6C86F0; --accent-ink:#0E1220; --accent-soft:#232A47; --accent-soft-ink:#B7C3FA;
+      --good:#4FC48A; --good-soft:#173226; --warn:#E0A23F; --warn-soft:#332711; --bad:#F0796A; --bad-soft:#3A1F1C;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#14161C; --surface:#1C1F27; --surface-2:#20232C; --border:#2C303B;
+    --ink:#EDEFF4; --ink-muted:#9BA3B2; --ink-faint:#6B7280;
+    --accent:#6C86F0; --accent-ink:#0E1220; --accent-soft:#232A47; --accent-soft-ink:#B7C3FA;
+    --good:#4FC48A; --good-soft:#173226; --warn:#E0A23F; --warn-soft:#332711; --bad:#F0796A; --bad-soft:#3A1F1C;
+    color-scheme: dark;
+  }
+
+  *{box-sizing:border-box;}
+  body{
+    background:var(--bg); color:var(--ink); margin:0;
+    font-family:"Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  h1,h2,h3,.brand{ font-family:"Sora", system-ui, sans-serif; }
+  h1,h2,h3{ text-wrap:balance; margin:0; }
+  button{ font-family:inherit; }
+  a{ color:var(--accent); }
+
+  .app{ display:grid; grid-template-columns: 216px 1fr; min-height:100vh; min-height:100dvh; }
+  .rail{
+    background:var(--surface); border-right:1px solid var(--border);
+    padding:20px 12px; display:flex; flex-direction:column; gap:4px;
+    position:sticky; top:0; align-self:start; height:100vh; height:100dvh;
+  }
+  .brand{ font-weight:700; font-size:16px; padding:6px 10px 18px; display:flex; align-items:center; gap:8px; color:var(--ink); }
+  .brand .dot{ width:9px;height:9px;border-radius:50%;background:var(--accent); flex:none; }
+  .navbtn{
+    display:flex; align-items:center; gap:10px; padding:9px 10px; border-radius:9px;
+    border:none; background:transparent; color:var(--ink-muted); font-size:14px; font-weight:600;
+    cursor:pointer; text-align:left; width:100%; text-decoration:none;
+    transition: background-color .15s ease, color .15s ease, box-shadow .15s ease;
+  }
+  .navbtn:focus-visible{ outline:none; box-shadow: 0 0 0 3px var(--accent-soft); }
+  .navbtn:hover{ background:var(--surface-2); color:var(--ink); }
+  .navbtn svg{ width:17px; height:17px; flex:none; }
+  .navbtn.active{ background:var(--accent-soft); color:var(--accent-soft-ink); box-shadow: inset 3px 0 0 var(--accent); }
+  .rail-pages{ display:flex; flex-direction:column; gap:4px; margin-bottom:8px; }
+  .rail-divider{ height:1px; background:var(--border); margin:4px 10px 10px; }
+  .rail-account{ padding:0 10px 10px; }
+  .account-row{ display:flex; align-items:center; justify-content:space-between; gap:8px; padding:8px 8px; border-top:1px solid var(--border); font-size:12px; color:var(--ink-muted); }
+  .account-email{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .rail-foot{ margin-top:auto; padding:10px; font-size:12px; color:var(--ink-faint); line-height:1.5; }
+
+  .main{ padding:26px 30px 60px; max-width:1100px; width:100%; min-width:0; }
+  .page-head{ display:flex; align-items:flex-end; justify-content:space-between; gap:16px; margin-bottom:18px; flex-wrap:wrap; }
+  .page-head h1{ font-size:22px; font-weight:700; }
+  .page-sub{ color:var(--ink-muted); font-size:13.5px; margin-top:4px; }
+
+  .btn{
+    display:inline-flex; align-items:center; gap:7px; padding:9px 14px; border-radius:9px;
+    font-size:13.5px; font-weight:600; border:1px solid var(--border); background:var(--surface);
+    color:var(--ink); cursor:pointer; white-space:nowrap;
+    transition: background-color .15s ease, border-color .15s ease, color .15s ease, box-shadow .15s ease, transform .08s ease;
+  }
+  .btn:hover{ background:var(--surface-2); }
+  .btn:active{ transform:scale(.96); }
+  .btn:focus-visible{ outline:none; box-shadow: 0 0 0 3px var(--accent-soft); }
+  .btn.primary{ background:var(--accent); color:var(--accent-ink); border-color:var(--accent); box-shadow: 0 1px 2px rgba(0,0,0,.08); }
+  .btn.good{ color:var(--good); border-color:var(--good-soft); }
+  .btn.good:hover{ background:var(--good-soft); }
+  .btn.ghost{ border-color:transparent; background:transparent; }
+  .btn.sm{ padding:6px 10px; font-size:12.5px; border-radius:7px; }
+  .btn:disabled{ opacity:.5; cursor:not-allowed; }
+
+  .card{ background:var(--surface); border:1px solid var(--border); border-radius:14px; margin-bottom:18px; }
+  .card-head{ display:flex; align-items:center; justify-content:space-between; padding:14px 16px; border-bottom:1px solid var(--border); gap:10px; flex-wrap:wrap; }
+  .card-head h3{ font-size:14.5px; font-weight:700; }
+  .empty{ padding:30px 16px; text-align:center; color:var(--ink-muted); font-size:13.5px; }
+
+  .stats{ display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin-bottom:12px; }
+  .stat{ background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:13px 14px; display:flex; flex-direction:column; gap:6px; }
+  .stat .n{ font-size:22px; font-weight:700; font-family:"Sora",sans-serif; }
+  .stat .l{ font-size:12px; color:var(--ink-muted); font-weight:600; }
+  .stat.warn .n{ color:var(--warn); }
+  .stat.bad .n{ color:var(--bad); }
+  button.stat{ cursor:pointer; text-align:left; font:inherit; transition: border-color .15s ease, box-shadow .15s ease, background-color .15s ease; }
+  button.stat:hover{ border-color:var(--accent); }
+  button.stat.selected{ border-color:var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); background:var(--accent-soft); }
+  button.stat.selected .l{ color:var(--accent-soft-ink); }
+  .filter-note{ display:flex; align-items:center; gap:8px; font-size:12.5px; color:var(--ink-muted); margin:-6px 0 12px; }
+  .filter-note button{ border:none; background:transparent; color:var(--accent); font-weight:600; cursor:pointer; padding:0; font-size:12.5px; }
+
+  .cal-toolbar{ display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; flex-wrap:wrap; gap:10px; }
+  .cal-nav{ display:flex; align-items:center; gap:8px; }
+  .cal-nav h2{ font-size:16px; font-weight:700; min-width:160px; text-align:center; }
+  .month-head{ display:flex; flex-direction:column; align-items:center; }
+  .month-head h2{ margin:0; }
+  .month-range{ font-size:11px; color:var(--ink-muted); margin-top:1px; }
+  @media (max-width: 640px){ .cal-nav h2{ font-size:14px; min-width:0; flex:1; } }
+
+  .seg{ display:inline-flex; background:var(--surface-2); border:1px solid var(--border); border-radius:9px; padding:2px; }
+  .seg button{ border:none; background:transparent; padding:6px 11px; border-radius:7px; font-size:12.5px; font-weight:600; color:var(--ink-muted); cursor:pointer; }
+  .seg button:active{ transform:scale(.94); }
+  .seg button.active{ background:var(--surface); color:var(--ink); box-shadow:var(--shadow); }
+
+  .search-row{ display:flex; gap:8px; margin-bottom:14px; flex-wrap:wrap; align-items:center; }
+  .search-row input, .search-row select{ font-size:13.5px; width:auto; flex:0 0 auto; }
+  .search-row select{ min-width:132px; }
+  .table-scroll{ overflow-x:auto; }
+  .stable{ min-width:100%; width:auto; border-collapse:collapse; }
+  .stable th{ text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--ink-muted); padding:8px 16px; border-bottom:1px solid var(--border); white-space:nowrap; }
+  .stable td{ padding:10px 16px; border-bottom:1px solid var(--border); font-size:13px; vertical-align:middle; white-space:nowrap; }
+  .stable .empty{ white-space:normal; }
+  .stable tr:last-child td{ border-bottom:none; }
+  .stable tbody tr td{ transition: background-color .12s ease; }
+  .stable tbody tr:hover td{ background:var(--surface-2); }
+  .stable tr.clickrow{ cursor:pointer; }
+  .stable tr.clickrow:hover{ background:var(--surface-2); }
+  .muted{ color:var(--ink-muted); }
+  .hint{ font-size:12px; color:var(--ink-muted); font-weight:500; }
+  .faint{ color:var(--ink-faint); }
+  .money{ font-variant-numeric:tabular-nums; font-weight:600; }
+  .money.good{ color:var(--good); }
+  .pill{ display:inline-flex; align-items:center; gap:5px; padding:3px 9px; border-radius:99px; font-size:11.5px; font-weight:700; white-space:nowrap; transition: background-color .15s ease, color .15s ease; }
+  .pill.subj-math{ background:var(--accent-soft); color:var(--accent-soft-ink); }
+  .pill.subj-reading{ background:var(--bad-soft); color:var(--bad); }
+  .pill.m1, .pill.m2{ background:var(--warn-soft); color:var(--warn); }
+  .pill.m3, .pill.m4{ background:var(--bad-soft); color:var(--bad); }
+  .pill.resumed{ background:var(--good-soft); color:var(--good); }
+  .pill.pending{ background:var(--accent-soft); color:var(--accent-soft-ink); }
+  .pill.flagged{ background:var(--warn-soft); color:var(--warn); }
+  .pill.verified{ background:var(--good-soft); color:var(--good); }
+  .pill.rejected{ background:var(--surface-2); color:var(--ink-faint); }
+  .field-row{ display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  .lvl.empty-lvl{ color:var(--ink-faint); }
+  .pill.beyond{ background:var(--surface-2); color:var(--ink-faint); }
+  .name-subj-pill{ margin-left:6px; vertical-align:middle; padding:2px 7px; }
+  .row-actions{ display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end; }
+
+  select, input[type=text], input[type=search], textarea{
+    font-family:inherit; font-size:13.5px; padding:8px 10px; border-radius:8px; border:1px solid var(--border);
+    background:var(--surface); color:var(--ink); width:100%;
+  }
+  select, input, textarea{ transition: border-color .15s ease, box-shadow .15s ease; }
+  select:focus, input:focus, textarea:focus{ outline:none; border-color:var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+  label.field{ display:flex; flex-direction:column; gap:5px; font-size:12.5px; font-weight:600; color:var(--ink-muted); }
+
+  .modal-backdrop{ position:fixed; inset:0; background:rgba(10,12,18,.5); display:flex; align-items:flex-start; justify-content:center; padding:5vh 16px; overflow-y:auto; z-index:50; }
+  .modal{ background:var(--surface); border-radius:16px; width:100%; max-width:460px; box-shadow:var(--shadow); }
+  .modal-head{ display:flex; align-items:center; justify-content:space-between; padding:16px 18px; border-bottom:1px solid var(--border); }
+  .modal-head h3{ font-size:15.5px; font-weight:700; }
+  .modal-body{ padding:16px 18px; display:flex; flex-direction:column; gap:12px; max-height:66vh; overflow-y:auto; }
+  .modal-foot{ display:flex; justify-content:flex-end; gap:8px; padding:14px 18px; border-top:1px solid var(--border); }
+  .iconbtn{ border:none; background:transparent; cursor:pointer; color:var(--ink-muted); padding:4px; border-radius:6px; transition: background-color .15s ease, color .15s ease, transform .08s ease; }
+  .iconbtn:hover{ background:var(--surface-2); color:var(--ink); }
+  .iconbtn:active{ transform:scale(.9); }
+
+  .note-item{ border:1px solid var(--border); border-radius:10px; padding:10px 12px; background:var(--surface-2); }
+  .note-item .note-meta{ font-size:11px; color:var(--ink-muted); margin-bottom:4px; }
+  .note-item .note-text{ font-size:13px; white-space:pre-wrap; }
+  .note-form{ display:flex; flex-direction:column; gap:8px; }
+
+  .banner{ background:var(--warn-soft); color:var(--warn); border-radius:11px; padding:11px 14px; font-size:13px; font-weight:600; margin-bottom:16px; }
+  .banner.info{ background:var(--accent-soft); color:var(--accent-soft-ink); }
+
+  .toast{ position:fixed; left:50%; bottom:22px; transform:translateX(-50%); background:var(--ink); color:var(--bg); font-size:13px; font-weight:600; padding:10px 16px; border-radius:10px; z-index:95; box-shadow:var(--shadow); }
+
+  .login-screen{ position:fixed; inset:0; display:flex; align-items:center; justify-content:center; background:var(--bg); z-index:100; padding:20px; }
+  .login-card{ width:100%; max-width:360px; background:var(--surface); border:1px solid var(--border); border-radius:16px; padding:28px 26px; box-shadow:var(--shadow); display:flex; flex-direction:column; gap:14px; }
+  .login-brand{ font-family:"Sora", system-ui, sans-serif; font-weight:700; font-size:18px; display:flex; align-items:center; gap:8px; color:var(--ink); }
+  .login-brand .dot{ width:9px; height:9px; border-radius:50%; background:var(--accent); flex:none; }
+  .login-sub{ font-size:13px; color:var(--ink-muted); margin:-6px 0 4px; }
+  .login-error{ background:var(--bad-soft); color:var(--bad); border-radius:9px; padding:9px 12px; font-size:12.5px; font-weight:600; }
+
+  [hidden]{ display:none !important; }
+
+  @media (max-width: 860px){
+    .app{ grid-template-columns:1fr; }
+    .rail{ position:fixed; bottom:0; left:0; right:0; top:auto; height:auto; flex-direction:row; padding:8px; border-right:none; border-top:1px solid var(--border); z-index:40; }
+    .brand, .rail-foot, .rail-account{ display:none; }
+    .rail-pages{ flex-direction:row; flex:1; margin-bottom:0; }
+    .rail-divider{ display:none; }
+    .navbtn{ text-align:center; justify-content:center; }
+    .main{ padding:16px 14px calc(70px + env(safe-area-inset-bottom)); }
+    .stats{ grid-template-columns:repeat(2,1fr); }
+    .stable th, .stable td{ padding:9px 8px; font-size:12.5px; }
+    .modal-backdrop{ padding:0; align-items:flex-end; }
+    .modal{ max-width:none; border-radius:16px 16px 0 0; max-height:92vh; }
+    .field-row{ grid-template-columns:1fr; }
+  }
+
+  /* ===== Shared across pages: collapsible sidebar + fit-to-screen ===== */
+  :root{ --rail-w:216px; --z:1; }
+  html.rail-collapsed{ --rail-w:68px; }
+  .rail-toggle{ display:none; }
+  .rail-pipeline .rail-section-label{ font-size:10.5px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:var(--ink-faint); padding:2px 10px 6px; }
+  .rail-pipeline{ display:flex; flex-direction:column; gap:4px; margin-bottom:8px; }
+  @media (min-width:1600px){ :root{ --z:1.1; } }
+  @media (min-width:1900px){ :root{ --z:1.2; } }
+  @media (min-width:2300px){ :root{ --z:1.4; } }
+  @media (min-width:2800px){ :root{ --z:1.7; } }
+  @media (min-width:3400px){ :root{ --z:2; } }
+  @media (min-width:861px){
+    /* Big screens: the page fills the window and everything scales up together (steps above), instead of
+       sitting in a narrow column with tiny text and empty space on the right. */
+    body{ zoom:var(--z); }
+    .app{ grid-template-columns:var(--rail-w) minmax(0,1fr); min-height:calc(100dvh / var(--z)); transition:grid-template-columns .18s ease; }
+    .rail{ height:calc(100dvh / var(--z)); overflow-y:auto; overflow-x:hidden; }
+    .main{ max-width:none; }
+    .rail-pipeline-mobile{ display:none !important; }
+    .rail-toggle{ display:inline-flex; position:absolute; top:20px; right:10px; width:28px; height:28px; align-items:center; justify-content:center; border:1px solid var(--border); background:var(--surface); color:var(--ink-muted); border-radius:8px; cursor:pointer; padding:0; }
+    .rail-toggle:hover{ background:var(--surface-2); color:var(--ink); }
+    .rail-toggle svg{ width:15px; height:15px; transition:transform .18s ease; }
+    html.rail-collapsed .rail-toggle svg{ transform:rotate(180deg); }
+    html.rail-collapsed .rail{ padding:20px 8px; }
+    html.rail-collapsed .rail-toggle{ position:static; align-self:center; margin-bottom:12px; }
+    html.rail-collapsed .brand{ display:none; }
+    html.rail-collapsed .navbtn{ font-size:0; justify-content:center; padding:10px 0; position:relative; gap:0; }
+    html.rail-collapsed .navbtn svg{ width:19px; height:19px; }
+    html.rail-collapsed .navbtn .badge{ position:absolute; top:3px; right:8px; font-size:10px; margin:0; padding:0 4px; min-width:15px; line-height:15px; }
+    html.rail-collapsed .rail-section-label, html.rail-collapsed .rail-account, html.rail-collapsed .rail-foot{ display:none; }
+    html.rail-collapsed .rail-divider{ margin:6px 8px; }
+  }
+  @media (max-width:860px){ .rail-pipeline{ display:none !important; } }
+
+
+  /* ===== Projection page ===== */
+  :root{ --kis:#7A8394; --bronze:#B5703A; --silver:#8E98A8; --gold:#D4A21A; --proj:#3454D1; --actual:#1E8E5A; --grid:#E8EAF0; }
+  @media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){ --proj:#6C86F0; --actual:#4FC48A; --grid:#2C303B; --kis:#9BA3B2; } }
+  :root[data-theme="dark"]{ --proj:#6C86F0; --actual:#4FC48A; --grid:#2C303B; --kis:#9BA3B2; }
+  .stats{ grid-template-columns:repeat(5,1fr); }
+  .stat.good .n{ color:var(--good); }
+  .toolbar{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:12px; }
+  .toolbar select, .toolbar input[type=text]{ width:auto; min-width:150px; }
+  .grow{ flex:1; }
+  .pill.p-good{ background:var(--good-soft); color:var(--good); } .pill.p-bad{ background:var(--bad-soft); color:var(--bad); }
+  .pill.p-warn{ background:var(--warn-soft); color:var(--warn); } .pill.p-accent{ background:var(--accent-soft); color:var(--accent-soft-ink); }
+  .pill.p-muted{ background:var(--surface-2); color:var(--ink-muted); border:1px solid var(--border); }
+  a.btn{ text-decoration:none; }
+  .btn.danger{ color:var(--bad); border-color:var(--bad-soft); } .btn.danger:hover{ background:var(--bad-soft); }
+  .detail-top{ display:flex; gap:8px; align-items:center; margin-bottom:12px; flex-wrap:wrap; }
+  .sp-card{ overflow:hidden; }
+  .sp-head{ display:flex; justify-content:space-between; align-items:flex-start; gap:12px; padding:18px 20px; border-bottom:1px solid var(--border); flex-wrap:wrap; }
+  .sp-head h2{ font-size:19px; }
+  .sp-body{ padding:18px 20px; display:flex; flex-direction:column; gap:18px; }
+  .inputs{ display:grid; grid-template-columns:repeat(6, minmax(0,1fr)); gap:10px; }
+  .f{ display:flex; flex-direction:column; gap:5px; font-size:11px; font-weight:700; color:var(--ink-muted); text-transform:uppercase; letter-spacing:.03em; }
+  .f input, .f select{ text-transform:none; letter-spacing:0; font-size:14px; font-weight:600; padding:8px 9px; }
+  .f .pair{ display:flex; gap:6px; } .f .pair select{ flex:1; min-width:0; } .f .pair input{ width:72px; }
+  input[type=number], input[type=date]{ font-family:inherit; font-size:13.5px; padding:8px 10px; border-radius:8px; border:1px solid var(--border); background:var(--surface); color:var(--ink); width:100%; }
+  .insights{ display:grid; grid-template-columns:repeat(4,1fr); gap:10px; }
+  .ins{ border:1px solid var(--border); border-radius:12px; padding:12px 14px; background:var(--surface-2); }
+  .ins .k{ font-size:11.5px; color:var(--ink-muted); font-weight:600; }
+  .ins .n{ font-family:"Sora",sans-serif; font-weight:700; font-size:17px; margin-top:4px; }
+  .ins .n .pill{ font-family:"Inter",sans-serif; font-size:12.5px; }
+  .ins .d{ font-size:12px; color:var(--ink-muted); margin-top:3px; }
+  .sec h3{ font-size:14px; }
+  .sec-h{ display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:10px; }
+  .sec > h3{ margin-bottom:10px; }
+  .legend{ display:flex; gap:6px; flex-wrap:wrap; }
+  .lg{ display:inline-flex; align-items:center; gap:6px; border:1px solid var(--border); border-radius:99px; padding:4px 10px; font:600 12px "Inter",sans-serif; background:var(--surface); cursor:pointer; color:var(--ink); }
+  .lg i{ width:14px; height:3px; border-radius:2px; display:inline-block; } .lg.off{ opacity:.4; }
+  .chart{ border:1px solid var(--border); border-radius:12px; padding:8px 8px 4px; background:var(--surface); }
+  .chart svg{ display:block; width:100%; height:auto; }
+  .tip{ position:fixed; pointer-events:none; background:var(--ink); color:var(--bg); font-size:12px; padding:7px 9px; border-radius:8px; line-height:1.45; display:none; z-index:90; white-space:pre-line; }
+  .tbl{ border:1px solid var(--border); border-radius:12px; overflow-x:auto; }
+  .stable.plan td{ vertical-align:top; white-space:normal; }
+  .topic{ color:var(--ink-muted); font-size:12px; margin-top:2px; max-width:420px; }
+  .cellin{ width:64px !important; padding:5px 7px !important; font-weight:700; border-style:dashed !important; }
+  .cellin.set{ border-style:solid !important; border-color:var(--accent) !important; background:var(--accent-soft) !important; }
+  .tnum{ font-variant-numeric:tabular-nums; white-space:nowrap; }
+  .cols{ display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+  .box{ border:1px solid var(--border); border-radius:12px; padding:12px 14px; display:flex; flex-direction:column; gap:8px; align-items:flex-start; }
+  .box textarea{ width:100%; font-family:inherit; font-size:13px; padding:8px 10px; border-radius:8px; border:1px solid var(--border); background:var(--surface); color:var(--ink); }
+  .box .t{ font-size:11.5px; font-weight:700; color:var(--ink-muted); text-transform:uppercase; letter-spacing:.03em; }
+  .slist{ margin:0; padding-left:18px; font-size:13px; line-height:1.5; }
+  .sig{ display:grid; grid-template-columns:repeat(4,1fr); gap:10px; }
+  .sigbox{ border:1px solid var(--border); border-radius:10px; padding:10px 12px; font-size:12px; display:flex; flex-direction:column; gap:5px; }
+  .sigbox b{ font-size:12.5px; } .sigline{ border-bottom:1px solid var(--ink-faint); height:26px; }
+  .skill-opt{ display:flex; gap:10px; align-items:flex-start; font-size:13px; line-height:1.45; padding:8px 10px; border:1px solid var(--border); border-radius:10px; cursor:pointer; }
+  .skill-opt input{ margin-top:3px; }
+  .modal.wide{ max-width:640px; }
+  .clickrow td{ cursor:pointer; }
+  .print-only{ display:none; }
+  .print-title{ font-family:"Sora",sans-serif; font-weight:700; font-size:12px; color:var(--ink-muted); letter-spacing:.06em; }
+  @media (max-width: 1100px){ .insights{ grid-template-columns:repeat(2,1fr); } .inputs{ grid-template-columns:repeat(3,minmax(0,1fr)); } }
+  @media (max-width: 860px){ .inputs{ grid-template-columns:repeat(2,minmax(0,1fr)); } .insights, .cols, .sig{ grid-template-columns:1fr; } .stats{ grid-template-columns:repeat(2,1fr); } }
+  @media print{
+    body{ zoom:1 !important; background:#fff; }
+    .rail, .no-print, .rail-toggle, #pageHead, .toast, .tip{ display:none !important; }
+    .app{ display:block !important; }
+    .main{ padding:0 !important; max-width:none !important; }
+    .card{ border:none; box-shadow:none; }
+    .print-only{ display:block; }
+    input, select, textarea{ border:none !important; background:transparent !important; padding:0 !important; -webkit-appearance:none; appearance:none; }
+    .cellin{ border:none !important; background:transparent !important; }
+    .sec, .sig, .cols{ break-inside:avoid; }
+    .inputs{ grid-template-columns:repeat(6,minmax(0,1fr)) !important; }
+    .insights, .sig{ grid-template-columns:repeat(4,1fr) !important; }
+    .cols{ grid-template-columns:1fr 1fr !important; }
+    .stats{ display:none !important; }
+    .lg{ border:none; padding:2px 6px; }
+    .lg.off{ display:none; }
+    input::-webkit-calendar-picker-indicator{ display:none; }
+    textarea::placeholder{ color:transparent; }
+    .sp-body{ gap:12px; padding:10px 0; } .sp-head{ padding:6px 0 10px; }
+  }
+  /* ---- Worksheets page ---- */
+  .ws-tabs{ display:flex; gap:6px; flex-wrap:wrap; margin-bottom:14px; }
+  .ws-tab, .ws-sub{ font:inherit; font-size:13.5px; font-weight:600; padding:8px 14px; border-radius:10px; border:1px solid var(--border); background:var(--surface); color:var(--ink-muted); cursor:pointer; }
+  .ws-tab.on{ background:var(--accent); border-color:var(--accent); color:var(--accent-ink); }
+  .ws-subs{ display:flex; gap:6px; flex-wrap:wrap; margin-bottom:12px; } .ws-sub{ font-size:12.5px; padding:6px 12px; } .ws-sub.on{ border-color:var(--accent); color:var(--accent); background:var(--accent-soft); }
+  .ws-set{ display:flex; gap:14px; align-items:center; flex-wrap:wrap; }
+  .field.inline{ display:flex; flex-direction:row; align-items:center; gap:8px; margin:0; white-space:nowrap; }
+  .ws-grid-wrap{ overflow-x:auto; border:1px solid var(--border); border-radius:10px; margin:8px 0; }
+  .ws-grid{ border-collapse:collapse; font-size:12.5px; min-width:100%; font-variant-numeric:tabular-nums; }
+  .ws-grid th, .ws-grid td{ border-bottom:1px solid var(--border); padding:5px 6px; text-align:center; white-space:nowrap; }
+  .ws-grid thead th{ background:var(--surface-2); font-weight:600; color:var(--ink-muted); position:sticky; top:0; }
+  .ws-grid tbody th{ background:var(--surface-2); font-weight:700; text-align:left; position:sticky; left:0; }
+  .ws-grid td.tot{ font-weight:700; background:var(--surface-2); }
+  .ws-grid input{ width:52px; font:inherit; font-size:12.5px; text-align:center; padding:4px 2px; border:1px solid var(--border); border-radius:6px; background:var(--surface); color:var(--ink); }
+  .stable td.c-bad{ color:var(--bad); font-weight:700; } .stable td.c-warn{ color:var(--warn); font-weight:600; }
+  .ws-grid td.c-bad{ background:var(--bad-soft); color:var(--bad); font-weight:700; }
+  .ws-grid td.c-warn{ background:var(--warn-soft); color:var(--warn); font-weight:600; }
+  .ws-grid td.c-much{ background:var(--accent-soft); color:var(--accent-soft-ink); }
+  .ws-legend{ display:flex; gap:10px; flex-wrap:wrap; font-size:12px; align-items:center; } .ws-legend .lg{ padding:2px 8px; border-radius:6px; }
+  .ws-legend .c-bad{ background:var(--bad-soft); color:var(--bad); } .ws-legend .c-warn{ background:var(--warn-soft); color:var(--warn); } .ws-legend .c-much{ background:var(--accent-soft); color:var(--accent-soft-ink); }
+  .ws-drop{ display:flex; flex-direction:column; gap:4px; padding:18px; border:1.5px dashed var(--border); border-radius:12px; cursor:pointer; text-align:center; align-items:center; }
+  .ws-drop:hover{ border-color:var(--accent); }
+  tr.v-bad td{ background:var(--bad-soft); } tr.v-warn td{ background:var(--warn-soft); } tr.sel td{ background:var(--accent-soft); }
+  .grow{ flex:1; }
+  .card.sect{ padding:16px 20px; margin-bottom:14px; }
+  .sec-h{ display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; margin-bottom:10px; }
+  .sec-h h3{ margin:0; font-size:15.5px; }
+  .ws-recv{ display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
+  .ws-recv input[type=date]{ width:138px; font:inherit; font-size:12.5px; padding:4px 6px; border:1px solid var(--border); border-radius:7px; background:var(--surface); color:var(--ink); }
+  .ws-act{ white-space:nowrap; }
+</style>
+<script>try{if(localStorage.getItem("kumonRailCollapsed")==="1")document.documentElement.classList.add("rail-collapsed")}catch(e){}</script>
+<script>
+/* PTC menu link + "due" number (phase97). Each page calls kumonPtcNav(sbClient, role) once the role is known. */
+window.kumonPtcNav = function(client, role){
+  var link = document.getElementById("navPtcLink"); if(!link) return;
+  var ok = ["admin","superadmin","teacher","trainer_teacher"].indexOf(role) >= 0;
+  link.hidden = !ok;
+  var proj = document.getElementById("navProjLink"); if(proj) proj.hidden = !ok;
+  // Worksheets (phase118): admins and superadmins only — the link is added here so every page gets it.
+  var wsAdm = role === "admin" || role === "superadmin", ws = document.getElementById("navWsLink");
+  if(!ws && wsAdm){
+    var after = document.getElementById("navReportsLink") || document.getElementById("navActivityLink") || document.getElementById("navAdminLink");
+    var box = after ? after.parentNode : document.querySelector(".rail-pages");
+    if(box){
+      ws = document.createElement("a"); ws.className = "navbtn"; ws.id = "navWsLink"; ws.href = "worksheets.html"; ws.title = "Worksheets";
+      ws.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 3h10v4H7zM5 7h14v14H5z"/><path d="M9 12h6M9 16h4"/></svg>Worksheets';
+      if(/worksheets\.html$/.test(location.pathname)) ws.classList.add("active");
+      if(after && after.nextSibling) box.insertBefore(ws, after.nextSibling); else box.appendChild(ws);
+    }
+  }
+  if(ws) ws.hidden = !wsAdm;
+  if(!ok || !client) return;
+  if(!document.getElementById("ptcBadgeStyle")){
+    var st = document.createElement("style"); st.id = "ptcBadgeStyle";
+    st.textContent = ".navbtn .ptc-badge{margin-left:auto;background:var(--bad);color:#fff;font-size:11px;font-weight:700;border-radius:99px;padding:1px 6px;min-width:18px;text-align:center;line-height:16px;}";
+    document.head.appendChild(st);
+  }
+  // An expired sign-in (a tab left open in the background) is renewed and the count asked again once;
+  // with no sign-in at all it doesn't ask. A failed check keeps the last number instead of hiding it.
+  var expired = function(r){ var e = r && r.error; return !!e && (e.status === 401 || /jwt|expired|401/i.test(String(e.message || e.code || ""))); };
+  var refresh = function(){
+    var ask = function(){ return client.rpc("ptc_due_count"); };
+    client.auth.getSession().then(function(s){
+      if(!s || !s.data || !s.data.session) return null;
+      return ask().then(function(r){
+        if(!expired(r)) return r;
+        return client.auth.refreshSession().then(function(x){ return (x && x.data && x.data.session) ? ask() : null; }, function(){ return null; });
+      });
+    }).then(function(r){
+      var b = document.getElementById("navPtcBadge"); if(!b || !r || r.error || typeof r.data !== "number") return;
+      var n = r.data;
+      b.textContent = n > 99 ? "99+" : String(n); b.hidden = !n;
+      link.title = n ? ("PTC — " + n + " due") : "PTC";
+    }, function(){});
+  };
+  refresh();
+  window.kumonPtcNavRefresh = refresh;
+  if(!window.__ptcNavTimer) window.__ptcNavTimer = setInterval(refresh, 5 * 60 * 1000);
+};
+</script>
+<script>
+/* Sign-in resilience (Oct 23). A slow or dropped connection used to make the page think the account had no role
+   ("waiting for approval — ask a superadmin"), and a hiccup while renewing the sign-in could log people out.
+   kumonFetchProfile retries, renews the sign-in if it expired, and — only if the Hub still can't be reached —
+   uses the last role this account had on this browser instead of "pending". */
+(function(){
+  var sleep = function(ms){ return new Promise(function(r){ setTimeout(r, ms); }); };
+  function notice(msg){
+    var el = document.getElementById("kumonNetNotice");
+    if(!msg){ if(el) el.remove(); return; }
+    if(!el){
+      el = document.createElement("div"); el.id = "kumonNetNotice";
+      el.style.cssText = "position:fixed;left:50%;top:14px;transform:translateX(-50%);z-index:200;background:#1B1F27;color:#fff;font:600 13px Inter,system-ui,sans-serif;padding:9px 14px;border-radius:10px;box-shadow:0 8px 24px -10px rgba(0,0,0,.4)";
+      (document.body || document.documentElement).appendChild(el);
+    }
+    el.textContent = msg;
+  }
+  window.kumonFetchProfile = async function(client, uid, cols){
+    var key = "kumonProfile:" + uid, cached = null;
+    try{ cached = JSON.parse(localStorage.getItem(key) || "null"); }catch(e){}
+    var want = String(cols).split(",").map(function(s){ return s.trim(); }).filter(Boolean);
+    var cacheOk = cached && cached.role && cached.role !== "pending" && want.every(function(k){ return k in cached; });
+    var once = async function(){ try{ return await client.from("profiles").select(cols).eq("id", uid).maybeSingle(); }catch(e){ return { data:null, error:e }; } };
+    for(var attempt = 0; ; attempt++){
+      var r = await once();
+      if(!r.error && !r.data && attempt === 0){
+        // An expired sign-in can read as "no profile" instead of an error: renew it and ask once more.
+        try{ await client.auth.refreshSession(); }catch(e){}
+        r = await once();
+      }
+      if(!r.error){
+        if(r.data){ try{ localStorage.setItem(key, JSON.stringify(Object.assign({}, cached || {}, r.data))); }catch(e){} }
+        notice(null);
+        return { data: r.data, error: null };
+      }
+      var msg = String((r.error && (r.error.message || r.error.code)) || "");
+      if(/jwt|token|expired|401|auth/i.test(msg)){ try{ await client.auth.refreshSession(); }catch(e){} }
+      if(cacheOk && attempt >= 2){ notice(null); return { data: cached, error: null, fromCache: true }; }
+      notice("Can't reach the Kumon Hub right now — trying again…");
+      await sleep(Math.min(8000, 800 * (attempt + 1)));
+    }
+  };
+  // Before treating a "signed out" event as real, make sure the sign-in is really gone (not a hiccup while renewing it).
+  window.kumonStillSignedIn = async function(client, uid){
+    if(window.__kumonLoggingOut) return false;
+    await sleep(1200);
+    try{ var a = await client.auth.getSession(); if(a && a.data && a.data.session && a.data.session.user.id === uid) return true; }catch(e){}
+    if(window.__kumonLoggingOut) return false;
+    try{ var b = await client.auth.refreshSession(); if(b && b.data && b.data.session && b.data.session.user.id === uid) return true; }catch(e){}
+    return false;
+  };
+  // Mark a deliberate "Log out" click so it isn't second-guessed above; forget the remembered role on log out.
+  document.addEventListener("click", function(e){
+    var b = e.target && e.target.closest && e.target.closest('[data-action="logout"]');
+    if(!b) return;
+    window.__kumonLoggingOut = true;
+    try{ Object.keys(localStorage).forEach(function(k){ if(k.indexOf("kumonProfile:") === 0) localStorage.removeItem(k); }); }catch(err){}
+  }, true);
+})();
+</script>
+</head>
+<body>
+
+<!-- While the page checks who's signed in: a quiet loading screen instead of flashing the login form. -->
+<div class="login-screen" id="bootSplash" aria-live="polite">
+  <div class="login-brand" style="opacity:.85"><span class="dot"></span>Kumon Hub</div>
+</div>
+<div class="login-screen" id="loginScreen" hidden>
+  <form class="login-card" id="loginForm">
+    <div class="login-brand"><span class="dot"></span>Kumon Hub</div>
+    <div class="login-sub">Sign in with your team account.</div>
+    <div class="login-error" id="loginError" hidden></div>
+    <label class="field">Email<input type="email" name="email" required autocomplete="username" autofocus></label>
+    <label class="field">Password<input type="password" name="password" required autocomplete="current-password"></label>
+    <button class="btn primary" type="submit" style="justify-content:center;">Log in</button>
+  </form>
+</div>
+
+<script>
+  // No saved sign-in on this browser at all → show the login form right away (no splash).
+  (function(){ try{ var has = Object.keys(localStorage).some(function(k){ return /^sb-.*-auth-token$/.test(k); });
+    if(!has){ document.getElementById("bootSplash").hidden = true; document.getElementById("loginScreen").hidden = false; } }catch(e){} })();
+</script>
+<div class="app" id="appRoot" hidden>
+  <nav class="rail">
+    <button type="button" class="rail-toggle" id="railToggle" aria-label="Collapse sidebar" title="Collapse sidebar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg></button>
+    <div class="brand"><span class="dot"></span>Kumon Hub</div>
+    <div class="rail-pages">
+      <a class="navbtn rail-pipeline-mobile" href="index.html" id="navPipelineLink" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16l-6.5 8.5V19l-3 1.5v-8L4 4z"/></svg>Pipeline</a>
+      <a class="navbtn" href="roster.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3L2 8l10 5 10-5-10-5z"/><path d="M6 10.5V15c0 1.5 2.5 3 6 3s6-1.5 6-3v-4.5"/></svg>Student roster</a>
+      <a class="navbtn" href="calendar.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>Calendar</a>
+      <a class="navbtn" href="ptc.html" id="navPtcLink" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="7.5" r="3.2"/><circle cx="17" cy="9.5" r="2.4"/><path d="M3 20c0-3.6 2.7-6.3 6-6.3s6 2.7 6 6.3"/><path d="M15.2 14.4c.6-.2 1.2-.3 1.8-.3 2.5 0 4.4 1.9 4.4 4.6"/></svg>PTC<span class="badge ptc-badge" id="navPtcBadge" hidden></span></a>
+      <a class="navbtn" href="projection.html" id="navProjLink" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 20h18"/><path d="M4 16l5-5 4 3 7-8"/><path d="M15 6h5v5"/></svg>Projection</a>
+      <a class="navbtn" href="payments.html" id="navPaymentsLink" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20M6 15h4"/></svg>Payments</a>
+      <a class="navbtn" href="absent.html" id="navAbsentLink" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.5-7 8-7s8 3 8 7"/><path d="M2 2l20 20" stroke="currentColor"/></svg>Retention</a>
+      <a class="navbtn" href="admin.html" id="navAdminLink" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v6c0 5-3.5 8-7 9-3.5-1-7-4-7-9V6l7-3z"/></svg>Admin</a>
+      <a class="navbtn" href="activity.html" id="navActivityLink" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></svg>Activity</a>
+      <a class="navbtn" href="reports.html" id="navReportsLink" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a9 9 0 1 0 9 9h-9z"/><path d="M15 3.5A9 9 0 0 1 20.5 9H15z"/></svg>Reports</a>
+    </div>
+    <div class="rail-divider"></div>
+    <div class="rail-pipeline" id="navPipelineGroup" hidden>
+      <div class="rail-section-label">Pipeline views</div>
+      <a class="navbtn" href="index.html#calendar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 3v3h6V3"/><path d="M9 12l2 2 4-4"/></svg>DT &amp; Training</a>
+      <a class="navbtn" href="index.html#enrollment"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 12l2 2 4-4"/><circle cx="12" cy="12" r="9"/></svg>Enrollment</a>
+      <a class="navbtn" href="index.html#students"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-7 8-7s8 3 8 7"/></svg>New students</a>
+      <a class="navbtn" href="index.html#settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M19 5l-2 2M7 17l-2 2"/></svg>Settings</a>
+    </div>
+    <div class="rail-account" id="railAccount"></div>
+    <div class="rail-foot">Worksheet stock per level, what to order, and a check of each order. Admins only.</div>
+  </nav>
+
+  <main class="main">
+    <div id="pendingGate" hidden></div>
+    <div class="page-head" id="pageHead">
+      <div>
+        <h1>Worksheets</h1>
+        <div class="page-sub">What to order from Kumon, what's on the shelf for every level, and a check of each order — worked out from where every child is and how fast they go.</div>
+      </div>
+    </div>
+    <div id="view"></div>
+  </main>
+</div>
+
+<div class="modal-backdrop" id="modalBackdrop" hidden>
+  <div class="modal" id="modal"></div>
+</div>
+<div class="tip" id="tip"></div>
+<div class="toast" id="toast" hidden></div>
+
+<script>
+(function(){
+  "use strict";
+
+  const SUPABASE_URL = "https://bcnmsryahczapnxbpkve.supabase.co";
+  const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJjbm1zcnlhaGN6YXBueGJwa3ZlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTAyMDQ4NzksImV4cCI6MjEwNTc4MDg3OX0.VgCX3CR7YCJxR9-vwD8HlYcCx0MxlY7atgD_0h3F3to";
+
+  const $ = (sel, el) => (el||document).querySelector(sel);
+  const $$ = (sel, el) => Array.from((el||document).querySelectorAll(sel));
+  function esc(s){ return String(s==null?"":s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+
+  /* ======================= Study projection rules (from the Digital Study Projection sheet) =======================
+     Chart scale: 1 notch = 10 worksheets, so one level (200 pages) = 20 notches. Level n (0-based on the ladder)
+     runs from n*20 to n*20+20. A starting point "3A 71" sits at 3A's start + floor((71-1)/10) = 60 + 7 = 67.
+     Each level: Total WS = 200 × repeats (first level: (200 − (start page − 1)) × repeats);
+     Months = ROUNDUP(Total ÷ pages a day ÷ 30, 1 decimal); Target = previous target + months × 30 days.
+     KIS (grade-level line) starts each school year (June) at a point set by the grade and climbs month by month;
+     Math: +5/3 a month (1 level a year), Bronze/Silver/Gold = KIS + 10 / + 40 / + 60.
+     Reading: its own month-by-month curves per grade for KIS, Bronze, Silver and Gold (copied from the sheet). */
+  const LADDER = {
+    Math: ["6A","5A","4A","3A","2A","A","B","C","D","E","F","G","H","I","J","K","L","M","N","O"],
+    Reading: ["7A","6A","5A","4A","3A","2A","AI","AII","BI","BII","CI","CII","DI","DII","EI","EII","FI","FII","GI","GII","HI","HII","I-I","I-II","J","K","L"]
+  };
+  const LEVEL_ALIAS = { Reading: { "G":"GI", "H":"HI", "II":"I-I", "III":"I-II", "I":"I-I", "I-1":"I-I", "I-2":"I-II" } };
+  const TOPICS = {
+    Math: { "6A":"Counting, Number Reading Exercises, Number of Dots", "5A":"Number Reading Exercises and Sequence of Numbers",
+      "4A":"Number Reading and Writing Exercises", "3A":"Number Reading and Writing Exercises, Introduction to Addition", "2A":"Addition",
+      "A":"Addition and Subtraction I", "B":"Addition and Subtraction II", "C":"Elementary Multiplication and Division",
+      "D":"Multiplication and Division, Introduction to Fractions", "E":"Operations on Fractions and Decimals", "F":"Order of Operations",
+      "G":"Positive and Negative Numbers, Elementary Algebraic Expressions", "H":"Simultaneous Linear Equations in Two, Three, or Four Variables, Linear Functions",
+      "I":"Factorization, Quadratic Equations", "J":"Advanced Factorization, Quadratic Equations" },
+    Reading: { "7A":"Connecting Words to familiar Objects, Saying Words with the same Sound, Putting Words Together",
+      "6A":"Recognizing Familiar Words, Saying Rhyming Words and Phrases", "5A":"Saying the Sounds of Letters, Putting Sounds Together",
+      "4A":"Consonant Combinations, Changing Letter Sounds", "3A":"Sound Patterns, Compound Words", "2A":"Word Puzzles, Function of Words",
+      "AI":"Simple Sentences, Basic Expressions, Sentence Topics, Thought Sequence", "AII":"Simple Sentences, Basic Expressions, Sentence Topics, Thought Sequence",
+      "BI":"Subject and Predicate, Expressions in the Past, Modifiers, Defining Words, Identifying Ideas, Comparing and Contrasting",
+      "BII":"Subject and Predicate, Expressions in the Past, Modifiers, Defining Words, Identifying Ideas, Comparing and Contrasting",
+      "CI":"Parts of a Sentence, Expressions of Language, Elements of Statements, Organizing Information, Synthesizing Ideas",
+      "CII":"Parts of a Sentence, Expressions of Language, Elements of Statements, Organizing Information, Synthesizing Ideas",
+      "DI":"Combining Sentences, Statements from Paragraphs, Topic, Main Idea, Understanding Paragraphs",
+      "DII":"Combining Sentences, Statements from Paragraphs, Topic, Main Idea, Understanding Paragraphs" }
+  };
+  const SKILLS = {"Math": [{"section": "WORK SKILLS", "obs": "Poor pencil grip", "skill": "Good Pencil Grip / Improved Pencil Skills", "plan": "Training through the Pencil Skills Program"}, {"section": "WORK SKILLS", "obs": "Counts from the beginning to know the next number", "skill": "Determine the next number automatically", "plan": "Number Board Activity, Number Recitation"}, {"section": "WORK SKILLS", "obs": "Not following instructions (performs wrong operation)", "skill": "Ability to follow instruction. To become observant in changes in questions/operation.", "plan": "Training students to always read instructions, examples and questions (including operation)."}, {"section": "WORK SKILLS", "obs": "Uses Finger Counting, Nagbabakod etc.", "skill": "To be able to add and subtract without using finger counting", "plan": "Oral Drills"}, {"section": "WORK SKILLS", "obs": "Adds without finger counting, but not automatic", "skill": "Automaticity in Mental Addition / Subtraction", "plan": "Oral Drills"}, {"section": "WORK SKILLS", "obs": "Add vertically but writes carry over", "skill": "Adding vertically without carry over", "plan": "Training addition without carry over in Level B"}, {"section": "STUDY ATTITUDE", "obs": "Easily distracted", "skill": "Improved concentration ability", "plan": "Pen Pacing. More number of pages to answer to develop endurance."}, {"section": "STUDY ATTITUDE", "obs": "Lacks motivation to answer the test", "skill": "Develop eagerness in answering worksheets", "plan": "Share target Monthly GOALS and Study Projection to the student."}, {"section": "STUDY ATTITUDE", "obs": "Poor confidence level. Too SHY.", "skill": "Develop confidence level.", "plan": "Start from easy starting point and ALWAYS PRAISE and Encourage the student. SPE!"}], "Reading": [{"section": "WORK SKILLS", "obs": "Poor pencil grip", "skill": "Good Pencil Grip / Improved Pencil Skills", "plan": "Training through the Pencil Skills Program"}, {"section": "WORK SKILLS", "obs": "Limited Vocabulary  in English", "skill": "Increase in Students Vocabulary", "plan": "Flashcard. Remind parent to use the vocabulary everyday."}, {"section": "WORK SKILLS", "obs": "Not following instructions.", "skill": "Ability to follow instruction well.", "plan": "Training students to always READ ALOUD instructions, examples and questions before starting to answer. Untimed reading."}, {"section": "WORK SKILLS", "obs": "Not familiar with Alphabet.", "skill": "Familiarization with Alphabet.", "plan": "Alphabet Flashcard both at the center & at home."}, {"section": "WORK SKILLS", "obs": "Not familiar with Phonics.", "skill": "Ability to sound out phonics (sounds of letters).", "plan": "Through Level 5A worksheets and CD listening of the sounds of phonics."}, {"section": "STUDY ATTITUDE", "obs": "Easily distracted", "skill": "", "plan": "Pen Pacing. More number of pages to answer to develop endurance."}, {"section": "STUDY ATTITUDE", "obs": "Lacks motivation to answer the test", "skill": "Develop eagerness in answering worksheets", "plan": "Share target Monthly GOALS and Study Projection to the student."}, {"section": "STUDY ATTITUDE", "obs": "Poor confidence level. Too SHY.", "skill": "Develop confidence level.", "plan": "Start from easy starting point and ALWAYS PRAISE and Encourage the student. SPE!"}]};
+  const READING_CURVES = {"kis":{"PK3":[40,41.67,43.33,45,46.67,48.33,50,51.67,53.33,55,56.67,58.33,60,61.67,63.33,65,66.67,68.33,70,71.67,73.33,75,76.67,78.33,80,81.67,83.33,85,86.67,88.33,90],"PK2":[60,61.67,63.33,65,66.67,68.33,70,71.67,73.33,75,76.67,78.33,80,81.67,83.33,85.0,86.67,88.33,90.0,91.67,93.33,95.0,96.67,98.33,100,101.67,103.33,105,106.67,108.33,110],"PK1":[80,81.67,83.33,85,86.67,88.33,90,91.67,93.33,95,96.67,98.33,100,101.67,103.33,105,106.67,108.33,110,111.67,113.33,115,116.67,118.33,120,121.67,123.33,125,126.67,128.33,130],"K":[100,101.67,103.33,105,106.67,108.33,110,111.67,113.33,115,116.67,118.33,120,121.67,123.33,125,126.67,128.33,130,131.67,133.33,135,136.67,138.33,140,141.67,143.33,145,146.67,148.33,150],"P1":[120,123.33,126.67,130,133.33,136.67,140,143.33,146.67,150,153.33,156.67,160,163.33,166.67,170,173.33,176.67,180,183.33,186.67,190,193.33,196.67,200,203.33,206.67,210,213.33,216.67,220],"P2":[160,163.33,166.67,170,173.33,176.67,180,183.33,186.67,190,193.33,196.67,200,203.33,206.67,210,213.33,216.67,220,223.33,226.67,230,233.33,236.67,240,243.33,246.67,250,253.33,256.67,260],"P3":[200,203.33,206.67,210,213.33,216.67,220,223.33,226.67,230,233.33,236.67,240,243.33,246.67,250,253.33,256.67,260,263.33,266.67,270,273.33,276.67,280,283.33,286.67,290,293.33,296.67,300],"P4":[240,243.33,246.67,250,253.33,256.67,260,263.33,266.67,270,273.33,276.67,280,283.33,286.67,290,293.33,296.67,300,303.33,306.67,310,313.33,316.67,320,323.33,326.67,330,333.33,336.67,340],"P5":[280,283.33,286.67,290,293.33,296.67,300,303.33,306.67,310,313.33,316.67,320,323.33,326.67,330,333.33,336.67,340,343.33,346.67,350,353.33,356.67,360,363.33,366.67,370,373.33,376.67,380.0],"P6":[320,323.33,326.67,330,333.33,336.67,340,343.33,346.67,350,353.33,356.67,360,363.33,366.67,370,373.33,376.67,380,383.33,386.67,390,393.33,396.67,400,403.33,406.67,410,413.33,416.67,420.0],"P7":[360,361.67,363.33,365,366.67,368.33,370,371.67,373.33,375,376.67,378.33,380,381.67,383.33,385,386.67,388.33,390,391.67,393.33,395,396.67,398.33,400,401.67,403.33,405.0,406.67,408.33,410.0],"P8":[380,381.67,383.33,385,386.67,388.33,390,391.67,393.33,395,396.67,398.33,400,401.67,403.33,405,406.67,408.33,410,411.67,413.33,415,416.67,418.33,420,421.67,423.33,425.0,426.67,428.33,430.0],"P9":[400,401.67,403.33,405,406.67,408.33,410,411.67,413.33,415,416.67,418.33,420,421.67,423.33,425,426.67,428.33,430,431.67,433.33,435,436.67,438.33,440,441.67,443.33,445.0,446.67,448.33,450.0]},"bronze":{"PK3":[50,51.67,53.33,55,56.67,58.33,60,61.67,63.33,65,66.67,68.33,70,71.67,73.33,75,76.67,78.33,80,81.67,83.33,85,86.67,88.33,90.0,91.67,93.33,95.0,96.67,98.33,100],"PK2":[70,71.67,73.33,75,76.67,78.33,80,81.67,83.33,85,86.67,88.33,90.0,91.67,93.33,95.0,96.67,98.33,100,101.67,103.33,105,106.67,108.33,110,111.67,113.33,115,116.67,118.33,120],"PK1":[90,91.67,93.33,95,96.67,98.33,100,101.67,103.33,105,106.67,108.33,110,111.67,113.33,115,116.67,118.33,120,123.33,126.67,130,133.33,136.67,140,143.33,146.67,150,153.33,156.67,160],"K":[110,111.67,113.33,115,116.67,118.33,120,123.33,126.67,130,133.33,136.67,140,143.33,146.67,150,153.33,156.67,160,163.33,166.67,170,173.33,176.67,180,183.33,186.67,190,193.33,196.67,200],"P1":[140,143.33,146.67,150,153.33,156.67,160,163.33,166.67,170,173.33,176.67,180,183.33,186.67,190,193.33,196.67,200,203.33,206.67,210,213.33,216.67,220,223.33,226.67,230,233.33,236.67,240],"P2":[180,183.33,186.67,190,193.33,196.67,200,203.33,206.67,210,213.33,216.67,220,223.33,226.67,230,233.33,236.67,240,243.33,246.67,250,253.33,256.67,260,263.33,266.67,270,273.33,276.67,280],"P3":[220,223.33,226.67,230,233.33,236.67,240,243.33,246.67,250,253.33,256.67,260,263.33,266.67,270,273.33,276.67,280,283.33,286.67,290,293.33,296.67,300,303.33,306.67,310,313.33,316.67,320],"P4":[260,263.33,266.67,270,273.33,276.67,280,283.33,286.67,290,293.33,296.67,300,303.33,306.67,310,313.33,316.67,320,323.33,326.67,330,333.33,336.67,340,343.33,346.67,350,353.33,356.67,360.0],"P5":[300,303.33,306.67,310,313.33,316.67,320,323.33,326.67,330,333.33,336.67,340,343.33,346.67,350,353.33,356.67,360,361.67,363.33,365,366.67,368.33,370,371.67,373.33,375,376.67,378.33,380],"P6":[340,343.33,346.67,350,353.33,356.67,360,361.67,363.33,365,366.67,368.33,370,371.67,373.33,375,376.67,378.33,380,381.67,383.33,385,386.67,388.33,390,391.67,393.33,395,396.67,398.33,400],"P7":[360,361.67,363.33,365,366.67,368.33,370,371.67,373.33,375,376.67,378.33,380,381.67,383.33,385,386.67,388.33,390,391.67,393.33,395,396.67,398.33,400,401.67,403.33,405.0,406.67,408.33,410.0],"P8":[380,381.67,383.33,385,386.67,388.33,390,391.67,393.33,395,396.67,398.33,400,401.67,403.33,405,406.67,408.33,410,411.67,413.33,415,416.67,418.33,420,421.67,423.33,425.0,426.67,428.33,430.0],"P9":[400,401.67,403.33,405,406.67,408.33,410,411.67,413.33,415,416.67,418.33,420,421.67,423.33,425,426.67,428.33,430,431.67,433.33,435,436.67,438.33,440,441.67,443.33,445.0,446.67,448.33,450.0]},"silver":{"PK3":[80,81.67,83.33,85,86.67,88.33,90,91.67,93.33,95,96.67,98.33,100,101.67,103.33,105,106.67,108.33,110,111.67,113.33,115,116.67,118.33,120,123.33,126.67,130,133.33,136.67,140],"PK2":[100,101.67,103.33,105,106.67,108.33,110,111.67,113.33,115,116.67,118.33,120,123.33,126.67,130,133.33,136.67,140,143.33,146.67,150,153.33,156.67,160,163.33,166.67,170,173.33,176.67,180],"PK1":[120,123.33,126.67,130,133.33,136.67,140,143.33,146.67,150,153.33,156.67,160,163.33,166.67,170,173.33,176.67,180,183.33,186.67,190,193.33,196.67,200,203.33,206.67,210,213.33,216.67,220],"K":[160,163.33,166.67,170,173.33,176.67,180,183.33,186.67,190,193.33,196.67,200,203.33,206.67,210,213.33,216.67,220,223.33,226.67,230,233.33,236.67,240,243.33,246.67,250,253.33,256.67,260],"P1":[200,203.33,206.67,210,213.33,216.67,220,223.33,226.67,230,233.33,236.67,240,243.33,246.67,250,253.33,256.67,260,263.33,266.67,270,273.33,276.67,280,283.33,286.67,290,293.33,296.67,300],"P2":[240,243.33,246.67,250,253.33,256.67,260,263.33,266.67,270,273.33,276.67,280,283.33,286.67,290,293.33,296.67,300,303.33,306.67,310,313.33,316.67,320,323.33,326.67,330,333.33,336.67,340],"P3":[280,283.33,286.67,290,293.33,296.67,300,303.33,306.67,310,313.33,316.67,320,323.33,326.67,330,333.33,336.67,340,343.33,346.67,350,353.33,356.67,360,361.67,363.33,365,366.67,368.33,370],"P4":[320,323.33,326.67,330,333.33,336.67,340,343.33,346.67,350,353.33,356.67,360,361.67,363.33,365,366.67,368.33,370,371.67,373.33,375,376.67,378.33,380,381.67,383.33,385,386.67,388.33,390],"P5":[360,361.67,363.33,365,366.67,368.33,370,371.67,373.33,375,376.67,378.33,380,381.67,383.33,385,386.67,388.33,390,391.67,393.33,395,396.67,398.33,400,401.67,403.33,405.0,406.67,408.33,410.0],"P6":[380,381.67,383.33,385,386.67,388.33,390,391.67,393.33,395,396.67,398.33,400,401.67,403.33,405,406.67,408.33,410,411.67,413.33,415,416.67,418.33,420,421.67,423.33,425.0,426.67,428.33,430.0],"P7":[380,381.67,383.33,385,386.67,388.33,390,391.67,393.33,395,396.67,398.33,400,401.67,403.33,405,406.67,408.33,410,411.67,413.33,415,416.67,418.33,420,421.67,423.33,425.0,426.67,428.33,430.0],"P8":[400,401.67,403.33,405,406.67,408.33,410,411.67,413.33,415,416.67,418.33,420,421.67,423.33,425,426.67,428.33,430,431.67,433.33,435,436.67,438.33,440,441.67,443.33,445.0,446.67,448.33,450.0],"P9":[420,421.67,423.33,425,426.67,428.33,430,431.67,433.33,435,436.67,438.33,440,441.67,443.33,445,446.67,448.33,450,451.67,453.33,455,456.67,458.33,460,461.67,463.33,465.0,466.67,468.33,470.0]},"gold":{"PK3":[100,101.67,103.33,105,106.67,108.33,110,111.67,113.33,115,116.67,118.33,120,123.33,126.67,130,133.33,136.67,140,143.33,146.67,150,153.33,156.67,160,163.33,166.67,170,173.33,176.67,180],"PK2":[120,123.33,126.67,130,133.33,136.67,140,143.33,146.67,150,153.33,156.67,160,163.33,166.67,170,173.33,176.67,180,183.33,186.67,190,193.33,196.67,200,203.33,206.67,210,213.33,216.67,220],"PK1":[160,163.33,166.67,170,173.33,176.67,180,183.33,186.67,190,193.33,196.67,200,203.33,206.67,210,213.33,216.67,220,223.33,226.67,230,233.33,236.67,240,243.33,246.67,250,253.33,256.67,260],"K":[200,203.33,206.67,210,213.33,216.67,220,223.33,226.67,230,233.33,236.67,240,243.33,246.67,250,253.33,256.67,260,263.33,266.67,270,273.33,276.67,280,283.33,286.67,290,293.33,296.67,300],"P1":[240,243.33,246.67,250,253.33,256.67,260,263.33,266.67,270,273.33,276.67,280,283.33,286.67,290,293.33,296.67,300,303.33,306.67,310,313.33,316.67,320,323.33,326.67,330,333.33,336.67,340],"P2":[280,283.33,286.67,290,293.33,296.67,300,303.33,306.67,310,313.33,316.67,320,323.33,326.67,330,333.33,336.67,340,343.33,346.67,350,353.33,356.67,360,361.67,363.33,365,366.67,368.33,370],"P3":[320,323.33,326.67,330,333.33,336.67,340,343.33,346.67,350,353.33,356.67,360,361.67,363.33,365,366.67,368.33,370,371.67,373.33,375,376.67,378.33,380,381.67,383.33,385,386.67,388.33,390],"P4":[360,361.67,363.33,365,366.67,368.33,370,371.67,373.33,375,376.67,378.33,380,381.67,383.33,385,386.67,388.33,390,391.67,393.33,395,396.67,398.33,400,401.67,403.33,405.0,406.67,408.33,410.0],"P5":[380,381.67,383.33,385,386.67,388.33,390,391.67,393.33,395,396.67,398.33,400,401.67,403.33,405,406.67,408.33,410,411.67,413.33,415,416.67,418.33,420,421.67,423.33,425.0,426.67,428.33,430.0],"P6":[400,401.67,403.33,405,406.67,408.33,410,411.67,413.33,415,416.67,418.33,420,421.67,423.33,425,426.67,428.33,430,431.67,433.33,435,436.67,438.33,440,441.67,443.33,445.0,446.67,448.33,450.0],"P7":[420,421.67,423.33,425,426.67,428.33,430,431.67,433.33,435,436.67,438.33,440,441.67,443.33,445,446.67,448.33,450,451.67,453.33,455,456.67,458.33,460,461.67,463.33,465.0,466.67,468.33,470.0],"P8":[440,441.67,443.33,445,446.67,448.33,450,451.67,453.33,455,456.67,458.33,460,461.67,463.33,465,466.67,468.33,470,471.67,473.33,475,476.67,478.33,480,481.67,483.33,485.0,486.67,488.33,490.0],"P9":[460,461.67,463.33,465,466.67,468.33,470,471.67,473.33,475,476.67,478.33,480,481.67,483.33,485,486.67,488.33,490,491.67,493.33,495,496.67,498.33,500,501.67,503.33,505.0,506.67,508.33,510.0]}};     // {kis|bronze|silver|gold: {grade: [31 monthly values from the school-year start]}}
+  // Grade order as the sheet has it (PK3 is the youngest there).
+  const GRADES = ["PK3","PK2","PK1","K","P1","P2","P3","P4","P5","P6","P7","P8","P9","P10","P11","P12"];
+  const gradeIdx = g => GRADES.indexOf(g) + 1;      // PK3 = 1 … P1 = 5 … P5 = 9
+  const DEFAULTS = { Math: { rate: 3, ppd: 10 }, Reading: { rate: 2, ppd: 10 } };
+  const MS_DAY = 86400e3;
+
+  function normGrade(g){
+    const t = String(g || "").trim().toUpperCase().replace(/\s+/g, " ");
+    if(!t) return "";
+    let m = t.match(/^(?:GRADE ?|GR\.? ?|G ?)?(\d{1,2})(?:ST|ND|RD|TH)?(?: GRADE)?$/); if(m) return "P" + Number(m[1]);
+    m = t.match(/^P ?(\d{1,2})$/); if(m) return "P" + Number(m[1]);
+    m = t.match(/^PK ?(\d)$/); if(m) return "PK" + m[1];
+    if(/^(K|KG|KINDER|KINDERGARTEN|KINDER ?\d?)$/.test(t)) return "K";
+    return t;
+  }
+  function normLevel(subject, lv){
+    let t = String(lv || "").trim().toUpperCase().replace(/\s+/g, "");
+    if(!t) return "";
+    const al = LEVEL_ALIAS[subject] || {};
+    if(al[t]) t = al[t];
+    return t;
+  }
+  function levelIndex(subject, lv){ return (LADDER[subject] || []).indexOf(normLevel(subject, lv)); }
+  function yOf(subject, lv, page){
+    const i = levelIndex(subject, lv); if(i < 0) return null;
+    const p = Math.max(0, Math.min(200, parseInt(page, 10) || 0));
+    return i * 20 + p / 10;
+  }
+  // LWC is free text ("3A 80", "3A80", "BII-200") → { level, page } or null.
+  function parseLwc(subject, txt){
+    const m = String(txt || "").trim().match(/^(.*?[A-Za-z])\s*[-–]?\s*(\d{1,3})$/);
+    if(!m || levelIndex(subject, m[1]) < 0) return null;
+    return { level: normLevel(subject, m[1]), page: m[2] };
+  }
+  // Where a row says the child is: the roster's Current level/page or the report's LWC — whichever is further along.
+  function bestPos(subject, row){
+    const a = yOf(subject, row.current_level, row.current_page);
+    const l = parseLwc(subject, row.lwc), b = l ? yOf(subject, l.level, l.page) : null;
+    if(b != null && (a == null || b > a)) return { y: b, txt: `${l.level} ${l.page}`, src: "lwc" };
+    if(a != null) return { y: a, txt: `${row.current_level} ${row.current_page || ""}`.trim(), src: "level" };
+    return null;
+  }
+  function bandName(subject, y){
+    const L = LADDER[subject] || [];
+    const i = Math.max(0, Math.min(L.length - 1, Math.floor((y + 1e-9) / 20)));
+    return L[i] || "";
+  }
+  function levelAndPage(subject, y){
+    const L = LADDER[subject] || [];
+    let i = Math.floor((y + 1e-9) / 20), p = Math.round((y - i * 20) * 10);
+    if(p === 0 && i > 0){ i -= 1; p = 200; }
+    if(i >= L.length) return (L[L.length-1] || "") + " 200";
+    return (L[Math.max(0,i)] || "") + " " + Math.max(1, p);
+  }
+
+  /* dates (ISO yyyy-mm-dd, worked out in UTC so nothing shifts by a day) */
+  const T = iso => Date.parse(iso + "T00:00:00Z");
+  const iso = t => new Date(t).toISOString().slice(0,10);
+  const addDays = (s, n) => iso(T(s) + Math.round(n) * MS_DAY);
+  // Same as the database: Jan 31 + 1 month = Feb 28/29 (the last day of a shorter month), never Mar 3.
+  function addMonths(s, n){
+    const d = new Date(T(s)), day = d.getUTCDate();
+    d.setUTCDate(1); d.setUTCMonth(d.getUTCMonth() + n);
+    const last = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 0)).getUTCDate();
+    d.setUTCDate(Math.min(day, last));
+    return iso(d.getTime());
+  }
+  function todayISO(){ return new Date(Date.now() + 8*3600e3).toISOString().slice(0,10); }   // Philippine date
+  function fmtDate(s, o){ if(!s) return "—"; return new Date(T(s)).toLocaleDateString("en-US", Object.assign({ timeZone:"UTC", month:"short", day:"numeric", year:"numeric" }, o||{})); }
+  function fmtMonth(s){ return new Date(T(s)).toLocaleDateString("en-US", { timeZone:"UTC", month:"short", year:"numeric" }); }
+  const monthsBetween = (a, b) => (T(b) - T(a)) / (30.4375 * MS_DAY);
+  function syStartFor(date){ const y = Number(date.slice(0,4)); return (date.slice(5) >= "06-01" ? y : y - 1) + "-06-01"; }
+
+  let sbClient = null, currentUser = null, currentRole = null, currentTeacherName = null;
+
+  function isAdmin(){ return currentRole === "admin" || currentRole === "superadmin"; }
+  function isTeacherScoped(){ return currentRole === "teacher" || currentRole === "trainer_teacher"; }
+  function isAuthorized(){ return isAdmin(); }   // admins and superadmins only
+  function myName(){ return currentTeacherName || (currentUser && currentUser.email) || ""; }
+  function studentName(id){ const s = studentById.get(id); return s ? (s.name || [s.first_name, s.last_name].filter(Boolean).join(" ")) : ""; }
+  function displayName(id, fallback){
+    const s = studentById.get(id);
+    if(s && s.last_name && s.first_name) return `${s.last_name}, ${s.first_name}`;
+    return (s && s.name) || fallback || "";
+  }
+  let toastTimer = null;
+  function toast(msg){ const el = $("#toast"); if(!el) return; el.textContent = msg; el.hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(()=>{ el.hidden = true; }, 3200); }
+  function logHistory(action, summary, entityId, details){
+    if(!sbClient || !currentUser) return;
+    sbClient.from("edit_history").insert({ actor_email: currentUser.email || null, actor_role: currentRole || null, page: "worksheets", action, summary,
+      entity_type: "worksheets", entity_id: entityId != null ? String(entityId) : null, details: details || null })
+      .then(({ error }) => { if(error) console.warn("Couldn't log history:", error); });
+  }
+
+  /* teacher groups (phase95), same as the other pages */
+  const DEFAULT_TEACHER_GROUPS = [
+    { key:"g1", name:"Group 1 (7A–3A61)", teachers:["Sir GB","Miss Mira","Miss Frixie","Miss Queenie","Miss Jess","Miss Sugar","Miss KC"] },
+    { key:"g2", name:"Group 2 (BCD)", teachers:["Sir Hamid","Miss Kath","Miss Kristine","Miss Nazel","Miss Rona"] },
+    { key:"g3", name:"Group 3 (E–O)", teachers:["Sir Mark","Sir Francis","Sir Erickson","Miss Shaina","Miss Kate"] }
+  ];
+  let teacherGroups = DEFAULT_TEACHER_GROUPS;
+  async function loadTeacherGroups(){
+    try{
+      const { data } = await sbClient.from("settings").select("value").eq("id","teacher_groups").maybeSingle();
+      const g = data && data.value && Array.isArray(data.value.groups) ? data.value.groups.filter(x => x && x.key && Array.isArray(x.teachers)) : null;
+      if(g && g.length) teacherGroups = g;
+    }catch(e){ console.warn("couldn't load teacher groups", e); }
+  }
+  function groupShortName(g){ return String(g.name || g.key).replace(/\s*\(.*\)\s*$/, ""); }
+  function myGroupTeachers(){
+    if(!currentTeacherName) return [];
+    const set = new Set([currentTeacherName]);
+    teacherGroups.forEach(g => { if(g.teachers.includes(currentTeacherName)) g.teachers.forEach(t => set.add(t)); });
+    return [...set];
+  }
+  function teacherInFilter(teacher, value){
+    if(!value || value === "all") return true;
+    if(value.startsWith("group:")){ const g = teacherGroups.find(x => "group:" + x.key === value); return !!g && g.teachers.includes(teacher); }
+    return teacher === value;
+  }
+  function groupedTeacherOptions(names, selected, opts){
+    opts = opts || {};
+    const pool = [...new Set((names || []).filter(Boolean))];
+    const sel = v => v === selected ? " selected" : "";
+    const me = currentTeacherName;
+    const label = t => esc(t) + (opts.scoped && t === me ? " (you)" : "");
+    let html = "";
+    if(opts.withAll && !opts.scoped) html += `<option value="all"${sel("all")}>All teachers</option>`;
+    const used = new Set();
+    for(const g of teacherGroups){
+      if(opts.scoped && !g.teachers.includes(me)) continue;
+      g.teachers.forEach(t => used.add(t));
+      html += `<optgroup label="${esc(g.name)}">` + (opts.withGroups ? `<option value="group:${esc(g.key)}"${sel("group:" + g.key)}>All of ${esc(groupShortName(g))}</option>` : "")
+        + g.teachers.map(t => `<option value="${esc(t)}"${sel(t)}>${label(t)}</option>`).join("") + `</optgroup>`;
+    }
+    if(opts.scoped){ if(me && !used.has(me)) html += `<option value="${esc(me)}"${sel(me)}>${esc(me)} (you)</option>`; return html; }
+    const others = pool.filter(t => !used.has(t)).sort((a,b) => a.localeCompare(b));
+    if(others.length) html += `<optgroup label="Not in a group">` + others.map(t => `<option value="${esc(t)}"${sel(t)}>${esc(t)}</option>`).join("") + `</optgroup>`;
+    return html;
+  }
+
+  /* login / boot — same as the other pages */
+  function showLogin(errMsg){ { const sp = document.getElementById("bootSplash"); if(sp) sp.hidden = true; }
+    $("#loginScreen").hidden = false; $("#appRoot").hidden = true;
+    const err = $("#loginError"); if(errMsg){ err.textContent = errMsg; err.hidden = false; } else { err.hidden = true; } }
+  function showApp(){ { const sp = document.getElementById("bootSplash"); if(sp) sp.hidden = true; } $("#loginScreen").hidden = true; $("#appRoot").hidden = false; }
+  function renderAccount(){
+    if(window.kumonPtcNav) window.kumonPtcNav(sbClient, currentRole);
+    const el = $("#railAccount");
+    if(el) el.innerHTML = currentUser ? `<div class="account-row"><span class="account-email">${esc(currentUser.email)}</span><button class="btn sm ghost" data-action="logout">Log out</button></div>` : "";
+    const show = (id, on) => { const a = document.getElementById(id); if(a) a.hidden = !on; };
+    const r = currentRole;
+    show("navPipelineLink", !(r === "teacher" || r === "pending"));
+    show("navPaymentsLink", ["admin","superadmin","teacher","trainer_teacher"].includes(r));
+    show("navAbsentLink", ["admin","superadmin","teacher","trainer_teacher"].includes(r));
+    show("navAdminLink", r === "superadmin");
+    show("navActivityLink", r === "admin" || r === "superadmin");
+    show("navReportsLink", r === "superadmin");
+    const gate = $("#pendingGate"), blocked = !isAuthorized();
+    if(gate){ gate.hidden = !blocked; gate.innerHTML = blocked ? `<div class="banner">${currentRole === "pending" ? `Your account is waiting for approval. Ask a superadmin to set your role in <a href="admin.html">Admin</a>.` : "The Worksheets page is for admins only."}</div>` : ""; }
+    $$("#pageHead, #view").forEach(x => { x.style.display = blocked ? "none" : ""; });
+  }
+  async function loadRole(){
+    if(!sbClient || !currentUser){ currentRole = null; currentTeacherName = null; return; }
+    try{
+      const { data, error } = await window.kumonFetchProfile(sbClient, currentUser.id, "role,teacher_name");
+      if(error) throw error;
+      currentRole = data ? data.role : "pending"; currentTeacherName = data ? data.teacher_name : null;
+    }catch(e){ console.warn("couldn't load role", e); currentRole = "pending"; currentTeacherName = null; }
+  }
+  let shownUserId = null;
+  async function boot(){
+    if(!window.supabase){ showLogin("Couldn't load Supabase."); return; }
+    try{ sbClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY); }catch(e){ showLogin("Couldn't connect to Supabase."); return; }
+    const { data:{ session } } = await sbClient.auth.getSession();
+    if(session){ currentUser = session.user; shownUserId = session.user.id; await loadRole(); showApp(); renderAccount(); startApp(); }
+    else showLogin();
+    sbClient.auth.onAuthStateChange(async (event, session)=>{
+      if(session){
+        if(shownUserId === session.user.id) return;
+        if(shownUserId){ location.reload(); return; }
+        currentUser = session.user; shownUserId = session.user.id; await loadRole(); showApp(); renderAccount(); startApp();
+      }else{ if(shownUserId){ if(window.kumonStillSignedIn && await window.kumonStillSignedIn(sbClient, shownUserId)) return; location.reload(); return; } currentUser = null; currentRole = null; showLogin(); }
+    });
+  }
+
+  async function selectAll(table, cols, build){
+    let out = [], from = 0;
+    for(;;){
+      let q = sbClient.from(table).select(cols).range(from, from + 999);
+      if(build) q = build(q);
+      const { data, error } = await q;
+      if(error){ console.warn(table, error); const err = new Error(error.message || "load failed"); err.loadFailed = true; throw err; }
+      out = out.concat(data || []);
+      if(!data || data.length < 1000) return out;
+      from += 1000;
+    }
+  }
+  // Reads a Kumon "Web Ordering Detail" PDF's text items into { orderNo, orderDate, status, lines:{ME:{B:{41:100}}}, items:[...], remark }.
+  // items: [{ str, x, y, w, page }] in PDF units (y grows upwards).
+  function wsParseOrder(items){
+    const WS_LEVELS = {
+      PSE: ["Z1","Z2"],
+      ME: ["6A","5A","4A","3A","2A","A","B","C","D","E","F","G","H","I","J","K","L","M","N","O"],
+      EEU: ["7A","6A","5A","4A","3A","2A","A1","A2","B1","B2","C1","C2","D1","D2","E1","E2","F1","F2","G1","G2","H1","H2","I1","I2","J","K","L"]
+    };
+    // split items into words with estimated x
+    const words = [];
+    for(const it of items){
+      const s = it.str; if(!s || !s.trim()) continue;
+      const re = /\S+/g; let m;
+      while((m = re.exec(s))){
+        const cx = it.x + (it.w || 0) * ((m.index + m[0].length / 2) / Math.max(1, s.length));
+        words.push({ t: m[0], x: cx, y: it.y, page: it.page });
+      }
+    }
+    // group into lines
+    words.sort((a, b) => a.page - b.page || b.y - a.y || a.x - b.x);
+    const lines = [];
+    for(const w of words){
+      const L = lines[lines.length - 1];
+      if(L && L.page === w.page && Math.abs(L.y - w.y) <= 3){ L.words.push(w); }
+      else lines.push({ page: w.page, y: w.y, words: [w] });
+    }
+    lines.forEach(L => { L.words.sort((a, b) => a.x - b.x); L.text = L.words.map(w => w.t).join(" "); });
+    const out = { orderNo: "", orderDate: "", status: "", type: "", orderBy: "", lines: {}, items: [], remark: "" };
+    const field = (label) => { const L = lines.find(l => l.text.startsWith(label)); return L ? L.text.slice(label.length).trim() : ""; };
+    out.orderNo = field("Order No.");
+    out.orderDate = field("Order Date");
+    out.status = field("Order Status");
+    out.type = field("Order Type");
+    out.orderBy = field("Order By").replace(/[​]/g, "").trim();
+    const rm = lines.find(l => /^Remark:/.test(l.text)); if(rm) out.remark = rm.text.replace(/^Remark:\s*/, "");
+    let sec = null, cols = null, inItems = false, pendingName = "";
+    for(const L of lines){
+      const t = L.text.trim();
+      if(t === "PSE" || t === "ME" || t === "EEU"){ sec = t; cols = null; inItems = false; continue; }
+      if(t === "CN/NCI"){ sec = null; inItems = true; continue; }
+      if(sec && L.words[0].t === "level"){
+        cols = L.words.slice(1).map(w => ({ key: w.t, x: w.x }));
+        continue;
+      }
+      if(sec && cols && WS_LEVELS[sec].includes(L.words[0].t)){
+        const level = L.words[0].t;
+        for(const w of L.words.slice(1)){
+          if(w.t === "-") continue;
+          const n = Number(w.t.replace(/,/g, "")); if(!isFinite(n)) continue;
+          let best = null, bd = Infinity;
+          for(const c of cols){ const d = Math.abs(c.x - w.x); if(d < bd){ bd = d; best = c; } }
+          if(!best || best.key === "Total" || !/^\d+$/.test(best.key) || n === 0) continue;
+          const sl = (out.lines[sec] = out.lines[sec] || {}); const ll = (sl[level] = sl[level] || {});
+          ll[best.key] = (ll[best.key] || 0) + n;
+        }
+        continue;
+      }
+      if(inItems){
+        if(/^Item Name/.test(t) || /^Total Cost/.test(t) || /^Remark:/.test(t)) continue;
+        const m = t.match(/^(.*?)\s*(\d[\d,]*)\s+PHP\s+([\d,.]+)\s+PHP\s+([\d,.]+)$/);
+        if(m){ out.items.push({ name: (pendingName + " " + m[1]).trim(), qty: Number(m[2].replace(/,/g, "")), cost: Number(m[3].replace(/,/g, "")) }); pendingName = ""; }
+        else pendingName = (pendingName + " " + t).trim();
+      }
+    }
+    return out;
+  }
+
+
+  /* ======================= Worksheets: stock per level, order suggestions, order checks =======================
+     Kumon sells worksheets in blocks of 10 (1–10, 11–20 … 191–200) per level. Everything here counts COPIES of a
+     block ("sets" on Kumon's Stock Summary). A child going from B 40 to B 120 used blocks 41…111 — and a few
+     extra copies for repeats; that "repeat factor" is learned from Kumon's own monthly Used number. */
+  const WS_SUBJECTS = ["ME", "EEU", "PSE"];
+  const WS_NAME = { ME: "Math (ME)", EEU: "English (EEU)", PSE: "Pre-school (PSE)" };
+  const WS_LEVELS = {
+    PSE: ["Z1","Z2"],
+    ME: ["6A","5A","4A","3A","2A","A","B","C","D","E","F","G","H","I","J","K","L","M","N","O"],
+    EEU: ["7A","6A","5A","4A","3A","2A","A1","A2","B1","B2","C1","C2","D1","D2","E1","E2","F1","F2","G1","G2","H1","H2","I1","I2","J","K","L"]
+  };
+  const PSE_BLOCKS = [1,11,21,31,41,51,61,71,81,91];
+  const WS_BLOCKS = [1,11,21,31,41,51,61,71,81,91,101,111,121,131,141,151,161,171,181,191];
+  const blocksOf = sub => sub === "PSE" ? PSE_BLOCKS : WS_BLOCKS;
+  const HUB_SUBJECT = { ME: "Math", EEU: "Reading" };   // Hub ladders line up level for level with Kumon's
+  const DEFAULT_RATE = { ME: 120, EEU: 120 };            // pages a month when a child has no history yet and no peers
+  const DEFAULT_FACTOR = 1.3;
+
+  let wsEnrollments = [], wsHistory = [], wsCounts = [], wsOrders = [], wsSettings = { cover_weeks: 4, calib: {} };
+  const wsUi = { tab: "suggest", countSubject: "ME", checkId: null, stockSubject: "ME" };
+
+  /* ---------- positions: a child's place as one page number across all levels (B 40 → 6*200+40) ---------- */
+  function hubPos(sub, row){ const p = bestPos(HUB_SUBJECT[sub], row); return p ? Math.round(p.y * 10) : null; }
+  // block key for a page number: { level, block }
+  function blockOfPage(sub, G){
+    const L = WS_LEVELS[sub]; const b = Math.floor((G - 1) / 10);
+    const li = Math.floor(b / 20); if(li < 0 || li >= L.length) return null;
+    return { level: L[li], block: (b % 20) * 10 + 1 };
+  }
+  // add `copies` spread evenly over pages (from, to] into a {level:{block:n}} map
+  function spread(map, sub, from, to, perPage){
+    if(!(to > from)) return;
+    let g = Math.floor(from) + 1;
+    const end = Math.min(to, WS_LEVELS[sub].length * 200);
+    while(g <= end){
+      const k = blockOfPage(sub, g); if(!k) break;
+      const blockEnd = Math.floor((g - 1) / 10) * 10 + 10;
+      const upto = Math.min(blockEnd, end);
+      const pages = upto - g + 1;
+      const lv = (map[k.level] = map[k.level] || {});
+      lv[k.block] = (lv[k.block] || 0) + pages * perPage;
+      g = upto + 1;
+    }
+  }
+  const monthEnd = key => { const [y, m] = key.split("-").map(Number); return iso(Date.UTC(y, m, 0)); };
+
+  // For every enrollment of a subject: its known positions over time [{ date, G }] (oldest first).
+  function trackOf(sub){
+    const hs = HUB_SUBJECT[sub]; const today = todayISO();
+    const byEnr = new Map();
+    for(const e of wsEnrollments){ if(e.subject !== hs) continue; byEnr.set(e.id, { e, pts: [] }); }
+    for(const h of wsHistory){
+      const t = byEnr.get(h.subject_enrollment_id); if(!t || !h.cycle_key) continue;
+      const G = hubPos(sub, h); if(G != null) t.pts.push({ date: monthEnd(h.cycle_key), G });
+    }
+    for(const t of byEnr.values()){
+      const G = hubPos(sub, t.e);
+      if(G != null && t.e.status === "active") t.pts.push({ date: today, G });
+      t.pts.sort((a, b) => a.date < b.date ? -1 : 1);
+      // positions only go forward (a typo'd lower level shouldn't count as negative use)
+      for(let i = 1; i < t.pts.length; i++) if(t.pts[i].G < t.pts[i-1].G) t.pts[i].G = t.pts[i-1].G;
+    }
+    return byEnr;
+  }
+  // pages a month over the last ~3 months of known positions (null if unknown)
+  function rateOf(t){
+    const pts = t.pts; if(pts.length < 2) return null;
+    const last = pts[pts.length - 1];
+    const from = pts.slice().reverse().find(p => monthsBetween(p.date, last.date) >= 2.5) || pts[0];
+    const mo = monthsBetween(from.date, last.date); if(mo < 0.5) return null;
+    return Math.max(0, (last.G - from.G) / mo);
+  }
+  function median(a){ if(!a.length) return null; const s = a.slice().sort((x, y) => x - y); const m = Math.floor(s.length / 2); return s.length % 2 ? s[m] : (s[m-1] + s[m]) / 2; }
+
+  /* ---------- the repeat factor: Kumon's Used ÷ what the children's progress alone would use ---------- */
+  function advancedInMonth(sub, key){
+    // pages advanced during month `key` (from the end of the month before to the end of `key`)
+    const tracks = trackOf(sub); const end = monthEnd(key);
+    const [y, m] = key.split("-").map(Number); const prevEnd = iso(Date.UTC(y, m - 1, 0));
+    let pages = 0, kids = 0;
+    for(const t of tracks.values()){
+      const a = t.pts.find(p => p.date === prevEnd), b = t.pts.find(p => p.date === end);
+      if(a && b){ pages += Math.max(0, b.G - a.G); kids++; }
+    }
+    return { pages, kids };
+  }
+  function factorOf(sub){
+    const c = (wsSettings.calib || {})[sub];
+    if(!c || !c.month || !(c.used > 0)) return { f: DEFAULT_FACTOR, src: "default" };
+    const adv = advancedInMonth(sub, c.month);
+    if(!(adv.pages > 0)) return { f: DEFAULT_FACTOR, src: "no-history", month: c.month };
+    const f = (c.used * 10) / adv.pages;
+    return { f: Math.max(1, Math.min(4, f)), raw: f, src: "kumon", month: c.month, kids: adv.kids };
+  }
+
+  /* ---------- demand: copies each block will need in the next `days` days ---------- */
+  function demandFor(sub, days){
+    if(sub === "PSE") return { map: {}, kids: 0 };
+    const tracks = trackOf(sub); const { f } = factorOf(sub);
+    const L = WS_LEVELS[sub];
+    // peer rates per level, for children without enough history
+    const peer = {};
+    for(const t of tracks.values()){ if(t.e.status !== "active") continue; const r = rateOf(t); const last = t.pts[t.pts.length - 1]; if(r == null || !last) continue; const lv = L[Math.min(L.length - 1, Math.floor((last.G - 1) / 200))]; (peer[lv] = peer[lv] || []).push(r); }
+    const allRates = Object.values(peer).flat();
+    const map = {}; let kids = 0;
+    for(const t of tracks.values()){
+      if(t.e.status !== "active") continue;
+      const last = t.pts[t.pts.length - 1]; if(!last) continue;
+      const lv = L[Math.min(L.length - 1, Math.floor((Math.max(1, last.G) - 1) / 200))];
+      let r = rateOf(t); if(r == null) r = median(peer[lv] || []) ?? median(allRates) ?? DEFAULT_RATE[sub];
+      const pages = r * days / 30.4375;
+      if(pages <= 0) continue;
+      kids++;
+      spread(map, sub, last.G, last.G + pages, f / 10);
+    }
+    return { map, kids };
+  }
+
+  /* ---------- stock now: last count + orders received since − what the children used since ---------- */
+  function latestCount(sub){ return wsCounts.filter(c => c.subject === sub).sort((a, b) => (a.counted_on + a.created_at) < (b.counted_on + b.created_at) ? 1 : -1)[0] || null; }
+  function addLines(map, lines, sign){ for(const lv in (lines || {})) for(const b in lines[lv]){ const n = Number(lines[lv][b]) || 0; if(!n) continue; const x = (map[lv] = map[lv] || {}); x[b] = (x[b] || 0) + sign * n; } }
+  function stockNow(sub){
+    const c = latestCount(sub); if(!c) return null;
+    const map = {}; addLines(map, c.lines, 1);
+    const received = wsOrders.filter(o => o.received_on && o.received_on > c.counted_on);
+    received.forEach(o => addLines(map, (o.lines || {})[sub], 1));
+    let usedCopies = 0;
+    if(sub !== "PSE"){
+      const used = {}; const { f } = factorOf(sub); const tracks = trackOf(sub); const pos = c.positions || {};
+      for(const t of tracks.values()){
+        const after = t.pts.filter(p => p.date > c.counted_on);
+        const start = pos[t.e.id] != null ? Number(pos[t.e.id]) : (after.length ? after[0].G : null);
+        const end = t.pts.length ? t.pts[t.pts.length - 1].G : null;
+        if(start == null || end == null || end <= start) continue;
+        spread(used, sub, start, end, f / 10);
+      }
+      for(const lv in used) for(const b in used[lv]){ usedCopies += used[lv][b]; }
+      addLines(map, used, -1);
+    }
+    return { map, count: c, received, usedCopies };
+  }
+  // ordered but not yet received (last 45 days) — on its way
+  function incomingFor(sub){
+    const map = {}; const cutoff = addDays(todayISO(), -45);
+    wsOrders.filter(o => !o.received_on && (!o.order_date || o.order_date >= cutoff)).forEach(o => addLines(map, (o.lines || {})[sub], 1));
+    return map;
+  }
+  const getN = (m, lv, b) => ((m || {})[lv] || {})[b] || 0;
+  const round10 = n => Math.ceil(n / 10) * 10;
+
+  function suggestionFor(sub){
+    const weeks = Math.max(1, Number(wsSettings.cover_weeks) || 4);
+    const d = demandFor(sub, weeks * 7), st = stockNow(sub), inc = incomingFor(sub);
+    const out = {}; let total = 0;
+    for(const lv of WS_LEVELS[sub]) for(const b of blocksOf(sub)){
+      const need = getN(d.map, lv, b); if(need <= 0.05) continue;
+      const have = st ? Math.max(0, getN(st.map, lv, b)) : 0;
+      const n = round10(Math.max(0, need - have - getN(inc, lv, b)));
+      if(n > 0){ (out[lv] = out[lv] || {})[b] = n; total += n; }
+    }
+    return { lines: out, total, weeks, stock: st, demand: d };
+  }
+
+  /* ---------- order check ---------- */
+  function checkOrder(o){
+    const rows = [];
+    for(const sub of WS_SUBJECTS){
+      const lines = (o.lines || {})[sub]; if(!lines) continue;
+      const d4 = sub === "PSE" ? null : demandFor(sub, 28), d13 = sub === "PSE" ? null : demandFor(sub, 91);
+      const st = stockNow(sub);
+      const hs = HUB_SUBJECT[sub];
+      for(const lv of WS_LEVELS[sub]){
+        const l = lines[lv]; if(!l) continue;
+        const ordered = Object.values(l).reduce((a, b) => a + b, 0); if(!ordered) continue;
+        if(sub === "PSE"){ rows.push({ sub, lv, ordered, kidsNow: null, perWeek: null, stock: st ? sumLevel(st.map, lv) : null, verdict: "info", note: "The Hub has no pre-school (Z) students to compare with." }); continue; }
+        const kidsNow = wsEnrollments.filter(e => e.subject === hs && e.status === "active" && (() => { const G = hubPos(sub, e); return G != null && WS_LEVELS[sub][Math.floor((Math.max(1, G) - 1) / 200)] === lv; })()).length;
+        const perWeek = sumLevel(d4.map, lv) / 4, in13 = sumLevel(d13.map, lv);
+        const stock = st ? Math.max(0, sumLevel(st.map, lv)) : null;
+        let verdict = "ok", note;
+        const shelf = stock != null ? " with what's on the shelf" : "";
+        if(in13 < 1){ verdict = "bad"; note = "No child is expected to reach this level in the next 3 months."; }
+        else if(perWeek < 0.5){ verdict = "warn"; note = "Nobody needs this level in the next 4 weeks — a few children reach it later in the 3 months."; }
+        else{
+          const weeks = ((stock || 0) + ordered) / perWeek;
+          const wk = weeks > 52 ? "over a year's" : `about ${Math.max(1, Math.round(weeks))} week${Math.round(weeks) === 1 ? "" : "s"}'`;
+          if(weeks > 16){ verdict = "warn"; note = `${wk[0].toUpperCase() + wk.slice(1)} worth${shelf} — more than needed.`; }
+          else note = `${wk[0].toUpperCase() + wk.slice(1)} worth${shelf}.`;
+        }
+        rows.push({ sub, lv, ordered, kidsNow, perWeek, stock, verdict, note });
+      }
+    }
+    return rows;
+  }
+  function sumLevel(map, lv){ return Object.values((map || {})[lv] || {}).reduce((a, b) => a + b, 0); }
+
+  /* ---------- loading ---------- */
+  const wsLoadIssues = new Set();
+  async function wsLoad(key, fn){ try{ await fn(); wsLoadIssues.delete(key); }catch(e){ console.warn("worksheets load", key, e); wsLoadIssues.add(key); } }
+  async function loadAll(){
+    await Promise.all([
+      wsLoad("enrollments", async () => { wsEnrollments = await selectAll("subject_enrollments", "id,student_id,student_name,subject,teacher,status,current_level,current_page,lwc,created_at", q => q.order("id")); }),
+      wsLoad("history", async () => { wsHistory = await selectAll("enrollment_monthly_history", "id,subject_enrollment_id,cycle_key,current_level,current_page,lwc,nwu", q => q.order("id")); }),
+      loadCounts(), loadOrders(),
+      wsLoad("settings", async () => { const { data, error } = await sbClient.from("ws_settings").select("value").eq("id", "main").maybeSingle(); if(error) throw error; if(data && data.value) wsSettings = Object.assign({ cover_weeks: 4, calib: {} }, data.value); })
+    ]);
+  }
+  function loadCounts(){ return wsLoad("counts", async () => { wsCounts = await selectAll("ws_counts", "*", q => q.order("id")); }); }
+  function loadOrders(){ return wsLoad("orders", async () => { wsOrders = await selectAll("ws_orders", "*", q => q.order("id")); }); }
+  async function saveSettings(patch){
+    const value = Object.assign({}, wsSettings, patch);
+    const { data, error } = await sbClient.from("ws_settings").upsert([{ id: "main", value }], { onConflict: "id" }).select("id");
+    if(error || !data || !data.length){ toast("Couldn't save: " + (error ? error.message : "the database didn't allow it")); return false; }
+    wsSettings = value; return true;
+  }
+
+  /* ---------- rendering ---------- */
+  const fmtN = n => (Math.round(n) || 0).toLocaleString("en-US");
+  function render(){
+    const v = $("#view");
+    const tabs = [["suggest","Order suggestion"],["stock","Stock per level"],["orders","Orders & checks"],["count","Shelf count"]];
+    const warn = wsLoadIssues.size ? `<div class="banner">Some of the data couldn't load (${esc([...wsLoadIssues].join(", "))}). The numbers may be wrong — refresh the page before acting on them.${wsLoadIssues.has("counts") || wsLoadIssues.has("orders") || wsLoadIssues.has("settings") ? " If this is the first time you open this page, ask Claude whether phase118 has been run." : ""}</div>` : "";
+    v.innerHTML = `${warn}<div class="ws-tabs">${tabs.map(([k, l]) => `<button class="ws-tab${wsUi.tab === k ? " on" : ""}" data-tab="${k}">${l}</button>`).join("")}</div><div id="wsBody"></div>`;
+    ({ suggest: renderSuggest, stock: renderStock, orders: renderOrders, count: renderCount })[wsUi.tab]();
+  }
+  function gridHtml(sub, lines, opts){
+    opts = opts || {};
+    const blocks = blocksOf(sub);
+    const levels = opts.allLevels ? WS_LEVELS[sub] : WS_LEVELS[sub].filter(lv => blocks.some(b => getN(lines, lv, b)));
+    if(!levels.length) return `<div class="empty">${opts.empty || "Nothing to show."}</div>`;
+    return `<div class="ws-grid-wrap"><table class="ws-grid"><thead><tr><th>Level</th>${blocks.map(b => `<th>${b}</th>`).join("")}<th>Total</th></tr></thead><tbody>
+      ${levels.map(lv => { let t = 0; const cells = blocks.map(b => { const n = getN(lines, lv, b); t += n; const cls = opts.cellClass ? opts.cellClass(lv, b, n) : ""; return `<td class="${cls}">${opts.input ? `<input type="number" min="0" step="1" inputmode="numeric" data-lv="${esc(lv)}" data-b="${b}" value="${n ? Math.round(n) : ""}" placeholder="0">` : (n ? fmtN(n) : "")}</td>`; }).join(""); return `<tr><th>${esc(lv)}</th>${cells}<td class="tot">${t ? fmtN(t) : ""}</td></tr>`; }).join("")}
+    </tbody></table></div>`;
+  }
+  function factorLine(sub){
+    const fx = factorOf(sub);
+    return fx.src === "kumon" ? `Repeat factor ${fx.f.toFixed(2)} — from Kumon's Used for ${fmtMonth(fx.month + "-01")} (${fx.kids} children with reports both months).`
+      : fx.src === "no-history" ? `Repeat factor ${DEFAULT_FACTOR} (standard) — the Hub has no close-out reports for ${fmtMonth(fx.month + "-01")} and the month before to compare with.`
+      : `Repeat factor ${DEFAULT_FACTOR} (standard) — enter last month's Used from Kumon's Stock Summary below to make it exact.`;
+  }
+  function renderSuggest(){
+    const body = $("#wsBody");
+    const parts = ["ME","EEU"].map(sub => {
+      const s = suggestionFor(sub);
+      const noCount = !s.stock;
+      return `<div class="card sect"><div class="sec-h"><h3>${WS_NAME[sub]}</h3><span class="faint">${s.total ? fmtN(s.total) + " copies" : ""}</span><span class="grow"></span>
+          ${s.total ? `<button class="btn sm" data-action="csv" data-sub="${sub}">Download (CSV)</button>` : ""}</div>
+        ${noCount ? `<div class="banner">No shelf count for ${WS_NAME[sub]} yet, so this assumes the shelf is empty — it's the full need for the next ${s.weeks} weeks. Do a <a href="#" data-tab="count" data-sub="${sub}">shelf count</a> to get a real suggestion.</div>` : ""}
+        ${gridHtml(sub, s.lines, { empty: noCount ? "No child needs this subject's worksheets in that time." : "Nothing to order — the shelf covers the next " + s.weeks + " weeks." })}
+        <div class="hint">${s.demand.kids} children · ${esc(factorLine(sub))}</div></div>`;
+    }).join("");
+    body.innerHTML = `<div class="card sect"><div class="ws-set">
+        <label class="field inline">Plan for <select id="coverWeeks">${[2,3,4,5,6,8].map(w => `<option value="${w}"${Number(wsSettings.cover_weeks) === w ? " selected" : ""}>${w} weeks</option>`).join("")}</select></label>
+        <div class="hint" style="margin:0;">You order twice a month, so 4 weeks = two weeks until the next order + about a week for delivery + a week spare. The suggestion is what each block needs for that time, minus what's on the shelf and what's already ordered but not yet received — rounded up to tens.</div></div></div>
+      ${parts}
+      ${calibCard()}
+      <div class="card sect"><div class="sec-h"><h3>Pre-school (PSE · Z1, Z2)</h3></div><div class="hint">The Hub has no pre-school students, so there's no suggestion for Z1/Z2. Their stock still shows on Stock per level once they're counted.</div></div>`;
+  }
+  // Kumon's Stock Summary "Used" for a closed month teaches the Hub how many copies a child really uses
+  // per 10 pages of progress (repeats, re-dos, spares).
+  function calibCard(){
+    const keys = [...new Set(wsHistory.map(h => h.cycle_key).filter(Boolean))].sort().reverse().slice(0, 6);
+    const c = wsSettings.calib || {}; const m = (c.ME && c.ME.month) || (c.EEU && c.EEU.month) || keys[0] || "";
+    return `<div class="card sect"><div class="sec-h"><h3>Kumon's Stock Summary</h3></div>
+      <div class="hint">From Order &amp; Inventory → Worksheet Stock Summary, type the <b>Used</b> number for one month the Hub has closed out. The Hub compares it with how far the children moved that month, so its numbers match what Kumon sees.</div>
+      <div class="ws-set"><label class="field inline">Month <select id="calMonth">${keys.map(k => `<option value="${k}"${k === m ? " selected" : ""}>${esc(fmtMonth(k + "-01"))}</option>`).join("") || `<option value="">no closed months yet</option>`}</select></label>
+        <label class="field inline">ME Used <input type="number" min="0" id="calME" value="${c.ME && c.ME.used || ""}" placeholder="e.g. 13612" style="width:110px"></label>
+        <label class="field inline">EEU Used <input type="number" min="0" id="calEEU" value="${c.EEU && c.EEU.used || ""}" placeholder="e.g. 8301" style="width:110px"></label>
+        <button class="btn sm" data-action="save-calib">Save</button></div></div>`;
+  }
+  function renderStock(){
+    const body = $("#wsBody"); const sub = wsUi.stockSubject;
+    const st = stockNow(sub), d = demandFor(sub, 7);
+    const subTabs = WS_SUBJECTS.map(s => `<button class="ws-sub${s === sub ? " on" : ""}" data-stocksub="${s}">${WS_NAME[s]}</button>`).join("");
+    if(!st){ body.innerHTML = `<div class="ws-subs">${subTabs}</div><div class="card sect"><div class="empty">No shelf count for ${WS_NAME[sub]} yet. <a href="#" data-tab="count" data-sub="${sub}">Do a shelf count</a> — after that this shows what's on the shelf for every block, kept up to date from orders and the children's progress.</div></div>`; return; }
+    const weeksLeft = (lv, b) => { const w = getN(d.map, lv, b); return w > 0.05 ? getN(st.map, lv, b) / w : null; };
+    const cellClass = (lv, b, n) => { const w = weeksLeft(lv, b); if(n < 0) return "c-bad"; if(w == null) return ""; return w < 2 ? "c-bad" : w < 4 ? "c-warn" : w > 16 ? "c-much" : ""; };
+    const shown = {}; for(const lv of WS_LEVELS[sub]) for(const b of blocksOf(sub)){ const n = getN(st.map, lv, b); if(n || getN(d.map, lv, b) > 0.05) (shown[lv] = shown[lv] || {})[b] = Math.round(n) || 0.0001; }
+    const levelRows = WS_LEVELS[sub].map(lv => { const have = sumLevel(st.map, lv), wk = sumLevel(d.map, lv); if(!have && wk < 0.05) return ""; return `<tr><th>${esc(lv)}</th><td>${fmtN(have)}</td><td>${wk > 0.05 ? fmtN(wk) : "—"}</td><td class="${wk > 0.05 ? (have / wk < 2 ? "c-bad" : have / wk < 4 ? "c-warn" : "") : ""}">${wk > 0.05 ? (have <= 0 ? "none left" : (have / wk).toFixed(1) + " wks") : "nobody needs it soon"}</td></tr>`; }).join("");
+    body.innerHTML = `<div class="ws-subs">${subTabs}</div>
+      <div class="card sect"><div class="sec-h"><h3>${WS_NAME[sub]} on the shelf now</h3><span class="faint">counted ${esc(fmtDate(st.count.counted_on))}${st.received.length ? ` · +${st.received.length} order${st.received.length === 1 ? "" : "s"} received since` : ""}${sub !== "PSE" ? ` · −${fmtN(st.usedCopies)} used since` : ""}</span></div>
+        <div class="ws-legend"><span class="lg c-bad">under 2 weeks left</span><span class="lg c-warn">2–4 weeks</span><span class="lg c-much">over 16 weeks</span><span class="faint">blank = nobody needs it soon</span></div>
+        ${gridHtml(sub, shown, { cellClass })}
+        <div class="hint">${sub === "PSE" ? "Pre-school use isn't in the Hub, so Z1/Z2 only change with counts and orders." : "Used since the count is worked out from each child's LWC/level (updated at report time), times the repeat factor. " + esc(factorLine(sub))}</div></div>
+      ${sub !== "PSE" ? `<div class="card sect"><div class="sec-h"><h3>Per level</h3></div><div class="tbl"><table class="stable"><thead><tr><th>Level</th><th>On the shelf</th><th>Used a week</th><th>Lasts</th></tr></thead><tbody>${levelRows}</tbody></table></div></div>` : ""}`;
+  }
+  // An order placed before every subject's latest shelf count was already on the shelf when it was counted.
+  function beforeCount(o){
+    const subs = Object.keys(o.lines || {}).filter(s => Object.keys(o.lines[s] || {}).length); if(!subs.length || !o.order_date) return false;
+    return subs.every(s => { const c = latestCount(s); return c && o.order_date < addDays(c.counted_on, -14); });
+  }
+  function renderOrders(){
+    const body = $("#wsBody");
+    const list = wsOrders.slice().sort((a, b) => (b.order_date || "") < (a.order_date || "") ? -1 : 1);
+    const tot = o => WS_SUBJECTS.map(s => { const l = (o.lines || {})[s]; if(!l) return ""; const n = Object.keys(l).reduce((a, lv) => a + sumLevel(l, lv), 0); return n ? `${s} ${fmtN(n)}` : ""; }).filter(Boolean).join(" · ") || ((o.items || []).length ? `${o.items.length} other item${o.items.length === 1 ? "" : "s"}` : "—");
+    const rows = list.map(o => `<tr${wsUi.checkId === o.id ? ' class="sel"' : ""}><td><b>${esc(o.order_no)}</b><div class="faint">${esc(o.status || "")}</div></td><td>${esc(fmtDate(o.order_date))}</td><td>${esc(tot(o))}</td>
+      <td><div class="ws-recv">${o.received_on ? `<span class="pill p-good">Received ${esc(fmtDate(o.received_on))}</span><button class="btn sm ghost" data-action="unreceive" data-id="${esc(o.id)}">Undo</button>`
+        : beforeCount(o) ? `<span class="faint">Before the shelf count — already counted</span>`
+        : `<input type="date" data-recv="${esc(o.id)}" value="${todayISO()}" max="${todayISO()}"><button class="btn sm" data-action="receive" data-id="${esc(o.id)}">Mark received</button>`}</div></td>
+      <td class="ws-act"><button class="btn sm" data-action="check" data-id="${esc(o.id)}">Check</button> <button class="btn sm ghost danger" data-action="del-order" data-id="${esc(o.id)}">Delete</button></td></tr>`).join("");
+    const sel = wsOrders.find(o => o.id === wsUi.checkId);
+    let check = "";
+    if(sel){
+      const rows2 = checkOrder(sel);
+      check = `<div class="card sect"><div class="sec-h"><h3>Check: ${esc(sel.order_no)} (${esc(fmtDate(sel.order_date))})</h3></div>
+        ${rows2.length ? `<div class="tbl"><table class="stable"><thead><tr><th>Subject</th><th>Level</th><th>Ordered</th><th>Children there now</th><th>Used a week</th><th>On the shelf</th><th></th></tr></thead><tbody>
+        ${rows2.map(r => `<tr class="v-${r.verdict}"><td>${esc(r.sub)}</td><td><b>${esc(r.lv)}</b></td><td>${fmtN(r.ordered)}</td><td>${r.kidsNow == null ? "—" : r.kidsNow}</td><td>${r.perWeek == null ? "—" : fmtN(r.perWeek)}</td><td>${r.stock == null ? "not counted" : fmtN(r.stock)}</td><td>${esc(r.note)}</td></tr>`).join("")}</tbody></table></div>
+        <div class="hint">Compared with today's children and shelf. Red = nobody needs it in the next 3 months; amber = more than about 16 weeks' worth.</div>` : `<div class="empty">This order has no worksheets (only other items).</div>`}
+        ${(sel.items || []).length ? `<div class="hint"><b>Other items:</b> ${sel.items.map(i => esc(i.name) + " × " + esc(i.qty)).join(" · ")}</div>` : ""}</div>`;
+    }
+    body.innerHTML = `<div class="card sect"><div class="sec-h"><h3>Upload order PDFs</h3></div>
+        <label class="ws-drop"><input type="file" id="pdfIn" accept="application/pdf" multiple hidden><b>Choose the "Web Ordering Detail" PDFs</b><span class="faint">from Kumon's ordering site — several at once is fine. Uploading the same order again updates it.</span></label>
+        <div id="pdfMsg" class="hint"></div></div>
+      <div class="card sect"><div class="sec-h"><h3>Orders</h3><span class="faint">An order adds to the stock once it's marked received.</span></div>
+        ${list.length ? `<div class="tbl"><table class="stable"><thead><tr><th>Order</th><th>Date</th><th>Worksheets</th><th>Received</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>` : `<div class="empty">No orders yet — upload the PDFs above.</div>`}</div>
+      ${check}`;
+  }
+  function renderCount(){
+    const body = $("#wsBody"); const sub = wsUi.countSubject; const c = latestCount(sub);
+    const subTabs = WS_SUBJECTS.map(s => `<button class="ws-sub${s === sub ? " on" : ""}" data-countsub="${s}">${WS_NAME[s]}</button>`).join("");
+    body.innerHTML = `<div class="ws-subs">${subTabs}</div>
+      <div class="card sect"><div class="sec-h"><h3>Shelf count — ${WS_NAME[sub]}</h3><span class="faint">${c ? "last counted " + esc(fmtDate(c.counted_on)) : "never counted"}</span></div>
+        <div class="hint">Type how many copies of each block are on the shelf (leave empty for none). Put away any delivery first. Saving replaces the stock for this subject from that day on; the Hub then adds received orders and takes off what the children use.</div>
+        <div class="ws-set"><label class="field inline">Counted on <input type="date" id="countDate" value="${todayISO()}" max="${todayISO()}"></label>
+          ${c ? `<button class="btn sm ghost" data-action="prefill">Start from the current estimate</button>` : ""}
+          <span class="grow"></span><button class="btn primary" data-action="save-count">Save count</button></div>
+        <div id="countGrid">${gridHtml(sub, {}, { allLevels: true, input: true })}</div></div>`;
+  }
+
+  /* ---------- actions ---------- */
+  async function readPdf(file){
+    if(!window.pdfjsLib) throw new Error("the PDF reader didn't load");
+    const doc = await window.pdfjsLib.getDocument({ data: new Uint8Array(await file.arrayBuffer()) }).promise;
+    const items = [];
+    for(let p = 1; p <= doc.numPages; p++){ const pg = await doc.getPage(p); const tc = await pg.getTextContent(); tc.items.forEach(i => items.push({ str: i.str, x: i.transform[4], y: i.transform[5], w: i.width, page: p })); }
+    return wsParseOrder(items);
+  }
+  function pdfDate(s){ const d = Date.parse(String(s || "") + " UTC"); return isNaN(d) ? null : iso(d); }
+  async function uploadPdfs(files){
+    const msg = $("#pdfMsg"); const done = [], bad = [];
+    for(const f of files){
+      try{
+        msg.textContent = `Reading ${f.name}…`;
+        const o = await readPdf(f);
+        if(!o.orderNo) throw new Error("no order number found — is this a Web Ordering Detail PDF?");
+        const ex = wsOrders.find(x => x.order_no === o.orderNo);
+        const row = { order_no: o.orderNo, order_date: pdfDate(o.orderDate), status: o.status || null, order_type: o.type || null, order_by: o.orderBy || null,
+          lines: o.lines, items: o.items, remark: o.remark || null, file_name: f.name, uploaded_by: currentUser ? currentUser.email : null, updated_at: new Date().toISOString() };
+        if(ex && ex.received_on) row.received_on = ex.received_on;
+        const { data, error } = await sbClient.from("ws_orders").upsert([row], { onConflict: "order_no" }).select("id");
+        if(error || !data || !data.length) throw new Error(error ? error.message : "the database didn't allow it");
+        done.push(o.orderNo + (ex ? " (updated)" : ""));
+      }catch(e){ bad.push(`${f.name}: ${e.message || e}`); }
+    }
+    await loadOrders(); render();
+    $("#pdfMsg").innerHTML = (done.length ? `Saved ${esc(done.join(", "))}. ` : "") + (bad.length ? `<span style="color:var(--bad)">Couldn't read: ${esc(bad.join(" · "))}</span>` : "");
+    if(done.length) logHistory("ws_orders_upload", `Uploaded worksheet orders: ${done.join(", ")}`, null);
+  }
+  async function setReceived(id, date){
+    const { data, error } = await sbClient.from("ws_orders").update({ received_on: date, updated_at: new Date().toISOString() }).eq("id", id).select("id");
+    if(error || !data || !data.length){ toast("Couldn't save: " + (error ? error.message : "the database didn't allow it")); return; }
+    await loadOrders(); render(); toast(date ? "Marked received — added to the stock." : "Taken off the stock again.");
+  }
+  async function saveCount(){
+    const sub = wsUi.countSubject, date = $("#countDate").value;
+    if(!date){ alert("Pick the date of the count."); return; }
+    const lines = {}; let n = 0;
+    $$("#countGrid input[data-lv]").forEach(i => { const v = Math.max(0, Math.round(Number(i.value) || 0)); if(v){ (lines[i.dataset.lv] = lines[i.dataset.lv] || {})[i.dataset.b] = v; n += v; } });
+    if(!n && !confirm(`Every box is empty. Save a count of 0 copies for ${WS_NAME[sub]}?`)) return;
+    if(n && !confirm(`Save this count: ${fmtN(n)} copies of ${WS_NAME[sub]} on ${fmtDate(date)}?\n\nFrom now on the stock starts from this count.`)) return;
+    const positions = {};
+    if(sub !== "PSE") for(const t of trackOf(sub).values()){ if(t.e.status !== "active") continue; const G = hubPos(sub, t.e); if(G != null) positions[t.e.id] = G; }
+    const btn = $('[data-action="save-count"]'); if(btn) btn.disabled = true;
+    const { data, error } = await sbClient.from("ws_counts").insert([{ subject: sub, counted_on: date, counted_by: currentUser ? currentUser.email : null, lines, positions }]).select("id");
+    if(btn && btn.isConnected) btn.disabled = false;
+    if(error || !data || !data.length){ alert("Couldn't save the count: " + (error ? error.message : "the database didn't allow it")); return; }
+    logHistory("ws_count", `Shelf count for ${WS_NAME[sub]}: ${fmtN(n)} copies (${date})`, data[0].id);
+    await loadCounts(); wsUi.tab = "stock"; wsUi.stockSubject = sub; render(); toast("Count saved.");
+  }
+  function downloadCsv(sub){
+    const s = suggestionFor(sub); const blocks = blocksOf(sub);
+    const rows = [["Level", ...blocks, "Total"]];
+    for(const lv of WS_LEVELS[sub]){ const l = s.lines[lv]; if(!l) continue; const vals = blocks.map(b => l[b] || 0); rows.push([lv, ...vals, vals.reduce((a, b) => a + b, 0)]); }
+    const csv = rows.map(r => r.join(",")).join("\n");
+    const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv" })); a.download = `order-suggestion-${sub}-${todayISO()}.csv`; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  }
+
+  document.addEventListener("click", async (e) => {
+    const t = e.target.closest("[data-tab],[data-stocksub],[data-countsub],[data-action]"); if(!t) return;
+    if(t.dataset.tab){ e.preventDefault(); wsUi.tab = t.dataset.tab; if(t.dataset.sub) wsUi.countSubject = t.dataset.sub; render(); return; }
+    if(t.dataset.stocksub){ wsUi.stockSubject = t.dataset.stocksub; render(); return; }
+    if(t.dataset.countsub){ wsUi.countSubject = t.dataset.countsub; render(); return; }
+    const a = t.dataset.action;
+    if(a === "logout"){ await sbClient.auth.signOut(); return; }
+    if(a === "csv"){ downloadCsv(t.dataset.sub); return; }
+    if(a === "check"){ wsUi.checkId = t.dataset.id; render(); return; }
+    if(a === "receive"){ const inp = document.querySelector(`[data-recv="${t.dataset.id}"]`); await setReceived(t.dataset.id, (inp && inp.value) || todayISO()); return; }
+    if(a === "unreceive"){ if(confirm("Mark this order as not received? Its worksheets come off the stock.")) await setReceived(t.dataset.id, null); return; }
+    if(a === "del-order"){
+      const o = wsOrders.find(x => x.id === t.dataset.id); if(!o || !confirm(`Delete order ${o.order_no} from the Hub? (Kumon's order isn't touched.)`)) return;
+      const { data, error } = await sbClient.from("ws_orders").delete().eq("id", o.id).select("id");
+      if(error || !data || !data.length){ toast("Couldn't delete: " + (error ? error.message : "the database didn't allow it")); return; }
+      if(wsUi.checkId === o.id) wsUi.checkId = null; await loadOrders(); render(); return;
+    }
+    if(a === "save-count"){ await saveCount(); return; }
+    if(a === "save-calib"){
+      const month = $("#calMonth").value; if(!month){ toast("There's no closed-out month to compare with yet."); return; }
+      const me = Number($("#calME").value) || 0, eeu = Number($("#calEEU").value) || 0;
+      const calib = Object.assign({}, wsSettings.calib); if(me) calib.ME = { month, used: me }; if(eeu) calib.EEU = { month, used: eeu };
+      if(await saveSettings({ calib })){ render(); toast("Saved — the suggestions now use it."); }
+      return;
+    }
+    if(a === "prefill"){ const st = stockNow(wsUi.countSubject); if(!st) return; $$("#countGrid input[data-lv]").forEach(i => { const n = getN(st.map, i.dataset.lv, i.dataset.b); i.value = n > 0 ? Math.round(n) : ""; }); return; }
+  });
+  document.addEventListener("change", async (e) => {
+    if(e.target.id === "pdfIn" && e.target.files.length){ await uploadPdfs([...e.target.files]); return; }
+    if(e.target.id === "coverWeeks"){ if(await saveSettings({ cover_weeks: Number(e.target.value) })) render(); return; }
+  });
+
+  let started = false;
+  async function startApp(){
+    if(started || !isAuthorized()) return;
+    started = true;
+    $("#view").innerHTML = `<div class="empty">Loading…</div>`;
+    await loadAll();
+    render();
+  }
+  document.addEventListener("submit", async (e)=>{
+    if(e.target.id === "loginForm"){ e.preventDefault(); const fd = new FormData(e.target);
+      const { error } = await sbClient.auth.signInWithPassword({ email: fd.get("email"), password: fd.get("password") }); if(error) showLogin(error.message); }
+  });
+  window.__ws = { wsParseOrder, demandFor, stockNow, suggestionFor, checkOrder, factorOf };   // for tests
+  boot();
+})();
+</script>
+<script>
+(function(){
+  var KEY = "kumonRailCollapsed", root = document.documentElement;
+  function apply(c){
+    root.classList.toggle("rail-collapsed", c);
+    var b = document.getElementById("railToggle");
+    if(b){ var t = c ? "Expand sidebar" : "Collapse sidebar"; b.title = t; b.setAttribute("aria-label", t); b.setAttribute("aria-expanded", String(!c)); }
+  }
+  apply(root.classList.contains("rail-collapsed"));
+  var b = document.getElementById("railToggle");
+  if(b) b.addEventListener("click", function(){
+    var c = !root.classList.contains("rail-collapsed"); apply(c);
+    try{ localStorage.setItem(KEY, c ? "1" : "0"); }catch(e){}
+  });
+  // Collapsed rail is icons only, so every link gets a tooltip with its name.
+  document.querySelectorAll(".rail .navbtn").forEach(function(a){
+    if(a.title) return;
+    var t = (a.textContent || "").replace(/\s+/g, " ").trim().replace(/\s*\d+$/, "");
+    if(t) a.title = t;
+  });
+  // The Pipeline views group follows the same who-can-see-Pipeline flag as the single Pipeline link.
+  var link = document.getElementById("navPipelineLink"), grp = document.getElementById("navPipelineGroup");
+  if(link && grp){
+    var sync = function(){ grp.hidden = link.hidden; };
+    sync(); new MutationObserver(sync).observe(link, { attributes:true, attributeFilter:["hidden"] });
+  }
+})();
+</script>
+</body>
+</html>
