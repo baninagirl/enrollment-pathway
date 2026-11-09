@@ -2020,6 +2020,29 @@ window.kumonPtcNav = function(client, role){
   // Mirrors the Retention page's own Resume action exactly (same confirm copy, same 4-month
   // policy window, same RETURNEE tag) — Payments just gives admin/superadmin a faster path
   // to it without leaving the billing screen.
+  // Brings a child back the safe way: close the absence record first (only if it's still open), then switch
+  // the subjects back on; if that second step fails, the record is opened again, so nothing is left half-done.
+  // Returns { ok } or { already } (someone else resumed it) or { message } (nothing changed).
+  async function safeResume(a, resumedBy){
+    const nowIso = new Date().toISOString();
+    const ids = a.subject_enrollment_ids || [];
+    const { data: closed, error: e2 } = await sbClient.from("absence_records")
+      .update({ resumed_at: nowIso, resumed_by: resumedBy })
+      .eq("id", a.id).is("resumed_at", null).select("id");
+    if(e2) return { message: e2.message };
+    if(!closed || !closed.length) return { already: true };
+    if(ids.length){
+      const { data: back, error: e1 } = await sbClient.from("subject_enrollments")
+        .update({ status:"active", enrollment_type:"resume", enrollment_type_set_at: nowIso, updated_at: nowIso })
+        .in("id", ids).select("id");
+      if(e1 || !back || back.length !== ids.length){
+        await sbClient.from("absence_records").update({ resumed_at: null, resumed_by: null }).eq("id", a.id);
+        if(back && back.length && !e1) await sbClient.from("subject_enrollments").update({ status:"inactive", updated_at: nowIso }).in("id", back.map(x => x.id));
+        return { message: e1 ? e1.message : "the database didn't allow switching the subjects back on" };
+      }
+    }
+    return { ok: true };
+  }
   async function resumeAbsence(absenceId){
     if(!isBillingAdmin()) return; // belt-and-suspenders — the Absent tab itself is admin/superadmin only
     const a = absences.find(x => x.id === absenceId);
@@ -2035,18 +2058,11 @@ window.kumonPtcNav = function(client, role){
       `\n\nThis reactivates their enrollment${a.subject_enrollment_ids && a.subject_enrollment_ids.length > 1 ? "s" : ""} and tags them RESUME for reporting.`
     );
     if(!ok) return;
-    const nowIso = new Date().toISOString();
-    const ids = a.subject_enrollment_ids || [];
-    if(ids.length){
-      const { error: e1 } = await sbClient.from("subject_enrollments")
-        .update({ status:"active", enrollment_type:"resume", enrollment_type_set_at: nowIso, updated_at: nowIso })
-        .in("id", ids);
-      if(e1){ alert("Couldn't resume: " + e1.message); return; }
+    const res = await safeResume(a, currentUser ? currentUser.email : null);
+    if(!res.ok){
+      alert(res.already ? `${displayName(s)} was already resumed (or this record was removed). The list has been refreshed.` : "Couldn't resume (" + res.message + "). Nothing was changed — try again.");
+      await Promise.all([loadEnrollments(), loadAbsences()]); render(); return;
     }
-    const { error: e2 } = await sbClient.from("absence_records")
-      .update({ resumed_at: nowIso, resumed_by: currentUser ? currentUser.email : null })
-      .eq("id", absenceId);
-    if(e2){ alert("Reactivated the enrollment, but couldn't close out the absence record: " + e2.message); }
     logHistory("resume_absence", `Resumed ${displayName(s)} (tagged RESUME)`, "absence_record", absenceId);
     await Promise.all([loadEnrollments(), loadAbsences()]);
     render();
@@ -2327,7 +2343,9 @@ window.kumonPtcNav = function(client, role){
   // absence record), so nobody has to remember to also click Resume after verifying. Logging
   // a payment on its own never triggers this — only a verified one does, same trigger point
   // Retention's own Log payment relies on if this session is the one that verifies it.
+  let autoResumeFailed = [];
   async function maybeAutoResumeFromReceipt(receiptId){
+    autoResumeFailed = [];
     const r = receipts.find(x => x.id === receiptId);
     if(!r) return null;
     // Per-subject: each open absence of this student is checked on its own (its subject, its catch-up month).
@@ -2345,18 +2363,15 @@ window.kumonPtcNav = function(client, role){
     const due = tuitionDueForAbsence(a);
     const paid = paidForAbsence(a, catchUpYm);
     if(paid < due) return null;
-    const nowIso = new Date().toISOString();
-    const ids = a.subject_enrollment_ids || [];
-    if(ids.length){
-      const { error: e1 } = await sbClient.from("subject_enrollments")
-        .update({ status:"active", enrollment_type:"resume", enrollment_type_set_at: nowIso, updated_at: nowIso })
-        .in("id", ids);
-      if(e1){ console.warn("Auto-resume: couldn't reactivate enrollments", e1); return null; }
+    const res = await safeResume(a, currentUser ? currentUser.email + " (auto, via payment)" : "auto (via payment)");
+    if(!res.ok){
+      await Promise.all([loadEnrollments(), loadAbsences()]);
+      if(res.already) return null;   // someone resumed them already — nothing to say
+      const s0 = students.find(x => x.id === r.student_id);
+      autoResumeFailed.push(s0 ? displayName(s0) : "a student");
+      console.warn("Auto-resume didn't go through", res.message);
+      return null;
     }
-    const { error: e2 } = await sbClient.from("absence_records")
-      .update({ resumed_at: nowIso, resumed_by: currentUser ? currentUser.email + " (auto, via payment)" : "auto (via payment)" })
-      .eq("id", a.id);
-    if(e2) console.warn("Auto-resume: couldn't close the absence record", e2);
     await Promise.all([loadEnrollments(), loadAbsences()]);
     const s = students.find(x => x.id === r.student_id);
     const subjLabel = absenceSubjectsOf(a).join(" + ");
@@ -2600,7 +2615,10 @@ window.kumonPtcNav = function(client, role){
     else if(action === "verify-receipt"){
       if(!isSuperadmin()) return;
       const r = await setReceiptStatus(btn.dataset.id, "verified");
-      if(r && r.ok) toast(r.autoResumedName ? `Marked verified — ${r.autoResumedName} automatically resumed, payment covers their return.` : "Marked verified.");
+      if(r && r.ok){
+        if(autoResumeFailed.length) alert(`Marked verified. ${autoResumeFailed.join(", ")} should come back now (this payment covers their return), but the automatic resume didn't go through — nothing was changed.\n\nGo to the Absent tab and press Resume.`);
+        else toast(r.autoResumedName ? `Marked verified — ${r.autoResumedName} automatically resumed, payment covers their return.` : "Marked verified.");
+      }
     }
     else if(action === "reject-receipt"){
       if(!isSuperadmin()) return;

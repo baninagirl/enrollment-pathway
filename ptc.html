@@ -753,11 +753,18 @@ window.kumonPtcNav = function(client, role){
       let q = sbClient.from(table).select(cols).range(from, from + 999);
       if(build) q = build(q);
       const { data, error } = await q;
-      if(error){ console.warn(table, error); return out; }
+      if(error){ console.warn(table, error); throw Object.assign(new Error(error.message || "load failed"), { loadFailed: true }); }
       out = out.concat(data || []);
       if(!data || data.length < 1000) return out;
       from += 1000;
     }
+  }
+  // A failed load keeps what's on screen and is noted (shown as a warning) — it never counts as "there are none",
+  // which would invite making a second copy of a PTC week or a draft.
+  const loadIssues = new Set();
+  async function keepOnFail(key, fn){
+    try{ await fn(); loadIssues.delete(key); return true; }
+    catch(e){ console.warn("PTC load", key, e); loadIssues.add(key); return false; }
   }
   async function loadStaff(){
     try{
@@ -767,19 +774,20 @@ window.kumonPtcNav = function(client, role){
     }catch(e){ staffTeachers = []; }
     await loadTeacherGroups();
   }
-  async function loadStudents(){
+  async function loadStudents(){ return keepOnFail("students", async () => {
     students = await selectAll("students", "id,name,first_name,last_name,parent_name,parent_phone,billing_group_id,status,first_day", q => q.order("id"));
     studentById = new Map(students.map(s => [s.id, s]));
-  }
-  async function loadEnrollments(){
+  }); }
+  async function loadEnrollments(){ return keepOnFail("enrollments", async () => {
     enrollments = await selectAll("subject_enrollments", "id,student_id,subject,teacher,status", q => q.eq("status","active").order("id"));
-  }
-  async function loadSchedules(){
+  }); }
+  async function loadSchedules(){ return keepOnFail("schedules", async () => {
     schedules = await selectAll("schedules", "id,student_id,subject_enrollment_id,slots,status", q => q.eq("status","active").order("id"));
-  }
+  }); }
   async function loadWeeks(){
     const { data, error } = await sbClient.from("ptc_weeks").select("*").order("created_at", { ascending:false });
-    if(error){ console.warn(error); weeks = []; return; }
+    if(error){ console.warn(error); loadIssues.add("weeks"); return false; }   // keep the weeks already on screen
+    loadIssues.delete("weeks");
     weeks = (data || []).map(w => Object.assign(w, { days: Array.isArray(w.days) ? w.days.slice().sort((a,b) => a.date < b.date ? -1 : 1) : [] }));
   }
   function pickDefaultWeek(){
@@ -790,14 +798,16 @@ window.kumonPtcNav = function(client, role){
   async function loadSessions(){
     const ids = new Set(weeks.filter(w => !w.closed_at).map(w => w.id));
     if(ui.weekId) ids.add(ui.weekId);
-    if(!ids.size){ sessions = []; return; }
-    sessions = await selectAll("ptc_sessions", "*", q => q.in("week_id", [...ids]).order("id"));
+    if(!ids.size){ if(!loadIssues.has("weeks")) sessions = []; return; }
+    return keepOnFail("sessions", async () => {
+      sessions = await selectAll("ptc_sessions", "*", q => q.in("week_id", [...ids]).order("id"));
+    });
   }
-  async function loadFamilies(){
+  async function loadFamilies(){ return keepOnFail("families", async () => {
     const [f, n] = await Promise.all([selectAll("ptc_families", "student_id,family_id"), selectAll("ptc_not_siblings", "a,b")]);
     families = new Map(f.map(r => [r.student_id, r.family_id]));
     notSiblings = new Set(n.map(r => r.a < r.b ? r.a + "|" + r.b : r.b + "|" + r.a));
-  }
+  }); }
   let dueFailed = false;   // the last load of the due list failed (so an empty list doesn't mean "all done")
   async function loadDue(){
     let res = null;
@@ -810,9 +820,9 @@ window.kumonPtcNav = function(client, role){
     dueFailed = false;
     due = res.data || [];
   }
-  async function loadMilestones(){
+  async function loadMilestones(){ return keepOnFail("milestones", async () => {
     milestones = await selectAll("ptc_milestones", "*", q => q.order("created_at", { ascending:false }));
-  }
+  }); }
 
   /* ---------------- families ---------------- */
   // Same rule as the database (ptc_family_of): a PTC sibling link, else the billing group, else the child alone.
@@ -1122,6 +1132,12 @@ window.kumonPtcNav = function(client, role){
         <button class="btn sm" data-action="siblings">Siblings</button>
         <button class="btn sm primary" data-action="draft">${weekSessions().length ? "Add missing students" : "Make draft"}</button>
         ${weekSessions().length ? `<button class="btn sm danger" data-action="draft-delete" title="Remove every session in this week; the week's dates stay">Delete draft</button>` : ""}` : ""}` : "";
+    const weekLoadBad = loadIssues.has("weeks") || loadIssues.has("sessions");
+    const loadWarn = weekLoadBad ? `<div class="banner" style="margin-bottom:12px;">Couldn't load ${loadIssues.has("weeks") ? "the PTC weeks" : "this week's sessions"} (connection problem) — what's shown may be out of date. Refresh the page before making changes.</div>` : "";
+    if(!w && loadIssues.has("weeks")){
+      $("#weekSection").innerHTML = `${loadWarn}<div class="card"><div class="empty">The PTC weeks couldn't be loaded. Refresh the page — don't make a new week until they show.</div></div>`;
+      return;
+    }
     if(!w){
       $("#weekSection").innerHTML = `<div class="toolbar">${weekSel}${adminBtns}</div>
         <div class="card"><div class="empty">${isAdmin() ? "No PTC week yet. Click <b>New PTC week</b>, pick the dates and hours, then <b>Make draft</b> — the Hub books every child with each of their teachers, siblings back to back." : "No PTC week has been set up yet."}</div></div>`;
@@ -1163,7 +1179,7 @@ window.kumonPtcNav = function(client, role){
 
     const dayChips = `<div class="chips"><button class="chip${ui.weekDay === "all" ? " active" : ""}" data-action="week-day" data-day="all">All days</button>${w.days.map(d => `<button class="chip${ui.weekDay === d.date ? " active" : ""}" data-action="week-day" data-day="${esc(d.date)}">${esc(fmtDate(d.date))}</button>`).join("")}</div>`;
 
-    $("#weekSection").innerHTML = `
+    $("#weekSection").innerHTML = `${loadWarn}
       <div class="toolbar">${weekSel}${adminBtns}<span class="grow"></span>
         ${w.closed_at ? `<span class="pill st-draft">Closed</span>` : ""}
       </div>
@@ -1875,6 +1891,9 @@ window.kumonPtcNav = function(client, role){
       if(error){ alert("Couldn't undo: " + error.message); return; }
       logHistory("ptc_undo", `Undid ${studentName(m.student_id)} — ${ordinal(m.month_no)} month PTC`, "student", m.student_id, null);
       await Promise.all([loadMilestones(), loadDue()]); if(window.kumonPtcNavRefresh) window.kumonPtcNavRefresh(); render(); return;
+    }
+    if((a === "week-new" || a === "draft") && (loadIssues.has("weeks") || loadIssues.has("sessions"))){
+      alert("The PTC weeks/sessions didn't load properly, so the Hub can't tell what's already set up. Refresh the page first."); return;
     }
     if(a === "week-new"){ openWeekModal(null); return; }
     if(a === "week-edit"){ openWeekModal(currentWeek()); return; }

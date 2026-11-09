@@ -2516,9 +2516,14 @@ window.kumonPtcNav = function(client, role){
      For a student already on a roster (monitor or a teacher) whose days were never set, or to change them.
      Saves one schedule per subject, the same way Student Roster does (linked by subject_enrollment_id), so
      the roster, Calendar and New Students list all pick it up. Doesn't touch teacher, status or tags. */
+  // Steps that decide "does this child already have Math/Reading?" from the lists on this page wait until
+  // those lists have actually loaded — otherwise they'd add a second copy of a subject the child already has.
+  function pipelineDataReady(){ return !!(STATE.loaded && STATE.loaded.enrollments && STATE.loaded.schedules); }
+  function notReadyToast(){ toast("Still loading the students' subjects — wait a moment and try again. If this keeps showing, refresh the page."); }
   function activeEnrollmentsOf(studentId){ return STATE.enrollments.filter(e => e.studentId === studentId && !e.archived && (e.status || "active") === "active"); }
   function linkedScheduleOf(enrollmentId){ return STATE.schedules.find(x => x.status === "active" && x.subjectEnrollmentId === enrollmentId); }
   function openSetDays(studentId){
+    if(!pipelineDataReady()){ notReadyToast(); return; }
     const s = studentById(studentId);
     const enr = s ? activeEnrollmentsOf(studentId) : [];
     if(!s) return;
@@ -4454,6 +4459,7 @@ window.kumonPtcNav = function(client, role){
     if(day1 === day2){ toast("Pick two different days."); return false; }
     const s = studentById(studentId);
     if(!s) return;
+    if(!pipelineDataReady()){ notReadyToast(); return false; }
     const earlyMode = fd.get("kind") === "early";
     // Early schedules only add subjects that aren't already enrolled, so re-opening this never duplicates a row.
     const alreadyHas = sub => STATE.enrollments.some(e => e.studentId === studentId && e.subject === sub);
@@ -4491,7 +4497,13 @@ window.kumonPtcNav = function(client, role){
       // A subject the student already has (active) is updated in place — teacher / monitor / levels and its own
       // schedule row — instead of adding a second copy of the subject and its schedule.
       const saveSubjectWithSchedule = async (subject, f) => {
-        const existing = STATE.enrollments.find(e => e.studentId === studentId && e.subject === subject && !e.archived && (e.status || "active") === "active");
+        let existing = STATE.enrollments.find(e => e.studentId === studentId && e.subject === subject && !e.archived && (e.status || "active") === "active");
+        if(!existing){
+          // Double-check with the database (the page's list can be a moment behind) before adding a new subject.
+          const { data: found, error: fErr } = await sbClient.from("subject_enrollments").select("id").eq("student_id", studentId).eq("subject", subject).eq("status", "active").limit(1);
+          if(fErr) throw fErr;
+          if(found && found.length) existing = { id: found[0].id };
+        }
         let enrId;
         if(existing){
           const patch = { mode, ...monitorFields };
@@ -4503,7 +4515,12 @@ window.kumonPtcNav = function(client, role){
           const enr = await db.collection("subject_enrollments").add({ studentId, studentName: s.name, subject, ...f, mode, enrollmentType, enrollmentTypeSetAt, ...monitorFields });
           enrId = enr.id;
         }
-        const linked = STATE.schedules.find(x => x.subjectEnrollmentId === enrId && x.status === "active");
+        let linked = STATE.schedules.find(x => x.subjectEnrollmentId === enrId && x.status === "active");
+        if(!linked && existing){
+          const { data: ls, error: lErr } = await sbClient.from("schedules").select("id").eq("subject_enrollment_id", enrId).eq("status", "active").limit(1);
+          if(lErr) throw lErr;
+          if(ls && ls.length) linked = { id: ls[0].id };
+        }
         if(linked) await db.collection("schedules").doc(linked.id).update({ slots: linkedSlots, startDate, status: "active" });
         else await db.collection("schedules").add({ studentId, studentName: s.name, subjectEnrollmentId: enrId, slots: linkedSlots, startDate, status: "active", createdAt: new Date().toISOString() });
       };
@@ -4546,6 +4563,7 @@ window.kumonPtcNav = function(client, role){
   async function markOutcome(id, outcome, subject){
     const d = STATE.diagnostics.find(x=>x.id===id);
     if(!d) return;
+    if(outcome === "enrolled" && !pipelineDataReady()){ notReadyToast(); return; }   // NEW vs EO needs the subject list
     await guardWrite(async ()=>{
       await db.collection("diagnostics").doc(id).update({ outcome });
       const patch = {
