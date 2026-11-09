@@ -974,25 +974,40 @@ window.kumonPtcNav = function(client, role){
   /* ---------- stock now: last count + orders received since − what the children used since ---------- */
   function latestCount(sub){ return wsCounts.filter(c => c.subject === sub).sort((a, b) => (a.counted_on + a.created_at) < (b.counted_on + b.created_at) ? 1 : -1)[0] || null; }
   function addLines(map, lines, sign){ for(const lv in (lines || {})) for(const b in lines[lv]){ const n = Number(lines[lv][b]) || 0; if(!n) continue; const x = (map[lv] = map[lv] || {}); x[b] = (x[b] || 0) + sign * n; } }
-  function stockNow(sub){
-    const c = latestCount(sub); if(!c) return null;
-    const map = {}; addLines(map, c.lines, 1);
-    const received = wsOrders.filter(o => o.received_on && o.received_on > c.counted_on);
-    received.forEach(o => addLines(map, (o.lines || {})[sub], 1));
-    let usedCopies = 0;
-    if(sub !== "PSE"){
-      const used = {}; const { f } = factorOf(sub); const tracks = trackOf(sub); const pos = c.positions || {};
-      for(const t of tracks.values()){
-        const after = t.pts.filter(p => p.date > c.counted_on);
-        const start = pos[t.e.id] != null ? Number(pos[t.e.id]) : (after.length ? after[0].G : null);
-        const end = t.pts.length ? t.pts[t.pts.length - 1].G : null;
-        if(start == null || end == null || end <= start) continue;
-        spread(used, sub, start, end, f / 10);
-      }
-      for(const lv in used) for(const b in used[lv]){ usedCopies += used[lv][b]; }
-      addLines(map, used, -1);
+  // Counts can cover only some levels (e.g. H–O one day, 6A–G another). Each level's stock starts from the most
+  // recent count that included that level, then adds orders received after that count and takes off what the
+  // children used after it.
+  function countsFor(sub){ return wsCounts.filter(c => c.subject === sub).sort((a, b) => (a.counted_on + a.created_at) < (b.counted_on + b.created_at) ? 1 : -1); }
+  function countForLevel(sub, lv){ return countsFor(sub).find(c => c.lines && c.lines[lv]) || null; }
+  function usedSince(sub, c){
+    const used = {}; if(sub === "PSE") return used;
+    const { f } = factorOf(sub); const pos = c.positions || {};
+    for(const t of trackOf(sub).values()){
+      const after = t.pts.filter(p => p.date > c.counted_on);
+      const start = pos[t.e.id] != null ? Number(pos[t.e.id]) : (after.length ? after[0].G : null);
+      const end = t.pts.length ? t.pts[t.pts.length - 1].G : null;
+      if(start == null || end == null || end <= start) continue;
+      spread(used, sub, start, end, f / 10);
     }
-    return { map, count: c, received, usedCopies };
+    return used;
+  }
+  function stockNow(sub){
+    const all = countsFor(sub); if(!all.length) return null;
+    const map = {}, byCount = new Map(), uncounted = [];
+    for(const lv of WS_LEVELS[sub]){ const c = countForLevel(sub, lv); if(!c){ uncounted.push(lv); continue; } if(!byCount.has(c)) byCount.set(c, []); byCount.get(c).push(lv); }
+    let usedCopies = 0; const received = new Set();
+    for(const [c, levels] of byCount){
+      const used = usedSince(sub, c);
+      const recv = wsOrders.filter(o => o.received_on && o.received_on > c.counted_on); recv.forEach(o => received.add(o));
+      for(const lv of levels){
+        const x = (map[lv] = {});
+        for(const b in (c.lines[lv] || {})) x[b] = (x[b] || 0) + (Number(c.lines[lv][b]) || 0);
+        recv.forEach(o => { const l = ((o.lines || {})[sub] || {})[lv] || {}; for(const b in l) x[b] = (x[b] || 0) + (Number(l[b]) || 0); });
+        const u = used[lv] || {}; for(const b in u){ x[b] = (x[b] || 0) - u[b]; usedCopies += u[b]; }
+      }
+    }
+    const count = all[0];   // the latest count (for "counted on")
+    return { map, count, received: [...received], usedCopies, uncounted, groups: [...byCount].map(([c, levels]) => ({ c, levels })) };
   }
   // ordered but not yet received (last 45 days) — on its way
   function incomingFor(sub){
@@ -1167,6 +1182,7 @@ window.kumonPtcNav = function(client, role){
       const noCount = !s.stock;
       return `<div class="card sect"><div class="sec-h"><h3>${WS_NAME[sub]}</h3><span class="faint">${s.total ? fmtN(s.total) + " copies" : ""}</span><span class="grow"></span>
           ${s.total ? `<button class="btn sm" data-action="kumon-file" data-sub="${sub}" title="Upload this on Kumon's Order screen with Import (${sub} tab)">File for Kumon's Import</button>` : ""}</div>
+        ${!noCount && s.stock.uncounted.some(lv => s.lines[lv]) ? `<div class="banner">Not counted yet: ${esc(levelRange(sub, s.stock.uncounted.filter(lv => s.lines[lv])))} — these assume an empty shelf, so their numbers are the full need. <a href="#" data-tab="count" data-sub="${sub}">Count them</a>.</div>` : ""}
         ${noCount ? `<div class="banner">No shelf count for ${WS_NAME[sub]} yet, so this assumes the shelf is empty — it's the full need for the next ${s.weeks} weeks. Do a <a href="#" data-tab="count" data-sub="${sub}">shelf count</a> to get a real suggestion.</div>` : ""}
         ${gridHtml(sub, s.lines, { empty: noCount ? "No child needs this subject's worksheets in that time." : "Nothing to order — the shelf covers the next " + s.weeks + " weeks." })}
         <div class="hint">${s.demand.kids} children · ${esc(factorLine(sub))}</div>
@@ -1212,6 +1228,11 @@ window.kumonPtcNav = function(client, role){
         <label class="field inline">EEU Used <input type="number" min="0" id="calEEU" value="${c.EEU && c.EEU.used || ""}" placeholder="e.g. 8301" style="width:110px"></label>
         <button class="btn sm" data-action="save-calib">Save</button></div></div>`;
   }
+  function levelRange(sub, levels){
+    const L = WS_LEVELS[sub], idx = levels.map(l => L.indexOf(l)).sort((a, b) => a - b); const parts = [];
+    for(let i = 0; i < idx.length; i++){ let j = i; while(j + 1 < idx.length && idx[j + 1] === idx[j] + 1) j++; parts.push(i === j ? L[idx[i]] : L[idx[i]] + "–" + L[idx[j]]); i = j; }
+    return parts.join(", ");
+  }
   function renderStock(){
     const body = $("#wsBody"); const sub = wsUi.stockSubject;
     const subTabs = WS_SUBJECTS.concat("AT").map(s => `<button class="ws-sub${s === sub ? " on" : ""}" data-stocksub="${s}">${WS_NAME[s]}</button>`).join("");
@@ -1223,7 +1244,7 @@ window.kumonPtcNav = function(client, role){
     const shown = {}; for(const lv of WS_LEVELS[sub]) for(const b of blocksOf(sub)){ const n = getN(st.map, lv, b); if(n || getN(d.map, lv, b) > 0.05) (shown[lv] = shown[lv] || {})[b] = Math.max(0, Math.round(n)) || 0.0001; }
     const levelRows = WS_LEVELS[sub].map(lv => { const have = blocksOf(sub).reduce((a, b) => a + Math.max(0, getN(st.map, lv, b)), 0), wk = sumLevel(d.map, lv); if(!have && wk < 0.05) return ""; return `<tr><th>${esc(lv)}</th><td>${fmtN(have)}</td><td>${wk > 0.05 ? fmtN(wk) : "—"}</td><td class="${wk > 0.05 ? (have / wk < 2 ? "c-bad" : have / wk < 4 ? "c-warn" : have / wk > 16 ? "c-much" : "") : ""}">${wk > 0.05 ? (have <= 0 ? "none left" : (have / wk).toFixed(1) + " wks") : "nobody needs it soon"}</td></tr>`; }).join("");
     body.innerHTML = `<div class="ws-subs">${subTabs}</div>
-      <div class="card sect"><div class="sec-h"><h3>${WS_NAME[sub]} on the shelf now</h3><span class="faint">counted ${esc(fmtDate(st.count.counted_on))}${st.received.length ? ` · +${st.received.length} order${st.received.length === 1 ? "" : "s"} received since` : ""}${sub !== "PSE" ? ` · −${fmtN(st.usedCopies)} used since` : ""}</span></div>
+      <div class="card sect"><div class="sec-h"><h3>${WS_NAME[sub]} on the shelf now</h3><span class="faint">counted ${esc(st.groups.map(g => fmtDate(g.c.counted_on) + " (" + levelRange(sub, g.levels) + ")").join(", "))}${st.received.length ? ` · +${st.received.length} order${st.received.length === 1 ? "" : "s"} received since` : ""}${sub !== "PSE" ? ` · −${fmtN(st.usedCopies)} used since` : ""}</span></div>
         <div class="ws-legend"><span class="lg c-bad">under 2 weeks left</span><span class="lg c-warn">2–4 weeks</span><span class="lg c-much">over 16 weeks</span><span class="faint">blank = nobody needs it soon</span></div>
         ${gridHtml(sub, shown, { cellClass })}
         <div class="hint">${sub === "PSE" ? "Pre-school use isn't in the Hub, so Z1/Z2 only change with counts and orders." : "Used since the count is worked out from each child's LWC/level (updated at report time), times the repeat factor. " + esc(factorLine(sub))}</div></div>
@@ -1283,9 +1304,10 @@ window.kumonPtcNav = function(client, role){
     }
     body.innerHTML = `<div class="ws-subs">${subTabs}</div>
       <div class="card sect"><div class="sec-h"><h3>Shelf count — ${WS_NAME[sub]}</h3><span class="faint">${c ? "last counted " + esc(fmtDate(c.counted_on)) : "never counted"}</span></div>
-        <div class="hint">Type how many copies of each block are on the shelf (leave empty for none). Put away any delivery first. Saving replaces the stock for this subject from that day on; the Hub then adds received orders and takes off what the children use.</div>
+        <div class="hint">Type how many copies of each block are on the shelf, or <b>Import from Excel</b> (same layout as Kumon's order file: Level, 1, 11 … 191). You can count a few levels at a time: only the levels you fill in are replaced (an empty box in a filled level counts as 0); levels left completely empty keep their earlier count. Put away any delivery first.</div>
         <div class="ws-set"><label class="field inline">Counted on <input type="date" id="countDate" value="${todayISO()}" max="${todayISO()}"></label>
           ${c ? `<button class="btn sm ghost" data-action="prefill">Start from the current estimate</button>` : ""}
+          <label class="btn sm">Import from Excel<input type="file" id="countFile" accept=".xlsx,.xls,.csv" hidden></label>
           <span class="grow"></span><button class="btn primary" data-action="save-count">Save count</button></div>
         <div id="countGrid">${gridHtml(sub, {}, { allLevels: true, input: true })}</div></div>`;
   }
@@ -1328,10 +1350,18 @@ window.kumonPtcNav = function(client, role){
     const sub = wsUi.countSubject, date = $("#countDate").value;
     if(!date){ alert("Pick the date of the count."); return; }
     const lines = {}; let n = 0;
-    $$("#countGrid input[data-lv]").forEach(i => { const v = Math.max(0, Math.round(Number(i.value) || 0)); if(v){ (lines[i.dataset.lv] = lines[i.dataset.lv] || {})[i.dataset.b] = v; n += v; } });
+    // A level counts as counted when any of its boxes has something typed (0 included); its empty boxes are 0.
+    const typed = new Set($$("#countGrid input[data-lv]").filter(i => i.value.trim() !== "").map(i => i.dataset.lv));
+    $$("#countGrid input[data-lv]").forEach(i => { if(!typed.has(i.dataset.lv)) return; const v = Math.max(0, Math.round(Number(i.value) || 0)); (lines[i.dataset.lv] = lines[i.dataset.lv] || {})[i.dataset.b] = v; n += v; });
     $$("input[data-at-sub]").forEach(i => { const v = Math.max(0, Math.round(Number(i.value) || 0)); if(v){ (lines[i.dataset.atSub] = lines[i.dataset.atSub] || {})[i.dataset.atLv] = v; n += v; } });
-    if(!n && !confirm(`Every box is empty. Save a count of 0 copies for ${WS_NAME[sub]}?`)) return;
-    if(n && !confirm(`Save this count: ${fmtN(n)} copies of ${WS_NAME[sub]} on ${fmtDate(date)}?\n\nFrom now on the stock starts from this count.`)) return;
+    if(sub !== "AT"){
+      if(!typed.size){ alert("Nothing typed yet. Type the counts (0 for an empty block), or use Import from Excel."); return; }
+      const lvTxt = levelRange(sub, [...typed]);
+      if(!confirm(`Save this count: ${fmtN(n)} copies of ${WS_NAME[sub]}, levels ${lvTxt}, on ${fmtDate(date)}?\n\nOnly these levels are replaced; levels you left empty keep their earlier count.`)) return;
+    }else{
+      if(!n && !confirm(`Every box is empty. Save a count of 0 tests?`)) return;
+      if(n && !confirm(`Save this count: ${fmtN(n)} tests on ${fmtDate(date)}?`)) return;
+    }
     const positions = {};
     if(sub === "AT"){ for(const s2 of ["ME","EEU"]){ positions[s2] = {}; for(const t of trackOf(s2).values()){ if(t.e.status !== "active") continue; const G = hubPos(s2, t.e); if(G != null) positions[s2][t.e.id] = G; } } }
     else if(sub !== "PSE") for(const t of trackOf(sub).values()){ if(t.e.status !== "active") continue; const G = hubPos(sub, t.e); if(G != null) positions[t.e.id] = G; }
@@ -1388,6 +1418,31 @@ window.kumonPtcNav = function(client, role){
     XLSX.writeFile(wb, `Worksheet_${sub}_${ymd}.xlsx`);
     logHistory("ws_export", `Downloaded the Kumon import file for ${sub} (${s.total} copies)`, null);
   }
+  // Fills the count grid from an Excel/CSV laid out like Kumon's order file: a "Level" header row with the block
+  // numbers across, one row per level. Nothing is saved until Save count is pressed.
+  async function importCountFile(file){
+    if(!window.XLSX){ alert("The Excel reader didn't load — check the connection and refresh the page."); return; }
+    try{
+      const wb = XLSX.read(new Uint8Array(await file.arrayBuffer()), { type: "array" });
+      const sub = wsUi.countSubject; const blocks = blocksOf(sub); let filled = 0; const levelsHit = new Set(), unknown = [];
+      for(const name of wb.SheetNames){
+        const rows = XLSX.utils.sheet_to_json(wb.Sheets[name], { header: 1, defval: null });
+        const hi = rows.findIndex(r => r && String(r[0] || "").trim().toLowerCase() === "level"); if(hi < 0) continue;
+        const head = rows[hi].map(h => Number(h));
+        for(const r of rows.slice(hi + 1)){
+          if(!r || r[0] == null) continue; const lv = String(r[0]).trim().toUpperCase(); if(!lv || lv === "TOTAL") continue;
+          if(!WS_LEVELS[sub].includes(lv)){ if(r.slice(1).some(v => v !== null && v !== "")) unknown.push(lv); continue; }
+          head.forEach((b, k) => {
+            if(!blocks.includes(b)) return; const v = r[k]; if(v === null || v === "") return;
+            const inp = document.querySelector(`#countGrid input[data-lv="${lv}"][data-b="${b}"]`); if(!inp) return;
+            inp.value = Math.max(0, Math.round(Number(v) || 0)); filled++; levelsHit.add(lv);
+          });
+        }
+      }
+      if(!filled){ alert(`Nothing in "${file.name}" matched the ${WS_NAME[sub]} levels. Is it the right subject? The sheet needs a "Level" header row with 1, 11 … 191 across.`); return; }
+      toast(`Filled ${filled} boxes for levels ${levelRange(sub, [...levelsHit])}${unknown.length ? " (skipped: " + unknown.join(", ") + ")" : ""}. Check them, then press Save count.`);
+    }catch(err){ alert("Couldn't read that file: " + (err.message || err)); }
+  }
   function downloadCsv(sub){
     const s = suggestionFor(sub); const blocks = blocksOf(sub);
     const rows = [["Level", ...blocks, "Total"]];
@@ -1423,10 +1478,11 @@ window.kumonPtcNav = function(client, role){
       if(await saveSettings({ calib })){ render(); toast("Saved — the suggestions now use it."); }
       return;
     }
-    if(a === "prefill"){ const st = stockNow(wsUi.countSubject); if(!st) return; $$("#countGrid input[data-lv]").forEach(i => { const n = getN(st.map, i.dataset.lv, i.dataset.b); i.value = n > 0 ? Math.round(n) : ""; }); return; }
+    if(a === "prefill"){ const st = stockNow(wsUi.countSubject); if(!st) return; $$("#countGrid input[data-lv]").forEach(i => { if(st.uncounted && st.uncounted.includes(i.dataset.lv)) return; const n = getN(st.map, i.dataset.lv, i.dataset.b); i.value = Math.max(0, Math.round(n)); }); return; }
   });
   document.addEventListener("change", async (e) => {
     if(e.target.id === "pdfIn" && e.target.files.length){ await uploadPdfs([...e.target.files]); return; }
+    if(e.target.id === "countFile" && e.target.files.length){ await importCountFile(e.target.files[0]); e.target.value = ""; return; }
     if(e.target.id === "coverWeeks"){ if(await saveSettings({ cover_weeks: Number(e.target.value) })) render(); return; }
   });
 
