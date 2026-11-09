@@ -547,7 +547,7 @@ window.kumonPtcNav = function(client, role){
       <a class="navbtn" href="index.html#settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M19 5l-2 2M7 17l-2 2"/></svg>Settings</a>
     </div>
     <div class="rail-account" id="railAccount"></div>
-    <div class="rail-foot">Your day at a glance: classes, what needs you, and the month's scorecard.</div>
+    <div class="rail-foot">Your day at a glance: center visits, what needs you, and the month's scorecard.</div>
   </nav>
 
   <main class="main">
@@ -1059,7 +1059,7 @@ window.kumonPtcNav = function(client, role){
     const riIds = new Set();
     for(const sc of D.sched){ const sid = sc.student_id || (enrById.get(sc.subject_enrollment_id) || {}).student_id; if(ids.has(sid) && (sc.slots || []).some(x => x && x.mode === "RI")) riIds.add(sid); }
     metric({ k:"remote", name:"Remote 2× a month", n: riIds.size, of: studs.length, goal: 80,
-      how:"Students with a remote (RI) class on their Calendar schedule — a weekly RI class comes to 4 a month.", missLabel:"No remote class", miss: studs.filter(s => !riIds.has(s.id)).map(s => ({ sid: s.id })) });
+      how:"Students with a remote (RI) visit on their Calendar schedule — a weekly RI visit comes to 4 a month.", missLabel:"No remote visit", miss: studs.filter(s => !riIds.has(s.id)).map(s => ({ sid: s.id })) });
     return out;
   }
   function metricState(m){
@@ -1120,7 +1120,7 @@ window.kumonPtcNav = function(client, role){
     const long = behindKis().filter(o => o.k.months >= 6).length;
     $("#pageHead").innerHTML = `<div class="td-top"><span class="td-date">${esc(dateTxt)}</span>${picker}</div>
       <header class="td-mast"><div><h1 class="td-hello">${greet},${who ? ` <span>${esc(who)}.</span>` : ""}</h1>
-        <p class="td-lede">${today ? `You have <b>${plural(today, "child", "children")}</b> today` : "No classes on your schedule today"}${over ? `, <b>${plural(over, "overdue PTC", "overdue PTCs")}</b>` : ""}${long ? `, and <b>${long}</b> ${long === 1 ? "subject has" : "subjects have"} been behind KIS for six months or more` : ""}.</p></div>
+        <p class="td-lede">${today ? `You have <b>${plural(today, "child", "children")}</b> today` : "No center visits on your schedule today"}${over ? `, <b>${plural(over, "overdue PTC", "overdue PTCs")}</b>` : ""}${long ? `, and <b>${long}</b> ${long === 1 ? "subject has" : "subjects have"} been behind KIS for six months or more` : ""}.</p></div>
         <blockquote class="td-quote"><p>“${esc(q[0])}”</p><cite>— ${esc(q[1])}</cite></blockquote></header>`;
   }
   function renderDay(){
@@ -1129,7 +1129,7 @@ window.kumonPtcNav = function(client, role){
     const arr = uniq.filter(k => all.some(x => x.studentId === k.studentId && x.arrived)).length;
     const now = nowMin(), nowSlot = slots.find(s => now >= s.m && now < s.m + 60), next = slots.find(s => s.m > now);
     if(tdUi.slot == null || !slots.some(s => s.m === tdUi.slot)) tdUi.slot = (nowSlot || next || slots[slots.length - 1] || {}).m;
-    const title = !slots.length ? "No classes on the schedule today." : nowSlot ? `The ${fmtT(nowSlot.m)} class is on now${next ? `; next at ${fmtT(next.m)}` : ""}.` : next ? `${now < slots[0].m ? "First" : "Next"} class at ${fmtT(next.m)}.` : "That's every class for today.";
+    const title = !slots.length ? "No center visits on the schedule today." : nowSlot ? `The ${fmtT(nowSlot.m)} center visit is on now${next ? `; next at ${fmtT(next.m)}` : ""}.` : next ? `${now < slots[0].m ? "First" : "Next"} center visit at ${fmtT(next.m)}.` : "That's every center visit for today.";
     const A = Math.min(14 * 60, ...slots.map(s => s.m)), B = Math.max(20 * 60, ...slots.map(s => s.m + 60)), X = m => (m - A) / (B - A) * 100;
     const max = Math.max(1, ...slots.map(s => s.kids.length));
     const hours = []; for(let h = Math.ceil(A / 60); h <= Math.floor(B / 60); h++) hours.push(h);
@@ -1139,7 +1139,7 @@ window.kumonPtcNav = function(client, role){
         <div class="td-legend"><span><i style="background:var(--good)"></i>Arrived</span><span><i style="background:var(--accent)"></i>Not yet</span></div></div>
       <div style="min-width:0">${slots.length ? `<div class="td-tl"><div class="td-tl-track"></div>${slots.map(s => `<button class="td-tl-block${now >= s.m + 60 ? " past" : ""}${s.m === tdUi.slot ? " on" : ""}" data-slot="${s.m}" style="left:${X(s.m)}%;width:${Math.max(4, 60 / (B - A) * 100 * (0.7 + 0.3 * s.kids.length / max))}%" title="${fmtT(s.m)}: ${plural(s.kids.length, "child", "children")}">${s.kids.length}</button>`).join("")}
           ${now >= A && now <= B ? `<div class="td-tl-now" style="left:${X(now)}%"></div>` : ""}<div class="td-tl-axis">${hours.map(h => `<span style="left:${X(h * 60)}%">${fmtT(h * 60)}</span>`).join("")}</div></div>` : ""}
-        ${sl ? `<div class="td-slot-h"><b>${fmtT(sl.m)}</b><span>${plural(sl.kids.length, "child", "children")}${slots.length > 1 ? " · tap another time above to switch" : ""}</span></div>${sl.kids.map(k => kidRow(k.studentId, { tick: true, kid: k, items: k.items })).join("")}` : `<div class="td-empty">Nobody is scheduled today. Classes come from the Calendar.</div>`}
+        ${sl ? `<div class="td-slot-h"><b>${fmtT(sl.m)}</b><span>${plural(sl.kids.length, "child", "children")}${slots.length > 1 ? " · tap another time above to switch" : ""}</span></div>${sl.kids.map(k => kidRow(k.studentId, { tick: true, kid: k, items: k.items })).join("")}` : `<div class="td-empty">Nobody is scheduled today. Center visits come from the Calendar.</div>`}
       </div></div></section>`;
   }
   function renderStories(){
@@ -1270,7 +1270,7 @@ window.kumonPtcNav = function(client, role){
     const head = worst ? (worst.k.gap < 0 ? `${esc(firstName(sid))} is behind KIS in ${esc(worst.e.subject)}${worst.k.months ? ` and has been for ${plural(worst.k.months, "month")}` : ""}.` : `${esc(firstName(sid))} is at or ahead of KIS.`) : "";
     return `<div style="display:flex;align-items:center;gap:12px;margin-top:6px">${avatar(sid)}<span class="td-sub">${esc(s && s.age_grade ? normGrade(s.age_grade) : "")}${enrs.length ? " · " + esc([...new Set(enrs.map(e => e.teacher).filter(Boolean))].join(", ")) : ""}${s && s.mode ? " · " + esc(s.mode) : ""}</span></div>
       <h2>${esc(nameOf(sid))}</h2><p class="dek">${head}</p>
-      <div class="td-facts"><div><small>Today</small><b>${kid ? (kid.movedTo ? "Moved to " + esc(kid.movedTo) : kid.arrived ? "Arrived" : "Class at " + fmtT(slotOf.m)) : "No class"}</b></div>
+      <div class="td-facts"><div><small>Today</small><b>${kid ? (kid.movedTo ? "Moved to " + esc(kid.movedTo) : kid.arrived ? "Arrived" : "Center visit at " + fmtT(slotOf.m)) : "No center visit"}</b></div>
         <div><small>Next PTC</small><b style="${due && due.due_date < todayISO() ? "color:var(--bad)" : ""}">${due ? (due.due_date < todayISO() ? "Overdue" : esc(fmtDate(due.due_date, { year: undefined }))) : "—"}</b></div>
         <div><small>Projection</small><b>${enrs.length && enrs.every(e => has.has(e.id)) ? "Set" : "Missing"}</b></div></div>
       ${charts}<div class="td-links"><a href="student.html#s=${esc(sid)}">Profile</a>${enrs[0] ? `<a href="projection.html#e=${esc(enrs[0].id)}">Projection</a>` : ""}<a href="ptc.html">PTC</a></div>`;
