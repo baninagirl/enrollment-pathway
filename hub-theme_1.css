@@ -1,0 +1,146 @@
+/* =====================================================================
+   Kumon Hub theme — the Apple-style look shared by every page.
+   Linked at the END of each page's <head>, so it overrides that page's
+   own <style> without changing any page's layout or behaviour.
+   Fonts stay the Hub's own: Sora for headings, Inter for everything else.
+   ===================================================================== */
+
+:root{
+  --bg:#F5F5F7; --surface:#FFFFFF; --surface-2:#F7F7FA; --border:#E4E4EA;
+  --ink:#1D1D1F; --ink-muted:#5F6068; --ink-faint:#9496A0;
+  --accent:#3454D1; --accent-ink:#FFFFFF; --accent-soft:#EBEFFD; --accent-soft-ink:#2A41A8;
+  --good:#24935A; --good-soft:#E3F4EA; --warn:#C47F14; --warn-soft:#FBF0DF; --bad:#D2453A; --bad-soft:#FBE7E4;
+  --shadow: 0 1px 2px rgba(20,22,30,.04), 0 6px 24px -10px rgba(20,22,30,.16);
+  --shadow-lift: 0 2px 4px rgba(20,22,30,.05), 0 18px 40px -16px rgba(20,22,30,.28);
+  --shadow-modal: 0 30px 80px -20px rgba(20,22,30,.40), 0 0 0 1px rgba(20,22,30,.04);
+  --ring: 0 0 0 4px rgba(52,84,209,.18);
+  --glass: rgba(255,255,255,.72);
+  --spring: cubic-bezier(.2,.8,.2,1);
+  --r-card: 20px; --r-ctrl: 12px;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#111215; --surface:#1B1C21; --surface-2:#22232A; --border:#2D2E36;
+    --ink:#F2F2F5; --ink-muted:#AEB0B9; --ink-faint:#767883;
+    --accent:#7A92F3; --accent-ink:#0E1220; --accent-soft:#232A47; --accent-soft-ink:#BCC8FA;
+    --good:#55C98C; --good-soft:#16301F; --warn:#E6A84A; --warn-soft:#33270F; --bad:#F07E72; --bad-soft:#3A1E1B;
+    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 6px 24px -10px rgba(0,0,0,.6);
+    --shadow-lift: 0 2px 4px rgba(0,0,0,.35), 0 18px 40px -16px rgba(0,0,0,.7);
+    --shadow-modal: 0 30px 80px -20px rgba(0,0,0,.8), 0 0 0 1px rgba(255,255,255,.05);
+    --ring: 0 0 0 4px rgba(122,146,243,.25);
+    --glass: rgba(27,28,33,.72);
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#111215; --surface:#1B1C21; --surface-2:#22232A; --border:#2D2E36;
+  --ink:#F2F2F5; --ink-muted:#AEB0B9; --ink-faint:#767883;
+  --accent:#7A92F3; --accent-ink:#0E1220; --accent-soft:#232A47; --accent-soft-ink:#BCC8FA;
+  --good:#55C98C; --good-soft:#16301F; --warn:#E6A84A; --warn-soft:#33270F; --bad:#F07E72; --bad-soft:#3A1E1B;
+  --shadow: 0 1px 2px rgba(0,0,0,.3), 0 6px 24px -10px rgba(0,0,0,.6);
+  --shadow-lift: 0 2px 4px rgba(0,0,0,.35), 0 18px 40px -16px rgba(0,0,0,.7);
+  --shadow-modal: 0 30px 80px -20px rgba(0,0,0,.8), 0 0 0 1px rgba(255,255,255,.05);
+  --ring: 0 0 0 4px rgba(122,146,243,.25);
+  --glass: rgba(27,28,33,.72);
+}
+
+/* ---------- type ---------- */
+body{ background:var(--bg); color:var(--ink); letter-spacing:-.006em; }
+h1,h2,h3,.brand{ letter-spacing:-.025em; }
+.page-head h1{ font-size:34px; font-weight:700; letter-spacing:-.04em; line-height:1.12; }
+.page-sub{ font-size:14px; }
+.card-head h3{ font-size:15.5px; letter-spacing:-.02em; }
+
+/* ---------- side rail: frosted glass, soft selection ---------- */
+.rail{
+  background:var(--glass); border-right:1px solid var(--border); box-shadow:none;
+  -webkit-backdrop-filter:saturate(180%) blur(20px); backdrop-filter:saturate(180%) blur(20px);
+}
+.navbtn{ border-radius:10px; transition:background-color .2s var(--spring), color .2s var(--spring), transform .15s var(--spring); }
+.navbtn.active{ background:var(--accent-soft); color:var(--accent-soft-ink); box-shadow:none; }
+.navbtn:active{ transform:scale(.97); }
+
+/* ---------- surfaces ---------- */
+.card{ border:none; border-radius:var(--r-card); box-shadow:var(--shadow); }
+.card-head{ border-bottom-color:var(--border); padding:16px 18px; }
+.section-mini{ border:none; border-radius:12px; background:var(--surface); box-shadow:var(--shadow); }
+.stat{
+  border:none; border-radius:18px; box-shadow:var(--shadow); padding:16px;
+  transition:transform .25s var(--spring), box-shadow .25s var(--spring);
+}
+.stat:hover{ transform:translateY(-2px); box-shadow:var(--shadow-lift); border-color:transparent; }
+.stat:active{ transform:scale(.98); }
+.stat .n{ font-family:"Sora", system-ui, sans-serif; font-size:26px; letter-spacing:-.035em; }
+.banner{ border-radius:14px; }
+
+/* ---------- buttons: pill shaped, springy press ---------- */
+.btn{
+  border-radius:99px; padding:9px 16px; border:none; background:var(--surface); box-shadow:var(--shadow);
+  transition:transform .15s var(--spring), box-shadow .2s var(--spring), background-color .2s var(--spring), filter .15s ease;
+}
+.btn:hover{ background:var(--surface); box-shadow:var(--shadow-lift); }
+.btn:active{ transform:scale(.96); }
+.btn:focus-visible{ outline:none; box-shadow:var(--ring); }
+.btn.primary{ background:var(--accent); color:var(--accent-ink); box-shadow:0 1px 2px rgba(0,0,0,.08), 0 6px 16px -8px var(--accent); }
+.btn.primary:hover{ filter:brightness(1.07); }
+.btn.ghost{ background:transparent; box-shadow:none; }
+.btn.ghost:hover{ background:var(--surface-2); box-shadow:none; }
+.btn.danger{ background:var(--surface); color:var(--bad); }
+.btn.danger:hover{ background:var(--bad-soft); }
+.btn.sm{ padding:6px 12px; }
+.iconbtn{ border-radius:99px; transition:background-color .2s var(--spring), transform .15s var(--spring); }
+
+/* ---------- segmented control (iOS style) ---------- */
+.seg{ background:var(--surface-2); border:1px solid var(--border); border-radius:11px; padding:3px; }
+.seg button{ border-radius:8px; transition:background-color .2s var(--spring), color .2s var(--spring), box-shadow .2s var(--spring); }
+.seg button.active, .seg button.on{ background:var(--surface); color:var(--ink); box-shadow:0 1px 3px rgba(20,22,30,.12), 0 1px 1px rgba(20,22,30,.04); }
+
+/* ---------- fields ---------- */
+select, input[type=text], input[type=date], input[type=time], input[type=search], input[type=email], input[type=password], input[type=number], textarea{
+  border-radius:var(--r-ctrl); border:1px solid transparent; background-color:var(--surface); box-shadow:var(--shadow);
+  transition:border-color .2s var(--spring), box-shadow .2s var(--spring), background-color .2s var(--spring);
+}
+/* inside cards and pop-ups, fields sit on white, so they get a soft fill instead of a shadow */
+.modal select, .modal input[type=text], .modal input[type=date], .modal input[type=time], .modal input[type=search], .modal input[type=email], .modal input[type=password], .modal input[type=number], .modal textarea,
+.card select, .card input[type=text], .card input[type=date], .card input[type=time], .card input[type=search], .card input[type=number], .card textarea{
+  background-color:var(--surface-2); border-color:var(--border); box-shadow:none;
+}
+select:focus, input:focus, textarea:focus{ outline:none; border-color:var(--accent); background:var(--surface); box-shadow:var(--ring); }
+
+/* ---------- tables: quiet headers, soft rows ---------- */
+.stable th, .staff-table th{ text-transform:none; letter-spacing:0; font-size:12px; font-weight:600; color:var(--ink-faint); }
+.stable td{ border-bottom-color:var(--border); }
+.stable tr.clickrow td{ transition:background-color .15s ease; }
+.stable tr.clickrow:hover td{ background:var(--surface-2); }
+
+/* ---------- pills ---------- */
+.pill{ font-weight:600; padding:3px 10px; }
+
+/* ---------- modals: blurred backdrop, spring-in sheet ---------- */
+.modal-backdrop{
+  background:rgba(20,22,30,.28);
+  -webkit-backdrop-filter:blur(8px); backdrop-filter:blur(8px);
+  animation:hubFade .22s ease both;
+}
+.modal{ border-radius:24px; box-shadow:var(--shadow-modal); animation:hubSheet .34s var(--spring) both; }
+.modal-head{ border-bottom-color:var(--border); }
+.modal-foot{ border-top-color:var(--border); }
+
+/* ---------- toast: slides up ---------- */
+.toast{ border-radius:99px; padding:11px 20px; box-shadow:var(--shadow-modal); animation:hubToast .35s var(--spring) both; }
+
+/* ---------- sign-in ---------- */
+.login-card{ border:none; border-radius:26px; box-shadow:var(--shadow-modal); padding:32px 28px; animation:hubSheet .45s var(--spring) both; }
+
+/* ---------- one quiet entrance when a page opens ---------- */
+.main{ animation:hubRise .45s var(--spring) both; }
+
+@keyframes hubFade{ from{ opacity:0; } to{ opacity:1; } }
+@keyframes hubSheet{ from{ opacity:0; transform:translateY(14px) scale(.97); } to{ opacity:1; transform:none; } }
+@keyframes hubToast{ from{ opacity:0; transform:translate(-50%, 16px) scale(.96); } to{ opacity:1; transform:translate(-50%, 0); } }
+@keyframes hubRise{ from{ opacity:0; transform:translateY(8px); } to{ opacity:1; transform:none; } }
+
+@media (prefers-reduced-motion: reduce){
+  .main, .modal, .modal-backdrop, .toast, .login-card{ animation:none !important; }
+  .stat, .btn, .navbtn, .seg button{ transition:none !important; }
+  .stat:hover{ transform:none; }
+}

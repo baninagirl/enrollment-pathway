@@ -1,0 +1,71 @@
+# Kumon Hub: handoff note
+
+Paste this into a fresh Claude chat along with the project files. It is the whole memory of the project.
+
+## What this is
+A static website (plain HTML, no build step) for the Kumon Iligan City Learning Center, backed by Supabase (Postgres, row-level security, login). Hosted on Vercel. Live data is in the Supabase project named **Enrollment Hub** (address starts with `bcnmsryahczapnxbpkve`). Do not point this at the old Kumon 2 project.
+
+## Pages
+- `index.html`: Pipeline (diagnostic tests), DT & Training, Enrollment, Weekly view, New students, Settings. Also has the slot finders (Generate DT slots, Available training slots).
+- `roster.html`: roster, reporting tags, add student.
+- `calendar.html`: calendar, with links into the slot finders.
+- `payments.html`: payments, billing groups, SOA images, Log a payment, Mark absent.
+- `absent.html`: absence tracking and catch-up/resume.
+- `admin.html`: team accounts and roles. `activity.html`: edit history. `history.html`, `reporting.html`.
+- Helper code is duplicated in each file, so a shared change usually has to be made in several pages.
+
+## How data works
+- `students`: one row per child. `subject_enrollments`: one row per subject per student, with its own teacher. `schedules`, `diagnostics`, `trainings`, `payment_receipts`, `billing_groups`, `absence_records`, `enrollment_monthly_history`, `settings` (staff lists).
+- Roles: admin, superadmin, teacher, trainer_teacher, pending. A teacher only sees enrollments where `subject_enrollments.teacher` exactly equals her profile's `teacher_name`. Spelling must match exactly.
+- Receipts are saved against the student and month, not the teacher. Tuition per subject; grade 7 and up is a fixed 2,350 per subject (client rule plus a database trigger).
+- Recording cycle runs the 21st to the 20th, named by the month that holds the 20th.
+- Reporting tags live in `enrollment_type`: new, eo, resume, new_returnee, resume_transfer_in.
+- Students are matched by exact lowercase name, not an ID. This causes duplicate risk.
+
+## Working rules
+- SQL changes are handed over as files to run in the Supabase SQL Editor. Never run them against the live database from Claude. Files are idempotent where possible.
+- Direct, plain answers. Short status message when asked for an update.
+
+## SQL phases
+Run in numeric order on a fresh database: `schema.sql`, `enable-login.sql`, then phase1 through phase31 (phase2b after phase2, phase4b after phase4). Do not re-run phase25 (it re-imports students). Phase26 renames Sir Frix to Miss Frixie, and phase31 merges Sir Gib into Sir GB.
+Recent files that need checking against the live database: 23 and 24 (DT time and both-subject results), 29 (reporting tags), 30 (grade 7+ tuition), 31 (Sir Gib to Sir GB).
+
+## Open items
+- Ethan Tipa's diagnostic results would not save. Error visibility was added; waiting on a retry after 23/24 are run.
+- Brainstorm (nothing built yet): treat a student as one entity by name for enrollment history and billing, but count subjects separately for student totals, absences and retention. Findings:
+  1. A teacher sees only her own subject, but payments are for the whole student. A part payment can show as Paid for both teachers while the other subject is still owed.
+  2. SOA is built from the teacher's slice, so two teachers produce two partial SOAs. Wanted: one SOA per student with a line per subject and teacher.
+  3. Absences are stored once per student and the list keeps only the latest, so a second subject's absence can hide the first. Wanted: one absence record per subject.
+  4. A part-absent student mixes the catch-up amount with the ongoing bill. Needs a rule for splitting a payment by subject.
+  5. Identity is the typed name: middle initial or spacing creates a second student. Needs a duplicate check and a merge tool.
+  6. Smaller: diagnostic results hang off the latest diagnostic; subject, tag and status exist on both student and enrollment; tuition is one rate per student; teachers can open Edit tuition but only admins can save it.
+  Questions still to decide: should the other teacher see the other subject and its amount; are part payments assigned to a subject; can teachers verify payments or only admin; should an absent subject come off the bill; how to show "student number" (students vs enrollments).
+
+## Test workflow
+Extract each `<script>` block and run `node --check`. For behavior tests, use Playwright with Chromium and insert a `window.__test` hook before the main script's closing `})();` in a copy of the file.
+
+## Nov 3–9 (summary — the detailed Nov 3–5 notes were in a HANDOFF.md that never got committed)
+- phase114 weekly Calendar comment reset (pg_cron, Mon 12 AM Manila), phase115 absence "undo own recent" delete policy, phase116 backup_phase* tables locked (RLS on), phase117 schedule_moves (one-week class moves on the Calendar; ticks saved under the original day; profile shows "came Wed"). All run (check-everything-ran.sql all ✅).
+- Big bug rounds Nov 3–5 across every page (see git history of Nov 4–5 commits).
+- Nov 9 (from the daily bug-check emails Nov 6–8):
+  - payments.html: safeResume() — close the absence first (only if still open), then switch subjects on, undo if that fails; used by Resume and by auto-resume after Verify; a failed auto-resume now shows an alert ("press Resume on the Absent tab") instead of "automatically resumed".
+  - index.html: pipelineDataReady() — Set schedule / New schedule save / Mark enrolled wait until subject_enrollments + schedules have loaded; submitNewSchedule double-checks the database for an existing active subject / linked schedule before adding one.
+  - ptc.html: selectAll throws; loaders keep what's on screen (keepOnFail/loadIssues); week tab shows a warning, never "No PTC week yet" when the weeks failed to load; New PTC week / Make draft blocked until a clean load.
+  - phase1-roles.sql now carries the "ALREADY RUN — DO NOT RUN THIS AGAIN" header (delete the phase1-roles_5.sql copy).
+- Tests: /tmp/claude-0/t/mock.js (new minimal mock; supports eq/in/is/gte, upsert onConflict, __fail{table:"select"|"write"|"all"}, __rpc), t_pay.js, t_pay_ok.js, t_ptc.js, t_pipe.js.
+- Next file number: phase119.
+- Nov 9b: Worksheets page (admins + superadmins only). phase118-worksheet-stock.sql: ws_counts (shelf count per subject PSE/ME/EEU: lines {level:{block:qty}} + positions {enrollment_id: page-number} at count time), ws_orders (from Kumon "Web Ordering Detail" PDFs, unique order_no, received_on), ws_settings (id 'main': cover_weeks, calib {ME/EEU: {month, used}}); RLS ptc_is_admin().
+  worksheets.html (built from projection.html shell + helpers): tabs Order suggestion / Stock per level / Orders & checks / Shelf count. Blocks of 10 (1,11…191); Hub Math ↔ ME and Reading ↔ EEU line up level for level (AI→A1 … I-II→I2). Position G = level index*200 + page (from bestPos). Pace = pages/month over the last ~3 months of close-outs (peer median by level if no history, else 120). Repeat factor = Kumon "Used" for a closed month ×10 ÷ pages advanced that month (default 1.3, clamped 1–4). Demand = pages ahead spread over blocks × factor/10. Stock = latest count + orders received after it − used since (positions at count → now). Suggestion = demand for cover_weeks − stock − unreceived orders (last 45 days), rounded up to 10; CSV download. Order check per level: ordered vs children there now, use per week, shelf → red (nobody in 3 months) / amber (>16 weeks or nobody in 4 weeks). PDF parsing in the browser with pdf.js 3.11.174 (cdnjs) — wsParseOrder groups text by line and maps numbers to the nearest column header; verified on Nina's 5 PDFs (totals match). PSE (Z1/Z2): counted/ordered only, no Hub students.
+  Nav: kumonPtcNav (every page) now adds the "Worksheets" link for admin/superadmin. Tests: t_ws.js (real PDFs), t_nav.js. Next file number: phase119.
+- Nov 9c: worksheets.html Order suggestion has one "Download Excel" (SheetJS xlsx 0.18.5 from cdnjs): sheets "ME (Math)", "EEU (English)" laid out like Kumon's order grid (every level × blocks 1…191 + totals) and "Notes". CSV buttons removed. Test t_x3.js.
+- Nov 9d: Nina sent Kumon's own ME Export (Worksheet_ME_261109.xlsx: Sheet1, header Level + 1…191 as numbers, all 20 ME levels, empty = none, no Total). downloadKumonFile(sub) makes exactly that per subject (Worksheet_ME_YYMMDD.xlsx / Worksheet_EEU_YYMMDD.xlsx) — 'File for Kumon's Import' button on each subject card. EEU layout assumed the same (7A…L, 27 rows) — not yet confirmed against a Kumon EEU export. Test t_x4.js (identical layout to Kumon's file).
+- Nov 9e: Achievement tests on the Worksheets page. AT_LEVELS ME 4A…O, EEU 5A…K (from Kumon's Non-Chargeable Items list; ME list is a guess). Need = children whose path reaches page 200 of a level within the horizon × 1.2 (retakes); stock = AT count (ws_counts subject 'AT', lines {ME:{lv:n},EEU:{lv:n}}, positions {ME:{…},EEU:{…}}) + received orders' AT items (parsed from item names "ME AT H (Rev)", "EE (US) AT B2 (Rev)") − tests used since (children passing a level end). Suggestion card + Stock sub-tab + Count sub-tab + order check rows + Excel sheet "Achievement tests". phase118 updated: ws_counts subject check now PSE/ME/EEU/AT (drop/add constraint, re-run safe).
+- Nov 9f: Achievement tests now sit inside each subject card under its worksheet grid (atBlock): levels down the side, columns Order / Tests needed / On the shelf / On the way — same grid style. Excel: sheets 'ME AT' and 'EE (US) AT' (every AT level, same columns). atCard() kept but unused.
+- Nov 9g: achievement tests are ordered in exact numbers (Math.ceil), worksheets still rounded up to tens.
+- Nov 9h: worksheets also exact now (Math.ceil per block; Kumon takes any number). round10 no longer used.
+- Nov 9i: partial shelf counts — a count stores only the levels typed (every block of those levels, empty = 0); stockNow takes each level from the latest count that has it (usage/received orders per that count's date); suggestion warns 'Not counted yet: …'. Count tab: 'Import from Excel' (Kumon layout: Level row + 1…191) fills the grid; Save count still needed. Nina's handwritten ME count H–O (Nov 9) transcribed to Shelf_count_ME_H-O_261109.xlsx — every level total matches her written totals (O 131 read as 25 to match 486). Test t_imp.js.
+- Nov 9j: worksheets.html demand is per child now. plansOf(sub) (cached by wsDataVer): copies a month = average NWU of the last 3 months with NWU (NWU is in sets of 10 = copies) → else the projection's pages a day ×30÷10 (per level) → else centre median of NWU kids. Repeats per level = study_projections levels[].rate / default_rate → else child's own NWU×10 ÷ pages moved over the last 6 NWU months (needs ≥20 pages, clamp 1–8) → else centre factor (Kumon Used, default 1.3). simulate() walks the child forward block by block (pages a month = copies×10÷repeats) and is used by demandFor and atDemand; usedSince uses pages × that level's repeats. The hint under each card shows how many children use each source; Kumon's Stock Summary card now shows NWU total vs Kumon Used for the saved month. Loads study_projections (subject_enrollment_id, subject, levels, default_rate, default_ppd). Test t_plan.js.
+- Nov 9k: worksheets.html skips KC children (students.mode = 'KC', loaded as students id,mode) for worksheet demand, usage since a count, order-check head counts and the NWU vs Kumon Used check; achievement tests skip them too (atDemand, atStockNow). Children with no NWU and no projection now get the standard projection (Math 3 repeats / Reading 2, 10 pages a day = 30 copies a month) instead of the centre average / centre factor. Kumon Used is only a cross-check now.
+- Nov 9l: Apple-style look site-wide. New hub-theme.css (tokens + cards/buttons/fields/tables/segmented controls/modals/toast, page-open rise, spring presses, blurred modal backdrop; reduced-motion respected; dark mode). Every page links it last in <head> as hub-theme.css?v=1 (bump ?v= when it changes; remove the line to undo). Fonts unchanged (Sora + Inter).
+- Nov 9l: Worksheets nav link only adds its icon when the menu has icons (history.html's text-only menu showed a giant icon).
+- Nov 9m: today.html — the morning page (teachers, trainers, admins; read-only). Built on the worksheets/projection shell. Greeting + daily quote; Your day (Calendar rules: linked schedules, this week's schedule_moves, schedule_attendance arrived ticks; ring arrived/not yet; timeline with now line); three stories (ptc_due rpc next 7 days incl. overdue; subjects without study_projections; behind KIS); scorecard for the month: KC (students.mode), KIS within 6 months (subjects started 6+ months ago with close-outs in that window), under 2 months on a level (from history; first known level not counted), PTC done (ptc_milestones done this month ÷ done + overdue due this month), absences (absence_records active in month; lower is better), paid by 25th / by month end (payment_receipts verified or pending for this month, Manila date of created_at), remote (any RI slot); KIS dot chart (gap in levels; months behind = consecutive month-ends below KIS, grade shifted back per school year). Side panel for lists, metrics and a child's KIS path. Teachers see enrollments where teacher = their teacher_name; admins pick a teacher or Whole centre (sessionStorage). Refreshes arrivals/moves every 2 min. Nav: kumonPtcNav adds "Today" first in every menu for admin/superadmin/teacher/trainer_teacher. index.html now sends teachers to today.html (pending still to roster.html). Tests: t_today.js, t_today_m.js (seed today_seed.js). No SQL. Next file number still phase119.

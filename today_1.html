@@ -1,0 +1,1387 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Kumon Hub — Today</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700&family=Inter:wght@400;500;600;700;800&display=swap">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  :root{
+    --bg:#F5F6FA; --surface:#FFFFFF; --surface-2:#FBFBFE; --border:#E1E4EB;
+    --ink:#1B1F27; --ink-muted:#636C7C; --ink-faint:#9AA1AF;
+    --accent:#3454D1; --accent-ink:#FFFFFF; --accent-soft:#E9EDFC; --accent-soft-ink:#2A41A8;
+    --good:#1E8E5A; --good-soft:#E4F5EC; --warn:#C2831F; --warn-soft:#FBF0E1; --bad:#C23B2B; --bad-soft:#FBE8E5;
+    --shadow: 0 1px 2px rgba(16,20,30,.04), 0 2px 8px rgba(16,20,30,.06), 0 20px 40px -20px rgba(16,20,30,.25);
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#14161C; --surface:#1C1F27; --surface-2:#20232C; --border:#2C303B;
+      --ink:#EDEFF4; --ink-muted:#9BA3B2; --ink-faint:#6B7280;
+      --accent:#6C86F0; --accent-ink:#0E1220; --accent-soft:#232A47; --accent-soft-ink:#B7C3FA;
+      --good:#4FC48A; --good-soft:#173226; --warn:#E0A23F; --warn-soft:#332711; --bad:#F0796A; --bad-soft:#3A1F1C;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#14161C; --surface:#1C1F27; --surface-2:#20232C; --border:#2C303B;
+    --ink:#EDEFF4; --ink-muted:#9BA3B2; --ink-faint:#6B7280;
+    --accent:#6C86F0; --accent-ink:#0E1220; --accent-soft:#232A47; --accent-soft-ink:#B7C3FA;
+    --good:#4FC48A; --good-soft:#173226; --warn:#E0A23F; --warn-soft:#332711; --bad:#F0796A; --bad-soft:#3A1F1C;
+    color-scheme: dark;
+  }
+
+  *{box-sizing:border-box;}
+  body{
+    background:var(--bg); color:var(--ink); margin:0;
+    font-family:"Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  h1,h2,h3,.brand{ font-family:"Sora", system-ui, sans-serif; }
+  h1,h2,h3{ text-wrap:balance; margin:0; }
+  button{ font-family:inherit; }
+  a{ color:var(--accent); }
+
+  .app{ display:grid; grid-template-columns: 216px 1fr; min-height:100vh; min-height:100dvh; }
+  .rail{
+    background:var(--surface); border-right:1px solid var(--border);
+    padding:20px 12px; display:flex; flex-direction:column; gap:4px;
+    position:sticky; top:0; align-self:start; height:100vh; height:100dvh;
+  }
+  .brand{ font-weight:700; font-size:16px; padding:6px 10px 18px; display:flex; align-items:center; gap:8px; color:var(--ink); }
+  .brand .dot{ width:9px;height:9px;border-radius:50%;background:var(--accent); flex:none; }
+  .navbtn{
+    display:flex; align-items:center; gap:10px; padding:9px 10px; border-radius:9px;
+    border:none; background:transparent; color:var(--ink-muted); font-size:14px; font-weight:600;
+    cursor:pointer; text-align:left; width:100%; text-decoration:none;
+    transition: background-color .15s ease, color .15s ease, box-shadow .15s ease;
+  }
+  .navbtn:focus-visible{ outline:none; box-shadow: 0 0 0 3px var(--accent-soft); }
+  .navbtn:hover{ background:var(--surface-2); color:var(--ink); }
+  .navbtn svg{ width:17px; height:17px; flex:none; }
+  .navbtn.active{ background:var(--accent-soft); color:var(--accent-soft-ink); box-shadow: inset 3px 0 0 var(--accent); }
+  .rail-pages{ display:flex; flex-direction:column; gap:4px; margin-bottom:8px; }
+  .rail-divider{ height:1px; background:var(--border); margin:4px 10px 10px; }
+  .rail-account{ padding:0 10px 10px; }
+  .account-row{ display:flex; align-items:center; justify-content:space-between; gap:8px; padding:8px 8px; border-top:1px solid var(--border); font-size:12px; color:var(--ink-muted); }
+  .account-email{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .rail-foot{ margin-top:auto; padding:10px; font-size:12px; color:var(--ink-faint); line-height:1.5; }
+
+  .main{ padding:26px 30px 60px; max-width:1100px; width:100%; min-width:0; }
+  .page-head{ display:flex; align-items:flex-end; justify-content:space-between; gap:16px; margin-bottom:18px; flex-wrap:wrap; }
+  .page-head h1{ font-size:22px; font-weight:700; }
+  .page-sub{ color:var(--ink-muted); font-size:13.5px; margin-top:4px; }
+
+  .btn{
+    display:inline-flex; align-items:center; gap:7px; padding:9px 14px; border-radius:9px;
+    font-size:13.5px; font-weight:600; border:1px solid var(--border); background:var(--surface);
+    color:var(--ink); cursor:pointer; white-space:nowrap;
+    transition: background-color .15s ease, border-color .15s ease, color .15s ease, box-shadow .15s ease, transform .08s ease;
+  }
+  .btn:hover{ background:var(--surface-2); }
+  .btn:active{ transform:scale(.96); }
+  .btn:focus-visible{ outline:none; box-shadow: 0 0 0 3px var(--accent-soft); }
+  .btn.primary{ background:var(--accent); color:var(--accent-ink); border-color:var(--accent); box-shadow: 0 1px 2px rgba(0,0,0,.08); }
+  .btn.good{ color:var(--good); border-color:var(--good-soft); }
+  .btn.good:hover{ background:var(--good-soft); }
+  .btn.ghost{ border-color:transparent; background:transparent; }
+  .btn.sm{ padding:6px 10px; font-size:12.5px; border-radius:7px; }
+  .btn:disabled{ opacity:.5; cursor:not-allowed; }
+
+  .card{ background:var(--surface); border:1px solid var(--border); border-radius:14px; margin-bottom:18px; }
+  .card-head{ display:flex; align-items:center; justify-content:space-between; padding:14px 16px; border-bottom:1px solid var(--border); gap:10px; flex-wrap:wrap; }
+  .card-head h3{ font-size:14.5px; font-weight:700; }
+  .empty{ padding:30px 16px; text-align:center; color:var(--ink-muted); font-size:13.5px; }
+
+  .stats{ display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin-bottom:12px; }
+  .stat{ background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:13px 14px; display:flex; flex-direction:column; gap:6px; }
+  .stat .n{ font-size:22px; font-weight:700; font-family:"Sora",sans-serif; }
+  .stat .l{ font-size:12px; color:var(--ink-muted); font-weight:600; }
+  .stat.warn .n{ color:var(--warn); }
+  .stat.bad .n{ color:var(--bad); }
+  button.stat{ cursor:pointer; text-align:left; font:inherit; transition: border-color .15s ease, box-shadow .15s ease, background-color .15s ease; }
+  button.stat:hover{ border-color:var(--accent); }
+  button.stat.selected{ border-color:var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); background:var(--accent-soft); }
+  button.stat.selected .l{ color:var(--accent-soft-ink); }
+  .filter-note{ display:flex; align-items:center; gap:8px; font-size:12.5px; color:var(--ink-muted); margin:-6px 0 12px; }
+  .filter-note button{ border:none; background:transparent; color:var(--accent); font-weight:600; cursor:pointer; padding:0; font-size:12.5px; }
+
+  .cal-toolbar{ display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; flex-wrap:wrap; gap:10px; }
+  .cal-nav{ display:flex; align-items:center; gap:8px; }
+  .cal-nav h2{ font-size:16px; font-weight:700; min-width:160px; text-align:center; }
+  .month-head{ display:flex; flex-direction:column; align-items:center; }
+  .month-head h2{ margin:0; }
+  .month-range{ font-size:11px; color:var(--ink-muted); margin-top:1px; }
+  @media (max-width: 640px){ .cal-nav h2{ font-size:14px; min-width:0; flex:1; } }
+
+  .seg{ display:inline-flex; background:var(--surface-2); border:1px solid var(--border); border-radius:9px; padding:2px; }
+  .seg button{ border:none; background:transparent; padding:6px 11px; border-radius:7px; font-size:12.5px; font-weight:600; color:var(--ink-muted); cursor:pointer; }
+  .seg button:active{ transform:scale(.94); }
+  .seg button.active{ background:var(--surface); color:var(--ink); box-shadow:var(--shadow); }
+
+  .search-row{ display:flex; gap:8px; margin-bottom:14px; flex-wrap:wrap; align-items:center; }
+  .search-row input, .search-row select{ font-size:13.5px; width:auto; flex:0 0 auto; }
+  .search-row select{ min-width:132px; }
+  .table-scroll{ overflow-x:auto; }
+  .stable{ min-width:100%; width:auto; border-collapse:collapse; }
+  .stable th{ text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--ink-muted); padding:8px 16px; border-bottom:1px solid var(--border); white-space:nowrap; }
+  .stable td{ padding:10px 16px; border-bottom:1px solid var(--border); font-size:13px; vertical-align:middle; white-space:nowrap; }
+  .stable .empty{ white-space:normal; }
+  .stable tr:last-child td{ border-bottom:none; }
+  .stable tbody tr td{ transition: background-color .12s ease; }
+  .stable tbody tr:hover td{ background:var(--surface-2); }
+  .stable tr.clickrow{ cursor:pointer; }
+  .stable tr.clickrow:hover{ background:var(--surface-2); }
+  .muted{ color:var(--ink-muted); }
+  .hint{ font-size:12px; color:var(--ink-muted); font-weight:500; }
+  .faint{ color:var(--ink-faint); }
+  .money{ font-variant-numeric:tabular-nums; font-weight:600; }
+  .money.good{ color:var(--good); }
+  .pill{ display:inline-flex; align-items:center; gap:5px; padding:3px 9px; border-radius:99px; font-size:11.5px; font-weight:700; white-space:nowrap; transition: background-color .15s ease, color .15s ease; }
+  .pill.subj-math{ background:var(--accent-soft); color:var(--accent-soft-ink); }
+  .pill.subj-reading{ background:var(--bad-soft); color:var(--bad); }
+  .pill.m1, .pill.m2{ background:var(--warn-soft); color:var(--warn); }
+  .pill.m3, .pill.m4{ background:var(--bad-soft); color:var(--bad); }
+  .pill.resumed{ background:var(--good-soft); color:var(--good); }
+  .pill.pending{ background:var(--accent-soft); color:var(--accent-soft-ink); }
+  .pill.flagged{ background:var(--warn-soft); color:var(--warn); }
+  .pill.verified{ background:var(--good-soft); color:var(--good); }
+  .pill.rejected{ background:var(--surface-2); color:var(--ink-faint); }
+  .field-row{ display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  .lvl.empty-lvl{ color:var(--ink-faint); }
+  .pill.beyond{ background:var(--surface-2); color:var(--ink-faint); }
+  .name-subj-pill{ margin-left:6px; vertical-align:middle; padding:2px 7px; }
+  .row-actions{ display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end; }
+
+  select, input[type=text], input[type=search], textarea{
+    font-family:inherit; font-size:13.5px; padding:8px 10px; border-radius:8px; border:1px solid var(--border);
+    background:var(--surface); color:var(--ink); width:100%;
+  }
+  select, input, textarea{ transition: border-color .15s ease, box-shadow .15s ease; }
+  select:focus, input:focus, textarea:focus{ outline:none; border-color:var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+  label.field{ display:flex; flex-direction:column; gap:5px; font-size:12.5px; font-weight:600; color:var(--ink-muted); }
+
+  .modal-backdrop{ position:fixed; inset:0; background:rgba(10,12,18,.5); display:flex; align-items:flex-start; justify-content:center; padding:5vh 16px; overflow-y:auto; z-index:50; }
+  .modal{ background:var(--surface); border-radius:16px; width:100%; max-width:460px; box-shadow:var(--shadow); }
+  .modal-head{ display:flex; align-items:center; justify-content:space-between; padding:16px 18px; border-bottom:1px solid var(--border); }
+  .modal-head h3{ font-size:15.5px; font-weight:700; }
+  .modal-body{ padding:16px 18px; display:flex; flex-direction:column; gap:12px; max-height:66vh; overflow-y:auto; }
+  .modal-foot{ display:flex; justify-content:flex-end; gap:8px; padding:14px 18px; border-top:1px solid var(--border); }
+  .iconbtn{ border:none; background:transparent; cursor:pointer; color:var(--ink-muted); padding:4px; border-radius:6px; transition: background-color .15s ease, color .15s ease, transform .08s ease; }
+  .iconbtn:hover{ background:var(--surface-2); color:var(--ink); }
+  .iconbtn:active{ transform:scale(.9); }
+
+  .note-item{ border:1px solid var(--border); border-radius:10px; padding:10px 12px; background:var(--surface-2); }
+  .note-item .note-meta{ font-size:11px; color:var(--ink-muted); margin-bottom:4px; }
+  .note-item .note-text{ font-size:13px; white-space:pre-wrap; }
+  .note-form{ display:flex; flex-direction:column; gap:8px; }
+
+  .banner{ background:var(--warn-soft); color:var(--warn); border-radius:11px; padding:11px 14px; font-size:13px; font-weight:600; margin-bottom:16px; }
+  .banner.info{ background:var(--accent-soft); color:var(--accent-soft-ink); }
+
+  .toast{ position:fixed; left:50%; bottom:22px; transform:translateX(-50%); background:var(--ink); color:var(--bg); font-size:13px; font-weight:600; padding:10px 16px; border-radius:10px; z-index:95; box-shadow:var(--shadow); }
+
+  .login-screen{ position:fixed; inset:0; display:flex; align-items:center; justify-content:center; background:var(--bg); z-index:100; padding:20px; }
+  .login-card{ width:100%; max-width:360px; background:var(--surface); border:1px solid var(--border); border-radius:16px; padding:28px 26px; box-shadow:var(--shadow); display:flex; flex-direction:column; gap:14px; }
+  .login-brand{ font-family:"Sora", system-ui, sans-serif; font-weight:700; font-size:18px; display:flex; align-items:center; gap:8px; color:var(--ink); }
+  .login-brand .dot{ width:9px; height:9px; border-radius:50%; background:var(--accent); flex:none; }
+  .login-sub{ font-size:13px; color:var(--ink-muted); margin:-6px 0 4px; }
+  .login-error{ background:var(--bad-soft); color:var(--bad); border-radius:9px; padding:9px 12px; font-size:12.5px; font-weight:600; }
+
+  [hidden]{ display:none !important; }
+
+  @media (max-width: 860px){
+    .app{ grid-template-columns:1fr; }
+    .rail{ position:fixed; bottom:0; left:0; right:0; top:auto; height:auto; flex-direction:row; padding:8px; border-right:none; border-top:1px solid var(--border); z-index:40; }
+    .brand, .rail-foot, .rail-account{ display:none; }
+    .rail-pages{ flex-direction:row; flex:1; margin-bottom:0; }
+    .rail-divider{ display:none; }
+    .navbtn{ text-align:center; justify-content:center; }
+    .main{ padding:16px 14px calc(70px + env(safe-area-inset-bottom)); }
+    .stats{ grid-template-columns:repeat(2,1fr); }
+    .stable th, .stable td{ padding:9px 8px; font-size:12.5px; }
+    .modal-backdrop{ padding:0; align-items:flex-end; }
+    .modal{ max-width:none; border-radius:16px 16px 0 0; max-height:92vh; }
+    .field-row{ grid-template-columns:1fr; }
+  }
+
+  /* ===== Shared across pages: collapsible sidebar + fit-to-screen ===== */
+  :root{ --rail-w:216px; --z:1; }
+  html.rail-collapsed{ --rail-w:68px; }
+  .rail-toggle{ display:none; }
+  .rail-pipeline .rail-section-label{ font-size:10.5px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:var(--ink-faint); padding:2px 10px 6px; }
+  .rail-pipeline{ display:flex; flex-direction:column; gap:4px; margin-bottom:8px; }
+  @media (min-width:1600px){ :root{ --z:1.1; } }
+  @media (min-width:1900px){ :root{ --z:1.2; } }
+  @media (min-width:2300px){ :root{ --z:1.4; } }
+  @media (min-width:2800px){ :root{ --z:1.7; } }
+  @media (min-width:3400px){ :root{ --z:2; } }
+  @media (min-width:861px){
+    /* Big screens: the page fills the window and everything scales up together (steps above), instead of
+       sitting in a narrow column with tiny text and empty space on the right. */
+    body{ zoom:var(--z); }
+    .app{ grid-template-columns:var(--rail-w) minmax(0,1fr); min-height:calc(100dvh / var(--z)); transition:grid-template-columns .18s ease; }
+    .rail{ height:calc(100dvh / var(--z)); overflow-y:auto; overflow-x:hidden; }
+    .main{ max-width:none; }
+    .rail-pipeline-mobile{ display:none !important; }
+    .rail-toggle{ display:inline-flex; position:absolute; top:20px; right:10px; width:28px; height:28px; align-items:center; justify-content:center; border:1px solid var(--border); background:var(--surface); color:var(--ink-muted); border-radius:8px; cursor:pointer; padding:0; }
+    .rail-toggle:hover{ background:var(--surface-2); color:var(--ink); }
+    .rail-toggle svg{ width:15px; height:15px; transition:transform .18s ease; }
+    html.rail-collapsed .rail-toggle svg{ transform:rotate(180deg); }
+    html.rail-collapsed .rail{ padding:20px 8px; }
+    html.rail-collapsed .rail-toggle{ position:static; align-self:center; margin-bottom:12px; }
+    html.rail-collapsed .brand{ display:none; }
+    html.rail-collapsed .navbtn{ font-size:0; justify-content:center; padding:10px 0; position:relative; gap:0; }
+    html.rail-collapsed .navbtn svg{ width:19px; height:19px; }
+    html.rail-collapsed .navbtn .badge{ position:absolute; top:3px; right:8px; font-size:10px; margin:0; padding:0 4px; min-width:15px; line-height:15px; }
+    html.rail-collapsed .rail-section-label, html.rail-collapsed .rail-account, html.rail-collapsed .rail-foot{ display:none; }
+    html.rail-collapsed .rail-divider{ margin:6px 8px; }
+  }
+  @media (max-width:860px){ .rail-pipeline{ display:none !important; } }
+
+
+
+
+
+
+  /* ===== Today page ===== */
+  .main{ max-width:1180px; }
+  #pageHead{ display:block; margin-bottom:0; }
+  .td-top{ display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; }
+  .td-date{ font-size:13px; color:var(--ink-faint); font-weight:500; }
+  .td-who{ display:flex; align-items:center; gap:8px; font-size:13px; color:var(--ink-muted); font-weight:600; }
+  .td-who select{ width:auto; min-width:170px; }
+  .td-mast{ padding:26px 0 28px; border-bottom:1px solid var(--border); margin-bottom:30px; display:grid; grid-template-columns:minmax(0,1.5fr) minmax(0,1fr); gap:40px; align-items:end; }
+  .td-hello{ font-family:"Sora", system-ui, sans-serif; text-wrap:balance; font-size:clamp(32px, 4.6vw, 52px); line-height:1.08; font-weight:700; letter-spacing:-.04em; margin:0; }
+  .td-hello span{ color:var(--ink-muted); font-weight:600; }
+  .td-lede{ margin:14px 0 0; font-size:16.5px; color:var(--ink-muted); line-height:1.55; max-width:48ch; }
+  .td-lede b{ color:var(--ink); font-weight:600; }
+  .td-quote{ border-left:2px solid var(--ink); padding:2px 0 2px 18px; margin:0; }
+  .td-quote p{ margin:0; font-size:18.5px; line-height:1.5; font-style:italic; font-weight:500; }
+  .td-quote cite{ display:block; margin-top:10px; font-style:normal; font-size:12.5px; color:var(--ink-faint); }
+
+  .td-kicker{ font-size:12.5px; font-weight:600; color:var(--accent); margin-bottom:6px; }
+  .td-title{ font-family:"Sora", system-ui, sans-serif; font-size:24px; font-weight:700; letter-spacing:-.03em; line-height:1.2; margin:0; }
+  .td-dek{ color:var(--ink-muted); font-size:14.5px; margin:6px 0 0; line-height:1.5; max-width:64ch; }
+  .td-sec{ margin-bottom:44px; }
+  .td-sec-head{ display:flex; justify-content:space-between; align-items:flex-end; gap:12px; flex-wrap:wrap; }
+
+  .td-day{ display:grid; grid-template-columns:210px minmax(0,1fr); gap:28px; padding:24px; margin-top:16px; }
+  .td-ring{ display:flex; flex-direction:column; align-items:center; gap:10px; text-align:center; }
+  .td-legend{ display:flex; gap:12px; flex-wrap:wrap; justify-content:center; font-size:12px; color:var(--ink-muted); }
+  .td-legend span{ display:inline-flex; align-items:center; gap:5px; }
+  .td-legend i{ width:8px; height:8px; border-radius:50%; }
+  .td-tl{ position:relative; height:66px; margin:6px 0 16px; }
+  .td-tl-axis{ position:absolute; left:0; right:0; bottom:0; height:18px; font-size:11px; color:var(--ink-faint); }
+  .td-tl-axis span{ position:absolute; transform:translateX(-50%); white-space:nowrap; }
+  .td-tl-track{ position:absolute; left:0; right:0; top:8px; height:36px; border-radius:10px; background:var(--surface-2); border:1px solid var(--border); }
+  .td-tl-block{ position:absolute; top:8px; height:36px; min-width:26px; border-radius:10px; background:var(--accent-soft); color:var(--accent-soft-ink); font-size:11.5px; font-weight:700; display:flex; align-items:center; justify-content:center; border:none; cursor:pointer; font-family:inherit; transition:transform .15s var(--spring, ease); }
+  .td-tl-block:active{ transform:scale(.95); }
+  .td-tl-block.past{ background:var(--surface-2); color:var(--ink-faint); border:1px solid var(--border); }
+  .td-tl-block.on{ outline:2px solid var(--accent); outline-offset:1px; }
+  .td-tl-now{ position:absolute; top:0; width:2px; height:52px; background:var(--bad); border-radius:2px; pointer-events:none; }
+  .td-tl-now::before{ content:""; position:absolute; top:-3px; left:-3px; width:8px; height:8px; border-radius:50%; background:var(--bad); }
+
+  .td-slot-h{ display:flex; align-items:baseline; gap:10px; margin:2px 0 6px; flex-wrap:wrap; }
+  .td-slot-h b{ font-size:15px; } .td-slot-h span{ font-size:12.5px; color:var(--ink-faint); }
+  .td-kid{ display:flex; align-items:center; gap:10px; padding:9px 6px; border-top:1px solid var(--border); cursor:pointer; border-radius:10px; flex-wrap:wrap; transition:background-color .15s ease; }
+  .td-kid:hover{ background:var(--surface-2); }
+  .td-kid:focus-visible{ outline:2px solid var(--accent); outline-offset:1px; }
+  .td-av{ width:32px; height:32px; border-radius:50%; display:grid; place-items:center; font-size:12px; font-weight:700; color:#fff; flex:none; }
+  .td-nm{ font-weight:600; font-size:14px; }
+  .td-sub{ font-size:12.5px; color:var(--ink-muted); font-variant-numeric:tabular-nums; }
+  .td-kid.out .td-nm{ color:var(--ink-faint); text-decoration:line-through; }
+  .td-chip{ display:inline-flex; align-items:center; gap:4px; padding:3px 9px; border-radius:99px; font-size:11.5px; font-weight:600; white-space:nowrap; }
+  .td-math{ background:var(--accent-soft); color:var(--accent-soft-ink); } .td-read{ background:var(--bad-soft); color:var(--bad); }
+  .td-mute{ background:var(--surface-2); color:var(--ink-muted); border:1px solid var(--border); }
+  .td-warn{ background:var(--warn-soft); color:var(--warn); } .td-bad{ background:var(--bad-soft); color:var(--bad); } .td-good{ background:var(--good-soft); color:var(--good); }
+  .td-flags{ margin-left:auto; display:flex; gap:5px; flex-wrap:wrap; }
+  .td-tick{ width:22px; height:22px; border-radius:50%; border:1.5px solid var(--border); flex:none; }
+  .td-tick.yes{ background:var(--good); border-color:var(--good); position:relative; }
+  .td-tick.yes::after{ content:""; position:absolute; left:6px; top:6px; width:9px; height:5px; border-left:2px solid #fff; border-bottom:2px solid #fff; transform:rotate(-45deg); }
+
+  .td-stories{ display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:16px; margin-top:16px; }
+  .td-story{ padding:22px; display:flex; flex-direction:column; gap:14px; cursor:pointer; border:none; text-align:left; font:inherit; color:inherit; transition:transform .25s var(--spring, ease), box-shadow .25s var(--spring, ease); }
+  .td-story:hover, .td-metric:hover{ transform:translateY(-2px); box-shadow:var(--shadow-lift, var(--shadow)); }
+  .td-story:active, .td-metric:active{ transform:scale(.98); }
+  .td-story:focus-visible, .td-metric:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
+  .td-lab{ font-size:12.5px; font-weight:600; color:var(--ink-faint); display:flex; justify-content:space-between; gap:8px; }
+  .td-story h3{ font-family:"Sora", system-ui, sans-serif; font-size:18.5px; line-height:1.3; font-weight:600; letter-spacing:-.02em; margin:0; }
+  .td-viz{ min-height:92px; display:flex; align-items:center; }
+  .td-go{ font-size:13px; font-weight:600; color:var(--accent); margin-top:auto; }
+  .td-week{ display:grid; grid-template-columns:repeat(7, 1fr); gap:6px; width:100%; }
+  .td-week > div{ display:flex; flex-direction:column; align-items:center; gap:6px; font-size:11px; color:var(--ink-faint); }
+  .td-week .col{ width:100%; height:58px; border-radius:8px; background:var(--surface-2); border:1px solid var(--border); display:flex; flex-direction:column-reverse; padding:4px; gap:3px; overflow:hidden; }
+  .td-week .col i{ height:8px; border-radius:4px; background:var(--warn); flex:none; }
+  .td-week .col i.over{ background:var(--bad); }
+  .td-week .now{ color:var(--ink); font-weight:700; }
+
+  .td-metrics{ display:grid; grid-template-columns:repeat(4, minmax(0,1fr)); gap:14px; margin:16px 0 10px; }
+  .td-metric{ padding:18px; display:flex; flex-direction:column; gap:10px; border:none; text-align:left; cursor:pointer; font:inherit; color:inherit; transition:transform .25s var(--spring, ease), box-shadow .25s var(--spring, ease); }
+  .td-metric .r1{ display:flex; align-items:center; gap:14px; }
+  .td-big{ font-family:"Sora", system-ui, sans-serif; font-size:26px; font-weight:700; letter-spacing:-.035em; line-height:1; }
+  .td-goal{ font-size:12px; color:var(--ink-faint); margin-top:4px; }
+  .td-mname{ font-size:13.5px; font-weight:600; line-height:1.35; }
+  .td-note{ font-size:12.5px; color:var(--ink-faint); line-height:1.6; }
+  .td-bar{ height:8px; border-radius:99px; background:var(--surface-2); border:1px solid var(--border); position:relative; margin:8px 0 6px; }
+  .td-bar i{ position:absolute; left:0; top:0; bottom:0; border-radius:99px; }
+  .td-bar b{ position:absolute; top:-5px; width:2px; height:16px; background:var(--ink); border-radius:2px; }
+
+  .td-kis{ padding:24px; margin-top:16px; }
+  .td-kis-tools{ display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:10px; }
+  .td-kis-chart{ width:100%; overflow-x:auto; }
+  .td-kis-chart svg{ display:block; min-width:560px; width:100%; height:auto; }
+  .td-dotg{ cursor:pointer; }
+  .td-dotg:focus-visible circle{ stroke:var(--accent); }
+  .td-kis-foot{ display:flex; gap:22px; flex-wrap:wrap; font-size:13px; color:var(--ink-muted); margin-top:8px; }
+  .td-kis-foot b{ font-family:"Sora", system-ui, sans-serif; font-size:22px; display:block; font-weight:600; }
+
+  .td-scrim{ position:fixed; inset:0; background:rgba(20,22,30,.28); -webkit-backdrop-filter:blur(6px); backdrop-filter:blur(6px); opacity:0; pointer-events:none; transition:opacity .25s ease; z-index:60; }
+  .td-scrim.open{ opacity:1; pointer-events:auto; }
+  .td-drawer{ position:fixed; top:0; right:0; bottom:0; width:min(540px, 100%); background:var(--bg); z-index:61; transform:translateX(102%); transition:transform .34s var(--spring, ease); display:flex; flex-direction:column; box-shadow:var(--shadow-modal, var(--shadow)); padding-top:env(safe-area-inset-top, 0px); padding-bottom:env(safe-area-inset-bottom, 0px); padding-right:env(safe-area-inset-right, 0px); }
+  .td-drawer.open{ transform:none; }
+  .td-dr-head{ display:flex; align-items:center; justify-content:space-between; padding:16px 22px 4px; }
+  .td-dr-x{ border:none; background:var(--surface); border-radius:99px; width:32px; height:32px; cursor:pointer; box-shadow:var(--shadow); font-size:15px; color:var(--ink); }
+  .td-dr-back{ font:inherit; font-size:13.5px; font-weight:600; color:var(--accent); background:none; border:none; cursor:pointer; padding:0; }
+  .td-dr-body{ overflow-y:auto; padding:8px 22px 30px; }
+  .td-dr-body h2{ font-family:"Sora", system-ui, sans-serif; font-size:25px; font-weight:700; line-height:1.18; letter-spacing:-.03em; margin:6px 0 6px; }
+  .td-dr-body .dek{ color:var(--ink-muted); font-size:14px; line-height:1.55; margin:0 0 16px; }
+  .td-list{ padding:4px 12px; margin-bottom:16px; }
+  .td-list .td-kid:first-child{ border-top:none; }
+  .td-facts{ display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:10px; margin:14px 0 16px; }
+  .td-facts div{ background:var(--surface); border-radius:14px; padding:12px; box-shadow:var(--shadow); }
+  .td-facts small{ display:block; font-size:11.5px; color:var(--ink-faint); margin-bottom:3px; }
+  .td-facts b{ font-size:15.5px; }
+  .td-spark{ padding:16px; margin-bottom:14px; }
+  .td-spark svg{ width:100%; height:auto; display:block; }
+  .td-links{ display:flex; gap:10px; flex-wrap:wrap; }
+  .td-links a{ background:var(--surface); padding:10px 14px; border-radius:12px; font-size:13.5px; font-weight:600; box-shadow:var(--shadow); text-decoration:none; }
+  .td-empty{ padding:14px 4px; color:var(--ink-muted); font-size:13.5px; }
+
+  @media (max-width:1000px){ .td-metrics{ grid-template-columns:repeat(2, minmax(0,1fr)); } }
+  @media (max-width:900px){
+    .td-mast{ grid-template-columns:1fr; gap:22px; }
+    .td-stories{ grid-template-columns:1fr; }
+    .td-day{ grid-template-columns:1fr; }
+  }
+  @media (max-width:520px){
+    .td-day, .td-kis{ padding:16px; }
+    .td-facts{ grid-template-columns:repeat(2, minmax(0,1fr)); }
+    .td-flags{ margin-left:42px; width:100%; }
+    .td-tl-axis span:nth-child(even){ display:none; }
+    .td-who select{ min-width:0; }
+  }
+  @media (prefers-reduced-motion: reduce){ .td-drawer, .td-scrim, .td-story, .td-metric, .td-tl-block{ transition:none; } }
+
+</style>
+<script>try{if(localStorage.getItem("kumonRailCollapsed")==="1")document.documentElement.classList.add("rail-collapsed")}catch(e){}</script>
+<script>
+/* PTC menu link + "due" number (phase97). Each page calls kumonPtcNav(sbClient, role) once the role is known. */
+window.kumonPtcNav = function(client, role){
+  var link = document.getElementById("navPtcLink"); if(!link) return;
+  var ok = ["admin","superadmin","teacher","trainer_teacher"].indexOf(role) >= 0;
+  link.hidden = !ok;
+  var proj = document.getElementById("navProjLink"); if(proj) proj.hidden = !ok;
+  // Today (Nov 9): the morning page — added here so every page gets the link, first in the menu.
+  var td = document.getElementById("navTodayLink");
+  if(!td && ok){
+    var tbox = document.querySelector(".rail-pages");
+    if(tbox){
+      td = document.createElement("a"); td.className = "navbtn"; td.id = "navTodayLink"; td.href = "today.html"; td.title = "Today";
+      td.innerHTML = (tbox.querySelector(".navbtn svg") ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>' : "") + 'Today';
+      if(/today\.html$/.test(location.pathname)) td.classList.add("active");
+      var firstLink = tbox.querySelector(".navbtn:not(.rail-pipeline-mobile)");
+      tbox.insertBefore(td, firstLink || tbox.firstChild);
+    }
+  }
+  if(td) td.hidden = !ok;
+  // Worksheets (phase118): admins and superadmins only — the link is added here so every page gets it.
+  var wsAdm = role === "admin" || role === "superadmin", ws = document.getElementById("navWsLink");
+  if(!ws && wsAdm){
+    var after = document.getElementById("navReportsLink") || document.getElementById("navActivityLink") || document.getElementById("navAdminLink");
+    var box = after ? after.parentNode : document.querySelector(".rail-pages");
+    if(box){
+      ws = document.createElement("a"); ws.className = "navbtn"; ws.id = "navWsLink"; ws.href = "worksheets.html"; ws.title = "Worksheets";
+      ws.innerHTML = (box.querySelector(".navbtn svg") ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 3h10v4H7zM5 7h14v14H5z"/><path d="M9 12h6M9 16h4"/></svg>' : "") + 'Worksheets';   // icon only where the menu has icons
+      if(/worksheets\.html$/.test(location.pathname)) ws.classList.add("active");
+      if(after && after.nextSibling) box.insertBefore(ws, after.nextSibling); else box.appendChild(ws);
+    }
+  }
+  if(ws) ws.hidden = !wsAdm;
+  if(!ok || !client) return;
+  if(!document.getElementById("ptcBadgeStyle")){
+    var st = document.createElement("style"); st.id = "ptcBadgeStyle";
+    st.textContent = ".navbtn .ptc-badge{margin-left:auto;background:var(--bad);color:#fff;font-size:11px;font-weight:700;border-radius:99px;padding:1px 6px;min-width:18px;text-align:center;line-height:16px;}";
+    document.head.appendChild(st);
+  }
+  // An expired sign-in (a tab left open in the background) is renewed and the count asked again once;
+  // with no sign-in at all it doesn't ask. A failed check keeps the last number instead of hiding it.
+  var expired = function(r){ var e = r && r.error; return !!e && (e.status === 401 || /jwt|expired|401/i.test(String(e.message || e.code || ""))); };
+  var refresh = function(){
+    var ask = function(){ return client.rpc("ptc_due_count"); };
+    client.auth.getSession().then(function(s){
+      if(!s || !s.data || !s.data.session) return null;
+      return ask().then(function(r){
+        if(!expired(r)) return r;
+        return client.auth.refreshSession().then(function(x){ return (x && x.data && x.data.session) ? ask() : null; }, function(){ return null; });
+      });
+    }).then(function(r){
+      var b = document.getElementById("navPtcBadge"); if(!b || !r || r.error || typeof r.data !== "number") return;
+      var n = r.data;
+      b.textContent = n > 99 ? "99+" : String(n); b.hidden = !n;
+      link.title = n ? ("PTC — " + n + " due") : "PTC";
+    }, function(){});
+  };
+  refresh();
+  window.kumonPtcNavRefresh = refresh;
+  if(!window.__ptcNavTimer) window.__ptcNavTimer = setInterval(refresh, 5 * 60 * 1000);
+};
+</script>
+<script>
+/* Sign-in resilience (Oct 23). A slow or dropped connection used to make the page think the account had no role
+   ("waiting for approval — ask a superadmin"), and a hiccup while renewing the sign-in could log people out.
+   kumonFetchProfile retries, renews the sign-in if it expired, and — only if the Hub still can't be reached —
+   uses the last role this account had on this browser instead of "pending". */
+(function(){
+  var sleep = function(ms){ return new Promise(function(r){ setTimeout(r, ms); }); };
+  function notice(msg){
+    var el = document.getElementById("kumonNetNotice");
+    if(!msg){ if(el) el.remove(); return; }
+    if(!el){
+      el = document.createElement("div"); el.id = "kumonNetNotice";
+      el.style.cssText = "position:fixed;left:50%;top:14px;transform:translateX(-50%);z-index:200;background:#1B1F27;color:#fff;font:600 13px Inter,system-ui,sans-serif;padding:9px 14px;border-radius:10px;box-shadow:0 8px 24px -10px rgba(0,0,0,.4)";
+      (document.body || document.documentElement).appendChild(el);
+    }
+    el.textContent = msg;
+  }
+  window.kumonFetchProfile = async function(client, uid, cols){
+    var key = "kumonProfile:" + uid, cached = null;
+    try{ cached = JSON.parse(localStorage.getItem(key) || "null"); }catch(e){}
+    var want = String(cols).split(",").map(function(s){ return s.trim(); }).filter(Boolean);
+    var cacheOk = cached && cached.role && cached.role !== "pending" && want.every(function(k){ return k in cached; });
+    var once = async function(){ try{ return await client.from("profiles").select(cols).eq("id", uid).maybeSingle(); }catch(e){ return { data:null, error:e }; } };
+    for(var attempt = 0; ; attempt++){
+      var r = await once();
+      if(!r.error && !r.data && attempt === 0){
+        // An expired sign-in can read as "no profile" instead of an error: renew it and ask once more.
+        try{ await client.auth.refreshSession(); }catch(e){}
+        r = await once();
+      }
+      if(!r.error){
+        if(r.data){ try{ localStorage.setItem(key, JSON.stringify(Object.assign({}, cached || {}, r.data))); }catch(e){} }
+        notice(null);
+        return { data: r.data, error: null };
+      }
+      var msg = String((r.error && (r.error.message || r.error.code)) || "");
+      if(/jwt|token|expired|401|auth/i.test(msg)){ try{ await client.auth.refreshSession(); }catch(e){} }
+      if(cacheOk && attempt >= 2){ notice(null); return { data: cached, error: null, fromCache: true }; }
+      notice("Can't reach the Kumon Hub right now — trying again…");
+      await sleep(Math.min(8000, 800 * (attempt + 1)));
+    }
+  };
+  // Before treating a "signed out" event as real, make sure the sign-in is really gone (not a hiccup while renewing it).
+  window.kumonStillSignedIn = async function(client, uid){
+    if(window.__kumonLoggingOut) return false;
+    await sleep(1200);
+    try{ var a = await client.auth.getSession(); if(a && a.data && a.data.session && a.data.session.user.id === uid) return true; }catch(e){}
+    if(window.__kumonLoggingOut) return false;
+    try{ var b = await client.auth.refreshSession(); if(b && b.data && b.data.session && b.data.session.user.id === uid) return true; }catch(e){}
+    return false;
+  };
+  // Mark a deliberate "Log out" click so it isn't second-guessed above; forget the remembered role on log out.
+  document.addEventListener("click", function(e){
+    var b = e.target && e.target.closest && e.target.closest('[data-action="logout"]');
+    if(!b) return;
+    window.__kumonLoggingOut = true;
+    try{ Object.keys(localStorage).forEach(function(k){ if(k.indexOf("kumonProfile:") === 0) localStorage.removeItem(k); }); }catch(err){}
+  }, true);
+})();
+</script>
+<link rel="stylesheet" href="hub-theme.css?v=1">   <!-- the shared Apple-style look; remove this line to undo -->
+</head>
+<body>
+
+<!-- While the page checks who's signed in: a quiet loading screen instead of flashing the login form. -->
+<div class="login-screen" id="bootSplash" aria-live="polite">
+  <div class="login-brand" style="opacity:.85"><span class="dot"></span>Kumon Hub</div>
+</div>
+<div class="login-screen" id="loginScreen" hidden>
+  <form class="login-card" id="loginForm">
+    <div class="login-brand"><span class="dot"></span>Kumon Hub</div>
+    <div class="login-sub">Sign in with your team account.</div>
+    <div class="login-error" id="loginError" hidden></div>
+    <label class="field">Email<input type="email" name="email" required autocomplete="username" autofocus></label>
+    <label class="field">Password<input type="password" name="password" required autocomplete="current-password"></label>
+    <button class="btn primary" type="submit" style="justify-content:center;">Log in</button>
+  </form>
+</div>
+
+<script>
+  // No saved sign-in on this browser at all → show the login form right away (no splash).
+  (function(){ try{ var has = Object.keys(localStorage).some(function(k){ return /^sb-.*-auth-token$/.test(k); });
+    if(!has){ document.getElementById("bootSplash").hidden = true; document.getElementById("loginScreen").hidden = false; } }catch(e){} })();
+</script>
+<div class="app" id="appRoot" hidden>
+  <nav class="rail">
+    <button type="button" class="rail-toggle" id="railToggle" aria-label="Collapse sidebar" title="Collapse sidebar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg></button>
+    <div class="brand"><span class="dot"></span>Kumon Hub</div>
+    <div class="rail-pages">
+      <a class="navbtn rail-pipeline-mobile" href="index.html" id="navPipelineLink" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16l-6.5 8.5V19l-3 1.5v-8L4 4z"/></svg>Pipeline</a>
+      <a class="navbtn" href="roster.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3L2 8l10 5 10-5-10-5z"/><path d="M6 10.5V15c0 1.5 2.5 3 6 3s6-1.5 6-3v-4.5"/></svg>Student roster</a>
+      <a class="navbtn" href="calendar.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>Calendar</a>
+      <a class="navbtn" href="ptc.html" id="navPtcLink" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="7.5" r="3.2"/><circle cx="17" cy="9.5" r="2.4"/><path d="M3 20c0-3.6 2.7-6.3 6-6.3s6 2.7 6 6.3"/><path d="M15.2 14.4c.6-.2 1.2-.3 1.8-.3 2.5 0 4.4 1.9 4.4 4.6"/></svg>PTC<span class="badge ptc-badge" id="navPtcBadge" hidden></span></a>
+      <a class="navbtn" href="projection.html" id="navProjLink" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 20h18"/><path d="M4 16l5-5 4 3 7-8"/><path d="M15 6h5v5"/></svg>Projection</a>
+      <a class="navbtn" href="payments.html" id="navPaymentsLink" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20M6 15h4"/></svg>Payments</a>
+      <a class="navbtn" href="absent.html" id="navAbsentLink" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.5-7 8-7s8 3 8 7"/><path d="M2 2l20 20" stroke="currentColor"/></svg>Retention</a>
+      <a class="navbtn" href="admin.html" id="navAdminLink" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v6c0 5-3.5 8-7 9-3.5-1-7-4-7-9V6l7-3z"/></svg>Admin</a>
+      <a class="navbtn" href="activity.html" id="navActivityLink" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></svg>Activity</a>
+      <a class="navbtn" href="reports.html" id="navReportsLink" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a9 9 0 1 0 9 9h-9z"/><path d="M15 3.5A9 9 0 0 1 20.5 9H15z"/></svg>Reports</a>
+    </div>
+    <div class="rail-divider"></div>
+    <div class="rail-pipeline" id="navPipelineGroup" hidden>
+      <div class="rail-section-label">Pipeline views</div>
+      <a class="navbtn" href="index.html#calendar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 3v3h6V3"/><path d="M9 12l2 2 4-4"/></svg>DT &amp; Training</a>
+      <a class="navbtn" href="index.html#enrollment"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 12l2 2 4-4"/><circle cx="12" cy="12" r="9"/></svg>Enrollment</a>
+      <a class="navbtn" href="index.html#students"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-7 8-7s8 3 8 7"/></svg>New students</a>
+      <a class="navbtn" href="index.html#settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M19 5l-2 2M7 17l-2 2"/></svg>Settings</a>
+    </div>
+    <div class="rail-account" id="railAccount"></div>
+    <div class="rail-foot">Your day at a glance: classes, what needs you, and the month's scorecard.</div>
+  </nav>
+
+  <main class="main">
+    <div id="pendingGate" hidden></div>
+    <div id="pageHead"></div>
+    <div id="view"></div>
+  </main>
+</div>
+
+<div class="modal-backdrop" id="modalBackdrop" hidden>
+  <div class="modal" id="modal"></div>
+</div>
+<div class="tip" id="tip"></div>
+<div class="toast" id="toast" hidden></div>
+
+<script>
+(function(){
+  "use strict";
+
+  const SUPABASE_URL = "https://bcnmsryahczapnxbpkve.supabase.co";
+  const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJjbm1zcnlhaGN6YXBueGJwa3ZlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTAyMDQ4NzksImV4cCI6MjEwNTc4MDg3OX0.VgCX3CR7YCJxR9-vwD8HlYcCx0MxlY7atgD_0h3F3to";
+
+  const $ = (sel, el) => (el||document).querySelector(sel);
+  const $$ = (sel, el) => Array.from((el||document).querySelectorAll(sel));
+  function esc(s){ return String(s==null?"":s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+
+  /* ======================= Study projection rules (from the Digital Study Projection sheet) =======================
+     Chart scale: 1 notch = 10 worksheets, so one level (200 pages) = 20 notches. Level n (0-based on the ladder)
+     runs from n*20 to n*20+20. A starting point "3A 71" sits at 3A's start + floor((71-1)/10) = 60 + 7 = 67.
+     Each level: Total WS = 200 × repeats (first level: (200 − (start page − 1)) × repeats);
+     Months = ROUNDUP(Total ÷ pages a day ÷ 30, 1 decimal); Target = previous target + months × 30 days.
+     KIS (grade-level line) starts each school year (June) at a point set by the grade and climbs month by month;
+     Math: +5/3 a month (1 level a year), Bronze/Silver/Gold = KIS + 10 / + 40 / + 60.
+     Reading: its own month-by-month curves per grade for KIS, Bronze, Silver and Gold (copied from the sheet). */
+  const LADDER = {
+    Math: ["6A","5A","4A","3A","2A","A","B","C","D","E","F","G","H","I","J","K","L","M","N","O"],
+    Reading: ["7A","6A","5A","4A","3A","2A","AI","AII","BI","BII","CI","CII","DI","DII","EI","EII","FI","FII","GI","GII","HI","HII","I-I","I-II","J","K","L"]
+  };
+  const LEVEL_ALIAS = { Reading: { "G":"GI", "H":"HI", "II":"I-I", "III":"I-II", "I":"I-I", "I-1":"I-I", "I-2":"I-II" } };
+  const TOPICS = {
+    Math: { "6A":"Counting, Number Reading Exercises, Number of Dots", "5A":"Number Reading Exercises and Sequence of Numbers",
+      "4A":"Number Reading and Writing Exercises", "3A":"Number Reading and Writing Exercises, Introduction to Addition", "2A":"Addition",
+      "A":"Addition and Subtraction I", "B":"Addition and Subtraction II", "C":"Elementary Multiplication and Division",
+      "D":"Multiplication and Division, Introduction to Fractions", "E":"Operations on Fractions and Decimals", "F":"Order of Operations",
+      "G":"Positive and Negative Numbers, Elementary Algebraic Expressions", "H":"Simultaneous Linear Equations in Two, Three, or Four Variables, Linear Functions",
+      "I":"Factorization, Quadratic Equations", "J":"Advanced Factorization, Quadratic Equations" },
+    Reading: { "7A":"Connecting Words to familiar Objects, Saying Words with the same Sound, Putting Words Together",
+      "6A":"Recognizing Familiar Words, Saying Rhyming Words and Phrases", "5A":"Saying the Sounds of Letters, Putting Sounds Together",
+      "4A":"Consonant Combinations, Changing Letter Sounds", "3A":"Sound Patterns, Compound Words", "2A":"Word Puzzles, Function of Words",
+      "AI":"Simple Sentences, Basic Expressions, Sentence Topics, Thought Sequence", "AII":"Simple Sentences, Basic Expressions, Sentence Topics, Thought Sequence",
+      "BI":"Subject and Predicate, Expressions in the Past, Modifiers, Defining Words, Identifying Ideas, Comparing and Contrasting",
+      "BII":"Subject and Predicate, Expressions in the Past, Modifiers, Defining Words, Identifying Ideas, Comparing and Contrasting",
+      "CI":"Parts of a Sentence, Expressions of Language, Elements of Statements, Organizing Information, Synthesizing Ideas",
+      "CII":"Parts of a Sentence, Expressions of Language, Elements of Statements, Organizing Information, Synthesizing Ideas",
+      "DI":"Combining Sentences, Statements from Paragraphs, Topic, Main Idea, Understanding Paragraphs",
+      "DII":"Combining Sentences, Statements from Paragraphs, Topic, Main Idea, Understanding Paragraphs" }
+  };
+  const SKILLS = {"Math": [{"section": "WORK SKILLS", "obs": "Poor pencil grip", "skill": "Good Pencil Grip / Improved Pencil Skills", "plan": "Training through the Pencil Skills Program"}, {"section": "WORK SKILLS", "obs": "Counts from the beginning to know the next number", "skill": "Determine the next number automatically", "plan": "Number Board Activity, Number Recitation"}, {"section": "WORK SKILLS", "obs": "Not following instructions (performs wrong operation)", "skill": "Ability to follow instruction. To become observant in changes in questions/operation.", "plan": "Training students to always read instructions, examples and questions (including operation)."}, {"section": "WORK SKILLS", "obs": "Uses Finger Counting, Nagbabakod etc.", "skill": "To be able to add and subtract without using finger counting", "plan": "Oral Drills"}, {"section": "WORK SKILLS", "obs": "Adds without finger counting, but not automatic", "skill": "Automaticity in Mental Addition / Subtraction", "plan": "Oral Drills"}, {"section": "WORK SKILLS", "obs": "Add vertically but writes carry over", "skill": "Adding vertically without carry over", "plan": "Training addition without carry over in Level B"}, {"section": "STUDY ATTITUDE", "obs": "Easily distracted", "skill": "Improved concentration ability", "plan": "Pen Pacing. More number of pages to answer to develop endurance."}, {"section": "STUDY ATTITUDE", "obs": "Lacks motivation to answer the test", "skill": "Develop eagerness in answering worksheets", "plan": "Share target Monthly GOALS and Study Projection to the student."}, {"section": "STUDY ATTITUDE", "obs": "Poor confidence level. Too SHY.", "skill": "Develop confidence level.", "plan": "Start from easy starting point and ALWAYS PRAISE and Encourage the student. SPE!"}], "Reading": [{"section": "WORK SKILLS", "obs": "Poor pencil grip", "skill": "Good Pencil Grip / Improved Pencil Skills", "plan": "Training through the Pencil Skills Program"}, {"section": "WORK SKILLS", "obs": "Limited Vocabulary  in English", "skill": "Increase in Students Vocabulary", "plan": "Flashcard. Remind parent to use the vocabulary everyday."}, {"section": "WORK SKILLS", "obs": "Not following instructions.", "skill": "Ability to follow instruction well.", "plan": "Training students to always READ ALOUD instructions, examples and questions before starting to answer. Untimed reading."}, {"section": "WORK SKILLS", "obs": "Not familiar with Alphabet.", "skill": "Familiarization with Alphabet.", "plan": "Alphabet Flashcard both at the center & at home."}, {"section": "WORK SKILLS", "obs": "Not familiar with Phonics.", "skill": "Ability to sound out phonics (sounds of letters).", "plan": "Through Level 5A worksheets and CD listening of the sounds of phonics."}, {"section": "STUDY ATTITUDE", "obs": "Easily distracted", "skill": "", "plan": "Pen Pacing. More number of pages to answer to develop endurance."}, {"section": "STUDY ATTITUDE", "obs": "Lacks motivation to answer the test", "skill": "Develop eagerness in answering worksheets", "plan": "Share target Monthly GOALS and Study Projection to the student."}, {"section": "STUDY ATTITUDE", "obs": "Poor confidence level. Too SHY.", "skill": "Develop confidence level.", "plan": "Start from easy starting point and ALWAYS PRAISE and Encourage the student. SPE!"}]};
+  const READING_CURVES = {"kis":{"PK3":[40,41.67,43.33,45,46.67,48.33,50,51.67,53.33,55,56.67,58.33,60,61.67,63.33,65,66.67,68.33,70,71.67,73.33,75,76.67,78.33,80,81.67,83.33,85,86.67,88.33,90],"PK2":[60,61.67,63.33,65,66.67,68.33,70,71.67,73.33,75,76.67,78.33,80,81.67,83.33,85.0,86.67,88.33,90.0,91.67,93.33,95.0,96.67,98.33,100,101.67,103.33,105,106.67,108.33,110],"PK1":[80,81.67,83.33,85,86.67,88.33,90,91.67,93.33,95,96.67,98.33,100,101.67,103.33,105,106.67,108.33,110,111.67,113.33,115,116.67,118.33,120,121.67,123.33,125,126.67,128.33,130],"K":[100,101.67,103.33,105,106.67,108.33,110,111.67,113.33,115,116.67,118.33,120,121.67,123.33,125,126.67,128.33,130,131.67,133.33,135,136.67,138.33,140,141.67,143.33,145,146.67,148.33,150],"P1":[120,123.33,126.67,130,133.33,136.67,140,143.33,146.67,150,153.33,156.67,160,163.33,166.67,170,173.33,176.67,180,183.33,186.67,190,193.33,196.67,200,203.33,206.67,210,213.33,216.67,220],"P2":[160,163.33,166.67,170,173.33,176.67,180,183.33,186.67,190,193.33,196.67,200,203.33,206.67,210,213.33,216.67,220,223.33,226.67,230,233.33,236.67,240,243.33,246.67,250,253.33,256.67,260],"P3":[200,203.33,206.67,210,213.33,216.67,220,223.33,226.67,230,233.33,236.67,240,243.33,246.67,250,253.33,256.67,260,263.33,266.67,270,273.33,276.67,280,283.33,286.67,290,293.33,296.67,300],"P4":[240,243.33,246.67,250,253.33,256.67,260,263.33,266.67,270,273.33,276.67,280,283.33,286.67,290,293.33,296.67,300,303.33,306.67,310,313.33,316.67,320,323.33,326.67,330,333.33,336.67,340],"P5":[280,283.33,286.67,290,293.33,296.67,300,303.33,306.67,310,313.33,316.67,320,323.33,326.67,330,333.33,336.67,340,343.33,346.67,350,353.33,356.67,360,363.33,366.67,370,373.33,376.67,380.0],"P6":[320,323.33,326.67,330,333.33,336.67,340,343.33,346.67,350,353.33,356.67,360,363.33,366.67,370,373.33,376.67,380,383.33,386.67,390,393.33,396.67,400,403.33,406.67,410,413.33,416.67,420.0],"P7":[360,361.67,363.33,365,366.67,368.33,370,371.67,373.33,375,376.67,378.33,380,381.67,383.33,385,386.67,388.33,390,391.67,393.33,395,396.67,398.33,400,401.67,403.33,405.0,406.67,408.33,410.0],"P8":[380,381.67,383.33,385,386.67,388.33,390,391.67,393.33,395,396.67,398.33,400,401.67,403.33,405,406.67,408.33,410,411.67,413.33,415,416.67,418.33,420,421.67,423.33,425.0,426.67,428.33,430.0],"P9":[400,401.67,403.33,405,406.67,408.33,410,411.67,413.33,415,416.67,418.33,420,421.67,423.33,425,426.67,428.33,430,431.67,433.33,435,436.67,438.33,440,441.67,443.33,445.0,446.67,448.33,450.0]},"bronze":{"PK3":[50,51.67,53.33,55,56.67,58.33,60,61.67,63.33,65,66.67,68.33,70,71.67,73.33,75,76.67,78.33,80,81.67,83.33,85,86.67,88.33,90.0,91.67,93.33,95.0,96.67,98.33,100],"PK2":[70,71.67,73.33,75,76.67,78.33,80,81.67,83.33,85,86.67,88.33,90.0,91.67,93.33,95.0,96.67,98.33,100,101.67,103.33,105,106.67,108.33,110,111.67,113.33,115,116.67,118.33,120],"PK1":[90,91.67,93.33,95,96.67,98.33,100,101.67,103.33,105,106.67,108.33,110,111.67,113.33,115,116.67,118.33,120,123.33,126.67,130,133.33,136.67,140,143.33,146.67,150,153.33,156.67,160],"K":[110,111.67,113.33,115,116.67,118.33,120,123.33,126.67,130,133.33,136.67,140,143.33,146.67,150,153.33,156.67,160,163.33,166.67,170,173.33,176.67,180,183.33,186.67,190,193.33,196.67,200],"P1":[140,143.33,146.67,150,153.33,156.67,160,163.33,166.67,170,173.33,176.67,180,183.33,186.67,190,193.33,196.67,200,203.33,206.67,210,213.33,216.67,220,223.33,226.67,230,233.33,236.67,240],"P2":[180,183.33,186.67,190,193.33,196.67,200,203.33,206.67,210,213.33,216.67,220,223.33,226.67,230,233.33,236.67,240,243.33,246.67,250,253.33,256.67,260,263.33,266.67,270,273.33,276.67,280],"P3":[220,223.33,226.67,230,233.33,236.67,240,243.33,246.67,250,253.33,256.67,260,263.33,266.67,270,273.33,276.67,280,283.33,286.67,290,293.33,296.67,300,303.33,306.67,310,313.33,316.67,320],"P4":[260,263.33,266.67,270,273.33,276.67,280,283.33,286.67,290,293.33,296.67,300,303.33,306.67,310,313.33,316.67,320,323.33,326.67,330,333.33,336.67,340,343.33,346.67,350,353.33,356.67,360.0],"P5":[300,303.33,306.67,310,313.33,316.67,320,323.33,326.67,330,333.33,336.67,340,343.33,346.67,350,353.33,356.67,360,361.67,363.33,365,366.67,368.33,370,371.67,373.33,375,376.67,378.33,380],"P6":[340,343.33,346.67,350,353.33,356.67,360,361.67,363.33,365,366.67,368.33,370,371.67,373.33,375,376.67,378.33,380,381.67,383.33,385,386.67,388.33,390,391.67,393.33,395,396.67,398.33,400],"P7":[360,361.67,363.33,365,366.67,368.33,370,371.67,373.33,375,376.67,378.33,380,381.67,383.33,385,386.67,388.33,390,391.67,393.33,395,396.67,398.33,400,401.67,403.33,405.0,406.67,408.33,410.0],"P8":[380,381.67,383.33,385,386.67,388.33,390,391.67,393.33,395,396.67,398.33,400,401.67,403.33,405,406.67,408.33,410,411.67,413.33,415,416.67,418.33,420,421.67,423.33,425.0,426.67,428.33,430.0],"P9":[400,401.67,403.33,405,406.67,408.33,410,411.67,413.33,415,416.67,418.33,420,421.67,423.33,425,426.67,428.33,430,431.67,433.33,435,436.67,438.33,440,441.67,443.33,445.0,446.67,448.33,450.0]},"silver":{"PK3":[80,81.67,83.33,85,86.67,88.33,90,91.67,93.33,95,96.67,98.33,100,101.67,103.33,105,106.67,108.33,110,111.67,113.33,115,116.67,118.33,120,123.33,126.67,130,133.33,136.67,140],"PK2":[100,101.67,103.33,105,106.67,108.33,110,111.67,113.33,115,116.67,118.33,120,123.33,126.67,130,133.33,136.67,140,143.33,146.67,150,153.33,156.67,160,163.33,166.67,170,173.33,176.67,180],"PK1":[120,123.33,126.67,130,133.33,136.67,140,143.33,146.67,150,153.33,156.67,160,163.33,166.67,170,173.33,176.67,180,183.33,186.67,190,193.33,196.67,200,203.33,206.67,210,213.33,216.67,220],"K":[160,163.33,166.67,170,173.33,176.67,180,183.33,186.67,190,193.33,196.67,200,203.33,206.67,210,213.33,216.67,220,223.33,226.67,230,233.33,236.67,240,243.33,246.67,250,253.33,256.67,260],"P1":[200,203.33,206.67,210,213.33,216.67,220,223.33,226.67,230,233.33,236.67,240,243.33,246.67,250,253.33,256.67,260,263.33,266.67,270,273.33,276.67,280,283.33,286.67,290,293.33,296.67,300],"P2":[240,243.33,246.67,250,253.33,256.67,260,263.33,266.67,270,273.33,276.67,280,283.33,286.67,290,293.33,296.67,300,303.33,306.67,310,313.33,316.67,320,323.33,326.67,330,333.33,336.67,340],"P3":[280,283.33,286.67,290,293.33,296.67,300,303.33,306.67,310,313.33,316.67,320,323.33,326.67,330,333.33,336.67,340,343.33,346.67,350,353.33,356.67,360,361.67,363.33,365,366.67,368.33,370],"P4":[320,323.33,326.67,330,333.33,336.67,340,343.33,346.67,350,353.33,356.67,360,361.67,363.33,365,366.67,368.33,370,371.67,373.33,375,376.67,378.33,380,381.67,383.33,385,386.67,388.33,390],"P5":[360,361.67,363.33,365,366.67,368.33,370,371.67,373.33,375,376.67,378.33,380,381.67,383.33,385,386.67,388.33,390,391.67,393.33,395,396.67,398.33,400,401.67,403.33,405.0,406.67,408.33,410.0],"P6":[380,381.67,383.33,385,386.67,388.33,390,391.67,393.33,395,396.67,398.33,400,401.67,403.33,405,406.67,408.33,410,411.67,413.33,415,416.67,418.33,420,421.67,423.33,425.0,426.67,428.33,430.0],"P7":[380,381.67,383.33,385,386.67,388.33,390,391.67,393.33,395,396.67,398.33,400,401.67,403.33,405,406.67,408.33,410,411.67,413.33,415,416.67,418.33,420,421.67,423.33,425.0,426.67,428.33,430.0],"P8":[400,401.67,403.33,405,406.67,408.33,410,411.67,413.33,415,416.67,418.33,420,421.67,423.33,425,426.67,428.33,430,431.67,433.33,435,436.67,438.33,440,441.67,443.33,445.0,446.67,448.33,450.0],"P9":[420,421.67,423.33,425,426.67,428.33,430,431.67,433.33,435,436.67,438.33,440,441.67,443.33,445,446.67,448.33,450,451.67,453.33,455,456.67,458.33,460,461.67,463.33,465.0,466.67,468.33,470.0]},"gold":{"PK3":[100,101.67,103.33,105,106.67,108.33,110,111.67,113.33,115,116.67,118.33,120,123.33,126.67,130,133.33,136.67,140,143.33,146.67,150,153.33,156.67,160,163.33,166.67,170,173.33,176.67,180],"PK2":[120,123.33,126.67,130,133.33,136.67,140,143.33,146.67,150,153.33,156.67,160,163.33,166.67,170,173.33,176.67,180,183.33,186.67,190,193.33,196.67,200,203.33,206.67,210,213.33,216.67,220],"PK1":[160,163.33,166.67,170,173.33,176.67,180,183.33,186.67,190,193.33,196.67,200,203.33,206.67,210,213.33,216.67,220,223.33,226.67,230,233.33,236.67,240,243.33,246.67,250,253.33,256.67,260],"K":[200,203.33,206.67,210,213.33,216.67,220,223.33,226.67,230,233.33,236.67,240,243.33,246.67,250,253.33,256.67,260,263.33,266.67,270,273.33,276.67,280,283.33,286.67,290,293.33,296.67,300],"P1":[240,243.33,246.67,250,253.33,256.67,260,263.33,266.67,270,273.33,276.67,280,283.33,286.67,290,293.33,296.67,300,303.33,306.67,310,313.33,316.67,320,323.33,326.67,330,333.33,336.67,340],"P2":[280,283.33,286.67,290,293.33,296.67,300,303.33,306.67,310,313.33,316.67,320,323.33,326.67,330,333.33,336.67,340,343.33,346.67,350,353.33,356.67,360,361.67,363.33,365,366.67,368.33,370],"P3":[320,323.33,326.67,330,333.33,336.67,340,343.33,346.67,350,353.33,356.67,360,361.67,363.33,365,366.67,368.33,370,371.67,373.33,375,376.67,378.33,380,381.67,383.33,385,386.67,388.33,390],"P4":[360,361.67,363.33,365,366.67,368.33,370,371.67,373.33,375,376.67,378.33,380,381.67,383.33,385,386.67,388.33,390,391.67,393.33,395,396.67,398.33,400,401.67,403.33,405.0,406.67,408.33,410.0],"P5":[380,381.67,383.33,385,386.67,388.33,390,391.67,393.33,395,396.67,398.33,400,401.67,403.33,405,406.67,408.33,410,411.67,413.33,415,416.67,418.33,420,421.67,423.33,425.0,426.67,428.33,430.0],"P6":[400,401.67,403.33,405,406.67,408.33,410,411.67,413.33,415,416.67,418.33,420,421.67,423.33,425,426.67,428.33,430,431.67,433.33,435,436.67,438.33,440,441.67,443.33,445.0,446.67,448.33,450.0],"P7":[420,421.67,423.33,425,426.67,428.33,430,431.67,433.33,435,436.67,438.33,440,441.67,443.33,445,446.67,448.33,450,451.67,453.33,455,456.67,458.33,460,461.67,463.33,465.0,466.67,468.33,470.0],"P8":[440,441.67,443.33,445,446.67,448.33,450,451.67,453.33,455,456.67,458.33,460,461.67,463.33,465,466.67,468.33,470,471.67,473.33,475,476.67,478.33,480,481.67,483.33,485.0,486.67,488.33,490.0],"P9":[460,461.67,463.33,465,466.67,468.33,470,471.67,473.33,475,476.67,478.33,480,481.67,483.33,485,486.67,488.33,490,491.67,493.33,495,496.67,498.33,500,501.67,503.33,505.0,506.67,508.33,510.0]}};     // {kis|bronze|silver|gold: {grade: [31 monthly values from the school-year start]}}
+  // Grade order as the sheet has it (PK3 is the youngest there).
+  const GRADES = ["PK3","PK2","PK1","K","P1","P2","P3","P4","P5","P6","P7","P8","P9","P10","P11","P12"];
+  const gradeIdx = g => GRADES.indexOf(g) + 1;      // PK3 = 1 … P1 = 5 … P5 = 9
+  const DEFAULTS = { Math: { rate: 3, ppd: 10 }, Reading: { rate: 2, ppd: 10 } };
+  const MS_DAY = 86400e3;
+
+  function normGrade(g){
+    const t = String(g || "").trim().toUpperCase().replace(/\s+/g, " ");
+    if(!t) return "";
+    let m = t.match(/^(?:GRADE ?|GR\.? ?|G ?)?(\d{1,2})(?:ST|ND|RD|TH)?(?: GRADE)?$/); if(m) return "P" + Number(m[1]);
+    m = t.match(/^P ?(\d{1,2})$/); if(m) return "P" + Number(m[1]);
+    m = t.match(/^PK ?(\d)$/); if(m) return "PK" + m[1];
+    if(/^(K|KG|KINDER|KINDERGARTEN|KINDER ?\d?)$/.test(t)) return "K";
+    return t;
+  }
+  function normLevel(subject, lv){
+    let t = String(lv || "").trim().toUpperCase().replace(/\s+/g, "");
+    if(!t) return "";
+    const al = LEVEL_ALIAS[subject] || {};
+    if(al[t]) t = al[t];
+    return t;
+  }
+  function levelIndex(subject, lv){ return (LADDER[subject] || []).indexOf(normLevel(subject, lv)); }
+  function yOf(subject, lv, page){
+    const i = levelIndex(subject, lv); if(i < 0) return null;
+    const p = Math.max(0, Math.min(200, parseInt(page, 10) || 0));
+    return i * 20 + p / 10;
+  }
+  // LWC is free text ("3A 80", "3A80", "BII-200") → { level, page } or null.
+  function parseLwc(subject, txt){
+    const m = String(txt || "").trim().match(/^(.*?[A-Za-z])\s*[-–]?\s*(\d{1,3})$/);
+    if(!m || levelIndex(subject, m[1]) < 0) return null;
+    return { level: normLevel(subject, m[1]), page: m[2] };
+  }
+  // Where a row says the child is: the roster's Current level/page or the report's LWC — whichever is further along.
+  function bestPos(subject, row){
+    const a = yOf(subject, row.current_level, row.current_page);
+    const l = parseLwc(subject, row.lwc), b = l ? yOf(subject, l.level, l.page) : null;
+    if(b != null && (a == null || b > a)) return { y: b, txt: `${l.level} ${l.page}`, src: "lwc" };
+    if(a != null) return { y: a, txt: `${row.current_level} ${row.current_page || ""}`.trim(), src: "level" };
+    return null;
+  }
+  function bandName(subject, y){
+    const L = LADDER[subject] || [];
+    const i = Math.max(0, Math.min(L.length - 1, Math.floor((y + 1e-9) / 20)));
+    return L[i] || "";
+  }
+  function levelAndPage(subject, y){
+    const L = LADDER[subject] || [];
+    let i = Math.floor((y + 1e-9) / 20), p = Math.round((y - i * 20) * 10);
+    if(p === 0 && i > 0){ i -= 1; p = 200; }
+    if(i >= L.length) return (L[L.length-1] || "") + " 200";
+    return (L[Math.max(0,i)] || "") + " " + Math.max(1, p);
+  }
+
+  /* dates (ISO yyyy-mm-dd, worked out in UTC so nothing shifts by a day) */
+  const T = iso => Date.parse(iso + "T00:00:00Z");
+  const iso = t => new Date(t).toISOString().slice(0,10);
+  const addDays = (s, n) => iso(T(s) + Math.round(n) * MS_DAY);
+  // Same as the database: Jan 31 + 1 month = Feb 28/29 (the last day of a shorter month), never Mar 3.
+  function addMonths(s, n){
+    const d = new Date(T(s)), day = d.getUTCDate();
+    d.setUTCDate(1); d.setUTCMonth(d.getUTCMonth() + n);
+    const last = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 0)).getUTCDate();
+    d.setUTCDate(Math.min(day, last));
+    return iso(d.getTime());
+  }
+  function todayISO(){ return new Date(Date.now() + 8*3600e3).toISOString().slice(0,10); }   // Philippine date
+  function fmtDate(s, o){ if(!s) return "—"; return new Date(T(s)).toLocaleDateString("en-US", Object.assign({ timeZone:"UTC", month:"short", day:"numeric", year:"numeric" }, o||{})); }
+  function fmtMonth(s){ return new Date(T(s)).toLocaleDateString("en-US", { timeZone:"UTC", month:"short", year:"numeric" }); }
+  const monthsBetween = (a, b) => (T(b) - T(a)) / (30.4375 * MS_DAY);
+  function syStartFor(date){ const y = Number(date.slice(0,4)); return (date.slice(5) >= "06-01" ? y : y - 1) + "-06-01"; }
+
+  let sbClient = null, currentUser = null, currentRole = null, currentTeacherName = null;
+
+  function isAdmin(){ return currentRole === "admin" || currentRole === "superadmin"; }
+  function isTeacherScoped(){ return currentRole === "teacher" || currentRole === "trainer_teacher"; }
+  function isAuthorized(){ return ["admin","superadmin","teacher","trainer_teacher"].includes(currentRole); }
+  function myName(){ return currentTeacherName || (currentUser && currentUser.email) || ""; }
+  function studentName(id){ const s = studentById.get(id); return s ? (s.name || [s.first_name, s.last_name].filter(Boolean).join(" ")) : ""; }
+  function displayName(id, fallback){
+    const s = studentById.get(id);
+    if(s && s.last_name && s.first_name) return `${s.last_name}, ${s.first_name}`;
+    return (s && s.name) || fallback || "";
+  }
+  let toastTimer = null;
+  function toast(msg){ const el = $("#toast"); if(!el) return; el.textContent = msg; el.hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(()=>{ el.hidden = true; }, 3200); }
+  function logHistory(action, summary, entityId, details){
+    if(!sbClient || !currentUser) return;
+    sbClient.from("edit_history").insert({ actor_email: currentUser.email || null, actor_role: currentRole || null, page: "today", action, summary,
+      entity_type: "today", entity_id: entityId != null ? String(entityId) : null, details: details || null })
+      .then(({ error }) => { if(error) console.warn("Couldn't log history:", error); });
+  }
+
+  /* teacher groups (phase95), same as the other pages */
+  const DEFAULT_TEACHER_GROUPS = [
+    { key:"g1", name:"Group 1 (7A–3A61)", teachers:["Sir GB","Miss Mira","Miss Frixie","Miss Queenie","Miss Jess","Miss Sugar","Miss KC"] },
+    { key:"g2", name:"Group 2 (BCD)", teachers:["Sir Hamid","Miss Kath","Miss Kristine","Miss Nazel","Miss Rona"] },
+    { key:"g3", name:"Group 3 (E–O)", teachers:["Sir Mark","Sir Francis","Sir Erickson","Miss Shaina","Miss Kate"] }
+  ];
+  let teacherGroups = DEFAULT_TEACHER_GROUPS;
+  async function loadTeacherGroups(){
+    try{
+      const { data } = await sbClient.from("settings").select("value").eq("id","teacher_groups").maybeSingle();
+      const g = data && data.value && Array.isArray(data.value.groups) ? data.value.groups.filter(x => x && x.key && Array.isArray(x.teachers)) : null;
+      if(g && g.length) teacherGroups = g;
+    }catch(e){ console.warn("couldn't load teacher groups", e); }
+  }
+  function groupShortName(g){ return String(g.name || g.key).replace(/\s*\(.*\)\s*$/, ""); }
+  function myGroupTeachers(){
+    if(!currentTeacherName) return [];
+    const set = new Set([currentTeacherName]);
+    teacherGroups.forEach(g => { if(g.teachers.includes(currentTeacherName)) g.teachers.forEach(t => set.add(t)); });
+    return [...set];
+  }
+  function teacherInFilter(teacher, value){
+    if(!value || value === "all") return true;
+    if(value.startsWith("group:")){ const g = teacherGroups.find(x => "group:" + x.key === value); return !!g && g.teachers.includes(teacher); }
+    return teacher === value;
+  }
+  function groupedTeacherOptions(names, selected, opts){
+    opts = opts || {};
+    const pool = [...new Set((names || []).filter(Boolean))];
+    const sel = v => v === selected ? " selected" : "";
+    const me = currentTeacherName;
+    const label = t => esc(t) + (opts.scoped && t === me ? " (you)" : "");
+    let html = "";
+    if(opts.withAll && !opts.scoped) html += `<option value="all"${sel("all")}>All teachers</option>`;
+    const used = new Set();
+    for(const g of teacherGroups){
+      if(opts.scoped && !g.teachers.includes(me)) continue;
+      g.teachers.forEach(t => used.add(t));
+      html += `<optgroup label="${esc(g.name)}">` + (opts.withGroups ? `<option value="group:${esc(g.key)}"${sel("group:" + g.key)}>All of ${esc(groupShortName(g))}</option>` : "")
+        + g.teachers.map(t => `<option value="${esc(t)}"${sel(t)}>${label(t)}</option>`).join("") + `</optgroup>`;
+    }
+    if(opts.scoped){ if(me && !used.has(me)) html += `<option value="${esc(me)}"${sel(me)}>${esc(me)} (you)</option>`; return html; }
+    const others = pool.filter(t => !used.has(t)).sort((a,b) => a.localeCompare(b));
+    if(others.length) html += `<optgroup label="Not in a group">` + others.map(t => `<option value="${esc(t)}"${sel(t)}>${esc(t)}</option>`).join("") + `</optgroup>`;
+    return html;
+  }
+
+  /* login / boot — same as the other pages */
+  function showLogin(errMsg){ { const sp = document.getElementById("bootSplash"); if(sp) sp.hidden = true; }
+    $("#loginScreen").hidden = false; $("#appRoot").hidden = true;
+    const err = $("#loginError"); if(errMsg){ err.textContent = errMsg; err.hidden = false; } else { err.hidden = true; } }
+  function showApp(){ { const sp = document.getElementById("bootSplash"); if(sp) sp.hidden = true; } $("#loginScreen").hidden = true; $("#appRoot").hidden = false; }
+  function renderAccount(){
+    if(window.kumonPtcNav) window.kumonPtcNav(sbClient, currentRole);
+    const el = $("#railAccount");
+    if(el) el.innerHTML = currentUser ? `<div class="account-row"><span class="account-email">${esc(currentUser.email)}</span><button class="btn sm ghost" data-action="logout">Log out</button></div>` : "";
+    const show = (id, on) => { const a = document.getElementById(id); if(a) a.hidden = !on; };
+    const r = currentRole;
+    show("navPipelineLink", !(r === "teacher" || r === "pending"));
+    show("navPaymentsLink", ["admin","superadmin","teacher","trainer_teacher"].includes(r));
+    show("navAbsentLink", ["admin","superadmin","teacher","trainer_teacher"].includes(r));
+    show("navAdminLink", r === "superadmin");
+    show("navActivityLink", r === "admin" || r === "superadmin");
+    show("navReportsLink", r === "superadmin");
+    const gate = $("#pendingGate"), blocked = !isAuthorized();
+    if(gate){ gate.hidden = !blocked; gate.innerHTML = blocked ? `<div class="banner">${currentRole === "pending" ? `Your account is waiting for approval. Ask a superadmin to set your role in <a href="admin.html">Admin</a>.` : "The Worksheets page is for admins only."}</div>` : ""; }
+    $$("#pageHead, #view").forEach(x => { x.style.display = blocked ? "none" : ""; });
+  }
+  async function loadRole(){
+    if(!sbClient || !currentUser){ currentRole = null; currentTeacherName = null; return; }
+    try{
+      const { data, error } = await window.kumonFetchProfile(sbClient, currentUser.id, "role,teacher_name");
+      if(error) throw error;
+      currentRole = data ? data.role : "pending"; currentTeacherName = data ? data.teacher_name : null;
+    }catch(e){ console.warn("couldn't load role", e); currentRole = "pending"; currentTeacherName = null; }
+  }
+  let shownUserId = null;
+  async function boot(){
+    if(!window.supabase){ showLogin("Couldn't load Supabase."); return; }
+    try{ sbClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY); }catch(e){ showLogin("Couldn't connect to Supabase."); return; }
+    const { data:{ session } } = await sbClient.auth.getSession();
+    if(session){ currentUser = session.user; shownUserId = session.user.id; await loadRole(); showApp(); renderAccount(); startApp(); }
+    else showLogin();
+    sbClient.auth.onAuthStateChange(async (event, session)=>{
+      if(session){
+        if(shownUserId === session.user.id) return;
+        if(shownUserId){ location.reload(); return; }
+        currentUser = session.user; shownUserId = session.user.id; await loadRole(); showApp(); renderAccount(); startApp();
+      }else{ if(shownUserId){ if(window.kumonStillSignedIn && await window.kumonStillSignedIn(sbClient, shownUserId)) return; location.reload(); return; } currentUser = null; currentRole = null; showLogin(); }
+    });
+  }
+
+  async function selectAll(table, cols, build){
+    let out = [], from = 0;
+    for(;;){
+      let q = sbClient.from(table).select(cols).range(from, from + 999);
+      if(build) q = build(q);
+      const { data, error } = await q;
+      if(error){ console.warn(table, error); const err = new Error(error.message || "load failed"); err.loadFailed = true; throw err; }
+      out = out.concat(data || []);
+      if(!data || data.length < 1000) return out;
+      from += 1000;
+    }
+  }
+
+  /* the KIS / award lines for one grade: value (in notches, 20 per level) at a date — same as the Projection page */
+  function standardLines(subject, grade, sy){
+    const gi = gradeIdx(grade);
+    if(!gi) return null;
+    if(subject === "Math"){
+      const base = 20 * gi;
+      const kis = d => base + monthsBetween(sy, d) * 5 / 3;
+      return { kis };
+    }
+    const curve = (key) => {
+      let arr = READING_CURVES[key][grade], shift = 0;
+      if(!arr){ arr = READING_CURVES[key]["P9"]; shift = 20 * (gi - gradeIdx("P9")); }   // the sheet stops at P9
+      return d => {
+        const m = monthsBetween(sy, d), n = arr.length - 1;
+        if(m <= 0) return arr[0] + (arr[1] - arr[0]) * m + shift;
+        if(m >= n) return arr[n] + (arr[n] - arr[n-1]) * (m - n) + shift;
+        const k = Math.floor(m); return arr[k] + (arr[k+1] - arr[k]) * (m - k) + shift;
+      };
+    };
+    return { kis: curve("kis") };
+  }
+
+  /* ======================= Today: the morning page =======================
+     One page a teacher opens first: today's classes (from the Calendar, with this week's moves and arrived ticks),
+     what needs them this week (PTC, projections, children behind KIS), this month's scorecard, and where every
+     child stands against KIS. Teachers see their own students; admins can pick a teacher or the whole centre.
+     Nothing here writes to the database. */
+  const DAY_ORDER = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
+  const QUOTES = [
+    ["Well begun is half done.", "Aristotle"],
+    ["It always seems impossible until it's done.", "Attributed to Nelson Mandela"],
+    ["The beautiful thing about learning is that nobody can take it away from you.", "B.B. King"],
+    ["Little by little, one travels far.", "Spanish proverb"],
+    ["Teaching is the highest form of understanding.", "Attributed to Aristotle"],
+    ["The expert in anything was once a beginner.", "Attributed to Helen Hayes"],
+    ["A journey of a thousand miles begins with a single step.", "Lao Tzu"],
+    ["What we learn with pleasure we never forget.", "Attributed to Alfred Mercier"]
+  ];
+  const AV_COLORS = ["#3454D1","#D2453A","#24935A","#B9770E","#7B4FD1","#1F8FA8","#C2477F"];
+  const D = { students:[], enr:[], sched:[], moves:[], att:[], due:[], ms:[], proj:[], hist:[], rec:[], abs:[] };
+  const tdUi = { who: null, slot: null, kisSub: "all" };
+  const loadIssues = new Set();
+  let studentById = new Map(), enrById = new Map(), histBy = new Map();
+
+  /* ---------- time, in the centre's time zone (Philippines) ---------- */
+  const manilaNow = () => new Date(Date.now() + 8 * 3600e3);
+  const nowMin = () => { const d = manilaNow(); return d.getUTCHours() * 60 + d.getUTCMinutes(); };
+  const todayDow = () => DAY_ORDER[(manilaNow().getUTCDay() + 6) % 7];
+  const manilaDate = ts => ts ? new Date(Date.parse(ts) + 8 * 3600e3).toISOString().slice(0, 10) : null;
+  function mondayOf(isoDate){ const d = new Date(T(isoDate)); const dow = (d.getUTCDay() + 6) % 7; return addDays(isoDate, -dow); }
+  const weekStart = () => mondayOf(todayISO());                                   // attendance week (Mon)
+  const moveWeek = () => todayDow() === "Sun" ? addDays(todayISO(), 1) : weekStart();   // Sunday shows the coming week
+  const toMin = t => { const [h, m] = String(t || "").split(":").map(Number); return h * 60 + (m || 0); };
+  const fromMin = x => { x = Math.max(0, Math.min(23 * 60 + 59, x)); return String(Math.floor(x / 60)).padStart(2, "0") + ":" + String(x % 60).padStart(2, "0"); };
+  const fmtT = m => { const h = Math.floor(m / 60), mm = m % 60, h12 = h % 12 || 12; return `${h12}${mm ? ":" + String(mm).padStart(2, "0") : ""} ${h >= 12 ? "PM" : "AM"}`; };
+  const monthKey = () => todayISO().slice(0, 7);
+  const monthEndOf = key => { const [y, m] = key.split("-").map(Number); return iso(Date.UTC(y, m, 0)); };
+  const plural = (n, one, many) => `${n} ${n === 1 ? one : (many || one + "s")}`;
+
+  /* ---------- who is in scope ---------- */
+  const mineEnr = e => e && e.status === "active" && (tdUi.who === "all" || e.teacher === tdUi.who);
+  function scopeEnrollments(){ return D.enr.filter(mineEnr); }
+  function scopeStudentIds(){ return new Set(scopeEnrollments().map(e => e.student_id)); }
+  function nameOf(sid, fallback){ const s = studentById.get(sid); if(!s) return fallback || ""; return [s.first_name, s.last_name].filter(Boolean).join(" ") || s.name || fallback || ""; }
+  function firstName(sid){ const s = studentById.get(sid); return (s && (s.first_name || (s.name || "").split(/[ ,]/).filter(Boolean).pop())) || "This child"; }
+  const initials = n => String(n || "?").split(/\s+/).filter(Boolean).map(w => w[0]).slice(0, 2).join("").toUpperCase();
+  const hashN = s => { let h = 0; for(const c of String(s)) h = (h * 31 + c.charCodeAt(0)) >>> 0; return h; };
+  const avatar = sid => `<span class="td-av" style="background:${AV_COLORS[hashN(sid) % AV_COLORS.length]}" aria-hidden="true">${esc(initials(nameOf(sid)))}</span>`;
+  const subjChip = (e, pos) => `<span class="td-chip ${e.subject === "Math" ? "td-math" : "td-read"}">${esc(e.subject)}${pos ? " · " + esc(pos) : ""}</span>`;
+
+  /* ---------- KIS: where a subject stands against the grade line ---------- */
+  // The grade a child was in on date d (their grade now, one less for each school year back).
+  function gradeAt(g, d){
+    const shift = Number(syStartFor(todayISO()).slice(0, 4)) - Number(syStartFor(d).slice(0, 4));
+    const i = GRADES.indexOf(g) - shift; return i >= 0 ? GRADES[i] : null;
+  }
+  function kisAt(subject, g, d){ const gr = gradeAt(g, d); if(!gr) return null; const L = standardLines(subject, gr, syStartFor(d)); return L ? L.kis(d) : null; }
+  const levelOfY = y => Math.max(0, Math.ceil(y / 20 - 1e-9) - 1);
+  function histOf(eid){ return histBy.get(eid) || []; }   // oldest first
+  const kisCache = new Map();
+  function kisInfo(e){
+    if(kisCache.has(e.id)) return kisCache.get(e.id);
+    let out = null;
+    const s = studentById.get(e.student_id), g = s ? normGrade(s.age_grade) : "";
+    const pos = bestPos(e.subject, e);
+    const today = todayISO();
+    if(g && gradeIdx(g) && pos){
+      const k = kisAt(e.subject, g, today);
+      if(k != null){
+        const gap = (pos.y - k) / 20;
+        // months behind: count closed months (newest first) the child was also below the line at month end
+        let months = 0;
+        if(gap < 0){
+          const hs = histOf(e.id).slice().reverse();
+          for(const h of hs){
+            const d = monthEndOf(h.cycle_key); if(d >= today) continue;
+            const p = bestPos(e.subject, h), kk = kisAt(e.subject, g, d);
+            if(!p || kk == null || p.y >= kk) break;
+            months++;
+          }
+        }
+        out = { gap, months, now: pos.txt, kis: levelAndPage(e.subject, Math.max(0.1, k)), grade: g };
+      }
+    }
+    kisCache.set(e.id, out); return out;
+  }
+  // a subject's gap to KIS at each of the last 12 month ends (+ today), for the path chart
+  function kisPath(e){
+    const s = studentById.get(e.student_id), g = s ? normGrade(s.age_grade) : ""; if(!g) return [];
+    const pts = [];
+    for(const h of histOf(e.id).slice(-12)){
+      const d = monthEndOf(h.cycle_key), p = bestPos(e.subject, h), k = kisAt(e.subject, g, d);
+      if(p && k != null) pts.push({ d, gap: (p.y - k) / 20 });
+    }
+    const info = kisInfo(e); if(info) pts.push({ d: todayISO(), gap: info.gap });
+    return pts;
+  }
+
+  /* ---------- today's classes (same rules as the Calendar) ---------- */
+  function classesToday(){
+    const dow = todayDow(), out = [];
+    const hasLinked = new Set(D.sched.filter(sc => sc.subject_enrollment_id).map(sc => sc.subject_enrollment_id));
+    const seen = new Set();
+    for(const sc of D.sched){
+      if(sc.subject_enrollment_id){ if(seen.has(sc.subject_enrollment_id)) continue; seen.add(sc.subject_enrollment_id); }
+      const enrs = sc.subject_enrollment_id ? D.enr.filter(e => e.id === sc.subject_enrollment_id) : D.enr.filter(e => e.student_id === sc.student_id && !hasLinked.has(e.id));
+      const slots = Array.isArray(sc.slots) ? sc.slots : [];
+      const firstOn = day => slots.filter(x => x && x.day === day && x.time).map(x => x.time).sort()[0];
+      for(const slot of slots){
+        if(!slot || !slot.day || !slot.time) continue;
+        for(const e of enrs){
+          if(!mineEnr(e)) continue;
+          const mv = D.moves.find(x => x.schedule_id === sc.id && x.from_day === slot.day);
+          const base = { scheduleId: sc.id, origDay: slot.day, e, studentId: e.student_id, mode: slot.mode === "RI" ? "RI" : "IC" };
+          if(mv){
+            const t = fromMin(toMin(mv.to_time) + toMin(slot.time) - toMin(firstOn(slot.day) || slot.time));
+            if(mv.to_day === dow) out.push(Object.assign(base, { time: t, movedFrom: slot.day !== dow ? slot.day : null }));
+            else if(slot.day === dow) out.push(Object.assign(base, { time: slot.time, movedTo: mv.to_day }));
+          } else if(slot.day === dow) out.push(Object.assign(base, { time: slot.time }));
+        }
+      }
+    }
+    return out;
+  }
+  const arrivedFor = (scheduleId, day) => D.att.some(a => a.schedule_id === scheduleId && a.day === day && a.arrived);
+  // classes grouped by start time, one row per child (Math and Reading together)
+  function slotsToday(){
+    const bySlot = new Map();
+    for(const c of classesToday()){
+      const m = toMin(c.time); if(!bySlot.has(m)) bySlot.set(m, new Map());
+      const kids = bySlot.get(m), k = c.studentId;
+      if(!kids.has(k)) kids.set(k, { studentId: k, items: [], movedFrom: null, movedTo: null, arrived: false, ri: false });
+      const kid = kids.get(k); kid.items.push(c.e);
+      if(c.movedFrom) kid.movedFrom = c.movedFrom; if(c.movedTo) kid.movedTo = c.movedTo;
+      if(c.mode === "RI") kid.ri = true;
+      if(arrivedFor(c.scheduleId, c.origDay)) kid.arrived = true;
+    }
+    return [...bySlot.entries()].sort((a, b) => a[0] - b[0]).map(([m, kids]) => ({ m, kids: [...kids.values()].sort((a, b) => nameOf(a.studentId).localeCompare(nameOf(b.studentId))) }));
+  }
+
+  /* ---------- what needs you this week ---------- */
+  function ptcThisWeek(){
+    const ids = scopeStudentIds(), limit = addDays(todayISO(), 6);
+    return D.due.filter(d => d.due_date && d.due_date <= limit && (ids.has(d.student_id) || (tdUi.who !== "all" && (d.teachers || []).includes(tdUi.who))))
+      .sort((a, b) => a.due_date < b.due_date ? -1 : a.due_date > b.due_date ? 1 : 0);
+  }
+  function noProjection(){
+    const has = new Set(D.proj.map(p => p.subject_enrollment_id));
+    return scopeEnrollments().filter(e => !has.has(e.id)).map(e => {
+      const s = studentById.get(e.student_id); const since = (s && s.first_day) || String(e.created_at || "").slice(0, 10) || null;
+      return { e, since, days: since ? Math.max(0, Math.round((T(todayISO()) - T(since)) / MS_DAY)) : null };
+    }).sort((a, b) => (b.days || 0) - (a.days || 0));
+  }
+  function behindKis(){ return scopeEnrollments().map(e => ({ e, k: kisInfo(e) })).filter(o => o.k && o.k.gap < 0).sort((a, b) => b.k.months - a.k.months || a.k.gap - b.k.gap); }
+  const ordinal = n => n + (["th","st","nd","rd"][((n % 100) - 20) % 10] || ["th","st","nd","rd"][n % 100] || "th");
+
+  /* ---------- this month's scorecard (same goals as the monthly sheet) ---------- */
+  function scorecard(){
+    const ym = monthKey(), mStart = ym + "-01", mEnd = monthEndOf(ym), today = todayISO();
+    const enrs = scopeEnrollments(), ids = scopeStudentIds(), studs = [...ids].map(id => studentById.get(id)).filter(Boolean);
+    const out = [];
+    const metric = (o) => out.push(o);
+
+    // KC
+    const notKc = studs.filter(s => s.mode !== "KC");
+    metric({ k:"kc", name:"On KC", n: studs.length - notKc.length, of: studs.length, goal: 80, how:"Students whose mode is KC, out of all their active students.", missLabel:"Not on KC yet", miss: notKc.map(s => ({ sid: s.id })) });
+
+    // KIS within 6 months (only subjects that started 6+ months ago and have close-outs from those months)
+    const kis6 = { n:0, of:0, miss:[], unknown:0 };
+    for(const e of enrs){
+      const s = studentById.get(e.student_id), g = s ? normGrade(s.age_grade) : "";
+      const start = (s && s.first_day) || String(e.created_at || "").slice(0, 10); if(!start || !g || !gradeIdx(g)) continue;
+      const end6 = addMonths(start, 6); if(end6 > today) continue;
+      const pts = histOf(e.id).filter(h => monthEndOf(h.cycle_key) <= end6 && monthEndOf(h.cycle_key) >= start);
+      if(!pts.length){ kis6.unknown++; continue; }
+      kis6.of++;
+      const hit = pts.some(h => { const d = monthEndOf(h.cycle_key), p = bestPos(e.subject, h), k = kisAt(e.subject, g, d); return p && k != null && p.y >= k; });
+      if(hit) kis6.n++; else kis6.miss.push({ sid: e.student_id, e });
+    }
+    metric({ k:"kis6", name:"Reached KIS within 6 months", n: kis6.n, of: kis6.of, goal: 100, unit:"subjects",
+      how:`Subjects that started 6 or more months ago and reached KIS for their grade within their first 6 months, from each month's close-out.${kis6.unknown ? ` ${plural(kis6.unknown, "subject")} had no close-outs from their first 6 months, so ${kis6.unknown === 1 ? "it isn't" : "they aren't"} counted.` : ""}`,
+      missLabel:"Didn't reach KIS in their first 6 months", miss: kis6.miss });
+
+    // Under 2 months on their current level (leaves out subjects still on the first level the Hub knows)
+    const lvl = { n:0, of:0, miss:[] };
+    for(const e of enrs){
+      const pos = bestPos(e.subject, e); if(!pos) continue;
+      const li = levelOfY(pos.y); let arrived = null;
+      for(const h of histOf(e.id).slice().reverse()){
+        const p = bestPos(e.subject, h); if(!p) continue;
+        if(levelOfY(p.y) !== li){ arrived = monthEndOf(h.cycle_key); break; }
+      }
+      if(!arrived) continue;
+      lvl.of++; const mo = monthsBetween(arrived, today);
+      if(mo < 2) lvl.n++; else lvl.miss.push({ sid: e.student_id, e, note: `${Math.floor(mo)} months on ${bandName(e.subject, pos.y)}` });
+    }
+    metric({ k:"lvl2", name:"Under 2 months on a level", n: lvl.n, of: lvl.of, goal: 100, unit:"subjects",
+      how:"Subjects whose current level has taken under 2 months so far, counted from the month-end they were last on a different level. Subjects still on the first level the Hub knows aren't counted.", missLabel:"2 months or more on their level", miss: lvl.miss });
+
+    // PTC done this month
+    const done = D.ms.filter(m => m.status === "done" && String(m.done_on || "").startsWith(ym) && ids.has(m.student_id));
+    const late = D.due.filter(d => d.due_date && d.due_date.startsWith(ym) && d.due_date < today && ids.has(d.student_id));
+    metric({ k:"ptc", name:"PTC done", n: done.length, of: done.length + late.length, goal: 100, unit:"PTCs",
+      how:"PTCs done this month, out of those done plus the ones due this month that are still open past their date.", missLabel:"Overdue PTC", miss: late.map(d => ({ sid: d.student_id, note: `${ordinal(d.month_no)} month · was due ${fmtDate(d.due_date, { year: undefined })}` })) });
+
+    // Absences (lower is better)
+    const absIds = new Set();
+    for(const a of D.abs){
+      if(!ids.has(a.student_id)) continue;
+      const on = manilaDate(a.marked_absent_at), back = a.resumed_at ? manilaDate(a.resumed_at) : null;
+      if(on && on <= mEnd && (!back || back >= mStart)) absIds.add(a.student_id);
+    }
+    metric({ k:"abs", name:"Absences", n: absIds.size, of: studs.length, goal: 4, lower: true,
+      how:"Students marked absent (on Payments) at any point this month. Lower is better.", missLabel:"Absent this month", miss: [...absIds].map(sid => ({ sid })) });
+
+    // Payments for this month
+    const paidOn = new Map();
+    for(const r of D.rec){
+      if(!ids.has(r.student_id) || !(r.status === "verified" || r.status === "pending") || !String(r.covers_month || "").startsWith(ym)) continue;
+      const d = manilaDate(r.created_at); if(!d) continue;
+      if(!paidOn.has(r.student_id) || d < paidOn.get(r.student_id)) paidOn.set(r.student_id, d);
+    }
+    const by25 = studs.filter(s => paidOn.has(s.id) && paidOn.get(s.id) <= ym + "-25");
+    metric({ k:"pay25", name:"Paid on or before the 25th", n: by25.length, of: studs.length, goal: 50,
+      how:"Families who paid this month's tuition on or before the 25th (verified or waiting for review).", missLabel:"Not paid by the 25th", miss: studs.filter(s => !by25.includes(s)).map(s => ({ sid: s.id, note: paidOn.has(s.id) ? "paid " + fmtDate(paidOn.get(s.id), { year: undefined }) : "not paid yet" })) });
+    const byEnd = studs.filter(s => paidOn.has(s.id) && paidOn.get(s.id) <= mEnd);
+    metric({ k:"payEnd", name:"Paid before month end", n: byEnd.length, of: studs.length, goal: 90,
+      how:"Families who paid this month's tuition within the month (so far).", missLabel:"Not paid yet", miss: studs.filter(s => !byEnd.includes(s)).map(s => ({ sid: s.id })) });
+
+    // Remote at least 2x a month = a weekly RI class on their schedule
+    const riIds = new Set();
+    for(const sc of D.sched){ const sid = sc.student_id || (enrById.get(sc.subject_enrollment_id) || {}).student_id; if(ids.has(sid) && (sc.slots || []).some(x => x && x.mode === "RI")) riIds.add(sid); }
+    metric({ k:"remote", name:"Remote 2× a month", n: riIds.size, of: studs.length, goal: 80,
+      how:"Students with a remote (RI) class on their Calendar schedule — a weekly RI class comes to 4 a month.", missLabel:"No remote class", miss: studs.filter(s => !riIds.has(s.id)).map(s => ({ sid: s.id })) });
+    return out;
+  }
+  function metricState(m){
+    if(!m.of) return { pct: null, met: false, col: "var(--ink-faint)", text: "Nothing to count yet" };
+    const pct = Math.round(m.n / m.of * 100);
+    const met = m.lower ? pct <= m.goal : pct >= m.goal;
+    const close = !met && (m.lower ? pct <= m.goal * 2 : pct >= m.goal * 0.8);
+    return { pct, met, col: met ? "var(--good)" : close ? "var(--warn)" : "var(--bad)",
+      text: met ? "Goal met" : close ? "Close" : m.lower ? `${pct - m.goal} points over` : `${m.goal - pct} points to go` };
+  }
+
+  /* ---------- drawing helpers ---------- */
+  function ring(parts, total, big, small, size){
+    size = size || 180; const c = size / 2, R = size * 0.39, sw = size * 0.09, C = 2 * Math.PI * R;
+    let off = 0;
+    const arcs = parts.map(([n, col]) => { const len = total ? n / total * C : 0; const gapPx = parts.filter(p => p[0]).length > 1 ? 7 : 0;
+      const a = n ? `<circle cx="${c}" cy="${c}" r="${R}" fill="none" stroke="${col}" stroke-width="${sw}" stroke-linecap="round" stroke-dasharray="${Math.max(0.1, len - gapPx)} ${C}" stroke-dashoffset="${-off}" transform="rotate(-90 ${c} ${c})"/>` : ""; off += len; return a; }).join("");
+    return `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" role="img" aria-label="${esc(big)} ${esc(small)}"><circle cx="${c}" cy="${c}" r="${R}" fill="none" stroke="var(--surface-2)" stroke-width="${sw}"/>${arcs}
+      <text x="${c}" y="${c + (size >= 120 ? size * 0.03 : size * 0.08)}" text-anchor="middle" font-family="Sora, system-ui, sans-serif" font-size="${size * 0.22}" font-weight="700" fill="var(--ink)">${big}</text>
+      ${size >= 120 ? `<text x="${c}" y="${c + size * 0.16}" text-anchor="middle" font-size="${size * 0.068}" fill="var(--ink-muted)" font-family="Inter, sans-serif">${esc(small)}</text>` : ""}</svg>`;
+  }
+  function metricRing(m, st){
+    const R = 26, C = 2 * Math.PI * R, len = st.pct == null ? 0 : Math.min(1, st.pct / 100) * C, ga = (m.goal / 100) * 2 * Math.PI - Math.PI / 2;
+    return `<svg width="64" height="64" viewBox="0 0 64 64" style="flex:none" aria-hidden="true"><circle cx="32" cy="32" r="${R}" fill="none" stroke="var(--surface-2)" stroke-width="8"/>${len ? `<circle cx="32" cy="32" r="${R}" fill="none" stroke="${st.col}" stroke-width="8" stroke-linecap="round" stroke-dasharray="${len} ${C}" transform="rotate(-90 32 32)"/>` : ""}<circle cx="${32 + Math.cos(ga) * R}" cy="${32 + Math.sin(ga) * R}" r="3.5" fill="var(--surface)" stroke="var(--ink)" stroke-width="2"/></svg>`;
+  }
+  function kidRow(sid, opts){
+    opts = opts || {};
+    const enrs = opts.items || scopeEnrollments().filter(e => e.student_id === sid);
+    const s = studentById.get(sid), fl = [];
+    if(!opts.extra){
+      if(opts.kid){
+        if(opts.kid.movedFrom) fl.push(`<span class="td-chip td-good">Moved here from ${esc(opts.kid.movedFrom)}</span>`);
+        if(opts.kid.movedTo) fl.push(`<span class="td-chip td-mute">Moved to ${esc(opts.kid.movedTo)}</span>`);
+        if(opts.kid.ri) fl.push(`<span class="td-chip td-mute">RI</span>`);
+      }
+      if(s && s.mode === "KC") fl.push(`<span class="td-chip td-mute">KC</span>`);
+      const due = D.due.find(d => d.student_id === sid && d.due_date && d.due_date <= addDays(todayISO(), 6));
+      if(due) fl.push(`<span class="td-chip ${due.due_date < todayISO() ? "td-bad" : "td-warn"}">PTC ${due.due_date < todayISO() ? "overdue" : "due " + esc(fmtDate(due.due_date, { year: undefined }))}</span>`);
+      if(enrs.some(e => { const k = kisInfo(e); return k && k.gap < 0 && k.months >= 6; })) fl.push(`<span class="td-chip td-warn">Behind KIS</span>`);
+      const has = new Set(D.proj.map(p => p.subject_enrollment_id));
+      if(enrs.some(e => !has.has(e.id))) fl.push(`<span class="td-chip td-warn">No projection</span>`);
+    }
+    const tick = opts.tick ? `<span class="td-tick${opts.kid && opts.kid.arrived ? " yes" : ""}" title="${opts.kid && opts.kid.arrived ? "Arrived" : "Not yet"}"></span>` : "";
+    const teachers = tdUi.who === "all" ? [...new Set(enrs.map(e => e.teacher).filter(Boolean))].join(", ") : "";
+    return `<div class="td-kid${opts.kid && opts.kid.movedTo ? " out" : ""}" tabindex="0" role="button" data-kid="${esc(sid)}">${tick}${avatar(sid)}<div style="min-width:0"><div class="td-nm">${esc(nameOf(sid, opts.fallbackName))}</div><div class="td-sub">${esc(s && s.age_grade ? normGrade(s.age_grade) : "")}${teachers ? " · " + esc(teachers) : ""}</div></div>${enrs.map(e => subjChip(e, (bestPos(e.subject, e) || {}).txt)).join("")}<span class="td-flags">${opts.extra || fl.join("")}</span></div>`;
+  }
+
+  /* ---------- rendering ---------- */
+  function renderHead(){
+    const q = QUOTES[Number(todayISO().slice(8, 10)) % QUOTES.length];
+    const nowD = manilaNow(), hour = nowD.getUTCHours();
+    const greet = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
+    const who = tdUi.who === "all" ? "Kumon Iligan" : (tdUi.who || "");
+    const dateTxt = nowD.toLocaleDateString("en-US", { timeZone: "UTC", weekday: "long", month: "long", day: "numeric", year: "numeric" });
+    const picker = isAdmin() ? `<label class="td-who">Showing <select id="tdWho">${`<option value="all"${tdUi.who === "all" ? " selected" : ""}>Whole centre</option>` + groupedTeacherOptions(D.enr.filter(e => e.status === "active").map(e => e.teacher), tdUi.who)}</select></label>` : "";
+    const today = new Set(slotsToday().flatMap(s => s.kids).filter(k => !k.movedTo).map(k => k.studentId)).size;
+    const over = ptcThisWeek().filter(d => d.due_date < todayISO()).length;
+    const long = behindKis().filter(o => o.k.months >= 6).length;
+    $("#pageHead").innerHTML = `<div class="td-top"><span class="td-date">${esc(dateTxt)}</span>${picker}</div>
+      <header class="td-mast"><div><h1 class="td-hello">${greet},${who ? ` <span>${esc(who)}.</span>` : ""}</h1>
+        <p class="td-lede">${today ? `You have <b>${plural(today, "child", "children")}</b> today` : "No classes on your schedule today"}${over ? `, <b>${plural(over, "overdue PTC", "overdue PTCs")}</b>` : ""}${long ? `, and <b>${long}</b> ${long === 1 ? "subject has" : "subjects have"} been behind KIS for six months or more` : ""}.</p></div>
+        <blockquote class="td-quote"><p>“${esc(q[0])}”</p><cite>— ${esc(q[1])}</cite></blockquote></header>`;
+  }
+  function renderDay(){
+    const slots = slotsToday(), all = slots.flatMap(s => s.kids).filter(k => !k.movedTo);
+    const seenKid = new Set(), uniq = all.filter(k => !seenKid.has(k.studentId) && seenKid.add(k.studentId));
+    const arr = uniq.filter(k => all.some(x => x.studentId === k.studentId && x.arrived)).length;
+    const now = nowMin(), nowSlot = slots.find(s => now >= s.m && now < s.m + 60), next = slots.find(s => s.m > now);
+    if(tdUi.slot == null || !slots.some(s => s.m === tdUi.slot)) tdUi.slot = (nowSlot || next || slots[slots.length - 1] || {}).m;
+    const title = !slots.length ? "No classes on the schedule today." : nowSlot ? `The ${fmtT(nowSlot.m)} class is on now${next ? `; next at ${fmtT(next.m)}` : ""}.` : next ? `${now < slots[0].m ? "First" : "Next"} class at ${fmtT(next.m)}.` : "That's every class for today.";
+    const A = Math.min(14 * 60, ...slots.map(s => s.m)), B = Math.max(20 * 60, ...slots.map(s => s.m + 60)), X = m => (m - A) / (B - A) * 100;
+    const max = Math.max(1, ...slots.map(s => s.kids.length));
+    const hours = []; for(let h = Math.ceil(A / 60); h <= Math.floor(B / 60); h++) hours.push(h);
+    const sl = slots.find(s => s.m === tdUi.slot);
+    return `<section class="td-sec"><div class="td-kicker">Your day</div><h2 class="td-title">${esc(title)}</h2>
+      <div class="card td-day"><div class="td-ring">${ring([[arr, "var(--good)"], [uniq.length - arr, "var(--accent)"]], uniq.length, `${arr}<tspan font-size="${180 * 0.11}" fill="var(--ink-faint)">/${uniq.length}</tspan>`, "arrived so far")}
+        <div class="td-legend"><span><i style="background:var(--good)"></i>Arrived</span><span><i style="background:var(--accent)"></i>Not yet</span></div></div>
+      <div style="min-width:0">${slots.length ? `<div class="td-tl"><div class="td-tl-track"></div>${slots.map(s => `<button class="td-tl-block${now >= s.m + 60 ? " past" : ""}${s.m === tdUi.slot ? " on" : ""}" data-slot="${s.m}" style="left:${X(s.m)}%;width:${Math.max(4, 60 / (B - A) * 100 * (0.7 + 0.3 * s.kids.length / max))}%" title="${fmtT(s.m)}: ${plural(s.kids.length, "child", "children")}">${s.kids.length}</button>`).join("")}
+          ${now >= A && now <= B ? `<div class="td-tl-now" style="left:${X(now)}%"></div>` : ""}<div class="td-tl-axis">${hours.map(h => `<span style="left:${X(h * 60)}%">${fmtT(h * 60)}</span>`).join("")}</div></div>` : ""}
+        ${sl ? `<div class="td-slot-h"><b>${fmtT(sl.m)}</b><span>${plural(sl.kids.length, "child", "children")}${slots.length > 1 ? " · tap another time above to switch" : ""}</span></div>${sl.kids.map(k => kidRow(k.studentId, { tick: true, kid: k, items: k.items })).join("")}` : `<div class="td-empty">Nobody is scheduled today. Classes come from the Calendar.</div>`}
+      </div></div></section>`;
+  }
+  function renderStories(){
+    const ptc = ptcThisWeek(), today = todayISO(), over = ptc.filter(d => d.due_date < today);
+    const enrs = scopeEnrollments(), np = noProjection(), beh = behindKis(), long = beh.filter(o => o.k.months >= 6);
+    const days = [0,1,2,3,4,5,6].map(i => addDays(today, i));
+    const week = `<div class="td-week">${days.map((d, i) => { const items = ptc.filter(x => (x.due_date < today ? today : x.due_date) === d);
+      return `<div><div class="col">${items.slice(0, 6).map(x => `<i class="${x.due_date < today ? "over" : ""}"></i>`).join("")}</div><span class="${i === 0 ? "now" : ""}">${i === 0 ? "Today" : new Date(T(d)).toLocaleDateString("en-US", { timeZone: "UTC", weekday: "short" })}</span></div>`; }).join("")}</div>`;
+    const lead = over[0] || ptc[0];
+    const leadTxt = lead ? (lead.due_date < today ? `${esc(firstName(lead.student_id))}'s ${ordinal(lead.month_no)}-month PTC is ${Math.round((T(today) - T(lead.due_date)) / MS_DAY) >= 7 ? "over a week" : plural(Math.round((T(today) - T(lead.due_date)) / MS_DAY), "day")} overdue.` : `${esc(firstName(lead.student_id))}'s ${ordinal(lead.month_no)}-month PTC is due ${esc(fmtDate(lead.due_date, { year: undefined }))}.`) : "No PTC due this week.";
+    const all = enrs.map(e => ({ e, k: kisInfo(e) })).filter(o => o.k).sort((a, b) => a.k.gap - b.k.gap);
+    const shown = all.length > 24 ? all.filter((_, i) => i % Math.ceil(all.length / 24) === 0) : all;
+    const strip = shown.length ? `<svg viewBox="0 0 260 92" width="100%" height="92" aria-hidden="true"><line x1="130" y1="2" x2="130" y2="90" stroke="var(--ink-faint)" stroke-dasharray="3 3"/>${shown.map((o, i) => { const y = 6 + i * (80 / Math.max(1, shown.length - 1)); const g = Math.max(-2.3, Math.min(2.3, o.k.gap)); return `<line x1="130" y1="${y}" x2="${130 + g * 52}" y2="${y}" stroke="${o.k.gap < 0 ? (o.k.months >= 6 ? "var(--bad)" : "var(--warn)") : "var(--good)"}" stroke-width="${shown.length > 14 ? 2.5 : 4}" stroke-linecap="round"/>`; }).join("")}</svg>` : `<div class="td-empty">No grade levels to compare yet.</div>`;
+    const set = enrs.length - np.length;
+    return `<section class="td-sec"><div class="td-kicker">Needs you this week</div><h2 class="td-title">Three things to look at</h2>
+      <div class="td-stories">
+        <button class="card td-story" data-story="ptc"><div class="td-lab"><span>PTC</span><span>${plural(ptc.length, "this week", "this week")}</span></div><h3>${leadTxt}</h3><div class="td-viz">${week}</div><span class="td-go">${ptc.length ? `See all ${ptc.length}` : "Open PTC"}</span></button>
+        <button class="card td-story" data-story="proj"><div class="td-lab"><span>Projections</span><span>${set} of ${enrs.length} set</span></div><h3>${np.length ? `${plural(np.length, "subject still needs", "subjects still need")} a projection.` : "Every subject has a projection."}</h3>
+          <div class="td-viz" style="gap:16px">${ring([[set, "var(--good)"]], enrs.length, enrs.length ? Math.round(set / enrs.length * 100) + "%" : "—", "set", 92)}<div class="td-sub" style="line-height:1.7">${np.slice(0, 3).map(o => `${esc(firstName(o.e.student_id))} · ${o.days != null ? plural(o.days, "day") + " in" : esc(o.e.subject)}`).join("<br>")}</div></div><span class="td-go">${np.length ? "Set them up" : "Open Projection"}</span></button>
+        <button class="card td-story" data-story="kis"><div class="td-lab"><span>Behind KIS</span><span>${beh.length} of ${all.length}</span></div><h3>${long.length ? `${plural(long.length, "subject has", "subjects have")} been behind for six months or more.` : beh.length ? `${plural(beh.length, "subject is", "subjects are")} behind, all of them recently.` : "Everyone is at or past KIS."}</h3><div class="td-viz">${strip}</div><span class="td-go">Go deeper</span></button>
+      </div></section>`;
+  }
+  function renderScore(){
+    const ms = scorecard(), met = ms.filter(m => metricState(m).met).length;
+    const monthName = new Date(T(todayISO())).toLocaleDateString("en-US", { timeZone: "UTC", month: "long" });
+    return `<section class="td-sec"><div class="td-sec-head"><div><div class="td-kicker">Scorecard · ${esc(monthName)}</div><h2 class="td-title">${met} of ${ms.length} goals met so far this month.</h2></div><span class="td-sub">Same goals as the monthly scorecard</span></div>
+      <div class="td-metrics">${ms.map(m => { const st = metricState(m);
+        return `<button class="card td-metric" data-metric="${m.k}"><div class="r1">${metricRing(m, st)}<div><div class="td-big">${st.pct == null ? "—" : st.pct + "%"}</div><div class="td-goal">goal ${m.lower ? "under " : ""}${m.goal}%</div></div></div>
+          <div><div class="td-mname">${esc(m.name)}</div><div class="td-sub">${m.n} of ${m.of} · <span style="color:${st.col};font-weight:600">${esc(st.text)}</span></div></div></button>`; }).join("")}</div>
+      <p class="td-note">Not in the Hub, so not shown: self-marking (CW and HW), undone daily worksheets, achievement test group 1, and the staff ratings (punctuality, teamwork, tasks, entries, study approach).</p></section>`;
+  }
+  function renderKis(){
+    const pts = scopeEnrollments().filter(e => tdUi.kisSub === "all" || e.subject === tdUi.kisSub).map(e => ({ e, k: kisInfo(e) })).filter(o => o.k);
+    const W = 860, L = 70, Rr = 24, lo = -2, hi = 2, X = g => L + (Math.max(lo, Math.min(hi, g)) - lo) / (hi - lo) * (W - L - Rr);
+    const rows = ["Math", "Reading"].filter(r => tdUi.kisSub === "all" || r === tdUi.kisSub);
+    // stack dots that would overlap
+    const placed = [], dy = {}; let spread = 0;
+    for(const p of pts){ const x = X(p.k.gap); for(let n = 0; ; n++){ const off = n === 0 ? 0 : (n % 2 ? 1 : -1) * Math.ceil(n / 2) * 16;
+      if(!placed.some(q => q.s === p.e.subject && q.dy === off && Math.abs(q.x - x) < 16)){ placed.push({ s: p.e.subject, x, dy: off }); dy[p.e.id] = off; spread = Math.max(spread, Math.abs(off)); break; } } }
+    const band = Math.max(70, spread * 2 + 40), H = 40 + rows.length * band + 30;
+    const yOf = sub => 30 + rows.indexOf(sub) * band + band / 2;
+    const svg = pts.length ? `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Subjects relative to KIS">
+      <rect x="${L}" y="20" width="${X(0) - L}" height="${H - 50}" fill="var(--bad-soft)" opacity=".55" rx="10"/>
+      ${[-2,-1,0,1,2].map(g => `<line x1="${X(g)}" y1="20" x2="${X(g)}" y2="${H - 30}" stroke="${g === 0 ? "var(--ink-faint)" : "var(--border)"}" stroke-width="${g === 0 ? 2 : 1}" ${g === 0 ? "" : 'stroke-dasharray="2 4"'}/>
+        <text x="${X(g)}" y="${H - 10}" text-anchor="${g === -2 ? "start" : g === 2 ? "end" : "middle"}" font-size="12" fill="var(--ink-faint)">${g === 0 ? "KIS" : (g > 0 ? "+" : "−") + Math.abs(g) + (Math.abs(g) > 1 ? " levels" : " level")}${g === -2 || g === 2 ? " or more" : ""}</text>`).join("")}
+      ${rows.map(n => `<text x="4" y="${yOf(n) + 4}" font-size="12.5" font-weight="600" fill="var(--ink-muted)">${n}</text>`).join("")}
+      ${pts.map(p => { const c = p.k.gap >= 0 ? "var(--good)" : p.k.months >= 6 ? "var(--bad)" : "var(--warn)";
+        return `<g class="td-dotg" tabindex="0" role="button" data-kid="${esc(p.e.student_id)}"><title>${esc(nameOf(p.e.student_id))} · ${esc(p.e.subject)} ${esc(p.k.now)} · ${p.k.gap >= 0 ? "+" : "−"}${Math.abs(p.k.gap).toFixed(1)} levels</title><circle cx="${X(p.k.gap)}" cy="${yOf(p.e.subject) + dy[p.e.id]}" r="7.5" fill="${c}" stroke="var(--surface)" stroke-width="2.5"/></g>`; }).join("")}
+    </svg>` : `<div class="td-empty">No subjects with a grade and a level to compare yet.</div>`;
+    const b = pts.filter(p => p.k.gap < 0), y1 = b.filter(p => p.k.months >= 12).length, m6 = b.filter(p => p.k.months >= 6 && p.k.months < 12).length;
+    return `<section class="td-sec"><div class="td-kicker">Grade level</div><h2 class="td-title">Where ${tdUi.who === "all" ? "the centre's" : "your"} students stand against KIS</h2>
+      <p class="td-dek">Each dot is one student in one subject. The grey line is the Kumon Initial Standard for their grade today; dots to the left are behind it. Tap a dot to see that child's path.</p>
+      <div class="card td-kis"><div class="td-kis-tools"><div class="seg">${["all","Math","Reading"].map(s => `<button class="${tdUi.kisSub === s ? "active" : ""}" data-kissub="${s}">${s === "all" ? "Both" : s}</button>`).join("")}</div><span class="td-sub">levels behind or ahead of KIS</span></div>
+        <div class="td-kis-chart">${svg}</div>
+        <div class="td-kis-foot"><div><b style="color:var(--good)">${pts.length - b.length}</b>at or past KIS</div><div><b style="color:var(--warn)">${b.length - y1 - m6}</b>behind under 6 months</div><div><b style="color:var(--bad)">${m6}</b>behind 6–12 months</div><div><b style="color:var(--bad)">${y1}</b>behind a year or more</div></div></div></section>`;
+  }
+  function render(){
+    kisCache.clear();
+    if(!tdUi.who){ $("#pageHead").innerHTML = ""; $("#view").innerHTML = `<div class="banner">Your account has no teacher name yet, so the Hub can't tell which students are yours. Ask a superadmin to add it in <a href="admin.html">Admin</a>.</div>`; return; }
+    renderHead();
+    const warn = loadIssues.size ? `<div class="banner">Some of the data couldn't load (${esc([...loadIssues].join(", "))}), so parts of this page may be missing. Refresh the page to try again.</div>` : "";
+    $("#view").innerHTML = warn + renderDay() + renderStories() + renderScore() + renderKis();
+    if(drawerStack.length) paintDrawer();
+  }
+
+  /* ---------- going deeper: the side panel ---------- */
+  const drawerStack = [];
+  function ensureDrawer(){
+    if($("#tdDrawer")) return;
+    document.body.insertAdjacentHTML("beforeend", `<div class="td-scrim" id="tdScrim"></div><aside class="td-drawer" id="tdDrawer" aria-hidden="true" role="dialog" aria-modal="true"><div class="td-dr-head"><button class="td-dr-back" id="tdBack" hidden>Back</button><span></span><button class="td-dr-x" id="tdClose" aria-label="Close">✕</button></div><div class="td-dr-body" id="tdBody"></div></aside>`);
+  }
+  function openDrawer(v){ ensureDrawer(); drawerStack.push(v); paintDrawer(); $("#tdDrawer").classList.add("open"); $("#tdScrim").classList.add("open"); $("#tdDrawer").setAttribute("aria-hidden", "false"); setTimeout(() => { const x = $("#tdClose"); if(x) x.focus(); }, 50); }
+  function closeDrawer(){ drawerStack.length = 0; const d = $("#tdDrawer"); if(!d) return; d.classList.remove("open"); $("#tdScrim").classList.remove("open"); d.setAttribute("aria-hidden", "true"); }
+  function paintDrawer(){
+    const v = drawerStack[drawerStack.length - 1]; if(!v) return;
+    $("#tdBack").hidden = drawerStack.length < 2;
+    $("#tdBody").innerHTML = v.type === "kid" ? kidView(v.id) : v.type === "metric" ? metricView(v.k) : storyView(v.k);
+    $("#tdBody").scrollTop = 0;
+  }
+  function storyView(k){
+    const today = todayISO();
+    if(k === "ptc"){
+      const p = ptcThisWeek();
+      return `<div class="td-kicker">PTC</div><h2>Parent conferences this week</h2><p class="dek">Overdue first, then the ones due in the next 7 days. Book them on the PTC page.</p>
+        <div class="card td-list">${p.map(d => kidRow(d.student_id, { fallbackName: d.student_name, extra: `<span class="td-chip ${d.due_date < today ? "td-bad" : "td-warn"}">${ordinal(d.month_no)} month · ${d.due_date < today ? "was due" : "due"} ${esc(fmtDate(d.due_date, { year: undefined }))}</span>${d.status === "scheduled" && d.scheduled_on ? `<span class="td-chip td-good">Booked ${esc(fmtDate(d.scheduled_on, { year: undefined }))}</span>` : ""}` })).join("") || `<div class="td-empty">Nothing due this week.</div>`}</div>
+        <div class="td-links"><a href="ptc.html">Open the PTC page</a></div>`;
+    }
+    if(k === "proj"){
+      const p = noProjection();
+      return `<div class="td-kicker">Projections</div><h2>Subjects without a projection</h2><p class="dek">A projection sets each child's repeats and pages a day, and the KIS, Bronze, Silver and Gold lines. Longest-waiting first.</p>
+        <div class="card td-list">${p.map(o => kidRow(o.e.student_id, { items: [o.e], extra: `<a class="td-chip td-warn" href="projection.html#e=${esc(o.e.id)}" style="text-decoration:none">Set up${o.days != null ? " · " + plural(o.days, "day") + " in" : ""}</a>` })).join("") || `<div class="td-empty">Every subject has a projection.</div>`}</div>
+        <div class="td-links"><a href="projection.html">Open the Projection page</a></div>`;
+    }
+    const b = behindKis();
+    const grp = (h, f) => { const r = b.filter(f); return r.length ? `<div class="td-slot-h" style="margin-top:14px"><b>${h}</b><span>${r.length}</span></div><div class="card td-list">${r.map(o => kidRow(o.e.student_id, { items: [o.e], extra: `<span class="td-chip ${o.k.months >= 6 ? "td-bad" : "td-warn"}">${Math.abs(o.k.gap).toFixed(1)} levels behind · KIS ${esc(o.k.kis)}</span>` })).join("")}</div>` : ""; };
+    return `<div class="td-kicker">Grade level</div><h2>Behind KIS, longest first</h2><p class="dek">Months behind are counted from each month's close-out in Monthly History — how many month-ends in a row the child was below the line.</p>
+      ${grp("A year or more", o => o.k.months >= 12)}${grp("Six months to a year", o => o.k.months >= 6 && o.k.months < 12)}${grp("Under six months", o => o.k.months < 6)}${b.length ? "" : `<div class="td-empty">Everyone is at or past KIS.</div>`}`;
+  }
+  function metricView(k){
+    const m = scorecard().find(x => x.k === k); if(!m) return "";
+    const st = metricState(m), monthName = new Date(T(todayISO())).toLocaleDateString("en-US", { timeZone: "UTC", month: "long" });
+    const seen = new Set(), miss = m.miss.filter(x => { const key = x.sid + "|" + (x.e ? x.e.id : ""); if(seen.has(key)) return false; seen.add(key); return true; });
+    return `<div class="td-kicker">Scorecard · ${esc(monthName)}</div><h2>${esc(m.name)}: ${st.pct == null ? "—" : st.pct + "%"}</h2><p class="dek">${esc(m.how)} Goal: ${m.lower ? "under " : ""}${m.goal}%.</p>
+      <div class="card td-spark"><div class="td-slot-h"><b>${m.n} of ${m.of}${m.unit ? " " + esc(m.unit) : ""}</b><span style="color:${st.col};font-weight:600">${esc(st.text)}</span></div>
+      <div class="td-bar"><i style="width:${Math.min(100, st.pct || 0)}%;background:${st.col}"></i><b style="left:${m.goal}%"></b></div><div class="td-sub">The black mark is the goal.</div></div>
+      <div class="td-slot-h" style="margin-top:6px"><b>${esc(m.missLabel)}</b><span>${miss.length}</span></div>
+      <div class="card td-list">${miss.slice(0, 200).map(x => kidRow(x.sid, { items: x.e ? [x.e] : undefined, extra: x.note ? `<span class="td-chip td-mute">${esc(x.note)}</span>` : " " })).join("") || `<div class="td-empty">Nobody — well done.</div>`}</div>`;
+  }
+  function kidView(sid){
+    const s = studentById.get(sid), enrs = D.enr.filter(e => e.student_id === sid && e.status === "active");
+    const slotOf = slotsToday().find(x => x.kids.some(k => k.studentId === sid)), kid = slotOf ? slotOf.kids.find(k => k.studentId === sid) : null;
+    const due = D.due.filter(d => d.student_id === sid).sort((a, b) => a.due_date < b.due_date ? -1 : 1)[0];
+    const has = new Set(D.proj.map(p => p.subject_enrollment_id));
+    const charts = enrs.map(e => {
+      const k = kisInfo(e), path = kisPath(e), col = e.subject === "Math" ? "var(--accent)" : "var(--bad)";
+      if(!k) return `<div class="card td-spark"><div class="td-slot-h"><b>${esc(e.subject)}</b><span>${esc((bestPos(e.subject, e) || {}).txt || "no level yet")}</span></div><div class="td-sub">No grade or level on file, so there's no KIS line to compare with.</div></div>`;
+      const W = 440, H = 150, P = 28, n = Math.max(2, path.length), max = Math.max(1, ...path.map(p => Math.abs(p.gap))) + 0.3;
+      const X = i => P + i * (W - 2 * P) / (n - 1), Y = v => H / 2 - v / max * (H / 2 - 18);
+      const line = path.length > 1 ? `<path d="${path.map((p, i) => `${i ? "L" : "M"}${X(i)},${Y(p.gap)}`).join("")}" fill="none" stroke="${col}" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>` : "";
+      return `<div class="card td-spark"><div class="td-slot-h"><b>${esc(e.subject)}</b><span>now ${esc(k.now)} · KIS today ${esc(k.kis)}</span></div>
+        <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(e.subject)} against KIS"><rect x="${P}" y="${Y(0)}" width="${W - 2 * P}" height="${Math.max(0, H - 18 - Y(0))}" fill="var(--bad-soft)" opacity=".6" rx="6"/>
+        <line x1="${P}" y1="${Y(0)}" x2="${W - P}" y2="${Y(0)}" stroke="var(--ink-faint)" stroke-width="1.5"/><text x="${W - P}" y="${Y(0) - 6}" text-anchor="end" font-size="11" fill="var(--ink-faint)">KIS</text>
+        ${line}${path.length ? `<circle cx="${X(path.length - 1)}" cy="${Y(path[path.length - 1].gap)}" r="5" fill="${col}"/>` : ""}
+        ${path.map((p, i) => (path.length > 7 && i % 2) ? "" : `<text x="${X(i)}" y="${H - 2}" text-anchor="middle" font-size="10.5" fill="var(--ink-faint)">${i === path.length - 1 ? "Now" : new Date(T(p.d)).toLocaleDateString("en-US", { timeZone: "UTC", month: "short" })}</text>`).join("")}</svg>
+        <div class="td-sub">${k.gap >= 0 ? `${Math.abs(k.gap).toFixed(1)} levels ahead of KIS.` : `${Math.abs(k.gap).toFixed(1)} levels behind KIS${k.months ? ` — below the line at the last ${plural(k.months, "month-end")}` : ""}.`}${path.length < 2 ? " The line fills in as months are closed out." : ""}</div></div>`;
+    }).join("");
+    const worst = enrs.map(e => ({ e, k: kisInfo(e) })).filter(o => o.k).sort((a, b) => a.k.gap - b.k.gap)[0];
+    const head = worst ? (worst.k.gap < 0 ? `${esc(firstName(sid))} is behind KIS in ${esc(worst.e.subject)}${worst.k.months ? ` and has been for ${plural(worst.k.months, "month")}` : ""}.` : `${esc(firstName(sid))} is at or ahead of KIS.`) : "";
+    return `<div style="display:flex;align-items:center;gap:12px;margin-top:6px">${avatar(sid)}<span class="td-sub">${esc(s && s.age_grade ? normGrade(s.age_grade) : "")}${enrs.length ? " · " + esc([...new Set(enrs.map(e => e.teacher).filter(Boolean))].join(", ")) : ""}${s && s.mode ? " · " + esc(s.mode) : ""}</span></div>
+      <h2>${esc(nameOf(sid))}</h2><p class="dek">${head}</p>
+      <div class="td-facts"><div><small>Today</small><b>${kid ? (kid.movedTo ? "Moved to " + esc(kid.movedTo) : kid.arrived ? "Arrived" : "Class at " + fmtT(slotOf.m)) : "No class"}</b></div>
+        <div><small>Next PTC</small><b style="${due && due.due_date < todayISO() ? "color:var(--bad)" : ""}">${due ? (due.due_date < todayISO() ? "Overdue" : esc(fmtDate(due.due_date, { year: undefined }))) : "—"}</b></div>
+        <div><small>Projection</small><b>${enrs.length && enrs.every(e => has.has(e.id)) ? "Set" : "Missing"}</b></div></div>
+      ${charts}<div class="td-links"><a href="student.html#s=${esc(sid)}">Profile</a>${enrs[0] ? `<a href="projection.html#e=${esc(enrs[0].id)}">Projection</a>` : ""}<a href="ptc.html">PTC</a></div>`;
+  }
+
+  /* ---------- loading ---------- */
+  async function tdLoad(key, fn){ try{ await fn(); loadIssues.delete(key); }catch(e){ console.warn("today load", key, e); loadIssues.add(key); } }
+  async function loadAll(){
+    const wk = weekStart(), legacy = addDays(wk, -1);
+    await Promise.all([
+      tdLoad("students", async () => { D.students = await selectAll("students", "id,name,first_name,last_name,age_grade,mode,status,first_day", q => q.order("id")); }),
+      tdLoad("enrollments", async () => { D.enr = await selectAll("subject_enrollments", "id,student_id,student_name,subject,teacher,status,current_level,current_page,lwc,created_at", q => q.eq("status", "active").order("id")); }),
+      tdLoad("schedules", async () => { D.sched = await selectAll("schedules", "id,student_id,subject_enrollment_id,slots,status", q => q.eq("status", "active").order("id")); }),
+      tdLoad("history", async () => { D.hist = await selectAll("enrollment_monthly_history", "id,subject_enrollment_id,cycle_key,current_level,current_page,lwc", q => q.order("id")); }),
+      tdLoad("projections", async () => { D.proj = await selectAll("study_projections", "subject_enrollment_id", q => q.order("subject_enrollment_id")); }),
+      tdLoad("PTC", async () => { const r = await sbClient.rpc("ptc_due", { p_days_ahead: 7 }); if(r.error) throw r.error; D.due = r.data || []; }),
+      tdLoad("PTC done", async () => { D.ms = await selectAll("ptc_milestones", "student_id,month_no,due_date,status,done_on", q => q.gte("done_on", monthKey() + "-01").order("student_id")); }),
+      tdLoad("payments", async () => { D.rec = await selectAll("payment_receipts", "student_id,covers_month,status,created_at", q => q.gte("covers_month", monthKey() + "-01").lte("covers_month", monthEndOf(monthKey())).order("student_id")); }),
+      tdLoad("absences", async () => { D.abs = await selectAll("absence_records", "student_id,subject_enrollment_ids,marked_absent_at,resumed_at", q => q.order("marked_absent_at")); }),
+      loadToday()
+    ]);
+    // moves and arrivals are optional extras: a failed load just means none show
+    studentById = new Map(D.students.map(s => [s.id, s]));
+    enrById = new Map(D.enr.map(e => [e.id, e]));
+    histBy = new Map();
+    for(const h of D.hist){ if(!h.cycle_key) continue; (histBy.get(h.subject_enrollment_id) || histBy.set(h.subject_enrollment_id, []).get(h.subject_enrollment_id)).push(h); }
+    for(const a of histBy.values()) a.sort((x, y) => x.cycle_key < y.cycle_key ? -1 : 1);
+    void legacy;
+  }
+  // the parts that change during the day: this week's moves and arrived ticks
+  async function loadToday(){
+    const wk = weekStart();
+    await tdLoad("arrivals", async () => {
+      const rows = await selectAll("schedule_attendance", "schedule_id,day,week_start,arrived", q => q.in("week_start", [wk, addDays(wk, -1)]).order("schedule_id"));
+      const byKey = new Map(); rows.sort((a, b) => (a.week_start === wk) - (b.week_start === wk)).forEach(r => byKey.set(r.schedule_id + "|" + r.day, r)); D.att = [...byKey.values()];
+    });
+    await tdLoad("moves", async () => {
+      try{ D.moves = await selectAll("schedule_moves", "schedule_id,week_start,from_day,to_day,to_time", q => q.eq("week_start", moveWeek()).order("schedule_id")); }
+      catch(e){ if(/does not exist|schema cache/i.test(String(e.message || ""))){ D.moves = []; return; } throw e; }
+    });
+  }
+
+  /* ---------- actions ---------- */
+  document.addEventListener("click", (e) => {
+    const sl = e.target.closest("[data-slot]"); if(sl){ tdUi.slot = Number(sl.dataset.slot); render(); return; }
+    const ks = e.target.closest("[data-kissub]"); if(ks){ tdUi.kisSub = ks.dataset.kissub; render(); return; }
+    const st = e.target.closest("[data-story]"); if(st){ openDrawer({ type: "story", k: st.dataset.story }); return; }
+    const mt = e.target.closest("[data-metric]"); if(mt){ openDrawer({ type: "metric", k: mt.dataset.metric }); return; }
+    if(e.target.closest("a")) return;
+    const kd = e.target.closest("[data-kid]"); if(kd){ openDrawer({ type: "kid", id: kd.dataset.kid }); return; }
+    if(e.target.closest("#tdClose") || e.target.id === "tdScrim"){ closeDrawer(); return; }
+    if(e.target.closest("#tdBack")){ drawerStack.pop(); drawerStack.length ? paintDrawer() : closeDrawer(); return; }
+  });
+  document.addEventListener("keydown", (e) => {
+    if(e.key === "Escape" && drawerStack.length){ closeDrawer(); return; }
+    if((e.key === "Enter" || e.key === " ") && e.target.closest){ const kd = e.target.closest("[data-kid]"); if(kd && !e.target.closest("button, a")){ e.preventDefault(); openDrawer({ type: "kid", id: kd.dataset.kid }); } }
+  });
+  document.addEventListener("change", (e) => {
+    if(e.target.id === "tdWho"){ tdUi.who = e.target.value; tdUi.slot = null; try{ sessionStorage.setItem("kumonTodayWho", tdUi.who); }catch(_){ } render(); }
+  });
+
+  let started = false, refreshTimer = null;
+  async function startApp(){
+    if(started || !isAuthorized()) return;
+    started = true;
+    if(isAdmin()){ let saved = null; try{ saved = sessionStorage.getItem("kumonTodayWho"); }catch(_){ } tdUi.who = saved || "all"; }
+    else tdUi.who = currentTeacherName || null;
+    $("#view").innerHTML = `<div class="empty">Loading your day…</div>`;
+    await loadAll();
+    render();
+    // classes, arrivals and moves change during the day: refresh them every 2 minutes and when the tab comes back
+    const tick = async () => { if(document.hidden || drawerStack.length) return; await loadToday(); render(); };
+    refreshTimer = setInterval(tick, 2 * 60 * 1000);
+    document.addEventListener("visibilitychange", () => { if(!document.hidden) tick(); });
+  }
+  document.addEventListener("submit", async (e)=>{
+    if(e.target.id === "loginForm"){ e.preventDefault(); const fd = new FormData(e.target);
+      const { error } = await sbClient.auth.signInWithPassword({ email: fd.get("email"), password: fd.get("password") }); if(error) showLogin(error.message); }
+  });
+  document.addEventListener("click", (e) => { if(e.target.closest('[data-action="logout"]') && sbClient){ sbClient.auth.signOut(); } });
+  window.__today = { scorecard, slotsToday, kisInfo, behindKis, noProjection, ptcThisWeek, D, tdUi, render };   // for tests
+  boot();
+})();
+</script>
+<script>
+(function(){
+  var KEY = "kumonRailCollapsed", root = document.documentElement;
+  function apply(c){
+    root.classList.toggle("rail-collapsed", c);
+    var b = document.getElementById("railToggle");
+    if(b){ var t = c ? "Expand sidebar" : "Collapse sidebar"; b.title = t; b.setAttribute("aria-label", t); b.setAttribute("aria-expanded", String(!c)); }
+  }
+  apply(root.classList.contains("rail-collapsed"));
+  var b = document.getElementById("railToggle");
+  if(b) b.addEventListener("click", function(){
+    var c = !root.classList.contains("rail-collapsed"); apply(c);
+    try{ localStorage.setItem(KEY, c ? "1" : "0"); }catch(e){}
+  });
+  // Collapsed rail is icons only, so every link gets a tooltip with its name.
+  document.querySelectorAll(".rail .navbtn").forEach(function(a){
+    if(a.title) return;
+    var t = (a.textContent || "").replace(/\s+/g, " ").trim().replace(/\s*\d+$/, "");
+    if(t) a.title = t;
+  });
+  // The Pipeline views group follows the same who-can-see-Pipeline flag as the single Pipeline link.
+  var link = document.getElementById("navPipelineLink"), grp = document.getElementById("navPipelineGroup");
+  if(link && grp){
+    var sync = function(){ grp.hidden = link.hidden; };
+    sync(); new MutationObserver(sync).observe(link, { attributes:true, attributeFilter:["hidden"] });
+  }
+})();
+</script>
+</body>
+</html>
