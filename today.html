@@ -1180,26 +1180,40 @@ window.kumonPtcNav = function(client, role){
   }
   function renderKis(){
     const pts = scopeEnrollments().filter(e => tdUi.kisSub === "all" || e.subject === tdUi.kisSub).map(e => ({ e, k: kisInfo(e) })).filter(o => o.k);
-    const W = 860, L = 70, Rr = 24, lo = -2, hi = 2, X = g => L + (Math.max(lo, Math.min(hi, g)) - lo) / (hi - lo) * (W - L - Rr);
+    // Draw at the real width of the card (no stretching), so dots stay small on big screens.
+    const view = $("#view"), W = Math.max(560, Math.round((view ? view.clientWidth : 900) - 50));
+    const gaps = pts.map(p => p.k.gap);
+    const lo = Math.max(-5, Math.min(-2, Math.floor(Math.min(0, ...gaps)))), hi = Math.min(5, Math.max(2, Math.ceil(Math.max(0, ...gaps))));
+    const L = 78, Rr = 30, X = g => L + (Math.max(lo, Math.min(hi, g)) - lo) / (hi - lo) * (W - L - Rr);
     const rows = ["Math", "Reading"].filter(r => tdUi.kisSub === "all" || r === tdUi.kisSub);
-    // stack dots that would overlap
-    const placed = [], dy = {}; let spread = 0;
-    for(const p of pts){ const x = X(p.k.gap); for(let n = 0; ; n++){ const off = n === 0 ? 0 : (n % 2 ? 1 : -1) * Math.ceil(n / 2) * 16;
-      if(!placed.some(q => q.s === p.e.subject && q.dy === off && Math.abs(q.x - x) < 16)){ placed.push({ s: p.e.subject, x, dy: off }); dy[p.e.id] = off; spread = Math.max(spread, Math.abs(off)); break; } } }
-    const band = Math.max(70, spread * 2 + 40), H = 40 + rows.length * band + 30;
-    const yOf = sub => 30 + rows.indexOf(sub) * band + band / 2;
-    const svg = pts.length ? `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Subjects relative to KIS">
-      <rect x="${L}" y="20" width="${X(0) - L}" height="${H - 50}" fill="var(--bad-soft)" opacity=".55" rx="10"/>
-      ${[-2,-1,0,1,2].map(g => `<line x1="${X(g)}" y1="20" x2="${X(g)}" y2="${H - 30}" stroke="${g === 0 ? "var(--ink-faint)" : "var(--border)"}" stroke-width="${g === 0 ? 2 : 1}" ${g === 0 ? "" : 'stroke-dasharray="2 4"'}/>
-        <text x="${X(g)}" y="${H - 10}" text-anchor="${g === -2 ? "start" : g === 2 ? "end" : "middle"}" font-size="12" fill="var(--ink-faint)">${g === 0 ? "KIS" : (g > 0 ? "+" : "−") + Math.abs(g) + (Math.abs(g) > 1 ? " levels" : " level")}${g === -2 || g === 2 ? " or more" : ""}</text>`).join("")}
-      ${rows.map(n => `<text x="4" y="${yOf(n) + 4}" font-size="12.5" font-weight="600" fill="var(--ink-muted)">${n}</text>`).join("")}
+    // pile dots that share a spot into a short column above and below the subject's line; squeeze the column if it gets tall
+    const R = 5.5, COL = 2 * R + 2, BAND_MAX = 150;
+    const bins = new Map();
+    for(const p of pts){ const k = p.e.subject + "|" + Math.round(X(p.k.gap) / COL); if(!bins.has(k)) bins.set(k, []); bins.get(k).push(p); }
+    const tallest = Math.max(1, ...[...bins.values()].map(a => a.length));
+    const step = Math.min(COL, (BAND_MAX - 2 * R) / Math.max(1, tallest - 1));
+    const band = Math.min(BAND_MAX, Math.max(60, (tallest - 1) * step + 2 * R + 24));
+    const dy = {}, cx = {};
+    for(const arr of bins.values()){
+      arr.sort((a, c) => a.k.gap - c.k.gap);
+      const x0 = Math.round(X(arr[0].k.gap) / COL) * COL;
+      arr.forEach((p, n) => { dy[p.e.id] = (n % 2 ? 1 : -1) * Math.ceil(n / 2) * step; cx[p.e.id] = Math.max(L, Math.min(W - Rr, x0)); });
+    }
+    const H = 26 + rows.length * band + 34;
+    const yOf = sub => 26 + rows.indexOf(sub) * band + band / 2;
+    const ticks = []; for(let g = lo; g <= hi; g++) ticks.push(g);
+    const svg = pts.length ? `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="Subjects relative to KIS" style="width:${W}px;max-width:none">
+      <rect x="${L}" y="16" width="${Math.max(0, X(0) - L)}" height="${H - 46}" fill="var(--bad-soft)" opacity=".55" rx="10"/>
+      ${ticks.map(g => `<line x1="${X(g)}" y1="16" x2="${X(g)}" y2="${H - 30}" stroke="${g === 0 ? "var(--ink-faint)" : "var(--border)"}" stroke-width="${g === 0 ? 2 : 1}" ${g === 0 ? "" : 'stroke-dasharray="2 4"'}/>
+        <text x="${X(g)}" y="${H - 10}" text-anchor="${g === lo ? "start" : g === hi ? "end" : "middle"}" font-size="12" fill="var(--ink-faint)">${g === 0 ? "KIS" : (g > 0 ? "+" : "−") + Math.abs(g) + (g === lo || g === hi ? "+" : "")}</text>`).join("")}
+      ${rows.map((n, i) => `${i ? `<line x1="${L}" y1="${26 + i * band}" x2="${W - Rr}" y2="${26 + i * band}" stroke="var(--border)"/>` : ""}<text x="4" y="${yOf(n) + 4}" font-size="12.5" font-weight="600" fill="var(--ink-muted)">${n}</text>`).join("")}
       ${pts.map(p => { const c = p.k.gap >= 0 ? "var(--good)" : p.k.months >= 6 ? "var(--bad)" : "var(--warn)";
-        return `<g class="td-dotg" tabindex="0" role="button" data-kid="${esc(p.e.student_id)}"><title>${esc(nameOf(p.e.student_id))} · ${esc(p.e.subject)} ${esc(p.k.now)} · ${p.k.gap >= 0 ? "+" : "−"}${Math.abs(p.k.gap).toFixed(1)} levels</title><circle cx="${X(p.k.gap)}" cy="${yOf(p.e.subject) + dy[p.e.id]}" r="7.5" fill="${c}" stroke="var(--surface)" stroke-width="2.5"/></g>`; }).join("")}
+        return `<g class="td-dotg" tabindex="0" role="button" data-kid="${esc(p.e.student_id)}"><title>${esc(nameOf(p.e.student_id))} · ${esc(p.e.subject)} ${esc(p.k.now)} · ${p.k.gap >= 0 ? "+" : "−"}${Math.abs(p.k.gap).toFixed(1)} levels</title><circle cx="${cx[p.e.id]}" cy="${yOf(p.e.subject) + dy[p.e.id]}" r="${R}" fill="${c}" stroke="var(--surface)" stroke-width="1.5"/></g>`; }).join("")}
     </svg>` : `<div class="td-empty">No subjects with a grade and a level to compare yet.</div>`;
     const b = pts.filter(p => p.k.gap < 0), y1 = b.filter(p => p.k.months >= 12).length, m6 = b.filter(p => p.k.months >= 6 && p.k.months < 12).length;
     return `<section class="td-sec"><div class="td-kicker">Grade level</div><h2 class="td-title">Where ${tdUi.who === "all" ? "the centre's" : "your"} students stand against KIS</h2>
       <p class="td-dek">Each dot is one student in one subject. The grey line is the Kumon Initial Standard for their grade today; dots to the left are behind it. Tap a dot to see that child's path.</p>
-      <div class="card td-kis"><div class="td-kis-tools"><div class="seg">${["all","Math","Reading"].map(s => `<button class="${tdUi.kisSub === s ? "active" : ""}" data-kissub="${s}">${s === "all" ? "Both" : s}</button>`).join("")}</div><span class="td-sub">levels behind or ahead of KIS</span></div>
+      <div class="card td-kis"><div class="td-kis-tools"><div class="seg">${["all","Math","Reading"].map(s => `<button class="${tdUi.kisSub === s ? "active" : ""}" data-kissub="${s}">${s === "all" ? "Both" : s}</button>`).join("")}</div><span class="td-sub">levels behind (−) or ahead (+) of KIS</span></div>
         <div class="td-kis-chart">${svg}</div>
         <div class="td-kis-foot"><div><b style="color:var(--good)">${pts.length - b.length}</b>at or past KIS</div><div><b style="color:var(--warn)">${b.length - y1 - m6}</b>behind under 6 months</div><div><b style="color:var(--bad)">${m6}</b>behind 6–12 months</div><div><b style="color:var(--bad)">${y1}</b>behind a year or more</div></div></div></section>`;
   }
@@ -1335,6 +1349,8 @@ window.kumonPtcNav = function(client, role){
     if(e.key === "Escape" && drawerStack.length){ closeDrawer(); return; }
     if((e.key === "Enter" || e.key === " ") && e.target.closest){ const kd = e.target.closest("[data-kid]"); if(kd && !e.target.closest("button, a")){ e.preventDefault(); openDrawer({ type: "kid", id: kd.dataset.kid }); } }
   });
+  let resizeT = null, lastW = 0;
+  window.addEventListener("resize", () => { clearTimeout(resizeT); resizeT = setTimeout(() => { const v = $("#view"); if(!v || !started) return; if(Math.abs(v.clientWidth - lastW) > 40){ lastW = v.clientWidth; render(); } }, 200); });
   document.addEventListener("change", (e) => {
     if(e.target.id === "tdWho"){ tdUi.who = e.target.value; tdUi.slot = null; try{ sessionStorage.setItem("kumonTodayWho", tdUi.who); }catch(_){ } render(); }
   });
