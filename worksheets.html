@@ -871,7 +871,8 @@ window.kumonPtcNav = function(client, role){
   const DEFAULT_RATE = { ME: 120, EEU: 120 };            // pages a month when a child has no history yet and no peers
   const DEFAULT_FACTOR = 1.3;
 
-  let wsEnrollments = [], wsHistory = [], wsCounts = [], wsOrders = [], wsSettings = { cover_weeks: 4, calib: {} };
+  let wsEnrollments = [], wsHistory = [], wsCounts = [], wsOrders = [], wsProjections = [], wsSettings = { cover_weeks: 4, calib: {} };
+  let wsDataVer = 0;   // bumps whenever data loads, so cached plans are rebuilt
   const wsUi = { tab: "suggest", countSubject: "ME", checkId: null, stockSubject: "ME" };
 
   /* ---------- positions: a child's place as one page number across all levels (B 40 → 6*200+40) ---------- */
@@ -948,27 +949,89 @@ window.kumonPtcNav = function(client, role){
     return { f: Math.max(1, Math.min(4, f)), raw: f, src: "kumon", month: c.month, kids: adv.kids };
   }
 
+  /* ---------- each child's plan: copies a month (NWU → projection → centre) and repeats per level (projection → own history → centre) ---------- */
+  const NWU_MONTHS = 3;          // average NWU over the last few closed months
+  const HIST_MONTHS = 6;         // months used to work out a child's own repeats
+  const clampRep = r => Math.max(1, Math.min(8, r));
+  // walk pages (from, to] block by block: fn(level index, block start page G, pages in this block)
+  function walkPages(sub, from, to, fn){
+    const max = WS_LEVELS[sub].length * 200; let g = Math.floor(from) + 1; const end = Math.min(to, max);
+    while(g <= end){ const blockEnd = Math.floor((g - 1) / 10) * 10 + 10; const upto = Math.min(blockEnd, end); fn(Math.floor((g - 1) / 200), g, upto - g + 1); g = upto + 1; }
+  }
+  function addCopies(map, sub, g, copies){ const k = blockOfPage(sub, g); if(!k || !(copies > 0)) return; const lv = (map[k.level] = map[k.level] || {}); lv[k.block] = (lv[k.block] || 0) + copies; }
+  const planCache = {};
+  function plansOf(sub){
+    const key = wsDataVer + "|" + JSON.stringify((wsSettings.calib || {})[sub] || null);
+    if(planCache[sub] && planCache[sub].key === key) return planCache[sub];
+    const hs = HUB_SUBJECT[sub], LAD = LADDER[hs] || [], tracks = trackOf(sub), f = factorOf(sub).f;
+    const projBy = new Map(); for(const p of wsProjections) if(p.subject == null || p.subject === hs) projBy.set(p.subject_enrollment_id, p);
+    const histBy = new Map(); for(const h of wsHistory){ if(!h.cycle_key) continue; (histBy.get(h.subject_enrollment_id) || histBy.set(h.subject_enrollment_id, []).get(h.subject_enrollment_id)).push(h); }
+    const plans = new Map(); const known = [];
+    for(const t of tracks.values()){
+      const id = t.e.id, p = projBy.get(id) || null;
+      const rows = (histBy.get(id) || []).slice().sort((x, y) => x.cycle_key < y.cycle_key ? 1 : -1);
+      const withNwu = rows.filter(h => Number(h.nwu) > 0);
+      const pl = { t, proj: p, cpm: null, cpmSrc: null, histRep: null };
+      // copies a month: NWU (sets of 10 = copies), else the projection's pages a day
+      const recent = withNwu.slice(0, NWU_MONTHS);
+      if(recent.length){ pl.cpm = recent.reduce((a, h) => a + Number(h.nwu), 0) / recent.length; pl.cpmSrc = "nwu"; }
+      else if(p){ pl.cpmSrc = "proj"; }
+      // the child's own repeats: NWU × 10 ÷ pages moved, over the same months
+      let used = 0, moved = 0;
+      for(const h of withNwu.slice(0, HIST_MONTHS)){
+        const end = monthEnd(h.cycle_key); const [y, m] = h.cycle_key.split("-").map(Number); const prevEnd = iso(Date.UTC(y, m - 1, 0));
+        const a2 = t.pts.find(q => q.date === prevEnd), b2 = t.pts.find(q => q.date === end);
+        if(a2 && b2){ used += Number(h.nwu) * 10; moved += Math.max(0, b2.G - a2.G); }
+      }
+      if(moved >= 20 && used > 0) pl.histRep = clampRep(used / moved);
+      pl.repSrc = p ? "proj" : pl.histRep != null ? "hist" : "centre";
+      pl.repAt = li => {
+        if(p){ const o = (p.levels || []).find(x => x.level === LAD[li]) || {}; return clampRep(Number(o.rate) || Number(p.default_rate) || 1); }
+        return pl.histRep != null ? pl.histRep : f;
+      };
+      pl.cpmAt = li => {
+        if(pl.cpmSrc === "proj"){ const o = (p.levels || []).find(x => x.level === LAD[li]) || {}; return (Number(o.ppd) || Number(p.default_ppd) || 10) * 30 / 10; }
+        return pl.cpm;
+      };
+      if(pl.cpmSrc === "nwu") known.push(pl.cpm);
+      plans.set(id, pl);
+    }
+    // centre average for children with neither NWU nor a projection
+    const centre = median(known) ?? (DEFAULT_RATE[sub] * f / 10);
+    const counts = { nwu: 0, proj: 0, avg: 0, repProj: 0, repHist: 0, repCentre: 0 };
+    for(const pl of plans.values()){
+      if(!pl.cpmSrc){ pl.cpmSrc = "avg"; pl.cpm = centre; }
+      if(pl.t.e.status !== "active" || !pl.t.pts.length) continue;
+      counts[pl.cpmSrc]++; counts[pl.repSrc === "proj" ? "repProj" : pl.repSrc === "hist" ? "repHist" : "repCentre"]++;
+    }
+    return (planCache[sub] = { key, plans, centre, counts, f });
+  }
+  // move a child forward `days` days from page G; adds copies per block to `map` (if given), returns the end page
+  function simulate(sub, pl, G, days, map){
+    const max = WS_LEVELS[sub].length * 200; let g = G, months = days / 30.4375;
+    while(months > 1e-9 && g < max){
+      const li = Math.min(WS_LEVELS[sub].length - 1, Math.floor(g / 200));   // level of the next page
+      const rep = pl.repAt(li), cpm = pl.cpmAt(li); if(!(cpm > 0)) break;
+      const ppm = cpm * 10 / rep;                       // pages moved a month at this level
+      const blockEnd = Math.min(max, Math.floor(g / 10) * 10 + 10);
+      const pages = Math.min(blockEnd - g, ppm * months);
+      if(map) addCopies(map, sub, Math.floor(g) + 1, pages * rep / 10);
+      months -= pages / ppm; g += pages;
+      if(pages <= 1e-9) break;
+    }
+    return g;
+  }
   /* ---------- demand: copies each block will need in the next `days` days ---------- */
   function demandFor(sub, days){
-    if(sub === "PSE") return { map: {}, kids: 0 };
-    const tracks = trackOf(sub); const { f } = factorOf(sub);
-    const L = WS_LEVELS[sub];
-    // peer rates per level, for children without enough history
-    const peer = {};
-    for(const t of tracks.values()){ if(t.e.status !== "active") continue; const r = rateOf(t); const last = t.pts[t.pts.length - 1]; if(r == null || !last) continue; const lv = L[Math.min(L.length - 1, Math.floor((last.G - 1) / 200))]; (peer[lv] = peer[lv] || []).push(r); }
-    const allRates = Object.values(peer).flat();
-    const map = {}; let kids = 0;
-    for(const t of tracks.values()){
-      if(t.e.status !== "active") continue;
+    if(sub === "PSE") return { map: {}, kids: 0, counts: null };
+    const P = plansOf(sub); const map = {}; let kids = 0;
+    for(const pl of P.plans.values()){
+      const t = pl.t; if(t.e.status !== "active") continue;
       const last = t.pts[t.pts.length - 1]; if(!last) continue;
-      const lv = L[Math.min(L.length - 1, Math.floor((Math.max(1, last.G) - 1) / 200))];
-      let r = rateOf(t); if(r == null) r = median(peer[lv] || []) ?? median(allRates) ?? DEFAULT_RATE[sub];
-      const pages = r * days / 30.4375;
-      if(pages <= 0) continue;
-      kids++;
-      spread(map, sub, last.G, last.G + pages, f / 10);
+      const end = simulate(sub, pl, Math.max(0, last.G), days, map);
+      if(end > last.G) kids++;
     }
-    return { map, kids };
+    return { map, kids, counts: P.counts };
   }
 
   /* ---------- stock now: last count + orders received since − what the children used since ---------- */
@@ -981,13 +1044,13 @@ window.kumonPtcNav = function(client, role){
   function countForLevel(sub, lv){ return countsFor(sub).find(c => c.lines && c.lines[lv]) || null; }
   function usedSince(sub, c){
     const used = {}; if(sub === "PSE") return used;
-    const { f } = factorOf(sub); const pos = c.positions || {};
-    for(const t of trackOf(sub).values()){
+    const P = plansOf(sub); const pos = c.positions || {};
+    for(const pl of P.plans.values()){ const t = pl.t;
       const after = t.pts.filter(p => p.date > c.counted_on);
       const start = pos[t.e.id] != null ? Number(pos[t.e.id]) : (after.length ? after[0].G : null);
       const end = t.pts.length ? t.pts[t.pts.length - 1].G : null;
       if(start == null || end == null || end <= start) continue;
-      spread(used, sub, start, end, f / 10);
+      walkPages(sub, start, end, (li, g, n) => addCopies(used, sub, g, n * pl.repAt(li) / 10));
     }
     return used;
   }
@@ -1048,16 +1111,15 @@ window.kumonPtcNav = function(client, role){
   function atLinesOfOrder(o){ const out = {}; (o.items || []).forEach(it => { const k = atOfItem(it.name); if(!k) return; const x = (out[k.sub] = out[k.sub] || {}); x[k.level] = (x[k.level] || 0) + (Number(it.qty) || 0); }); return out; }
   // tests needed: children whose path reaches the end of a level (page 200) in the next `days` days
   function atDemand(sub, days){
-    const tracks = trackOf(sub); const L = WS_LEVELS[sub]; const need = {};
-    const peer = []; for(const t of tracks.values()){ const r = rateOf(t); if(r != null && t.e.status === "active") peer.push(r); }
-    const fallback = median(peer) ?? DEFAULT_RATE[sub];
-    for(const t of tracks.values()){
-      if(t.e.status !== "active") continue; const last = t.pts[t.pts.length - 1]; if(!last) continue;
-      const r = rateOf(t) ?? fallback; const to = last.G + r * days / 30.4375;
-      for(let li = 0; li < L.length; li++){ const end = (li + 1) * 200; if(end >= last.G && end <= to && AT_LEVELS[sub].includes(L[li])) need[L[li]] = (need[L[li]] || 0) + AT_RETAKE; }
+    const P = plansOf(sub); const L = WS_LEVELS[sub]; const need = {};
+    for(const pl of P.plans.values()){
+      const t = pl.t; if(t.e.status !== "active") continue; const last = t.pts[t.pts.length - 1]; if(!last) continue;
+      const to = simulate(sub, pl, Math.max(0, last.G), days, null);
+      for(let li = 0; li < L.length; li++){ const end = (li + 1) * 200; if(end >= last.G && end <= to + 1e-6 && AT_LEVELS[sub].includes(L[li])) need[L[li]] = (need[L[li]] || 0) + AT_RETAKE; }
     }
     return need;
   }
+
   function atStockNow(){
     const c = latestCount("AT"); if(!c) return null;
     const map = { ME: Object.assign({}, (c.lines || {}).ME), EEU: Object.assign({}, (c.lines || {}).EEU) };
@@ -1132,11 +1194,12 @@ window.kumonPtcNav = function(client, role){
 
   /* ---------- loading ---------- */
   const wsLoadIssues = new Set();
-  async function wsLoad(key, fn){ try{ await fn(); wsLoadIssues.delete(key); }catch(e){ console.warn("worksheets load", key, e); wsLoadIssues.add(key); } }
+  async function wsLoad(key, fn){ try{ await fn(); wsLoadIssues.delete(key); }catch(e){ console.warn("worksheets load", key, e); wsLoadIssues.add(key); } wsDataVer++; }
   async function loadAll(){
     await Promise.all([
       wsLoad("enrollments", async () => { wsEnrollments = await selectAll("subject_enrollments", "id,student_id,student_name,subject,teacher,status,current_level,current_page,lwc,created_at", q => q.order("id")); }),
       wsLoad("history", async () => { wsHistory = await selectAll("enrollment_monthly_history", "id,subject_enrollment_id,cycle_key,current_level,current_page,lwc,nwu", q => q.order("id")); }),
+      wsLoad("projections", async () => { wsProjections = await selectAll("study_projections", "subject_enrollment_id,subject,levels,default_rate,default_ppd", q => q.order("id")); }),
       loadCounts(), loadOrders(),
       wsLoad("settings", async () => { const { data, error } = await sbClient.from("ws_settings").select("value").eq("id", "main").maybeSingle(); if(error) throw error; if(data && data.value) wsSettings = Object.assign({ cover_weeks: 4, calib: {} }, data.value); })
     ]);
@@ -1147,7 +1210,7 @@ window.kumonPtcNav = function(client, role){
     const value = Object.assign({}, wsSettings, patch);
     const { data, error } = await sbClient.from("ws_settings").upsert([{ id: "main", value }], { onConflict: "id" }).select("id");
     if(error || !data || !data.length){ toast("Couldn't save: " + (error ? error.message : "the database didn't allow it")); return false; }
-    wsSettings = value; return true;
+    wsSettings = value; wsDataVer++; return true;
   }
 
   /* ---------- rendering ---------- */
@@ -1169,10 +1232,18 @@ window.kumonPtcNav = function(client, role){
     </tbody></table></div>`;
   }
   function factorLine(sub){
-    const fx = factorOf(sub);
-    return fx.src === "kumon" ? `Repeat factor ${fx.f.toFixed(2)} — from Kumon's Used for ${fmtMonth(fx.month + "-01")} (${fx.kids} children with reports both months).`
-      : fx.src === "no-history" ? `Repeat factor ${DEFAULT_FACTOR} (standard) — the Hub has no close-out reports for ${fmtMonth(fx.month + "-01")} and the month before to compare with.`
-      : `Repeat factor ${DEFAULT_FACTOR} (standard) — enter last month's Used from Kumon's Stock Summary below to make it exact.`;
+    const P = plansOf(sub), c = P.counts, fx = factorOf(sub);
+    const pl = (n, w) => `${n} ${w}${n === 1 ? "" : "s"}`;
+    const use = [c.nwu && `${c.nwu} from their NWU`, c.proj && `${c.proj} from their projection's pages a day`, c.avg && `${c.avg} use the centre average (${P.centre.toFixed(1)} copies a month)`].filter(Boolean).join(", ");
+    const centreF = fx.src === "kumon" ? `${fx.f.toFixed(2)} from Kumon's Used for ${fmtMonth(fx.month + "-01")}` : `${DEFAULT_FACTOR} (standard)`;
+    const reps = [c.repProj && `${c.repProj} from their projection`, c.repHist && `${c.repHist} from their own NWU history`, c.repCentre && `${c.repCentre} use the centre factor ${centreF}`].filter(Boolean).join(", ");
+    return `Copies a month — ${use || "no children yet"}. Repeats per level — ${reps || "none"}.`;
+  }
+  // total NWU (copies) the Hub recorded for a closed month — to compare with Kumon's Used
+  function nwuTotal(sub, key){
+    const hs = HUB_SUBJECT[sub]; const ids = new Set(wsEnrollments.filter(e => e.subject === hs).map(e => e.id));
+    let n = 0, kids = 0; for(const h of wsHistory) if(h.cycle_key === key && ids.has(h.subject_enrollment_id) && Number(h.nwu) > 0){ n += Number(h.nwu); kids++; }
+    return { n, kids };
   }
   function renderSuggest(){
     const body = $("#wsBody");
@@ -1222,11 +1293,22 @@ window.kumonPtcNav = function(client, role){
     const keys = [...new Set(wsHistory.map(h => h.cycle_key).filter(Boolean))].sort().reverse().slice(0, 6);
     const c = wsSettings.calib || {}; const m = (c.ME && c.ME.month) || (c.EEU && c.EEU.month) || keys[0] || "";
     return `<div class="card sect"><div class="sec-h"><h3>Kumon's Stock Summary</h3></div>
-      <div class="hint">From Order &amp; Inventory → Worksheet Stock Summary, type the <b>Used</b> number for one month the Hub has closed out. The Hub compares it with how far the children moved that month, so its numbers match what Kumon sees.</div>
+      <div class="hint">From Order &amp; Inventory → Worksheet Stock Summary, type the <b>Used</b> number for one month the Hub has closed out. It's a cross-check on the children's NWU, and it sets the repeat factor for children with no projection and no NWU history.</div>
       <div class="ws-set"><label class="field inline">Month <select id="calMonth">${keys.map(k => `<option value="${k}"${k === m ? " selected" : ""}>${esc(fmtMonth(k + "-01"))}</option>`).join("") || `<option value="">no closed months yet</option>`}</select></label>
         <label class="field inline">ME Used <input type="number" min="0" id="calME" value="${c.ME && c.ME.used || ""}" placeholder="e.g. 13612" style="width:110px"></label>
         <label class="field inline">EEU Used <input type="number" min="0" id="calEEU" value="${c.EEU && c.EEU.used || ""}" placeholder="e.g. 8301" style="width:110px"></label>
-        <button class="btn sm" data-action="save-calib">Save</button></div></div>`;
+        <button class="btn sm" data-action="save-calib">Save</button></div>${calibCheck()}</div>`;
+  }
+  function calibCheck(){
+    const c = wsSettings.calib || {}; const lines = [];
+    for(const sub of ["ME","EEU"]){
+      const k = c[sub]; if(!k || !k.month || !(k.used > 0)) continue;
+      const t = nwuTotal(sub, k.month);
+      if(!t.kids){ lines.push(`${sub}: no NWU recorded for ${esc(fmtMonth(k.month + "-01"))} to compare with.`); continue; }
+      const pct = Math.round(t.n / k.used * 100);
+      lines.push(`${sub} ${esc(fmtMonth(k.month + "-01"))}: children's NWU adds up to <b>${fmtN(t.n)}</b> (${t.kids} children) against Kumon's Used <b>${fmtN(k.used)}</b> — ${pct}%.${pct < 85 ? " Some NWU may be missing, so the suggestion may run low." : pct > 115 ? " NWU is higher than Kumon's Used — worth checking." : " Close match."}`);
+    }
+    return lines.length ? `<div class="hint" style="margin-top:8px">${lines.join("<br>")}</div>` : "";
   }
   function levelRange(sub, levels){
     const L = WS_LEVELS[sub], idx = levels.map(l => L.indexOf(l)).sort((a, b) => a - b); const parts = [];
@@ -1395,7 +1477,7 @@ window.kumonPtcNav = function(client, role){
       } }
     const notes = [
       ["Worksheet order suggestion"], ["Made", todayISO()], ["Plans for", weeks + " weeks"],
-      ["Math repeat factor", factorOf("ME").f.toFixed(2)], ["English repeat factor", factorOf("EEU").f.toFixed(2)],
+      ["Math — how it's worked out", factorLine("ME")], ["English — how it's worked out", factorLine("EEU")],
       ["Math shelf count", latestCount("ME") ? latestCount("ME").counted_on : "none — assumes an empty shelf"],
       ["English shelf count", latestCount("EEU") ? latestCount("EEU").counted_on : "none — assumes an empty shelf"],
       [], ["Each number is copies of a 10-worksheet block (1 = sheets 1–10, 11 = sheets 11–20 …), rounded up to whole copies."],
