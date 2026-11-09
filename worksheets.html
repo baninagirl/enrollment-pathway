@@ -349,6 +349,9 @@
   .ws-drop:hover{ border-color:var(--accent); }
   tr.v-bad td{ background:var(--bad-soft); } tr.v-warn td{ background:var(--warn-soft); } tr.sel td{ background:var(--accent-soft); }
   .grow{ flex:1; }
+  .at-block{ margin-top:18px; padding-top:14px; border-top:1px solid var(--border); }
+  .at-block .ws-grid-wrap{ display:inline-block; max-width:100%; vertical-align:top; }
+  .at-grid{ min-width:0; width:auto; } .at-grid th, .at-grid td{ padding:5px 14px; }
   .at-cols{ display:grid; grid-template-columns:repeat(auto-fit, minmax(280px, 1fr)); gap:18px; margin-top:10px; }
   .at-count{ display:grid; grid-template-columns:repeat(auto-fill, minmax(118px, 1fr)); gap:8px 14px; }
   .at-count .field.inline{ justify-content:space-between; }
@@ -1158,6 +1161,7 @@ window.kumonPtcNav = function(client, role){
   }
   function renderSuggest(){
     const body = $("#wsBody");
+    const at = atSuggestion();
     const parts = ["ME","EEU"].map(sub => {
       const s = suggestionFor(sub);
       const noCount = !s.stock;
@@ -1165,16 +1169,28 @@ window.kumonPtcNav = function(client, role){
           ${s.total ? `<button class="btn sm" data-action="kumon-file" data-sub="${sub}" title="Upload this on Kumon's Order screen with Import (${sub} tab)">File for Kumon's Import</button>` : ""}</div>
         ${noCount ? `<div class="banner">No shelf count for ${WS_NAME[sub]} yet, so this assumes the shelf is empty — it's the full need for the next ${s.weeks} weeks. Do a <a href="#" data-tab="count" data-sub="${sub}">shelf count</a> to get a real suggestion.</div>` : ""}
         ${gridHtml(sub, s.lines, { empty: noCount ? "No child needs this subject's worksheets in that time." : "Nothing to order — the shelf covers the next " + s.weeks + " weeks." })}
-        <div class="hint">${s.demand.kids} children · ${esc(factorLine(sub))}</div></div>`;
+        <div class="hint">${s.demand.kids} children · ${esc(factorLine(sub))}</div>
+        ${atBlock(sub, at)}</div>`;
     }).join("");
     body.innerHTML = `<div class="card sect"><div class="ws-set">
         <span class="grow" style="order:2"></span><button class="btn primary sm" data-action="xlsx" style="order:3">Download Excel</button>
         <label class="field inline">Plan for <select id="coverWeeks">${[2,3,4,5,6,8].map(w => `<option value="${w}"${Number(wsSettings.cover_weeks) === w ? " selected" : ""}>${w} weeks</option>`).join("")}</select></label>
         <div class="hint" style="margin:0;">You order twice a month, so 4 weeks = two weeks until the next order + about a week for delivery + a week spare. The suggestion is what each block needs for that time, minus what's on the shelf and what's already ordered but not yet received — rounded up to tens.</div></div></div>
       ${parts}
-      ${atCard()}
       ${calibCard()}
       <div class="card sect"><div class="sec-h"><h3>Pre-school (PSE · Z1, Z2)</h3></div><div class="hint">The Hub has no pre-school students, so there's no suggestion for Z1/Z2. Their stock still shows on Stock per level once they're counted.</div></div>`;
+  }
+  // Achievement tests for one subject, in the same grid style as the worksheets (levels down the side).
+  function atBlock(sub, a){
+    const rows = a.rows.filter(r => r.sub === sub && (r.order > 0 || r.need >= 0.5 || r.have));
+    const total = rows.reduce((x, r) => x + r.order, 0);
+    const name = sub === "ME" ? "ME AT" : "EE (US) AT";
+    return `<div class="at-block"><div class="sec-h"><h3>Achievement tests (${name})</h3><span class="faint">${total ? fmtN(total) + " tests" : ""}</span></div>
+      ${a.stock ? "" : `<div class="banner">The tests haven't been counted yet, so this is the full need for the next ${a.weeks} weeks. <a href="#" data-tab="count" data-sub="AT">Count the tests</a>.</div>`}
+      ${rows.length ? `<div class="ws-grid-wrap"><table class="ws-grid at-grid"><thead><tr><th>Level</th><th>Order</th><th>Tests needed</th><th>On the shelf</th><th>On the way</th></tr></thead><tbody>
+        ${rows.map(r => `<tr><th>${esc(r.lv)}</th><td class="tot">${r.order ? fmtN(r.order) : ""}</td><td>${r.need >= 0.5 ? fmtN(r.need) : ""}</td><td>${r.have == null ? "—" : r.have ? fmtN(r.have) : ""}</td><td>${r.coming ? fmtN(r.coming) : ""}</td></tr>`).join("")}
+      </tbody></table></div>` : `<div class="empty">No child finishes a level in the next ${a.weeks} weeks.</div>`}
+      <div class="hint">One test per child reaching page 200 of a level, plus 20% for retakes, rounded up to tens. Order under <b>Non-Chargeable Items</b>: search "${esc(name)}" and the level.</div></div>`;
   }
   function atCard(){
     const a = atSuggestion(); const toOrder = a.rows.filter(r => r.order > 0);
@@ -1340,10 +1356,13 @@ window.kumonPtcNav = function(client, role){
       ws["!freeze"] = { xSplit: 1, ySplit: 1 };
       XLSX.utils.book_append_sheet(wb, ws, sub === "ME" ? "ME (Math)" : "EEU (English)");
     }
-    { const a = atSuggestion(); const rows = [["Kumon item (Non-Chargeable Items)", "Order", "Tests needed", "On the shelf", "On the way"]];
-      a.rows.filter(r => r.order > 0).forEach(r => rows.push([r.item, r.order, Math.round(r.need), r.have, r.coming || null]));
-      const aws = XLSX.utils.aoa_to_sheet(rows); aws["!cols"] = [{ wch: 30 }, { wch: 8 }, { wch: 26 }, { wch: 12 }, { wch: 11 }];
-      XLSX.utils.book_append_sheet(wb, aws, "Achievement tests"); }
+    { const a = atSuggestion();
+      for(const sub of ["ME","EEU"]){
+        const rows = [["Level", "Order", "Tests needed", "On the shelf", "On the way"]];
+        AT_LEVELS[sub].forEach(lv => { const r = a.rows.find(x => x.sub === sub && x.lv === lv); rows.push([lv, r && r.order || null, r && r.need >= 0.5 ? Math.round(r.need) : null, r && r.have || null, r && r.coming || null]); });
+        const aws = XLSX.utils.aoa_to_sheet(rows); aws["!cols"] = [{ wch: 7 }, { wch: 8 }, { wch: 13 }, { wch: 12 }, { wch: 11 }];
+        XLSX.utils.book_append_sheet(wb, aws, sub === "ME" ? "ME AT" : "EE (US) AT");
+      } }
     const notes = [
       ["Worksheet order suggestion"], ["Made", todayISO()], ["Plans for", weeks + " weeks"],
       ["Math repeat factor", factorOf("ME").f.toFixed(2)], ["English repeat factor", factorOf("EEU").f.toFixed(2)],
