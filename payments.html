@@ -310,13 +310,23 @@ window.kumonPtcNav = function(client, role){
       }
       var wide = !window.matchMedia || window.matchMedia("(min-width: 861px)").matches;
       ids.forEach(function(id){ var a = document.getElementById(id); if(!a) return; var target = wide ? grp : pages; if(a.parentNode !== target) target.appendChild(a); });
-      var any = ids.some(function(id){ var a = document.getElementById(id); return a && !a.hidden && a.parentNode === grp; });
+      // Settings (from Pipeline views) goes last in the Admin section; same people see it as before (whoever sees Pipeline)
+      var st = document.getElementById("navSettingsLink") || document.querySelector('.rail a.navbtn[href="index.html#settings"], .rail button.navbtn[data-tab="settings"]');
+      if(st){
+        if(!st.id) st.id = "navSettingsLink";
+        if(!st.__home){ st.__home = st.parentNode; st.__next = st.nextSibling; }
+        var pl = document.getElementById("navPipelineLink");
+        if(st.tagName === "A") st.hidden = pl ? pl.hidden : false;
+        if(wide){ if(st.parentNode !== grp || grp.lastElementChild !== st) grp.appendChild(st); }
+        else if(st.parentNode !== st.__home){ st.__home.insertBefore(st, st.__next && st.__next.parentNode === st.__home ? st.__next : null); }
+      }
+      var any = ids.concat(["navSettingsLink"]).some(function(id){ var a = document.getElementById(id); return a && !a.hidden && a.parentNode === grp; });
       grp.hidden = !any;
     };
     window.__kumonPlaceAdmin = place;
     if(window.matchMedia){ var mq = window.matchMedia("(min-width: 861px)"); if(mq.addEventListener) mq.addEventListener("change", place); else if(mq.addListener) mq.addListener(place); }
     // pages decide who sees each link a moment after this runs, so look again when that changes
-    if(window.MutationObserver){ var mo = new MutationObserver(function(){ place(); }); ids.forEach(function(id){ var a = document.getElementById(id); if(a) mo.observe(a, { attributes: true, attributeFilter: ["hidden"] }); }); }
+    if(window.MutationObserver){ var mo = new MutationObserver(function(){ place(); }); ids.concat(["navPipelineLink"]).forEach(function(id){ var a = document.getElementById(id); if(a) mo.observe(a, { attributes: true, attributeFilter: ["hidden"] }); }); }
     setTimeout(place, 0); setTimeout(place, 800);
   }
   if(window.__kumonPlaceAdmin) window.__kumonPlaceAdmin();

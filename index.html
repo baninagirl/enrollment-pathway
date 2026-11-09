@@ -480,6 +480,42 @@ window.kumonPtcNav = function(client, role){
     }
   }
   if(ws) ws.hidden = !wsAdm;
+  // Admin tools (Nov 9): on computers, Admin, Activity, Reports and Worksheets sit in their own "Admin" section
+  // at the bottom of the menu so teachers' links aren't mixed with them. On phones they stay in the bottom bar.
+  if(!window.__kumonAdminGroup){
+    window.__kumonAdminGroup = true;
+    var ids = ["navAdminLink", "navActivityLink", "navReportsLink", "navWsLink"];
+    var place = function(){
+      var pages = document.querySelector(".rail-pages"); if(!pages) return;
+      var grp = document.getElementById("navAdminGroup");
+      if(!grp){
+        grp = document.createElement("div"); grp.className = "rail-admin"; grp.id = "navAdminGroup";
+        grp.innerHTML = '<div class="rail-divider"></div><div class="rail-section-label">Admin</div>';
+        var acct = document.getElementById("railAccount");
+        if(acct && acct.parentNode) acct.parentNode.insertBefore(grp, acct); else pages.parentNode.appendChild(grp);
+      }
+      var wide = !window.matchMedia || window.matchMedia("(min-width: 861px)").matches;
+      ids.forEach(function(id){ var a = document.getElementById(id); if(!a) return; var target = wide ? grp : pages; if(a.parentNode !== target) target.appendChild(a); });
+      // Settings (from Pipeline views) goes last in the Admin section; same people see it as before (whoever sees Pipeline)
+      var st = document.getElementById("navSettingsLink") || document.querySelector('.rail a.navbtn[href="index.html#settings"], .rail button.navbtn[data-tab="settings"]');
+      if(st){
+        if(!st.id) st.id = "navSettingsLink";
+        if(!st.__home){ st.__home = st.parentNode; st.__next = st.nextSibling; }
+        var pl = document.getElementById("navPipelineLink");
+        if(st.tagName === "A") st.hidden = pl ? pl.hidden : false;
+        if(wide){ if(st.parentNode !== grp || grp.lastElementChild !== st) grp.appendChild(st); }
+        else if(st.parentNode !== st.__home){ st.__home.insertBefore(st, st.__next && st.__next.parentNode === st.__home ? st.__next : null); }
+      }
+      var any = ids.concat(["navSettingsLink"]).some(function(id){ var a = document.getElementById(id); return a && !a.hidden && a.parentNode === grp; });
+      grp.hidden = !any;
+    };
+    window.__kumonPlaceAdmin = place;
+    if(window.matchMedia){ var mq = window.matchMedia("(min-width: 861px)"); if(mq.addEventListener) mq.addEventListener("change", place); else if(mq.addListener) mq.addListener(place); }
+    // pages decide who sees each link a moment after this runs, so look again when that changes
+    if(window.MutationObserver){ var mo = new MutationObserver(function(){ place(); }); ids.concat(["navPipelineLink"]).forEach(function(id){ var a = document.getElementById(id); if(a) mo.observe(a, { attributes: true, attributeFilter: ["hidden"] }); }); }
+    setTimeout(place, 0); setTimeout(place, 800);
+  }
+  if(window.__kumonPlaceAdmin) window.__kumonPlaceAdmin();
   if(!ok || !client) return;
   if(!document.getElementById("ptcBadgeStyle")){
     var st = document.createElement("style"); st.id = "ptcBadgeStyle";
