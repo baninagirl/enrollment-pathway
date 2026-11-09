@@ -349,6 +349,11 @@
   .ws-drop:hover{ border-color:var(--accent); }
   tr.v-bad td{ background:var(--bad-soft); } tr.v-warn td{ background:var(--warn-soft); } tr.sel td{ background:var(--accent-soft); }
   .grow{ flex:1; }
+  .at-cols{ display:grid; grid-template-columns:repeat(auto-fit, minmax(280px, 1fr)); gap:18px; margin-top:10px; }
+  .at-count{ display:grid; grid-template-columns:repeat(auto-fill, minmax(118px, 1fr)); gap:8px 14px; }
+  .at-count .field.inline{ justify-content:space-between; }
+  .at-count input{ width:64px; font:inherit; font-size:13px; padding:4px 6px; border:1px solid var(--border); border-radius:7px; background:var(--surface); color:var(--ink); }
+  .stable tr.faint td{ color:var(--ink-muted); }
   .card.sect{ padding:16px 20px; margin-bottom:14px; }
   .sec-h{ display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; margin-bottom:10px; }
   .sec-h h3{ margin:0; font-size:15.5px; }
@@ -850,7 +855,7 @@ window.kumonPtcNav = function(client, role){
      block ("sets" on Kumon's Stock Summary). A child going from B 40 to B 120 used blocks 41…111 — and a few
      extra copies for repeats; that "repeat factor" is learned from Kumon's own monthly Used number. */
   const WS_SUBJECTS = ["ME", "EEU", "PSE"];
-  const WS_NAME = { ME: "Math (ME)", EEU: "English (EEU)", PSE: "Pre-school (PSE)" };
+  const WS_NAME = { ME: "Math (ME)", EEU: "English (EEU)", PSE: "Pre-school (PSE)", AT: "Achievement tests" };
   const WS_LEVELS = {
     PSE: ["Z1","Z2"],
     ME: ["6A","5A","4A","3A","2A","A","B","C","D","E","F","G","H","I","J","K","L","M","N","O"],
@@ -1008,9 +1013,76 @@ window.kumonPtcNav = function(client, role){
     return { lines: out, total, weeks, stock: st, demand: d };
   }
 
+  /* ---------- achievement tests: one test per child each time they finish a level ---------- */
+  // Levels Kumon has an achievement test for (from the Non-Chargeable Items list).
+  const AT_LEVELS = {
+    ME: ["4A","3A","2A","A","B","C","D","E","F","G","H","I","J","K","L","M","N","O"],
+    EEU: ["5A","4A","3A","2A","A1","A2","B1","B2","C1","C2","D1","D2","E1","E2","F1","F2","G1","G2","H1","H2","I1","I2","J","K"]
+  };
+  const AT_RETAKE = 1.2;   // about 1 in 5 children sits a test twice
+  const atItem = (sub, lv) => sub === "ME" ? `ME AT ${lv}` : `EE (US) AT ${lv}`;
+  // "EE (US) AT B2 (Rev)" → { sub:"EEU", level:"B2" }
+  function atOfItem(name){
+    const m = String(name || "").match(/^(ME|EE\s*\(US\))\s+AT\s+([0-9]?[A-Z][0-9]?)\b/i); if(!m) return null;
+    const sub = /^ME/i.test(m[1]) ? "ME" : "EEU", lv = m[2].toUpperCase();
+    return AT_LEVELS[sub].includes(lv) ? { sub, level: lv } : null;
+  }
+  function atLinesOfOrder(o){ const out = {}; (o.items || []).forEach(it => { const k = atOfItem(it.name); if(!k) return; const x = (out[k.sub] = out[k.sub] || {}); x[k.level] = (x[k.level] || 0) + (Number(it.qty) || 0); }); return out; }
+  // tests needed: children whose path reaches the end of a level (page 200) in the next `days` days
+  function atDemand(sub, days){
+    const tracks = trackOf(sub); const L = WS_LEVELS[sub]; const need = {};
+    const peer = []; for(const t of tracks.values()){ const r = rateOf(t); if(r != null && t.e.status === "active") peer.push(r); }
+    const fallback = median(peer) ?? DEFAULT_RATE[sub];
+    for(const t of tracks.values()){
+      if(t.e.status !== "active") continue; const last = t.pts[t.pts.length - 1]; if(!last) continue;
+      const r = rateOf(t) ?? fallback; const to = last.G + r * days / 30.4375;
+      for(let li = 0; li < L.length; li++){ const end = (li + 1) * 200; if(end >= last.G && end <= to && AT_LEVELS[sub].includes(L[li])) need[L[li]] = (need[L[li]] || 0) + AT_RETAKE; }
+    }
+    return need;
+  }
+  function atStockNow(){
+    const c = latestCount("AT"); if(!c) return null;
+    const map = { ME: Object.assign({}, (c.lines || {}).ME), EEU: Object.assign({}, (c.lines || {}).EEU) };
+    wsOrders.filter(o => o.received_on && o.received_on > c.counted_on).forEach(o => { const a = atLinesOfOrder(o); for(const sub in a) for(const lv in a[sub]) map[sub][lv] = (map[sub][lv] || 0) + a[sub][lv]; });
+    for(const sub of ["ME","EEU"]){
+      const pos = ((c.positions || {})[sub]) || {}; const L = WS_LEVELS[sub];
+      for(const t of trackOf(sub).values()){
+        const after = t.pts.filter(p => p.date > c.counted_on);
+        const start = pos[t.e.id] != null ? Number(pos[t.e.id]) : (after.length ? after[0].G : null);
+        const end = t.pts.length ? t.pts[t.pts.length - 1].G : null;
+        if(start == null || end == null || end <= start) continue;
+        for(let li = 0; li < L.length; li++){ const e = (li + 1) * 200; if(e > start && e <= end && AT_LEVELS[sub].includes(L[li])) map[sub][L[li]] = (map[sub][L[li]] || 0) - AT_RETAKE; }
+      }
+    }
+    return { map, count: c };
+  }
+  function atSuggestion(){
+    const weeks = Math.max(1, Number(wsSettings.cover_weeks) || 4);
+    const st = atStockNow(); const inc = { ME: {}, EEU: {} }; const cutoff = addDays(todayISO(), -45);
+    wsOrders.filter(o => !o.received_on && (!o.order_date || o.order_date >= cutoff)).forEach(o => { const a = atLinesOfOrder(o); for(const sub in a) for(const lv in a[sub]) inc[sub][lv] = (inc[sub][lv] || 0) + a[sub][lv]; });
+    const rows = [];
+    for(const sub of ["ME","EEU"]){
+      const need = atDemand(sub, weeks * 7);
+      for(const lv of AT_LEVELS[sub]){
+        const n = need[lv] || 0, have = st ? Math.max(0, Math.round((st.map[sub] || {})[lv] || 0)) : null, coming = inc[sub][lv] || 0;
+        const order = n > 0.05 ? round10(Math.max(0, n - (have || 0) - coming)) : 0;
+        if(n > 0.05 || have) rows.push({ sub, lv, item: atItem(sub, lv), need: n, have, coming, order });
+      }
+    }
+    return { rows, weeks, stock: st };
+  }
+
   /* ---------- order check ---------- */
   function checkOrder(o){
     const rows = [];
+    const ats = atLinesOfOrder(o), atSt = atStockNow();
+    for(const sub of ["ME","EEU"]) for(const lv in (ats[sub] || {})){
+      const ordered = ats[sub][lv], in13 = (atDemand(sub, 91)[lv] || 0), kidsNow = in13 / AT_RETAKE;
+      const stock = atSt ? Math.max(0, Math.round((atSt.map[sub] || {})[lv] || 0)) : null;
+      const months = in13 > 0.05 ? ((stock || 0) + ordered) / (in13 / 3) : null;
+      rows.push({ sub, lv: "AT " + lv, ordered, kidsNow: null, perWeek: in13 / 13, stock, verdict: in13 < 1 ? "bad" : months > 4 ? "warn" : "ok",
+        note: in13 < 1 ? "Achievement test: no child is expected to finish this level in the next 3 months." : `Achievement test: about ${Math.round(kidsNow)} children finish this level in the next 3 months${months > 4 ? " — this is more than needed." : "."}` });
+    }
     for(const sub of WS_SUBJECTS){
       const lines = (o.lines || {})[sub]; if(!lines) continue;
       const d4 = sub === "PSE" ? null : demandFor(sub, 28), d13 = sub === "PSE" ? null : demandFor(sub, 91);
@@ -1100,8 +1172,17 @@ window.kumonPtcNav = function(client, role){
         <label class="field inline">Plan for <select id="coverWeeks">${[2,3,4,5,6,8].map(w => `<option value="${w}"${Number(wsSettings.cover_weeks) === w ? " selected" : ""}>${w} weeks</option>`).join("")}</select></label>
         <div class="hint" style="margin:0;">You order twice a month, so 4 weeks = two weeks until the next order + about a week for delivery + a week spare. The suggestion is what each block needs for that time, minus what's on the shelf and what's already ordered but not yet received — rounded up to tens.</div></div></div>
       ${parts}
+      ${atCard()}
       ${calibCard()}
       <div class="card sect"><div class="sec-h"><h3>Pre-school (PSE · Z1, Z2)</h3></div><div class="hint">The Hub has no pre-school students, so there's no suggestion for Z1/Z2. Their stock still shows on Stock per level once they're counted.</div></div>`;
+  }
+  function atCard(){
+    const a = atSuggestion(); const toOrder = a.rows.filter(r => r.order > 0);
+    const rows = a.rows.filter(r => r.order > 0 || r.need >= 1).map(r => `<tr${r.order ? "" : ' class="faint"'}><td>${esc(r.item)}</td><td>${fmtN(r.need)}</td><td>${r.have == null ? "not counted" : fmtN(r.have)}</td><td>${r.coming ? fmtN(r.coming) : ""}</td><td><b>${r.order ? fmtN(r.order) : "—"}</b></td></tr>`).join("");
+    return `<div class="card sect"><div class="sec-h"><h3>Achievement tests</h3><span class="faint">${toOrder.length ? toOrder.reduce((x, r) => x + r.order, 0) + " tests" : ""}</span></div>
+      ${a.stock ? "" : `<div class="banner">No shelf count for the tests yet, so this is the full need for the next ${a.weeks} weeks. <a href="#" data-tab="count" data-sub="AT">Count the tests</a> to get a real suggestion.</div>`}
+      ${rows ? `<div class="tbl"><table class="stable"><thead><tr><th>Kumon item</th><th>Tests needed (next ${a.weeks} wks)</th><th>On the shelf</th><th>On the way</th><th>Order</th></tr></thead><tbody>${rows}</tbody></table></div>` : `<div class="empty">No child finishes a level in the next ${a.weeks} weeks.</div>`}
+      <div class="hint">One test for each child who reaches the end of a level (page 200), plus 20% for retakes, rounded up to tens. Order these under <b>Non-Chargeable Items</b> (search "AT").</div></div>`;
   }
   // Kumon's Stock Summary "Used" for a closed month teaches the Hub how many copies a child really uses
   // per 10 pages of progress (repeats, re-dos, spares).
@@ -1117,8 +1198,9 @@ window.kumonPtcNav = function(client, role){
   }
   function renderStock(){
     const body = $("#wsBody"); const sub = wsUi.stockSubject;
+    const subTabs = WS_SUBJECTS.concat("AT").map(s => `<button class="ws-sub${s === sub ? " on" : ""}" data-stocksub="${s}">${WS_NAME[s]}</button>`).join("");
+    if(sub === "AT"){ renderAtStock(body, subTabs); return; }
     const st = stockNow(sub), d = demandFor(sub, 7);
-    const subTabs = WS_SUBJECTS.map(s => `<button class="ws-sub${s === sub ? " on" : ""}" data-stocksub="${s}">${WS_NAME[s]}</button>`).join("");
     if(!st){ body.innerHTML = `<div class="ws-subs">${subTabs}</div><div class="card sect"><div class="empty">No shelf count for ${WS_NAME[sub]} yet. <a href="#" data-tab="count" data-sub="${sub}">Do a shelf count</a> — after that this shows what's on the shelf for every block, kept up to date from orders and the children's progress.</div></div>`; return; }
     const weeksLeft = (lv, b) => { const w = getN(d.map, lv, b); return w > 0.05 ? getN(st.map, lv, b) / w : null; };
     const cellClass = (lv, b, n) => { const w = weeksLeft(lv, b); if(n < 1 && getN(d.map, lv, b) > 0.05) return "c-bad"; if(w == null) return ""; return w < 2 ? "c-bad" : w < 4 ? "c-warn" : w > 16 ? "c-much" : ""; };
@@ -1162,9 +1244,27 @@ window.kumonPtcNav = function(client, role){
         ${list.length ? `<div class="tbl"><table class="stable"><thead><tr><th>Order</th><th>Date</th><th>Worksheets</th><th>Received</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>` : `<div class="empty">No orders yet — upload the PDFs above.</div>`}</div>
       ${check}`;
   }
+  function renderAtStock(body, subTabs){
+    const st = atStockNow();
+    if(!st){ body.innerHTML = `<div class="ws-subs">${subTabs}</div><div class="card sect"><div class="empty">The achievement tests haven't been counted yet. <a href="#" data-tab="count" data-sub="AT">Count them</a>.</div></div>`; return; }
+    const tbl = sub => { const need = atDemand(sub, 28); return AT_LEVELS[sub].map(lv => { const have = Math.max(0, Math.round((st.map[sub] || {})[lv] || 0)), n = need[lv] || 0; if(!have && n < 0.05) return ""; const wk = n > 0.05 ? have / (n / 4) : null; return `<tr><td>${esc(atItem(sub, lv))}</td><td>${fmtN(have)}</td><td>${n > 0.05 ? fmtN(n) : "—"}</td><td class="${wk == null ? "" : wk < 2 ? "c-bad" : wk < 4 ? "c-warn" : wk > 16 ? "c-much" : ""}">${wk == null ? "nobody finishes it soon" : have <= 0 ? "none left" : wk.toFixed(1) + " wks"}</td></tr>`; }).join(""); };
+    body.innerHTML = `<div class="ws-subs">${subTabs}</div>
+      <div class="card sect"><div class="sec-h"><h3>Achievement tests on the shelf</h3><span class="faint">counted ${esc(fmtDate(st.count.counted_on))}</span></div>
+        <div class="tbl"><table class="stable"><thead><tr><th>Kumon item</th><th>On the shelf</th><th>Needed in 4 weeks</th><th>Lasts</th></tr></thead><tbody>${tbl("ME")}${tbl("EEU")}</tbody></table></div>
+        <div class="hint">Goes down by one (plus 20% for retakes) each time a child finishes a level, and up when an order with these tests is marked received.</div></div>`;
+  }
   function renderCount(){
     const body = $("#wsBody"); const sub = wsUi.countSubject; const c = latestCount(sub);
-    const subTabs = WS_SUBJECTS.map(s => `<button class="ws-sub${s === sub ? " on" : ""}" data-countsub="${s}">${WS_NAME[s]}</button>`).join("");
+    const subTabs = WS_SUBJECTS.concat("AT").map(s => `<button class="ws-sub${s === sub ? " on" : ""}" data-countsub="${s}">${WS_NAME[s]}</button>`).join("");
+    if(sub === "AT"){
+      const col = s => `<div style="min-width:0"><h4 style="margin:6px 0">${s === "ME" ? "Math (ME AT)" : "English (EE (US) AT)"}</h4><div class="at-count">${AT_LEVELS[s].map(lv => `<label class="field inline">${esc(lv)}<input type="number" min="0" data-at-sub="${s}" data-at-lv="${esc(lv)}" placeholder="0"></label>`).join("")}</div></div>`;
+      body.innerHTML = `<div class="ws-subs">${subTabs}</div>
+        <div class="card sect"><div class="sec-h"><h3>Shelf count — Achievement tests</h3><span class="faint">${c ? "last counted " + esc(fmtDate(c.counted_on)) : "never counted"}</span></div>
+          <div class="hint">How many of each test are on the shelf (leave empty for none).</div>
+          <div class="ws-set"><label class="field inline">Counted on <input type="date" id="countDate" value="${todayISO()}" max="${todayISO()}"></label><span class="grow"></span><button class="btn primary" data-action="save-count">Save count</button></div>
+          <div class="at-cols">${col("ME")}${col("EEU")}</div></div>`;
+      return;
+    }
     body.innerHTML = `<div class="ws-subs">${subTabs}</div>
       <div class="card sect"><div class="sec-h"><h3>Shelf count — ${WS_NAME[sub]}</h3><span class="faint">${c ? "last counted " + esc(fmtDate(c.counted_on)) : "never counted"}</span></div>
         <div class="hint">Type how many copies of each block are on the shelf (leave empty for none). Put away any delivery first. Saving replaces the stock for this subject from that day on; the Hub then adds received orders and takes off what the children use.</div>
@@ -1213,10 +1313,12 @@ window.kumonPtcNav = function(client, role){
     if(!date){ alert("Pick the date of the count."); return; }
     const lines = {}; let n = 0;
     $$("#countGrid input[data-lv]").forEach(i => { const v = Math.max(0, Math.round(Number(i.value) || 0)); if(v){ (lines[i.dataset.lv] = lines[i.dataset.lv] || {})[i.dataset.b] = v; n += v; } });
+    $$("input[data-at-sub]").forEach(i => { const v = Math.max(0, Math.round(Number(i.value) || 0)); if(v){ (lines[i.dataset.atSub] = lines[i.dataset.atSub] || {})[i.dataset.atLv] = v; n += v; } });
     if(!n && !confirm(`Every box is empty. Save a count of 0 copies for ${WS_NAME[sub]}?`)) return;
     if(n && !confirm(`Save this count: ${fmtN(n)} copies of ${WS_NAME[sub]} on ${fmtDate(date)}?\n\nFrom now on the stock starts from this count.`)) return;
     const positions = {};
-    if(sub !== "PSE") for(const t of trackOf(sub).values()){ if(t.e.status !== "active") continue; const G = hubPos(sub, t.e); if(G != null) positions[t.e.id] = G; }
+    if(sub === "AT"){ for(const s2 of ["ME","EEU"]){ positions[s2] = {}; for(const t of trackOf(s2).values()){ if(t.e.status !== "active") continue; const G = hubPos(s2, t.e); if(G != null) positions[s2][t.e.id] = G; } } }
+    else if(sub !== "PSE") for(const t of trackOf(sub).values()){ if(t.e.status !== "active") continue; const G = hubPos(sub, t.e); if(G != null) positions[t.e.id] = G; }
     const btn = $('[data-action="save-count"]'); if(btn) btn.disabled = true;
     const { data, error } = await sbClient.from("ws_counts").insert([{ subject: sub, counted_on: date, counted_by: currentUser ? currentUser.email : null, lines, positions }]).select("id");
     if(btn && btn.isConnected) btn.disabled = false;
@@ -1238,6 +1340,10 @@ window.kumonPtcNav = function(client, role){
       ws["!freeze"] = { xSplit: 1, ySplit: 1 };
       XLSX.utils.book_append_sheet(wb, ws, sub === "ME" ? "ME (Math)" : "EEU (English)");
     }
+    { const a = atSuggestion(); const rows = [["Kumon item (Non-Chargeable Items)", "Order", "Tests needed", "On the shelf", "On the way"]];
+      a.rows.filter(r => r.order > 0).forEach(r => rows.push([r.item, r.order, Math.round(r.need), r.have, r.coming || null]));
+      const aws = XLSX.utils.aoa_to_sheet(rows); aws["!cols"] = [{ wch: 30 }, { wch: 8 }, { wch: 26 }, { wch: 12 }, { wch: 11 }];
+      XLSX.utils.book_append_sheet(wb, aws, "Achievement tests"); }
     const notes = [
       ["Worksheet order suggestion"], ["Made", todayISO()], ["Plans for", weeks + " weeks"],
       ["Math repeat factor", factorOf("ME").f.toFixed(2)], ["English repeat factor", factorOf("EEU").f.toFixed(2)],
