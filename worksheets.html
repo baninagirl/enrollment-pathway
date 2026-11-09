@@ -870,8 +870,11 @@ window.kumonPtcNav = function(client, role){
   const HUB_SUBJECT = { ME: "Math", EEU: "Reading" };   // Hub ladders line up level for level with Kumon's
   const DEFAULT_RATE = { ME: 120, EEU: 120 };            // pages a month when a child has no history yet and no peers
   const DEFAULT_FACTOR = 1.3;
+  const DEFAULT_REPEATS = { ME: 3, EEU: 2 };              // same as a new projection (Math 3 repeats, Reading 2)
+  const DEFAULT_PPD = 10;                                  // a new projection's pages a day
+  const isKC = e => wsKcStudents.has(e.student_id);       // KC (Kumon Connect) children work on a tablet — no paper worksheets
 
-  let wsEnrollments = [], wsHistory = [], wsCounts = [], wsOrders = [], wsProjections = [], wsSettings = { cover_weeks: 4, calib: {} };
+  let wsEnrollments = [], wsHistory = [], wsCounts = [], wsOrders = [], wsProjections = [], wsKcStudents = new Set(), wsSettings = { cover_weeks: 4, calib: {} };
   let wsDataVer = 0;   // bumps whenever data loads, so cached plans are rebuilt
   const wsUi = { tab: "suggest", countSubject: "ME", checkId: null, stockSubject: "ME" };
 
@@ -971,7 +974,7 @@ window.kumonPtcNav = function(client, role){
       const id = t.e.id, p = projBy.get(id) || null;
       const rows = (histBy.get(id) || []).slice().sort((x, y) => x.cycle_key < y.cycle_key ? 1 : -1);
       const withNwu = rows.filter(h => Number(h.nwu) > 0);
-      const pl = { t, proj: p, cpm: null, cpmSrc: null, histRep: null };
+      const pl = { t, proj: p, cpm: null, cpmSrc: null, histRep: null, kc: isKC(t.e) };
       // copies a month: NWU (sets of 10 = copies), else the projection's pages a day
       const recent = withNwu.slice(0, NWU_MONTHS);
       if(recent.length){ pl.cpm = recent.reduce((a, h) => a + Number(h.nwu), 0) / recent.length; pl.cpmSrc = "nwu"; }
@@ -987,21 +990,23 @@ window.kumonPtcNav = function(client, role){
       pl.repSrc = p ? "proj" : pl.histRep != null ? "hist" : "centre";
       pl.repAt = li => {
         if(p){ const o = (p.levels || []).find(x => x.level === LAD[li]) || {}; return clampRep(Number(o.rate) || Number(p.default_rate) || 1); }
-        return pl.histRep != null ? pl.histRep : f;
+        return pl.histRep != null ? pl.histRep : DEFAULT_REPEATS[sub];
       };
       pl.cpmAt = li => {
         if(pl.cpmSrc === "proj"){ const o = (p.levels || []).find(x => x.level === LAD[li]) || {}; return (Number(o.ppd) || Number(p.default_ppd) || 10) * 30 / 10; }
         return pl.cpm;
       };
-      if(pl.cpmSrc === "nwu") known.push(pl.cpm);
+      if(pl.cpmSrc === "nwu" && !pl.kc) known.push(pl.cpm);
       plans.set(id, pl);
     }
     // centre average for children with neither NWU nor a projection
-    const centre = median(known) ?? (DEFAULT_RATE[sub] * f / 10);
-    const counts = { nwu: 0, proj: 0, avg: 0, repProj: 0, repHist: 0, repCentre: 0 };
+    // children with no NWU and no projection get the standard projection: 10 pages a day = 30 copies a month
+    const centre = DEFAULT_PPD * 30 / 10;
+    const counts = { nwu: 0, proj: 0, avg: 0, repProj: 0, repHist: 0, repCentre: 0, kc: 0 };
     for(const pl of plans.values()){
       if(!pl.cpmSrc){ pl.cpmSrc = "avg"; pl.cpm = centre; }
       if(pl.t.e.status !== "active" || !pl.t.pts.length) continue;
+      if(pl.kc){ counts.kc++; continue; }
       counts[pl.cpmSrc]++; counts[pl.repSrc === "proj" ? "repProj" : pl.repSrc === "hist" ? "repHist" : "repCentre"]++;
     }
     return (planCache[sub] = { key, plans, centre, counts, f });
@@ -1026,7 +1031,7 @@ window.kumonPtcNav = function(client, role){
     if(sub === "PSE") return { map: {}, kids: 0, counts: null };
     const P = plansOf(sub); const map = {}; let kids = 0;
     for(const pl of P.plans.values()){
-      const t = pl.t; if(t.e.status !== "active") continue;
+      const t = pl.t; if(t.e.status !== "active" || pl.kc) continue;
       const last = t.pts[t.pts.length - 1]; if(!last) continue;
       const end = simulate(sub, pl, Math.max(0, last.G), days, map);
       if(end > last.G) kids++;
@@ -1045,7 +1050,7 @@ window.kumonPtcNav = function(client, role){
   function usedSince(sub, c){
     const used = {}; if(sub === "PSE") return used;
     const P = plansOf(sub); const pos = c.positions || {};
-    for(const pl of P.plans.values()){ const t = pl.t;
+    for(const pl of P.plans.values()){ const t = pl.t; if(pl.kc) continue;
       const after = t.pts.filter(p => p.date > c.counted_on);
       const start = pos[t.e.id] != null ? Number(pos[t.e.id]) : (after.length ? after[0].G : null);
       const end = t.pts.length ? t.pts[t.pts.length - 1].G : null;
@@ -1113,7 +1118,7 @@ window.kumonPtcNav = function(client, role){
   function atDemand(sub, days){
     const P = plansOf(sub); const L = WS_LEVELS[sub]; const need = {};
     for(const pl of P.plans.values()){
-      const t = pl.t; if(t.e.status !== "active") continue; const last = t.pts[t.pts.length - 1]; if(!last) continue;
+      const t = pl.t; if(t.e.status !== "active" || pl.kc) continue; const last = t.pts[t.pts.length - 1]; if(!last) continue;
       const to = simulate(sub, pl, Math.max(0, last.G), days, null);
       for(let li = 0; li < L.length; li++){ const end = (li + 1) * 200; if(end >= last.G && end <= to + 1e-6 && AT_LEVELS[sub].includes(L[li])) need[L[li]] = (need[L[li]] || 0) + AT_RETAKE; }
     }
@@ -1127,6 +1132,7 @@ window.kumonPtcNav = function(client, role){
     for(const sub of ["ME","EEU"]){
       const pos = ((c.positions || {})[sub]) || {}; const L = WS_LEVELS[sub];
       for(const t of trackOf(sub).values()){
+        if(isKC(t.e)) continue;   // KC children don't use paper tests
         const after = t.pts.filter(p => p.date > c.counted_on);
         const start = pos[t.e.id] != null ? Number(pos[t.e.id]) : (after.length ? after[0].G : null);
         const end = t.pts.length ? t.pts[t.pts.length - 1].G : null;
@@ -1172,7 +1178,7 @@ window.kumonPtcNav = function(client, role){
         const l = lines[lv]; if(!l) continue;
         const ordered = Object.values(l).reduce((a, b) => a + b, 0); if(!ordered) continue;
         if(sub === "PSE"){ rows.push({ sub, lv, ordered, kidsNow: null, perWeek: null, stock: st ? sumLevel(st.map, lv) : null, verdict: "info", note: "The Hub has no pre-school (Z) students to compare with." }); continue; }
-        const kidsNow = wsEnrollments.filter(e => e.subject === hs && e.status === "active" && (() => { const G = hubPos(sub, e); return G != null && WS_LEVELS[sub][Math.floor((Math.max(1, G) - 1) / 200)] === lv; })()).length;
+        const kidsNow = wsEnrollments.filter(e => e.subject === hs && e.status === "active" && !isKC(e) && (() => { const G = hubPos(sub, e); return G != null && WS_LEVELS[sub][Math.floor((Math.max(1, G) - 1) / 200)] === lv; })()).length;
         const perWeek = sumLevel(d4.map, lv) / 4, in13 = sumLevel(d13.map, lv);
         const stock = st ? Math.max(0, sumLevel(st.map, lv)) : null;
         let verdict = "ok", note;
@@ -1200,6 +1206,7 @@ window.kumonPtcNav = function(client, role){
       wsLoad("enrollments", async () => { wsEnrollments = await selectAll("subject_enrollments", "id,student_id,student_name,subject,teacher,status,current_level,current_page,lwc,created_at", q => q.order("id")); }),
       wsLoad("history", async () => { wsHistory = await selectAll("enrollment_monthly_history", "id,subject_enrollment_id,cycle_key,current_level,current_page,lwc,nwu", q => q.order("id")); }),
       wsLoad("projections", async () => { wsProjections = await selectAll("study_projections", "subject_enrollment_id,subject,levels,default_rate,default_ppd", q => q.order("id")); }),
+      wsLoad("students", async () => { const st = await selectAll("students", "id,mode", q => q.order("id")); wsKcStudents = new Set(st.filter(x => x.mode === "KC").map(x => x.id)); }),
       loadCounts(), loadOrders(),
       wsLoad("settings", async () => { const { data, error } = await sbClient.from("ws_settings").select("value").eq("id", "main").maybeSingle(); if(error) throw error; if(data && data.value) wsSettings = Object.assign({ cover_weeks: 4, calib: {} }, data.value); })
     ]);
@@ -1232,16 +1239,15 @@ window.kumonPtcNav = function(client, role){
     </tbody></table></div>`;
   }
   function factorLine(sub){
-    const P = plansOf(sub), c = P.counts, fx = factorOf(sub);
+    const P = plansOf(sub), c = P.counts;
     const pl = (n, w) => `${n} ${w}${n === 1 ? "" : "s"}`;
-    const use = [c.nwu && `${c.nwu} from their NWU`, c.proj && `${c.proj} from their projection's pages a day`, c.avg && `${c.avg} use the centre average (${P.centre.toFixed(1)} copies a month)`].filter(Boolean).join(", ");
-    const centreF = fx.src === "kumon" ? `${fx.f.toFixed(2)} from Kumon's Used for ${fmtMonth(fx.month + "-01")}` : `${DEFAULT_FACTOR} (standard)`;
-    const reps = [c.repProj && `${c.repProj} from their projection`, c.repHist && `${c.repHist} from their own NWU history`, c.repCentre && `${c.repCentre} use the centre factor ${centreF}`].filter(Boolean).join(", ");
-    return `Copies a month — ${use || "no children yet"}. Repeats per level — ${reps || "none"}.`;
+    const use = [c.nwu && `${c.nwu} from their NWU`, c.proj && `${c.proj} from their projection's pages a day`, c.avg && `${c.avg} use the standard ${DEFAULT_PPD} pages a day (no NWU or projection yet)`].filter(Boolean).join(", ");
+    const reps = [c.repProj && `${c.repProj} from their projection`, c.repHist && `${c.repHist} from their own NWU history`, c.repCentre && `${c.repCentre} use the standard ${DEFAULT_REPEATS[sub]} repeats (same as a new projection)`].filter(Boolean).join(", ");
+    return `Copies a month — ${use || "no children yet"}. Repeats per level — ${reps || "none"}.${c.kc ? ` ${c.kc} KC ${c.kc === 1 ? "child is" : "children are"} left out (no paper worksheets or tests).` : ""}`;
   }
   // total NWU (copies) the Hub recorded for a closed month — to compare with Kumon's Used
   function nwuTotal(sub, key){
-    const hs = HUB_SUBJECT[sub]; const ids = new Set(wsEnrollments.filter(e => e.subject === hs).map(e => e.id));
+    const hs = HUB_SUBJECT[sub]; const ids = new Set(wsEnrollments.filter(e => e.subject === hs && !isKC(e)).map(e => e.id));
     let n = 0, kids = 0; for(const h of wsHistory) if(h.cycle_key === key && ids.has(h.subject_enrollment_id) && Number(h.nwu) > 0){ n += Number(h.nwu); kids++; }
     return { n, kids };
   }
@@ -1293,7 +1299,7 @@ window.kumonPtcNav = function(client, role){
     const keys = [...new Set(wsHistory.map(h => h.cycle_key).filter(Boolean))].sort().reverse().slice(0, 6);
     const c = wsSettings.calib || {}; const m = (c.ME && c.ME.month) || (c.EEU && c.EEU.month) || keys[0] || "";
     return `<div class="card sect"><div class="sec-h"><h3>Kumon's Stock Summary</h3></div>
-      <div class="hint">From Order &amp; Inventory → Worksheet Stock Summary, type the <b>Used</b> number for one month the Hub has closed out. It's a cross-check on the children's NWU, and it sets the repeat factor for children with no projection and no NWU history.</div>
+      <div class="hint">From Order &amp; Inventory → Worksheet Stock Summary, type the <b>Used</b> number for one month the Hub has closed out. It's a cross-check: the children's NWU for that month should add up to about the same.</div>
       <div class="ws-set"><label class="field inline">Month <select id="calMonth">${keys.map(k => `<option value="${k}"${k === m ? " selected" : ""}>${esc(fmtMonth(k + "-01"))}</option>`).join("") || `<option value="">no closed months yet</option>`}</select></label>
         <label class="field inline">ME Used <input type="number" min="0" id="calME" value="${c.ME && c.ME.used || ""}" placeholder="e.g. 13612" style="width:110px"></label>
         <label class="field inline">EEU Used <input type="number" min="0" id="calEEU" value="${c.EEU && c.EEU.used || ""}" placeholder="e.g. 8301" style="width:110px"></label>
@@ -1580,7 +1586,7 @@ window.kumonPtcNav = function(client, role){
     if(e.target.id === "loginForm"){ e.preventDefault(); const fd = new FormData(e.target);
       const { error } = await sbClient.auth.signInWithPassword({ email: fd.get("email"), password: fd.get("password") }); if(error) showLogin(error.message); }
   });
-  window.__ws = { wsParseOrder, demandFor, stockNow, suggestionFor, checkOrder, factorOf };   // for tests
+  window.__ws = { wsParseOrder, demandFor, stockNow, suggestionFor, checkOrder, factorOf, atDemand };   // for tests
   boot();
 })();
 </script>
