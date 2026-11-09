@@ -338,7 +338,7 @@
   .ws-grid tbody th{ background:var(--surface-2); font-weight:700; text-align:left; position:sticky; left:0; }
   .ws-grid td.tot{ font-weight:700; background:var(--surface-2); }
   .ws-grid input{ width:52px; font:inherit; font-size:12.5px; text-align:center; padding:4px 2px; border:1px solid var(--border); border-radius:6px; background:var(--surface); color:var(--ink); }
-  .stable td.c-bad{ color:var(--bad); font-weight:700; } .stable td.c-warn{ color:var(--warn); font-weight:600; }
+  .stable td.c-bad{ color:var(--bad); font-weight:700; } .stable td.c-warn{ color:var(--warn); font-weight:600; } .stable td.c-much{ color:var(--accent); font-weight:600; }
   .ws-grid td.c-bad{ background:var(--bad-soft); color:var(--bad); font-weight:700; }
   .ws-grid td.c-warn{ background:var(--warn-soft); color:var(--warn); font-weight:600; }
   .ws-grid td.c-much{ background:var(--accent-soft); color:var(--accent-soft-ink); }
@@ -1028,7 +1028,7 @@ window.kumonPtcNav = function(client, role){
         else if(perWeek < 0.5){ verdict = "warn"; note = "Nobody needs this level in the next 4 weeks — a few children reach it later in the 3 months."; }
         else{
           const weeks = ((stock || 0) + ordered) / perWeek;
-          const wk = weeks > 52 ? "over a year's" : `about ${Math.max(1, Math.round(weeks))} week${Math.round(weeks) === 1 ? "" : "s"}'`;
+          const wkN = Math.max(1, Math.round(weeks)); const wk = weeks > 52 ? "over a year's" : `about ${wkN} ${wkN === 1 ? "week's" : "weeks'"}`;
           if(weeks > 16){ verdict = "warn"; note = `${wk[0].toUpperCase() + wk.slice(1)} worth${shelf} — more than needed.`; }
           else note = `${wk[0].toUpperCase() + wk.slice(1)} worth${shelf}.`;
         }
@@ -1119,9 +1119,9 @@ window.kumonPtcNav = function(client, role){
     const subTabs = WS_SUBJECTS.map(s => `<button class="ws-sub${s === sub ? " on" : ""}" data-stocksub="${s}">${WS_NAME[s]}</button>`).join("");
     if(!st){ body.innerHTML = `<div class="ws-subs">${subTabs}</div><div class="card sect"><div class="empty">No shelf count for ${WS_NAME[sub]} yet. <a href="#" data-tab="count" data-sub="${sub}">Do a shelf count</a> — after that this shows what's on the shelf for every block, kept up to date from orders and the children's progress.</div></div>`; return; }
     const weeksLeft = (lv, b) => { const w = getN(d.map, lv, b); return w > 0.05 ? getN(st.map, lv, b) / w : null; };
-    const cellClass = (lv, b, n) => { const w = weeksLeft(lv, b); if(n < 0) return "c-bad"; if(w == null) return ""; return w < 2 ? "c-bad" : w < 4 ? "c-warn" : w > 16 ? "c-much" : ""; };
-    const shown = {}; for(const lv of WS_LEVELS[sub]) for(const b of blocksOf(sub)){ const n = getN(st.map, lv, b); if(n || getN(d.map, lv, b) > 0.05) (shown[lv] = shown[lv] || {})[b] = Math.round(n) || 0.0001; }
-    const levelRows = WS_LEVELS[sub].map(lv => { const have = sumLevel(st.map, lv), wk = sumLevel(d.map, lv); if(!have && wk < 0.05) return ""; return `<tr><th>${esc(lv)}</th><td>${fmtN(have)}</td><td>${wk > 0.05 ? fmtN(wk) : "—"}</td><td class="${wk > 0.05 ? (have / wk < 2 ? "c-bad" : have / wk < 4 ? "c-warn" : "") : ""}">${wk > 0.05 ? (have <= 0 ? "none left" : (have / wk).toFixed(1) + " wks") : "nobody needs it soon"}</td></tr>`; }).join("");
+    const cellClass = (lv, b, n) => { const w = weeksLeft(lv, b); if(n < 1 && getN(d.map, lv, b) > 0.05) return "c-bad"; if(w == null) return ""; return w < 2 ? "c-bad" : w < 4 ? "c-warn" : w > 16 ? "c-much" : ""; };
+    const shown = {}; for(const lv of WS_LEVELS[sub]) for(const b of blocksOf(sub)){ const n = getN(st.map, lv, b); if(n || getN(d.map, lv, b) > 0.05) (shown[lv] = shown[lv] || {})[b] = Math.max(0, Math.round(n)) || 0.0001; }
+    const levelRows = WS_LEVELS[sub].map(lv => { const have = blocksOf(sub).reduce((a, b) => a + Math.max(0, getN(st.map, lv, b)), 0), wk = sumLevel(d.map, lv); if(!have && wk < 0.05) return ""; return `<tr><th>${esc(lv)}</th><td>${fmtN(have)}</td><td>${wk > 0.05 ? fmtN(wk) : "—"}</td><td class="${wk > 0.05 ? (have / wk < 2 ? "c-bad" : have / wk < 4 ? "c-warn" : have / wk > 16 ? "c-much" : "") : ""}">${wk > 0.05 ? (have <= 0 ? "none left" : (have / wk).toFixed(1) + " wks") : "nobody needs it soon"}</td></tr>`; }).join("");
     body.innerHTML = `<div class="ws-subs">${subTabs}</div>
       <div class="card sect"><div class="sec-h"><h3>${WS_NAME[sub]} on the shelf now</h3><span class="faint">counted ${esc(fmtDate(st.count.counted_on))}${st.received.length ? ` · +${st.received.length} order${st.received.length === 1 ? "" : "s"} received since` : ""}${sub !== "PSE" ? ` · −${fmtN(st.usedCopies)} used since` : ""}</span></div>
         <div class="ws-legend"><span class="lg c-bad">under 2 weeks left</span><span class="lg c-warn">2–4 weeks</span><span class="lg c-much">over 16 weeks</span><span class="faint">blank = nobody needs it soon</span></div>
