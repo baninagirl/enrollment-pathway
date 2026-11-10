@@ -1,5 +1,7 @@
 -- Kumon Hub — Phase 1: roles (admin / superadmin)
--- Run this in Supabase: SQL Editor > New query. Safe to re-run.
+-- ⚠ ALREADY RUN — DO NOT RUN THIS AGAIN. It's kept only as a record.
+-- Re-running it would bring back the old rule that makes every new sign-up an ADMIN (later phases changed
+-- new sign-ups to "pending"). Not safe to re-run.
 --
 -- What this does:
 --   1. Adds a `profiles` table — one row per login, holding their role.

@@ -971,6 +971,19 @@ window.kumonPtcNav = function(client, role){
     }
     return byEnr;
   }
+  // where a child was on a given date: today's position for today, otherwise between the known month-ends and today
+  // (so a count typed in on Monday but dated Saturday takes off what was used since Saturday)
+  function posOn(t, date){
+    const pts = t.pts; if(!pts.length) return null;
+    const last = pts[pts.length - 1];
+    if(date >= last.date) return last.G;
+    let before = null, after = null;
+    for(const p of pts){ if(p.date <= date) before = p; else { after = p; break; } }
+    if(!before) return after ? after.G : null;
+    if(!after) return before.G;
+    const span = T(after.date) - T(before.date); if(span <= 0) return before.G;
+    return Math.round(before.G + (after.G - before.G) * (T(date) - T(before.date)) / span);
+  }
   // pages a month over the last ~3 months of known positions (null if unknown)
   function rateOf(t){
     const pts = t.pts; if(pts.length < 2) return null;
@@ -1486,6 +1499,12 @@ window.kumonPtcNav = function(client, role){
   async function saveCount(){
     const sub = wsUi.countSubject, date = $("#countDate").value;
     if(!date){ alert("Pick the date of the count."); return; }
+    if(date > todayISO()){ alert("The count date can't be in the future."); return; }
+    // A count also stores where every child was that day; without the children's subjects it would be saved wrong.
+    if(sub !== "PSE" && (wsLoadIssues.has("enrollments") || wsLoadIssues.has("history"))){
+      alert("The children's subjects or Monthly History didn't load, so this count can't be saved correctly yet.\n\nRefresh the page and save again.");
+      return;
+    }
     const lines = {}; let n = 0;
     // A level counts as counted when any of its boxes has something typed (0 included); its empty boxes are 0.
     const typed = new Set($$("#countGrid input[data-lv]").filter(i => i.value.trim() !== "").map(i => i.dataset.lv));
@@ -1500,8 +1519,8 @@ window.kumonPtcNav = function(client, role){
       if(n && !confirm(`Save this count: ${fmtN(n)} tests on ${fmtDate(date)}?`)) return;
     }
     const positions = {};
-    if(sub === "AT"){ for(const s2 of ["ME","EEU"]){ positions[s2] = {}; for(const t of trackOf(s2).values()){ if(t.e.status !== "active") continue; const G = hubPos(s2, t.e); if(G != null) positions[s2][t.e.id] = G; } } }
-    else if(sub !== "PSE") for(const t of trackOf(sub).values()){ if(t.e.status !== "active") continue; const G = hubPos(sub, t.e); if(G != null) positions[t.e.id] = G; }
+    if(sub === "AT"){ for(const s2 of ["ME","EEU"]){ positions[s2] = {}; for(const t of trackOf(s2).values()){ if(t.e.status !== "active") continue; const G = posOn(t, date); if(G != null) positions[s2][t.e.id] = G; } } }
+    else if(sub !== "PSE") for(const t of trackOf(sub).values()){ if(t.e.status !== "active") continue; const G = posOn(t, date); if(G != null) positions[t.e.id] = G; }
     const btn = $('[data-action="save-count"]'); if(btn) btn.disabled = true;
     const { data, error } = await sbClient.from("ws_counts").insert([{ subject: sub, counted_on: date, counted_by: currentUser ? currentUser.email : null, lines, positions }]).select("id");
     if(btn && btn.isConnected) btn.disabled = false;

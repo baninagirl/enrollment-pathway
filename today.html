@@ -885,7 +885,7 @@ window.kumonPtcNav = function(client, role){
     ["What we learn with pleasure we never forget.", "Attributed to Alfred Mercier"]
   ];
   const AV_COLORS = ["#3454D1","#D2453A","#24935A","#B9770E","#7B4FD1","#1F8FA8","#C2477F"];
-  const D = { attHist:[], movesHist:[], students:[], enr:[], sched:[], moves:[], att:[], due:[], ms:[], proj:[], hist:[], rec:[], abs:[] };
+  const D = { enrAll:[], attHist:[], movesHist:[], students:[], enr:[], sched:[], moves:[], att:[], due:[], ms:[], proj:[], hist:[], rec:[], abs:[] };
   const tdUi = { who: null, slot: null, kisSub: "all" };
   const loadIssues = new Set();
   let studentById = new Map(), enrById = new Map(), histBy = new Map();
@@ -1080,14 +1080,19 @@ window.kumonPtcNav = function(client, role){
       how:"Achievement tests recorded this cycle (on the Student roster), and how many of them came out Group 1. Counts tests, not students.",
       missLabel:"Not Group 1", miss: tests.filter(e => !g1.includes(e)).map(e => ({ sid: e.student_id, e, note: `${e.test_level ? e.test_level + " test" : "Test"}${filled(e.test_score) ? " · " + e.test_score : ""} · ${filled(e.test_group) ? "Group " + String(e.test_group).replace(/^\s*group\s*/i, "") : "no group yet"}` })) });
 
-    // Absences (lower is better)
+    // Absences (lower is better). A child marked absent has their subjects switched off, so they aren't in the
+    // active list above: match the absence to the teacher through the subjects it was recorded for instead.
     const absIds = new Set();
+    const enrAllById = new Map(D.enrAll.map(e => [e.id, e]));
+    const mineAbs = a => { const es = (a.subject_enrollment_ids || []).map(id => enrAllById.get(id)).filter(Boolean);
+      return es.length ? es.some(e => tdUi.who === "all" || e.teacher === tdUi.who) : ids.has(a.student_id); };
     for(const a of D.abs){
-      if(!ids.has(a.student_id)) continue;
+      if(!mineAbs(a)) continue;
       const on = manilaDate(a.marked_absent_at), back = a.resumed_at ? manilaDate(a.resumed_at) : null;
       if(on && on <= mEnd && (!back || back >= mStart)) absIds.add(a.student_id);
     }
-    metric({ k:"abs", name:"Absences", n: absIds.size, of: studs.length, goal: 4, lower: true,
+    const absOf = new Set([...ids, ...absIds]).size;   // their students plus the ones away this month
+    metric({ k:"abs", name:"Absences", n: absIds.size, of: absOf, goal: 4, lower: true,
       how:"Students marked absent (on Payments) at any point this month. Lower is better.", missLabel:"Absent this month", miss: [...absIds].map(sid => ({ sid })) });
 
     // Payments for this month
@@ -1359,7 +1364,7 @@ window.kumonPtcNav = function(client, role){
     const wk = weekStart(), legacy = addDays(wk, -1);
     await Promise.all([
       tdLoad("students", async () => { D.students = await selectAll("students", "id,name,first_name,last_name,age_grade,mode,status,first_day", q => q.order("id")); }),
-      tdLoad("enrollments", async () => { D.enr = await selectAll("subject_enrollments", "id,student_id,student_name,subject,teacher,status,current_level,current_page,lwc,created_at,mode,test_date,test_level,test_score,test_group", q => q.eq("status", "active").order("id")); }),
+      tdLoad("enrollments", async () => { D.enrAll = await selectAll("subject_enrollments", "id,student_id,student_name,subject,teacher,status,current_level,current_page,lwc,created_at,mode,test_date,test_level,test_score,test_group", q => q.order("id")); D.enr = D.enrAll.filter(e => e.status === "active"); }),
       tdLoad("schedules", async () => { D.sched = await selectAll("schedules", "id,student_id,subject_enrollment_id,slots,status", q => q.eq("status", "active").order("id")); }),
       tdLoad("history", async () => { D.hist = await selectAll("enrollment_monthly_history", "id,subject_enrollment_id,cycle_key,current_level,current_page,lwc", q => q.order("id")); }),
       tdLoad("projections", async () => { D.proj = await selectAll("study_projections", "subject_enrollment_id", q => q.order("subject_enrollment_id")); }),
