@@ -192,6 +192,22 @@
   .mv-btn svg{ width:100%; height:100%; display:block; }
   .cal-chip:hover .mv-btn, .mv-btn:focus-visible{ opacity:.7; } .mv-btn:hover{ opacity:1; background:rgba(0,0,0,.06); }
   @media (hover:none){ .mv-btn{ opacity:.6; } }
+  /* Visit outcomes (phase119): Came = the tick; Picked up = a parent took the worksheets home; Missed = a past day with neither */
+  .cal-chip.picked{ border-left-color:var(--warn); }
+  .cal-chip.missed{ box-shadow:inset 0 0 0 1.5px var(--bad); }
+  .st-line{ display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin:3px 0 0 22px; font-size:10.5px; font-weight:700; }
+  .st-line.missed{ color:var(--bad); } .st-line.picked{ color:var(--warn); }
+  .st-line svg{ width:12px; height:12px; flex:none; }
+  .st-btn{ font:inherit; font-size:10.5px; font-weight:700; border:1px solid currentColor; background:var(--surface); color:inherit; border-radius:99px; padding:1px 8px; cursor:pointer; line-height:1.5; }
+  .st-btn:hover{ background:var(--surface-2); }
+  .st-btn.quiet{ border-color:transparent; background:transparent; text-decoration:underline; padding:1px 2px; }
+  .pu-btn{ position:absolute; top:3px; right:23px; width:18px; height:18px; padding:2px; border:none; border-radius:5px; background:transparent; color:inherit; opacity:0; cursor:pointer; }
+  .pu-btn svg{ width:100%; height:100%; display:block; }
+  .cal-chip:hover .pu-btn, .pu-btn:focus-visible{ opacity:.7; } .pu-btn:hover{ opacity:1; background:rgba(0,0,0,.06); }
+  @media (hover:none){ .pu-btn{ opacity:.6; } }
+  .cal-legend{ display:flex; gap:16px; flex-wrap:wrap; align-items:center; font-size:12px; color:var(--ink-muted); margin:10px 2px 0; }
+  .cal-legend span{ display:inline-flex; align-items:center; gap:6px; }
+  .cal-legend i{ width:12px; height:12px; border-radius:4px; display:inline-block; background:var(--accent-soft); }
   .cal-ghost{ font-size:10.5px; font-weight:600; padding:3px 8px; margin-top:4px; border-radius:7px; border:1px dashed currentColor; opacity:.55; background:transparent !important; }
   .cal-ghost{ color:var(--ink-muted); } .cal-ghost .ghost-sub{ display:block; font-weight:500; font-size:10px; }
   body.cal-dragging .cal-cell[data-cell]{ transition:background-color .1s; }
@@ -579,6 +595,12 @@ window.kumonPtcNav = function(client, role){
       <div class="empty" id="calEmpty" hidden>Nobody's on a regular schedule that matches this view yet.</div>
     </div>
 
+    <div class="cal-legend" aria-label="What the marks mean">
+      <span><i style="border-left:3px solid var(--accent-soft-ink)"></i>Came (tick the dot)</span>
+      <span><i style="border-left:3px solid var(--warn)"></i>Picked up worksheets</span>
+      <span><i style="outline:1.5px dashed var(--accent-soft-ink);outline-offset:-1.5px"></i>Rescheduled this week</span>
+      <span><i style="box-shadow:inset 0 0 0 1.5px var(--bad)"></i>Missed — didn't come, no pick-up</span>
+    </div>
     <div class="noshow-card" id="noShowCard" hidden>
       <div class="noshow-head">Did not arrive today:</div>
       <div class="noshow-list" id="noShowList"></div>
@@ -895,6 +917,7 @@ window.kumonPtcNav = function(client, role){
     movesReady = true;
     moves = data || [];
   }
+  function canTick(){ return ["admin","superadmin","teacher","trainer_teacher"].includes(currentRole); }
   function canMove(){ return movesReady && ["admin","superadmin","teacher","trainer_teacher"].includes(currentRole); }
   const toMin = t => { const [h, m] = String(t || "").split(":").map(Number); return h * 60 + (m || 0); };
   const fromMin = x => { x = Math.max(0, Math.min(23 * 60 + 59, x)); return String(Math.floor(x / 60)).padStart(2, "0") + ":" + String(x % 60).padStart(2, "0"); };
@@ -1246,10 +1269,45 @@ window.kumonPtcNav = function(client, role){
   // Ticks being saved right now: shown as ticked/unticked straight away and kept that way through any reload
   // until the save is confirmed, so a tick never "turns itself off".
   const pendingTicks = new Map();   // "scheduleId|day" -> arrived (true/false)
+  let lastKidDay = new Map();      // child|day -> { came, picked, rows } from the last time the grid was drawn
+  const pendingPicks = new Map();   // "scheduleId|day" -> picked_up (true/false), same idea for pick-ups
   function attendanceFor(scheduleId, day){
     const k = scheduleId + "|" + day;
-    if(pendingTicks.has(k)) return { schedule_id: scheduleId, day, arrived: pendingTicks.get(k), pending: true };
-    return attendance.find(a => a.schedule_id === scheduleId && a.day === day) || null;
+    const saved = attendance.find(a => a.schedule_id === scheduleId && a.day === day) || null;
+    if(!pendingTicks.has(k) && !pendingPicks.has(k)) return saved;
+    return Object.assign({ schedule_id: scheduleId, day, arrived: false, picked_up: false }, saved || {},
+      pendingTicks.has(k) ? { arrived: pendingTicks.get(k) } : {}, pendingPicks.has(k) ? { picked_up: pendingPicks.get(k) } : {}, { pending: true });
+  }
+  // Picked up (phase119): a parent took the worksheets home instead of the child coming in.
+  // Saved on every subject the child has on that day, so Math + Reading count as one visit.
+  async function setPickedUp(rows, picked, name, day){
+    rows.forEach(r => pendingPicks.set(r.scheduleId + "|" + r.origDay, picked));
+    renderCalendar();
+    const wk = currentWeekStart(), at = picked ? new Date().toISOString() : null, by = picked && currentUser ? (currentUser.email || null) : null;
+    const payload = rows.map(r => { const cur = attendance.find(a => a.schedule_id === r.scheduleId && a.day === r.origDay);
+      return { schedule_id: r.scheduleId, day: r.origDay, week_start: wk, arrived: !!(cur && cur.arrived), picked_up: picked, picked_up_at: at, picked_up_by: by }; });
+    let error = null;
+    for(let attempt = 0; attempt < 3; attempt++){
+      ({ error } = await sbClient.from("schedule_attendance").upsert(payload, { onConflict: "schedule_id,day,week_start" }));
+      if(!error) break;
+      if(/jwt|token|expired|401/i.test(String(error.message || ""))){ try{ await sbClient.auth.refreshSession(); }catch(e){} }
+      await new Promise(r => setTimeout(r, 600 * (attempt + 1)));
+    }
+    if(rows.some(r => pendingPicks.get(r.scheduleId + "|" + r.origDay) !== picked)) return;   // changed again meanwhile
+    if(error){
+      console.warn(error);
+      rows.forEach(r => pendingPicks.delete(r.scheduleId + "|" + r.origDay));
+      renderCalendar();
+      calToast(/picked_up|column/i.test(String(error.message || "")) ? "Picked up can't be saved yet — run phase119 in Supabase first."
+        : /row-level security|permission/i.test(String(error.message || "")) ? "Couldn't save that — this student isn't in your group's list. Ask an admin."
+        : "Couldn't save that — check the connection and try again.");
+      return;
+    }
+    logHistory(picked ? "worksheets_picked_up" : "worksheets_picked_up_undo", picked ? `Marked ${name}'s worksheets picked up for ${day}` : `Undid ${name}'s worksheet pick-up for ${day}`, "schedule_attendance", rows[0].scheduleId);
+    calToast(picked ? `${chipDisplayName(name)}'s worksheets marked picked up for ${day}.` : `Pick-up undone for ${chipDisplayName(name)}.`);
+    await loadAttendance();
+    rows.forEach(r => { if(pendingPicks.get(r.scheduleId + "|" + r.origDay) === picked) pendingPicks.delete(r.scheduleId + "|" + r.origDay); });
+    renderCalendar();
   }
   function calToast(msg){
     let el = document.getElementById("calToast");
@@ -1357,6 +1415,13 @@ window.kumonPtcNav = function(client, role){
       } }
     const times = [...new Set(entries.map(e => e.time).concat(contEntries.map(e => e.time), Object.keys(ghostByCell).map(k => k.split("|")[1])))].sort();
     const showTeacherLabel = filters.teachers.size !== 1;
+    // One outcome per child per day (Math + Reading together): came if either subject is ticked, picked up if marked
+    const kidDayKey = it => (it.studentId || it.studentName) + "|" + it.day;
+    const kidDay = new Map();
+    for(const e of entries){ if(!e.scheduleId) continue; const r = attendanceFor(e.scheduleId, e.origDay || e.day) || {};
+      const o = kidDay.get(kidDayKey(e)) || { came: false, picked: false, rows: [] };
+      if(r.arrived) o.came = true; if(r.picked_up) o.picked = true; o.rows.push({ scheduleId: e.scheduleId, origDay: e.origDay || e.day }); kidDay.set(kidDayKey(e), o); }
+    lastKidDay = kidDay;
 
     const byCell = {};
     for(const e of entries.concat(contEntries)){
@@ -1370,6 +1435,7 @@ window.kumonPtcNav = function(client, role){
     const today = todayDow();
     const ccCells = ccOpenByCell();
     const canComment = ccCanUse();
+    const todayIdx = today === "Sun" ? -1 : DAY_ORDER.indexOf(today);   // Sunday shows the coming week, so nothing is "past" yet
     for(const t of times){
       html += `<div class="cal-cell cal-time-label">${fmtTime(t)}</div>`;
       for(const d of days){
@@ -1409,16 +1475,28 @@ window.kumonPtcNav = function(client, role){
           // hasn't happened yet, so there's nothing useful to check off either way.
           // A class moved to an earlier day this week can still be ticked afterwards (the teacher may only hear about it later).
           const movedPast = it.moved && today !== "Sun" && DAY_ORDER.indexOf(d) < DAY_ORDER.indexOf(today);
-          const checkbox = ((isToday || movedPast) && it.scheduleId)
+          const isPast = todayIdx >= 0 && DAY_ORDER.indexOf(d) < todayIdx;
+          // Past days this week can still be ticked (a teacher may only remember later) — otherwise they'd show as Missed.
+          const checkbox = ((isToday || isPast || movedPast) && it.scheduleId)
             ? `<input type="checkbox" data-action="toggle-arrived" data-schedule="${esc(it.scheduleId)}" data-day="${esc(it.origDay || it.day)}" ${arrived?"checked":""}>`
             : "";
           const mv = canMove() && it.scheduleId;
           const dragAttrs = mv ? ` draggable="true" data-kid="${esc(kidKey(it))}" data-day="${esc(it.day)}" data-time="${esc(it.time)}"` : "";
           const moveBtn = mv && firstOfKid ? `<button type="button" class="mv-btn" data-mvopen="1" title="Move this class to another day/time, this week only" aria-label="Move this week"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 9l-3 3 3 3M19 9l3 3-3 3M2 12h20"/></svg></button>` : "";
           const movedLine = it.moved && firstOfKid ? `<span class="moved-sub">moved from ${esc(it.origDay)} ${esc(fmtTime(it.origTime))} · this week</span>` : "";
-          return `<div class="cal-chip ${cls} ${(isToday || movedPast) && arrived?"arrived":""}${it.moved ? " moved" : ""}" title="${esc(titleBits)}${it.moved ? esc(" — moved this week from " + it.origDay + " " + fmtTime(it.origTime)) : ""}"${dragAttrs}>
+          const kd = kidDay.get(kidDayKey(it)) || { came: arrived, picked: false };
+          const outcome = !it.scheduleId ? "" : kd.came ? "came" : kd.picked ? "picked" : isPast ? "missed" : "";
+          const canPick = it.scheduleId && (isToday || isPast) && !kd.came && canTick();
+          const bag = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 7h12l-1 13H7z"/><path d="M9 7a3 3 0 0 1 6 0"/></svg>`;
+          const pickAttrs = `data-kidday="${esc(kidDayKey(it))}" data-name="${esc(it.studentName)}" data-dayname="${esc(d)}"`;
+          const statusLine = !firstOfKid ? "" : outcome === "picked"
+              ? `<span class="st-line picked">${bag}Picked up worksheets${canTick() ? ` <button type="button" class="st-btn quiet" data-pickup="0" ${pickAttrs}>Undo</button>` : ""}</span>`
+            : outcome === "missed"
+              ? `<span class="st-line missed">Missed${canPick ? ` <button type="button" class="st-btn" data-pickup="1" ${pickAttrs} title="A parent took the worksheets home">Picked up?</button>` : ""}</span>` : "";
+          const pickBtn = firstOfKid && canPick && isToday && outcome !== "picked" ? `<button type="button" class="pu-btn" data-pickup="1" ${pickAttrs} title="Didn't come, but worksheets were picked up" aria-label="Mark worksheets picked up">${bag}</button>` : "";
+          return `<div class="cal-chip ${cls} ${(isToday || isPast || movedPast) && arrived?"arrived":""}${it.moved ? " moved" : ""}${outcome === "picked" ? " picked" : outcome === "missed" ? " missed" : ""}" title="${esc(titleBits)}${it.moved ? esc(" — moved this week from " + it.origDay + " " + fmtTime(it.origTime)) : ""}"${dragAttrs}>
             <label class="chip-row">${numTag}${checkbox}<span class="chip-name">${esc(chipDisplayName(it.studentName))}${lvlTag} ${modeTag}${ccCells.chips.has(ccChipKey(it.scheduleId, it.day, it.time, it.subject)) ? `<span class="cc-chip-dot" title="Has an open comment"></span>` : ""}</span></label>
-            ${teacherLine}${movedLine}${moveBtn}
+            ${teacherLine}${movedLine}${statusLine}${pickBtn}${moveBtn}
           </div>`;
         }).join("")}${(ghostByCell[ck] || []).map(g => `<div class="cal-ghost" title="Moved for this week only">${esc(chipDisplayName(g.studentName))} → ${esc(g.day)} ${esc(fmtTime(g.time))}${g.subjects.length > 1 ? `<span class="ghost-sub">${esc(g.subjects.join(" + "))}</span>` : ""}</div>`).join("")}</div>`;
       }
@@ -1445,7 +1523,8 @@ window.kumonPtcNav = function(client, role){
     todays.forEach(e => {
       const k = e.studentId || ("name:" + (e.studentName || "").toLowerCase());
       const c = byChild.get(k) || { entry: e, arrived: false, teachers: new Set() };
-      if((attendanceFor(e.scheduleId, e.origDay || e.day)||{}).arrived) c.arrived = true;
+      const r = attendanceFor(e.scheduleId, e.origDay || e.day) || {};
+      if(r.arrived || r.picked_up) c.arrived = true;   // picked up = handled, not waited for
       if(e.teacher) c.teachers.add(e.teacher);
       byChild.set(k, c);
     });
@@ -1822,6 +1901,12 @@ window.kumonPtcNav = function(client, role){
     }
   });
 
+  document.addEventListener("click", (e) => {
+    const b = e.target.closest && e.target.closest("[data-pickup]"); if(!b) return;
+    e.preventDefault(); e.stopPropagation();
+    const o = lastKidDay.get(b.dataset.kidday); if(!o || !o.rows.length) return;
+    setPickedUp(o.rows, b.dataset.pickup === "1", b.dataset.name || "", b.dataset.dayname || "");
+  }, true);
   document.addEventListener("change", (e)=>{
     if(e.target.id === "calModeFilter"){ filters.mode = e.target.value; renderCalendar(); if(MP.mpLevels) mpRender("mpLevels"); }
     if(e.target.dataset && e.target.dataset.action === "toggle-arrived"){

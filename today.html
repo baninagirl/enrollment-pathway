@@ -300,7 +300,7 @@
   .td-tick.yes{ background:var(--good); border-color:var(--good); position:relative; }
   .td-tick.yes::after{ content:""; position:absolute; left:6px; top:6px; width:9px; height:5px; border-left:2px solid #fff; border-bottom:2px solid #fff; transform:rotate(-45deg); }
 
-  .td-stories{ display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:16px; margin-top:16px; }
+  .td-stories{ display:grid; grid-template-columns:repeat(auto-fill, minmax(260px, 1fr)); gap:16px; margin-top:16px; }
   .td-story{ padding:22px; display:flex; flex-direction:column; gap:14px; cursor:pointer; border:none; text-align:left; font:inherit; color:inherit; transition:transform .25s var(--spring, ease), box-shadow .25s var(--spring, ease); }
   .td-story:hover, .td-metric:hover{ transform:translateY(-2px); box-shadow:var(--shadow-lift, var(--shadow)); }
   .td-story:active, .td-metric:active{ transform:scale(.98); }
@@ -880,7 +880,7 @@ window.kumonPtcNav = function(client, role){
     ["What we learn with pleasure we never forget.", "Attributed to Alfred Mercier"]
   ];
   const AV_COLORS = ["#3454D1","#D2453A","#24935A","#B9770E","#7B4FD1","#1F8FA8","#C2477F"];
-  const D = { students:[], enr:[], sched:[], moves:[], att:[], due:[], ms:[], proj:[], hist:[], rec:[], abs:[] };
+  const D = { attHist:[], movesHist:[], students:[], enr:[], sched:[], moves:[], att:[], due:[], ms:[], proj:[], hist:[], rec:[], abs:[] };
   const tdUi = { who: null, slot: null, kisSub: "all" };
   const loadIssues = new Set();
   let studentById = new Map(), enrById = new Map(), histBy = new Map();
@@ -1140,6 +1140,8 @@ window.kumonPtcNav = function(client, role){
         if(opts.kid.ri) fl.push(`<span class="td-chip td-mute">RI</span>`);
       }
       if(enrs.some(isKcE)) fl.push(`<span class="td-chip td-mute">KC</span>`);
+      const nw = withoutWorksheets().find(o => o.sid === sid);
+      if(nw) fl.push(`<span class="td-chip ${nw.days >= 7 ? "td-bad" : "td-warn"}">No worksheets ${nw.days}d</span>`);
       const due = D.due.find(d => d.student_id === sid && d.due_date && d.due_date <= addDays(todayISO(), 6));
       if(due) fl.push(`<span class="td-chip ${due.due_date < todayISO() ? "td-bad" : "td-warn"}">PTC ${due.due_date < todayISO() ? "overdue" : "due " + esc(fmtDate(due.due_date, { year: undefined }))}</span>`);
       if(enrs.some(e => { const k = kisInfo(e); return k && k.gap < 0 && k.months >= 6; })) fl.push(`<span class="td-chip td-warn">Behind KIS</span>`);
@@ -1198,8 +1200,12 @@ window.kumonPtcNav = function(client, role){
     const shown = all.length > 24 ? all.filter((_, i) => i % Math.ceil(all.length / 24) === 0) : all;
     const strip = shown.length ? `<svg viewBox="0 0 260 92" width="100%" height="92" aria-hidden="true"><line x1="130" y1="2" x2="130" y2="90" stroke="var(--ink-faint)" stroke-dasharray="3 3"/>${shown.map((o, i) => { const y = 6 + i * (80 / Math.max(1, shown.length - 1)); const g = Math.max(-2.3, Math.min(2.3, o.k.gap)); return `<line x1="130" y1="${y}" x2="${130 + g * 52}" y2="${y}" stroke="${o.k.gap < 0 ? (o.k.months >= 6 ? "var(--bad)" : "var(--warn)") : "var(--good)"}" stroke-width="${shown.length > 14 ? 2.5 : 4}" stroke-linecap="round"/>`; }).join("")}</svg>` : `<div class="td-empty">No grade levels to compare yet.</div>`;
     const set = enrs.length - np.length;
-    return `<section class="td-sec"><div class="td-kicker">Needs you this week</div><h2 class="td-title">Three things to look at</h2>
+    const noWs = withoutWorksheets(), worst = noWs[0];
+    const maxD = Math.max(1, ...noWs.slice(0, 6).map(o => o.days));
+    const wsViz = noWs.length ? `<div style="display:flex;flex-direction:column;gap:6px;width:100%">${noWs.slice(0, 5).map(o => `<div style="display:grid;grid-template-columns:minmax(0,90px) 1fr auto;gap:8px;align-items:center;font-size:12px"><span class="td-sub" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(firstName(o.sid))}</span><span style="height:8px;border-radius:99px;background:var(--surface-2);overflow:hidden"><i style="display:block;height:100%;width:${Math.max(6, o.days / maxD * 100)}%;background:${o.days >= 7 ? "var(--bad)" : "var(--warn)"};border-radius:99px"></i></span><b style="font-variant-numeric:tabular-nums">${o.days}d</b></div>`).join("")}</div>` : `<div class="td-empty">Everyone has worksheets at home.</div>`;
+    return `<section class="td-sec"><div class="td-kicker">Needs you this week</div><h2 class="td-title">Four things to look at</h2>
       <div class="td-stories">
+        <button class="card td-story" data-story="nows"><div class="td-lab"><span>Worksheets at home</span><span>${noWs.length ? plural(noWs.length, "child", "children") : "all set"}</span></div><h3>${worst ? `${esc(firstName(worst.sid))} has had no worksheets for ${plural(worst.days, "day")}.` : "Every child has worksheets at home."}</h3><div class="td-viz">${wsViz}</div><span class="td-go">${noWs.length ? `See all ${noWs.length}` : "Open Calendar"}</span></button>
         <button class="card td-story" data-story="ptc"><div class="td-lab"><span>PTC</span><span>${plural(ptc.length, "this week", "this week")}</span></div><h3>${leadTxt}</h3><div class="td-viz">${week}</div><span class="td-go">${ptc.length ? `See all ${ptc.length}` : "Open PTC"}</span></button>
         <button class="card td-story" data-story="proj"><div class="td-lab"><span>Projections</span><span>${set} of ${enrs.length} set</span></div><h3>${np.length ? `${plural(np.length, "subject still needs", "subjects still need")} a projection.` : "Every subject has a projection."}</h3>
           <div class="td-viz" style="gap:16px">${ring([[set, "var(--good)"]], enrs.length, enrs.length ? Math.round(set / enrs.length * 100) + "%" : "—", "set", 92)}<div class="td-sub" style="line-height:1.7">${np.slice(0, 3).map(o => `${esc(firstName(o.e.student_id))} · ${o.days != null ? plural(o.days, "day") + " in" : esc(o.e.subject)}`).join("<br>")}</div></div><span class="td-go">${np.length ? "Set them up" : "Open Projection"}</span></button>
@@ -1255,7 +1261,7 @@ window.kumonPtcNav = function(client, role){
         <div class="td-kis-foot"><div><b style="color:var(--good)">${pts.length - b.length}</b>at or past KIS</div><div><b style="color:var(--warn)">${b.length - y1 - m6}</b>behind under 6 months</div><div><b style="color:var(--bad)">${m6}</b>behind 6–12 months</div><div><b style="color:var(--bad)">${y1}</b>behind a year or more</div></div></div></section>`;
   }
   function render(){
-    kisCache.clear();
+    kisCache.clear(); wsHomeCache = null;
     if(!tdUi.who){ $("#pageHead").innerHTML = ""; $("#view").innerHTML = `<div class="banner">Your account has no teacher name yet, so the Hub can't tell which students are yours. Ask a superadmin to add it in <a href="admin.html">Admin</a>.</div>`; return; }
     renderHead();
     const warn = loadIssues.size ? `<div class="banner">Some of the data couldn't load (${esc([...loadIssues].join(", "))}), so parts of this page may be missing. Refresh the page to try again.</div>` : "";
@@ -1284,6 +1290,14 @@ window.kumonPtcNav = function(client, role){
       return `<div class="td-kicker">PTC</div><h2>Parent conferences this week</h2><p class="dek">Overdue first, then the ones due in the next 7 days. Book them on the PTC page.</p>
         <div class="card td-list">${p.map(d => kidRow(d.student_id, { fallbackName: d.student_name, extra: `<span class="td-chip ${d.due_date < today ? "td-bad" : "td-warn"}">${ordinal(d.month_no)} month · ${d.due_date < today ? "was due" : "due"} ${esc(fmtDate(d.due_date, { year: undefined }))}</span>${d.status === "scheduled" && d.scheduled_on ? `<span class="td-chip td-good">Booked ${esc(fmtDate(d.scheduled_on, { year: undefined }))}</span>` : ""}` })).join("") || `<div class="td-empty">Nothing due this week.</div>`}</div>
         <div class="td-links"><a href="ptc.html">Open the PTC page</a></div>`;
+    }
+    if(k === "nows"){
+      const list = withoutWorksheets();
+      const fmtD = d => new Date(T(d)).toLocaleDateString("en-US", { timeZone: "UTC", weekday: "short", month: "short", day: "numeric" });
+      return `<div class="td-kicker">Worksheets at home</div><h2>Children without worksheets</h2><p class="dek">They missed a visit with no pick-up and no reschedule, so they've had nothing to work on since. Longest first. Mark a pick-up or a reschedule on the Calendar when it happens.</p>
+        <div class="card td-list">${list.map(o => kidRow(o.sid, { items: o.enrs, extra: `<span class="td-chip ${o.days >= 7 ? "td-bad" : "td-warn"}">${o.sure ? "" : "at least "}${plural(o.days, "day")} · since ${esc(fmtD(o.since))}</span>${o.missedVisits > 1 ? `<span class="td-chip td-mute">${o.missedVisits} visits missed</span>` : ""}` })).join("") || `<div class="td-empty">Every child has worksheets at home.</div>`}</div>
+        <p class="td-sub">Counted from the Calendar's ticks, pick-ups and reschedules over the last ${HIST_WEEKS} weeks. Children on leave (marked absent) and KC subjects aren't counted.</p>
+        <div class="td-links"><a href="calendar.html">Open the Calendar</a></div>`;
     }
     if(k === "proj"){
       const p = noProjection();
@@ -1369,6 +1383,65 @@ window.kumonPtcNav = function(client, role){
       try{ D.moves = await selectAll("schedule_moves", "schedule_id,week_start,from_day,to_day,to_time", q => q.eq("week_start", moveWeek()).order("schedule_id")); }
       catch(e){ if(/does not exist|schema cache/i.test(String(e.message || ""))){ D.moves = []; return; } throw e; }
     });
+    // the last 8 weeks of visits (came / picked up) and reschedules, for "no worksheets at home"
+    const from = addDays(wk, -HIST_WEEKS * 7 - 1);
+    await tdLoad("visit history", async () => { D.attHist = await selectAll("schedule_attendance", "*", q => q.gte("week_start", from).order("week_start")); });
+    await tdLoad("reschedule history", async () => {
+      try{ D.movesHist = await selectAll("schedule_moves", "schedule_id,week_start,from_day,to_day", q => q.gte("week_start", from).order("week_start")); }
+      catch(e){ if(/does not exist|schema cache/i.test(String(e.message || ""))){ D.movesHist = []; return; } throw e; }
+    });
+    wsHomeCache = null;
+  }
+
+  /* ---------- worksheets at home ----------
+     Worksheets are handed out at every visit (or picked up by a parent) and last until the next visit.
+     A visit that passes with no tick, no pick-up and no reschedule leaves the child without worksheets from
+     that day until they next come in or someone picks up. Built from the last 8 weeks of the Calendar. */
+  const HIST_WEEKS = 8;
+  let wsHomeCache = null;
+  function withoutWorksheets(){
+    if(wsHomeCache) return wsHomeCache;
+    const today = todayISO(), att = D.attHist || [], moves = D.movesHist || [];
+    // tracking starts with the first week anyone ticked anything — before that the Hub can't know
+    const trackFrom = att.reduce((m, r) => (!m || r.week_start < m) ? r.week_start : m, null);
+    const out = [];
+    if(!trackFrom){ wsHomeCache = out; return out; }
+    const onLeave = new Set(D.abs.filter(a => !a.resumed_at).map(a => a.student_id));
+    const byKid = new Map();
+    for(const e of scopeEnrollments()){ if(isKcE(e)) continue; (byKid.get(e.student_id) || byKid.set(e.student_id, []).get(e.student_id)).push(e); }
+    const schedFor = e => D.sched.filter(sc => sc.subject_enrollment_id === e.id || (!sc.subject_enrollment_id && sc.student_id === e.student_id));
+    const thisWeek = weekStart();
+    for(const [sid, enrs] of byKid){
+      if(onLeave.has(sid)) continue;
+      const s = studentById.get(sid), start = [trackFrom, (s && s.first_day) || ""].sort().pop();
+      const scheds = [...new Set(enrs.flatMap(schedFor))]; if(!scheds.length) continue;
+      const ids = new Set(scheds.map(x => x.id));
+      const visits = new Map();   // date -> { came, picked }
+      for(let w = 0; w <= HIST_WEEKS; w++){
+        const wk = addDays(thisWeek, -7 * w);
+        for(const sc of scheds){
+          for(const slot of (sc.slots || [])){
+            if(!slot || !slot.day || DAY_ORDER.indexOf(slot.day) < 0) continue;
+            const mv = moves.find(m => m.schedule_id === sc.id && m.week_start === wk && m.from_day === slot.day);
+            const date = addDays(wk, DAY_ORDER.indexOf(mv ? mv.to_day : slot.day));
+            if(date < start || date > today) continue;
+            const recs = att.filter(r => ids.has(r.schedule_id) && r.day === slot.day && (r.week_start === wk || r.week_start === addDays(wk, -1)));
+            const v = visits.get(date) || { came: false, picked: false };
+            if(recs.some(r => r.arrived)) v.came = true; if(recs.some(r => r.picked_up)) v.picked = true;
+            visits.set(date, v);
+          }
+        }
+      }
+      const dates = [...visits.keys()].sort();
+      let lastGot = null; for(const d of dates){ const v = visits.get(d); if(v.came || v.picked) lastGot = d; }
+      // the first visit after the last hand-out that has already passed with nothing marked
+      const missed = dates.filter(d => (!lastGot || d > lastGot) && d < today && !visits.get(d).came && !visits.get(d).picked);
+      if(!missed.length) continue;
+      const since = missed[0];
+      out.push({ sid, since, days: Math.round((T(today) - T(since)) / MS_DAY), missedVisits: missed.length, lastGot, sure: !!lastGot, enrs });
+    }
+    out.sort((a, b) => b.days - a.days);
+    wsHomeCache = out; return out;
   }
 
   /* ---------- actions ---------- */
