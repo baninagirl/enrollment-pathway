@@ -901,6 +901,7 @@ window.kumonPtcNav = function(client, role){
   const plural = (n, one, many) => `${n} ${n === 1 ? one : (many || one + "s")}`;
 
   /* ---------- who is in scope ---------- */
+  const isKcE = e => String((e && e.mode) || "").trim().toUpperCase() === "KC";   // Mode on the Student roster, per subject
   const mineEnr = e => e && e.status === "active" && (tdUi.who === "all" || e.teacher === tdUi.who);
   function scopeEnrollments(){ return D.enr.filter(mineEnr); }
   function scopeStudentIds(){ return new Set(scopeEnrollments().map(e => e.student_id)); }
@@ -1024,9 +1025,9 @@ window.kumonPtcNav = function(client, role){
     const out = [];
     const metric = (o) => out.push(o);
 
-    // KC
-    const notKc = studs.filter(s => s.mode !== "KC");
-    metric({ k:"kc", name:"On KC", n: studs.length - notKc.length, of: studs.length, goal: 80, how:"Students whose mode is KC, out of all their active students.", missLabel:"Not on KC yet", miss: notKc.map(s => ({ sid: s.id })) });
+    // KC: the Mode column on the Student roster, per subject
+    const notKc = enrs.filter(e => !isKcE(e));
+    metric({ k:"kc", name:"On KC", n: enrs.length - notKc.length, of: enrs.length, goal: 80, unit:"subjects", how:"Subjects whose Mode on the Student roster is KC, out of all active subjects.", missLabel:"Not on KC yet", miss: notKc.map(e => ({ sid: e.student_id, e })) });
 
     // KIS within 6 months (only subjects that started 6+ months ago and have close-outs from those months)
     const kis6 = { n:0, of:0, miss:[], unknown:0 };
@@ -1138,7 +1139,7 @@ window.kumonPtcNav = function(client, role){
         if(opts.kid.movedTo) fl.push(`<span class="td-chip td-mute">Moved to ${esc(opts.kid.movedTo)}</span>`);
         if(opts.kid.ri) fl.push(`<span class="td-chip td-mute">RI</span>`);
       }
-      if(s && s.mode === "KC") fl.push(`<span class="td-chip td-mute">KC</span>`);
+      if(enrs.some(isKcE)) fl.push(`<span class="td-chip td-mute">KC</span>`);
       const due = D.due.find(d => d.student_id === sid && d.due_date && d.due_date <= addDays(todayISO(), 6));
       if(due) fl.push(`<span class="td-chip ${due.due_date < todayISO() ? "td-bad" : "td-warn"}">PTC ${due.due_date < todayISO() ? "overdue" : "due " + esc(fmtDate(due.due_date, { year: undefined }))}</span>`);
       if(enrs.some(e => { const k = kisInfo(e); return k && k.gap < 0 && k.months >= 6; })) fl.push(`<span class="td-chip td-warn">Behind KIS</span>`);
@@ -1173,7 +1174,7 @@ window.kumonPtcNav = function(client, role){
     const now = nowMin(), nowSlot = slots.find(s => now >= s.m && now < s.m + 60), next = slots.find(s => s.m > now);
     if(tdUi.slot == null || !slots.some(s => s.m === tdUi.slot)) tdUi.slot = (nowSlot || next || slots[slots.length - 1] || {}).m;
     const title = !slots.length ? "No center visits on the schedule today." : nowSlot ? `The ${fmtT(nowSlot.m)} center visit is on now${next ? `; next at ${fmtT(next.m)}` : ""}.` : next ? `${now < slots[0].m ? "First" : "Next"} center visit at ${fmtT(next.m)}.` : "That's every center visit for today.";
-    const A = Math.min(14 * 60, ...slots.map(s => s.m)), B = Math.max(20 * 60, ...slots.map(s => s.m + 60)), X = m => (m - A) / (B - A) * 100;
+    const A = Math.min(13 * 60 + 30, ...slots.map(s => s.m)), B = Math.max(20 * 60, ...slots.map(s => s.m + 60)), X = m => (m - A) / (B - A) * 100;
     const max = Math.max(1, ...slots.map(s => s.kids.length));
     const hours = []; for(let h = Math.ceil(A / 60); h <= Math.floor(B / 60); h++) hours.push(h);
     const sl = slots.find(s => s.m === tdUi.slot);
@@ -1325,7 +1326,7 @@ window.kumonPtcNav = function(client, role){
     }).join("");
     const worst = enrs.map(e => ({ e, k: kisInfo(e) })).filter(o => o.k).sort((a, b) => a.k.gap - b.k.gap)[0];
     const head = worst ? (worst.k.gap < 0 ? `${esc(firstName(sid))} is behind KIS in ${esc(worst.e.subject)}${worst.k.months ? ` and has been for ${plural(worst.k.months, "month")}` : ""}.` : `${esc(firstName(sid))} is at or ahead of KIS.`) : "";
-    return `<div style="display:flex;align-items:center;gap:12px;margin-top:6px">${avatar(sid)}<span class="td-sub">${esc(s && s.age_grade ? normGrade(s.age_grade) : "")}${enrs.length ? " · " + esc([...new Set(enrs.map(e => e.teacher).filter(Boolean))].join(", ")) : ""}${s && s.mode ? " · " + esc(s.mode) : ""}</span></div>
+    return `<div style="display:flex;align-items:center;gap:12px;margin-top:6px">${avatar(sid)}<span class="td-sub">${esc(s && s.age_grade ? normGrade(s.age_grade) : "")}${enrs.length ? " · " + esc([...new Set(enrs.map(e => e.teacher).filter(Boolean))].join(", ")) : ""}${enrs.length ? " · " + esc(enrs.map(e => e.subject + " " + (isKcE(e) ? "KC" : "Paper")).join(", ")) : ""}</span></div>
       <h2>${esc(nameOf(sid))}</h2><p class="dek">${head}</p>
       <div class="td-facts"><div><small>Today</small><b>${kid ? (kid.movedTo ? "Moved to " + esc(kid.movedTo) : kid.arrived ? "Arrived" : "Center visit at " + fmtT(slotOf.m)) : "No center visit"}</b></div>
         <div><small>Next PTC</small><b style="${due && due.due_date < todayISO() ? "color:var(--bad)" : ""}">${due ? (due.due_date < todayISO() ? "Overdue" : esc(fmtDate(due.due_date, { year: undefined }))) : "—"}</b></div>
@@ -1339,7 +1340,7 @@ window.kumonPtcNav = function(client, role){
     const wk = weekStart(), legacy = addDays(wk, -1);
     await Promise.all([
       tdLoad("students", async () => { D.students = await selectAll("students", "id,name,first_name,last_name,age_grade,mode,status,first_day", q => q.order("id")); }),
-      tdLoad("enrollments", async () => { D.enr = await selectAll("subject_enrollments", "id,student_id,student_name,subject,teacher,status,current_level,current_page,lwc,created_at,test_date,test_level,test_score,test_group", q => q.eq("status", "active").order("id")); }),
+      tdLoad("enrollments", async () => { D.enr = await selectAll("subject_enrollments", "id,student_id,student_name,subject,teacher,status,current_level,current_page,lwc,created_at,mode,test_date,test_level,test_score,test_group", q => q.eq("status", "active").order("id")); }),
       tdLoad("schedules", async () => { D.sched = await selectAll("schedules", "id,student_id,subject_enrollment_id,slots,status", q => q.eq("status", "active").order("id")); }),
       tdLoad("history", async () => { D.hist = await selectAll("enrollment_monthly_history", "id,subject_enrollment_id,cycle_key,current_level,current_page,lwc", q => q.order("id")); }),
       tdLoad("projections", async () => { D.proj = await selectAll("study_projections", "subject_enrollment_id", q => q.order("subject_enrollment_id")); }),
