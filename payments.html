@@ -259,6 +259,20 @@
   }
   @media (max-width:860px){ .rail-pipeline{ display:none !important; } }
   .btn.paid-btn{ color:#1E7B46; border-color:#BFE3CC; background:#EEF8F2; }
+  /* Billing groups dialog */
+  .bg-tools{ display:flex; gap:10px; padding:12px 20px; border-bottom:1px solid var(--border); flex-wrap:wrap; }
+  .bg-tools input[type=search]{ flex:1 1 220px; min-width:0; }
+  .bg-body{ gap:0 !important; }
+  .bg-count{ font-size:12px; padding:2px 2px 8px; }
+  .bg-list{ display:flex; flex-direction:column; border:1px solid var(--border); border-radius:14px; overflow:hidden; background:var(--surface); }
+  .bg-row{ display:flex; align-items:center; gap:12px; padding:10px 14px; border-top:1px solid var(--border); flex-wrap:wrap; }
+  .bg-row:first-child{ border-top:none; }
+  .bg-row:hover{ background:var(--surface-2); }
+  .bg-main{ flex:1 1 140px; min-width:0; }
+  .bg-name{ font-weight:700; font-size:14px; }
+  .bg-members{ font-size:12px; margin-top:2px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .bg-n{ font-size:12px; white-space:nowrap; }
+  .bg-acts{ display:flex; gap:6px; }
 </style>
 <script>try{if(localStorage.getItem("kumonRailCollapsed")==="1")document.documentElement.classList.add("rail-collapsed")}catch(e){}</script>
 <script>
@@ -2294,31 +2308,52 @@ window.kumonPtcNav = function(client, role){
     $("#modalBackdrop").hidden = false;
   }
 
+  // Billing groups: search box and "New" at the top (no scrolling to the bottom), one compact row per group
+  // showing who's in it, so a family can be found by its name or any child's name.
+  let groupsQuery = "";
   function openGroupsModal(){
     const modal = $("#modal");
+    const groups = billingGroups.slice().sort((x, y) => String(x.name || "").localeCompare(String(y.name || "")));
     modal.innerHTML = `
       <div class="modal-head"><h3>Billing groups</h3><button class="iconbtn" data-action="close-modal">✕</button></div>
-      <div class="modal-body">
-        ${billingGroups.length ? billingGroups.map(g => {
-          const memberCount = students.filter(s => s.billing_group_id === g.id).length;
-          return `<div class="card" style="margin-bottom:0;">
-            <div class="card-head">
-              <div><b>${esc(g.name)}</b> <span class="muted" style="font-size:12px;">(${memberCount} student${memberCount===1?"":"s"})</span></div>
-              <div style="display:flex; gap:6px;">
-                <button class="btn sm" data-action="edit-group" data-id="${esc(g.id)}">Edit</button>
-                <button class="btn sm danger" data-action="delete-group" data-id="${esc(g.id)}">Delete</button>
-              </div>
-            </div>
+      <div class="bg-tools">
+        <input type="search" id="bgSearch" placeholder="Search a family or a child's name" value="${esc(groupsQuery)}" autocomplete="off" aria-label="Search billing groups">
+        <button class="btn primary" type="button" data-action="new-group">+ New billing group</button>
+      </div>
+      <div class="modal-body bg-body">
+        <div class="bg-count muted" id="bgCount"></div>
+        ${groups.length ? `<div class="bg-list">${groups.map(g => {
+          const members = students.filter(st => st.billing_group_id === g.id);
+          const names = members.map(displayName);
+          const hay = (String(g.name || "") + " " + names.join(" ")).toLowerCase();
+          return `<div class="bg-row" data-hay="${esc(hay)}">
+            <div class="bg-main"><div class="bg-name">${esc(g.name)}</div>
+              <div class="bg-members muted">${members.length ? esc(names.join(", ")) : "No students yet"}</div></div>
+            <span class="bg-n muted">${members.length} student${members.length === 1 ? "" : "s"}</span>
+            <div class="bg-acts"><button class="btn sm" data-action="edit-group" data-id="${esc(g.id)}">Edit</button>
+              <button class="btn sm danger" data-action="delete-group" data-id="${esc(g.id)}">Delete</button></div>
           </div>`;
-        }).join("") : `<div class="empty">No billing groups yet.</div>`}
-        <button class="btn" type="button" data-action="new-group" style="align-self:flex-start;">+ New billing group</button>
+        }).join("")}</div>
+        <div class="empty" id="bgNone" hidden>No billing group matches that. <button class="btn sm" type="button" data-action="new-group">+ New billing group</button></div>` : `<div class="empty">No billing groups yet. Use “+ New billing group” above.</div>`}
       </div>
       <div class="modal-foot">
         <button type="button" class="btn primary" data-action="close-modal" style="margin-left:auto;">Done</button>
       </div>
     `;
     $("#modalBackdrop").hidden = false;
+    filterGroupsList(groupsQuery);
+    const box = $("#bgSearch"); if(box){ box.focus(); box.setSelectionRange(box.value.length, box.value.length); }
   }
+  function filterGroupsList(query){
+    groupsQuery = query;
+    const q = query.trim().toLowerCase();
+    const rows = [...document.querySelectorAll(".bg-row")];
+    let shown = 0;
+    rows.forEach(r => { const hit = !q || r.dataset.hay.includes(q); r.hidden = !hit; if(hit) shown++; });
+    const c = $("#bgCount"); if(c) c.textContent = q ? `${shown} of ${rows.length} groups` : `${rows.length} groups`;
+    const none = $("#bgNone"); if(none) none.hidden = !(q && rows.length && !shown);
+  }
+  document.addEventListener("input", (e) => { if(e.target && e.target.id === "bgSearch") filterGroupsList(e.target.value); });
 
   // Just hides non-matching rows rather than rebuilding the list, so a checkbox someone
   // already ticked stays ticked even while it's filtered out of view.
