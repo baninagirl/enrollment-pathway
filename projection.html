@@ -322,12 +322,14 @@
     textarea::placeholder{ color:transparent; }
     .sp-body{ gap:12px; padding:10px 0; } .sp-head{ padding:6px 0 10px; }
   }
-  .pj-viewbox{ gap:10px; flex-wrap:wrap; }
+  .pj-plan{ display:flex; align-items:center; gap:10px 12px; flex-wrap:wrap; padding:12px 14px; margin-bottom:14px; background:var(--surface-2); border:1px solid var(--border); border-radius:14px; }
+  .pj-plan-k{ font-size:13px; font-weight:700; color:var(--ink); }
+  .pj-plan .seg{ background:var(--surface); }
+  .pj-plan .seg button{ white-space:nowrap; }
   .pj-from{ display:inline-flex; align-items:center; gap:8px; font-size:13px; font-weight:600; color:var(--ink-muted); }
   .pj-from input{ width:auto; }
-  .pj-viewbox{ display:flex; align-items:center; }
-  .pj-viewbox .seg button{ white-space:nowrap; }
-  @media (max-width:700px){ .pj-viewbox{ width:100%; } .pj-viewbox .seg{ max-width:100%; overflow-x:auto; } }
+  .pj-plan-note{ flex:1 1 260px; font-size:12.5px; color:var(--ink-muted); line-height:1.45; }
+  .pj-plan-note b{ color:var(--ink); }
 </style>
 <script>try{if(localStorage.getItem("kumonRailCollapsed")==="1")document.documentElement.classList.add("rail-collapsed")}catch(e){}</script>
 <script>
@@ -547,12 +549,7 @@ window.kumonPtcNav = function(client, role){
         <h1>Study projection</h1>
         <div class="page-sub">Each subject's projected path through the levels, the KIS (grade level), Bronze, Silver and Gold lines, and where the child actually is.</div>
       </div>
-      <div class="pj-viewbox no-print"><div class="seg" id="pjViewSeg" role="tablist" aria-label="Projection view">
-        <button type="button" data-pjview="history">Historical · from their first day</button>
-        <button type="button" data-pjview="current">Moving forward · from <span id="pjViewDate">the 1st</span></button>
-      </div>
-      <label class="pj-from" id="pjFromBox" hidden>Start the plan on <input type="date" id="pjFrom" aria-label="Start the moving-forward plan on"></label>
-      <button type="button" class="btn sm ghost" id="pjFromReset" hidden>Reset to the 1st of this month</button></div>
+
     </div>
     <div id="view"></div>
   </main>
@@ -984,6 +981,16 @@ window.kumonPtcNav = function(client, role){
   let lastHash = "";
   function history_back_guard(){ window.history.replaceState(null, "", lastHash || "#"); }
   function currentEnrollmentId(){ const m = (location.hash || "").match(/^#e=([\w-]+)/); return m ? m[1] : null; }
+  // The "which plan" switch — sits right above what it changes: the list's counts, and each child's plan.
+  function planBar(note){
+    const cur = pjView === "current";
+    return `<div class="pj-plan no-print">
+      <span class="pj-plan-k">Show the plan</span>
+      <div class="seg" role="tablist" aria-label="Which plan"><button type="button" class="${cur ? "" : "active"}" data-pjview="history">From their first day</button><button type="button" class="${cur ? "active" : ""}" data-pjview="current">Moving forward</button></div>
+      ${cur ? `<label class="pj-from">starting <input type="date" id="pjFrom" value="${esc(pjFrom)}" max="${esc(todayISO())}" aria-label="Start the moving-forward plan on"></label>${pjFrom !== firstOfMonth() ? `<button type="button" class="btn sm ghost" id="pjFromReset">Reset to the 1st</button>` : ""}` : ""}
+      ${note ? `<span class="pj-plan-note">${note}</span>` : ""}
+    </div>`;
+  }
   function syncViewSeg(){
     document.querySelectorAll("[data-pjview]").forEach(b => b.classList.toggle("active", b.dataset.pjview === pjView));
     const d = document.getElementById("pjViewDate"); if(d) d.textContent = viewMonthLabel();
@@ -1050,6 +1057,7 @@ window.kumonPtcNav = function(client, role){
       : `<select id="fTeacher">${groupedTeacherOptions(names, ui.teacher, { withAll:true, withGroups:true })}</select>`;
     const tile = (key, n, label, cls) => `<button class="stat ${cls||""}${ui.status === key ? " selected" : ""}" data-action="f-status" data-status="${key}"><span class="n">${n}</span><span class="l">${label}</span></button>`;
     $("#view").innerHTML = `
+      ${planBar(pjView === "current" ? `Ahead / behind is counted against a plan that starts on ${esc(fmtDate(pjFrom))}.` : "Ahead / behind is counted against each child's plan from their first day.")}
       <div class="stats">
         ${tile("all", all.length, `Subjects · ${withP.length} with a projection`)}
         ${tile("none", all.length - withP.length, "No projection yet")}
@@ -1181,8 +1189,10 @@ window.kumonPtcNav = function(client, role){
           <div class="print-only print-title">GOAL SETTING SHEET · Kumon Iligan City</div>
         </div>
         <div class="sp-body">
-          ${pjView === "current" && !vp._view ? `<div class="banner no-print" style="margin-bottom:12px">Moving forward from ${esc(fmtDate(pjFrom))}: that's on or before this child's first day, so this is their first-day plan.</div>` : ""}
-          ${vp._view ? `<div class="banner no-print" style="margin-bottom:12px">Moving forward: this plan starts on <b>${esc(fmtDate(vp.start_date))}</b> at <b>${esc(vp.start_level)} ${esc(vp.start_page)}</b>, ${vp._view.src === "lwc" ? "from today's LWC" : vp._view.src === "closeout" ? "from the close-out before it" : vp._view.src === "estimate" ? "estimated between the close-outs either side of that date" : "from their starting point"}. Change the date at the top of the page. The starting point and date enrolled below are the first-day ones — they're what the Historical view uses.</div>` : ""}
+          ${planBar(vp._view
+              ? `Starts <b>${esc(fmtDate(vp.start_date))}</b> at <b>${esc(vp.start_level)} ${esc(vp.start_page)}</b> — ${vp._view.src === "lwc" ? "today's LWC" : vp._view.src === "closeout" ? "from the close-out before it" : vp._view.src === "estimate" ? "estimated between close-outs" : "from their starting point"}. Same repeats and pages a day.`
+              : pjView === "current" ? `${esc(fmtDate(pjFrom))} is on or before this child's first day, so this is their first-day plan.`
+              : `Starts <b>${esc(fmtDate(draft.start_date))}</b> at <b>${esc(normLevel(draft.subject, draft.start_level))} ${esc(draft.start_page)}</b> — their first day.`)}
           <div class="inputs">
             <label class="f">Grade<select data-f="grade">${gradeOpts}</select></label>
             <label class="f">Starting point<span class="pair"><select data-f="start_level">${lvOpts}</select><input type="number" min="1" max="200" data-f="start_page" value="${esc(draft.start_page)}" aria-label="Starting page"></span></label>
