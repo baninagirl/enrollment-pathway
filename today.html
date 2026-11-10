@@ -992,6 +992,7 @@ window.kumonPtcNav = function(client, role){
     return out;
   }
   const arrivedFor = (scheduleId, day) => D.att.some(a => a.schedule_id === scheduleId && a.day === day && a.arrived);
+  const pickedFor = (scheduleId, day) => D.att.some(a => a.schedule_id === scheduleId && a.day === day && a.picked_up);
   // classes grouped by start time, one row per child (Math and Reading together)
   function slotsToday(){
     const bySlot = new Map();
@@ -1003,6 +1004,7 @@ window.kumonPtcNav = function(client, role){
       if(c.movedFrom) kid.movedFrom = c.movedFrom; if(c.movedTo) kid.movedTo = c.movedTo;
       if(c.mode === "RI") kid.ri = true;
       if(arrivedFor(c.scheduleId, c.origDay)) kid.arrived = true;
+      if(pickedFor(c.scheduleId, c.origDay)) kid.picked = true;
     }
     return [...bySlot.entries()].sort((a, b) => a[0] - b[0]).map(([m, kids]) => ({ m, kids: [...kids.values()].sort((a, b) => nameOf(a.studentId).localeCompare(nameOf(b.studentId))) }));
   }
@@ -1075,10 +1077,12 @@ window.kumonPtcNav = function(client, role){
     // Achievement tests this cycle: out of every test recorded (not every student), how many came out Group 1
     const filled = v => v != null && String(v).trim() !== "" && String(v).trim() !== "—";
     const tests = enrs.filter(e => filled(e.test_date) || filled(e.test_level) || filled(e.test_score) || filled(e.test_group));
-    const g1 = tests.filter(e => /^\s*(group\s*)?1\s*$/i.test(String(e.test_group || "")));
+    // the group can be typed as "1", "G1" or "Group 1"
+    const groupNo = v => { const m = String(v == null ? "" : v).match(/^\s*(?:group|grp|g)?\s*[-.]?\s*(\d+)\s*$/i); return m ? Number(m[1]) : null; };
+    const g1 = tests.filter(e => groupNo(e.test_group) === 1);
     metric({ k:"at", name:"Achievement test Group 1", n: g1.length, of: tests.length, goal: 100, unit:"tests",
       how:"Achievement tests recorded this cycle (on the Student roster), and how many of them came out Group 1. Counts tests, not students.",
-      missLabel:"Not Group 1", miss: tests.filter(e => !g1.includes(e)).map(e => ({ sid: e.student_id, e, note: `${e.test_level ? e.test_level + " test" : "Test"}${filled(e.test_score) ? " · " + e.test_score : ""} · ${filled(e.test_group) ? "Group " + String(e.test_group).replace(/^\s*group\s*/i, "") : "no group yet"}` })) });
+      missLabel:"Not Group 1", miss: tests.filter(e => !g1.includes(e)).map(e => ({ sid: e.student_id, e, note: `${e.test_level ? e.test_level + " test" : "Test"}${filled(e.test_score) ? " · " + e.test_score : ""} · ${filled(e.test_group) ? (groupNo(e.test_group) != null ? "Group " + groupNo(e.test_group) : String(e.test_group)) : "no group yet"}` })) });
 
     // Absences (lower is better). A child marked absent has their subjects switched off, so they aren't in the
     // active list above: match the absence to the teacher through the subjects it was recorded for instead.
@@ -1147,6 +1151,7 @@ window.kumonPtcNav = function(client, role){
       if(opts.kid){
         if(opts.kid.movedFrom) fl.push(`<span class="td-chip td-good">Moved here from ${esc(opts.kid.movedFrom)}</span>`);
         if(opts.kid.movedTo) fl.push(`<span class="td-chip td-mute">Moved to ${esc(opts.kid.movedTo)}</span>`);
+        if(opts.kid.picked && !opts.kid.arrived) fl.push(`<span class="td-chip td-warn">Picked up worksheets</span>`);
         if(opts.kid.ri) fl.push(`<span class="td-chip td-mute">RI</span>`);
       }
       if(enrs.some(isKcE)) fl.push(`<span class="td-chip td-mute">KC</span>`);
@@ -1183,6 +1188,7 @@ window.kumonPtcNav = function(client, role){
     const slots = slotsToday(), all = slots.flatMap(s => s.kids).filter(k => !k.movedTo);
     const seenKid = new Set(), uniq = all.filter(k => !seenKid.has(k.studentId) && seenKid.add(k.studentId));
     const arr = uniq.filter(k => all.some(x => x.studentId === k.studentId && x.arrived)).length;
+    const pick = uniq.filter(k => !all.some(x => x.studentId === k.studentId && x.arrived) && all.some(x => x.studentId === k.studentId && x.picked)).length;
     const now = nowMin(), nowSlot = slots.find(s => now >= s.m && now < s.m + 60), next = slots.find(s => s.m > now);
     if(tdUi.slot == null || !slots.some(s => s.m === tdUi.slot)) tdUi.slot = (nowSlot || next || slots[slots.length - 1] || {}).m;
     const title = !slots.length ? "No center visits on the schedule today." : nowSlot ? `The ${fmtT(nowSlot.m)} center visit is on now${next ? `; next at ${fmtT(next.m)}` : ""}.` : next ? `${now < slots[0].m ? "First" : "Next"} center visit at ${fmtT(next.m)}.` : "That's every center visit for today.";
@@ -1191,8 +1197,8 @@ window.kumonPtcNav = function(client, role){
     const hours = []; for(let h = Math.ceil(A / 60); h <= Math.floor(B / 60); h++) hours.push(h);
     const sl = slots.find(s => s.m === tdUi.slot);
     return `<section class="td-sec"><div class="td-kicker">Your day</div><h2 class="td-title">${esc(title)}</h2>
-      <div class="card td-day"><div class="td-ring">${ring([[arr, "var(--good)"], [uniq.length - arr, "var(--accent)"]], uniq.length, `${arr}<tspan font-size="${180 * 0.11}" fill="var(--ink-faint)">/${uniq.length}</tspan>`, "arrived so far")}
-        <div class="td-legend"><span><i style="background:var(--good)"></i>Arrived</span><span><i style="background:var(--accent)"></i>Not yet</span></div></div>
+      <div class="card td-day"><div class="td-ring">${ring([[arr, "var(--good)"], [pick, "var(--warn)"], [uniq.length - arr - pick, "var(--accent)"]], uniq.length, `${arr}<tspan font-size="${180 * 0.11}" fill="var(--ink-faint)">/${uniq.length}</tspan>`, "arrived so far")}
+        <div class="td-legend"><span><i style="background:var(--good)"></i>Arrived</span><span><i style="background:var(--warn)"></i>Picked up</span><span><i style="background:var(--accent)"></i>Not yet</span></div></div>
       <div style="min-width:0">${slots.length ? `<div class="td-tl"><div class="td-tl-track"></div>${slots.map((s, i) => `<button class="td-tl-block${now >= s.m + 60 ? " past" : ""}${s.m === tdUi.slot ? " on" : ""}" data-slot="${s.m}" style="left:${X(s.m)}%;width:calc(${Math.min(60, (slots[i + 1] ? slots[i + 1].m : s.m + 60) - s.m) / (B - A) * 100}% - 4px)" title="${fmtT(s.m)}: ${plural(s.kids.length, "child", "children")}">${s.kids.length}</button>`).join("")}
           ${now >= A && now <= B ? `<div class="td-tl-now" style="left:${X(now)}%"></div>` : ""}<div class="td-tl-axis">${hours.map(h => `<span style="left:${X(h * 60)}%">${fmtT(h * 60)}</span>`).join("")}</div></div>` : ""}
         ${sl ? `<div class="td-slot-h"><b>${fmtT(sl.m)}</b><span>${plural(sl.kids.length, "child", "children")}${slots.length > 1 ? " · tap another time above to switch" : ""}</span></div>${sl.kids.map(k => kidRow(k.studentId, { tick: true, kid: k, items: k.items })).join("")}` : `<div class="td-empty">Nobody is scheduled today. Center visits come from the Calendar.</div>`}
@@ -1386,7 +1392,7 @@ window.kumonPtcNav = function(client, role){
   async function loadToday(){
     const wk = weekStart();
     await tdLoad("arrivals", async () => {
-      const rows = await selectAll("schedule_attendance", "schedule_id,day,week_start,arrived", q => q.in("week_start", [wk, addDays(wk, -1)]).order("schedule_id"));
+      const rows = await selectAll("schedule_attendance", "*", q => q.in("week_start", [wk, addDays(wk, -1)]).order("schedule_id"));
       const byKey = new Map(); rows.sort((a, b) => (a.week_start === wk) - (b.week_start === wk)).forEach(r => byKey.set(r.schedule_id + "|" + r.day, r)); D.att = [...byKey.values()];
     });
     await tdLoad("moves", async () => {

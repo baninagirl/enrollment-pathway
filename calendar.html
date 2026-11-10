@@ -917,6 +917,14 @@ window.kumonPtcNav = function(client, role){
     movesReady = true;
     moves = data || [];
   }
+  // A schedule made this week (a new student) shouldn't show its earlier days as Missed.
+  function beforeSchedule(scheduleId, day){
+    const sc = schedules.find(x => x.id === scheduleId); if(!sc || !sc.created_at) return false;
+    const made = new Date(Date.parse(sc.created_at) + 8 * 3600e3).toISOString().slice(0, 10);   // Philippine date
+    const [y, m, dd] = currentWeekStart().split("-").map(Number);
+    const date = new Date(Date.UTC(y, m - 1, dd + DAY_ORDER.indexOf(day))).toISOString().slice(0, 10);
+    return date < made;
+  }
   function canTick(){ return ["admin","superadmin","teacher","trainer_teacher"].includes(currentRole); }
   function canMove(){ return movesReady && ["admin","superadmin","teacher","trainer_teacher"].includes(currentRole); }
   const toMin = t => { const [h, m] = String(t || "").split(":").map(Number); return h * 60 + (m || 0); };
@@ -1284,7 +1292,7 @@ window.kumonPtcNav = function(client, role){
     rows.forEach(r => pendingPicks.set(r.scheduleId + "|" + r.origDay, picked));
     renderCalendar();
     const wk = currentWeekStart(), at = picked ? new Date().toISOString() : null, by = picked && currentUser ? (currentUser.email || null) : null;
-    const payload = rows.map(r => { const cur = attendance.find(a => a.schedule_id === r.scheduleId && a.day === r.origDay);
+    const payload = rows.map(r => { const cur = attendanceFor(r.scheduleId, r.origDay);   // includes a tick that's still saving
       return { schedule_id: r.scheduleId, day: r.origDay, week_start: wk, arrived: !!(cur && cur.arrived), picked_up: picked, picked_up_at: at, picked_up_by: by }; });
     let error = null;
     for(let attempt = 0; attempt < 3; attempt++){
@@ -1485,7 +1493,7 @@ window.kumonPtcNav = function(client, role){
           const moveBtn = mv && firstOfKid ? `<button type="button" class="mv-btn" data-mvopen="1" title="Move this class to another day/time, this week only" aria-label="Move this week"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 9l-3 3 3 3M19 9l3 3-3 3M2 12h20"/></svg></button>` : "";
           const movedLine = it.moved && firstOfKid ? `<span class="moved-sub">moved from ${esc(it.origDay)} ${esc(fmtTime(it.origTime))} · this week</span>` : "";
           const kd = kidDay.get(kidDayKey(it)) || { came: arrived, picked: false };
-          const outcome = !it.scheduleId ? "" : kd.came ? "came" : kd.picked ? "picked" : isPast ? "missed" : "";
+          const outcome = !it.scheduleId ? "" : kd.came ? "came" : kd.picked ? "picked" : (isPast && !beforeSchedule(it.scheduleId, d)) ? "missed" : "";
           const canPick = it.scheduleId && (isToday || isPast) && !kd.came && canTick();
           const bag = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 7h12l-1 13H7z"/><path d="M9 7a3 3 0 0 1 6 0"/></svg>`;
           const pickAttrs = `data-kidday="${esc(kidDayKey(it))}" data-name="${esc(it.studentName)}" data-dayname="${esc(d)}"`;
