@@ -322,6 +322,12 @@
     textarea::placeholder{ color:transparent; }
     .sp-body{ gap:12px; padding:10px 0; } .sp-head{ padding:6px 0 10px; }
   }
+  .pj-viewbox{ gap:10px; flex-wrap:wrap; }
+  .pj-from{ display:inline-flex; align-items:center; gap:8px; font-size:13px; font-weight:600; color:var(--ink-muted); }
+  .pj-from input{ width:auto; }
+  .pj-viewbox{ display:flex; align-items:center; }
+  .pj-viewbox .seg button{ white-space:nowrap; }
+  @media (max-width:700px){ .pj-viewbox{ width:100%; } .pj-viewbox .seg{ max-width:100%; overflow-x:auto; } }
 </style>
 <script>try{if(localStorage.getItem("kumonRailCollapsed")==="1")document.documentElement.classList.add("rail-collapsed")}catch(e){}</script>
 <script>
@@ -541,6 +547,12 @@ window.kumonPtcNav = function(client, role){
         <h1>Study projection</h1>
         <div class="page-sub">Each subject's projected path through the levels, the KIS (grade level), Bronze, Silver and Gold lines, and where the child actually is.</div>
       </div>
+      <div class="pj-viewbox no-print"><div class="seg" id="pjViewSeg" role="tablist" aria-label="Projection view">
+        <button type="button" data-pjview="history">Historical · from their first day</button>
+        <button type="button" data-pjview="current">Moving forward · from <span id="pjViewDate">the 1st</span></button>
+      </div>
+      <label class="pj-from" id="pjFromBox" hidden>Start the plan on <input type="date" id="pjFrom" aria-label="Start the moving-forward plan on"></label>
+      <button type="button" class="btn sm ghost" id="pjFromReset" hidden>Reset to the 1st of this month</button></div>
     </div>
     <div id="view"></div>
   </main>
@@ -691,6 +703,52 @@ window.kumonPtcNav = function(client, role){
     return { kis: curve("kis"), bronze: curve("bronze"), silver: curve("silver"), gold: curve("gold") };
   }
 
+  /* Two ways to look at a projection:
+     - "history": from the child's first day and starting point (what's saved);
+     - "current": moving forward — starts on the 1st of this month from where they were at last month's close-out
+       (or from today's LWC if that month isn't closed out yet). Same repeats and pages a day; nothing saved changes. */
+  let pjView = (() => { try{ return sessionStorage.getItem("kumonProjView") === "current" ? "current" : "history"; }catch(_){ return "history"; } })();
+  const firstOfMonth = () => todayISO().slice(0, 7) + "-01";
+  let pjFrom = (() => { try{ const v = sessionStorage.getItem("kumonProjFrom"); return /^\d{4}-\d{2}-\d{2}$/.test(v || "") ? v : firstOfMonth(); }catch(_){ return firstOfMonth(); } })();
+  // Where the child was on the "from" date: exact at a month's close-out (the 1st of the next month), today's LWC
+  // from today on, and in between an estimate along the line between the two closest known points.
+  function viewStartInfo(p, enr){
+    if(!p || !enr) return null;
+    const today = todayISO(), d = pjFrom > today ? today : pjFrom;
+    if(d <= p.start_date) return null;   // on or before their first day: that's the Historical view
+    const sp = levelIndex(p.subject, p.start_level);
+    const pts = [];
+    if(sp >= 0) pts.push({ d: p.start_date, y: sp * 20 + (Math.max(1, Number(p.start_page) || 1) - 1) / 10, src: "start" });
+    for(const h of histRows){
+      if(h.subject_enrollment_id !== enr.id || !h.cycle_key) continue;
+      const b = bestPos(p.subject, h); if(!b) continue;
+      const [yy, mm] = h.cycle_key.split("-").map(Number);
+      pts.push({ d: iso(Date.UTC(yy, mm, 1)), y: b.y, src: "closeout", key: h.cycle_key });   // a close-out = where they start the next month
+    }
+    const now = bestPos(p.subject, enr); if(now) pts.push({ d: today, y: now.y, src: "lwc" });
+    pts.sort((x, z) => x.d < z.d ? -1 : x.d > z.d ? 1 : 0);
+    for(let i = 1; i < pts.length; i++) if(pts[i].y < pts[i-1].y) pts[i].y = pts[i-1].y;   // positions only go forward
+    if(!pts.length) return null;
+    let before = null, after = null;
+    for(const q of pts){ if(q.d <= d) before = q; else { after = q; break; } }
+    let y, src;
+    if(before && before.d === d){ y = before.y; src = before.src; }
+    else if(before && after){ y = before.y + (after.y - before.y) * (T(d) - T(before.d)) / Math.max(1, T(after.d) - T(before.d)); src = "estimate"; }
+    else if(before){ y = before.y; src = before.src; }
+    else { y = after.y; src = after.src; }
+    const L = LADDER[p.subject] || [];
+    let i = Math.floor((y + 1e-9) / 20), page = Math.round((y - i * 20) * 10) + (src === "start" ? 1 : 1);   // last page done → they start on the next
+    if(page > 200){ i++; page = 1; }
+    if(i >= L.length){ i = L.length - 1; page = 200; }
+    return { level: L[i], page: Math.max(1, Math.min(200, page)), date: d, src };
+  }
+  function viewOf(p, enr){
+    if(pjView !== "current" || !p) return p;
+    const v = viewStartInfo(p, enr); if(!v) return p;
+    return Object.assign({}, p, { start_level: v.level, start_page: v.page, start_date: v.date, _view: v });
+  }
+  const viewMonthLabel = () => new Date(T(pjFrom)).toLocaleDateString("en-US", { timeZone: "UTC", month: "short", day: "numeric", year: pjFrom.slice(0, 4) === todayISO().slice(0, 4) ? undefined : "numeric" });
+
   /* the whole projection, worked out */
   function compute(p, enr){
     const subject = p.subject, L = LADDER[subject] || [];
@@ -713,7 +771,8 @@ window.kumonPtcNav = function(client, role){
     }
     // Actual: starts at the starting point (on its date), then every closed-out month (Monthly History) and
     // today's level on the roster.
-    out.actual.push({ d: p.start_date, y: out.proj[0].y, label: "Starting point", start: true, txt: `${normLevel(subject, p.start_level)} ${startPage}` });
+    out.p = p;
+    out.actual.push({ d: p.start_date, y: out.proj[0].y, label: p._view ? `Plan start (${fmtDate(p.start_date)})` : "Starting point", start: true, txt: `${normLevel(subject, p.start_level)} ${startPage}` });
     if(enr){
       const hist = histRows.filter(h => h.subject_enrollment_id === enr.id && h.cycle_key).sort((a,b) => a.cycle_key < b.cycle_key ? -1 : 1);
       for(const h of hist){
@@ -925,7 +984,34 @@ window.kumonPtcNav = function(client, role){
   let lastHash = "";
   function history_back_guard(){ window.history.replaceState(null, "", lastHash || "#"); }
   function currentEnrollmentId(){ const m = (location.hash || "").match(/^#e=([\w-]+)/); return m ? m[1] : null; }
+  function syncViewSeg(){
+    document.querySelectorAll("[data-pjview]").forEach(b => b.classList.toggle("active", b.dataset.pjview === pjView));
+    const d = document.getElementById("pjViewDate"); if(d) d.textContent = viewMonthLabel();
+    const box = document.getElementById("pjFromBox"), inp = document.getElementById("pjFrom"), rs = document.getElementById("pjFromReset");
+    if(box){ box.hidden = pjView !== "current"; }
+    if(inp){ inp.value = pjFrom; inp.max = todayISO(); }
+    if(rs){ rs.hidden = pjView !== "current" || pjFrom === firstOfMonth(); }
+  }
+  document.addEventListener("change", (e) => {
+    if(e.target && e.target.id === "pjFrom"){
+      const v = e.target.value;
+      if(!/^\d{4}-\d{2}-\d{2}$/.test(v || "")){ syncViewSeg(); return; }
+      pjFrom = v > todayISO() ? todayISO() : v; try{ sessionStorage.setItem("kumonProjFrom", pjFrom); }catch(_){ }
+      syncViewSeg(); if(draft) renderDetail(); else renderList();
+    }
+  });
+  document.addEventListener("click", (e) => {
+    if(!(e.target && e.target.id === "pjFromReset")) return;
+    pjFrom = firstOfMonth(); try{ sessionStorage.removeItem("kumonProjFrom"); }catch(_){ }
+    syncViewSeg(); if(draft) renderDetail(); else renderList();
+  });
+  document.addEventListener("click", (e) => {
+    const b = e.target.closest && e.target.closest("[data-pjview]"); if(!b) return;
+    pjView = b.dataset.pjview; try{ sessionStorage.setItem("kumonProjView", pjView); }catch(_){ }
+    syncViewSeg(); if(draft) renderDetail(); else renderList();   // keeps any unsaved edits on an open projection
+  });
   function route(){
+    syncViewSeg();
     lastHash = location.hash;
     const id = currentEnrollmentId();
     if(id) openDetail(id); else { draft = null; draftDirty = false; draftTouched = false; renderList(); }
@@ -941,7 +1027,7 @@ window.kumonPtcNav = function(client, role){
       .filter(e => (!isTeacherScoped() || myGroupTeachers().includes(e.teacher)) && teacherInFilter(e.teacher, ui.teacher))
       .filter(e => ui.subject === "all" || e.subject === ui.subject)
       .filter(e => !q || displayName(e.student_id, e.student_name).toLowerCase().includes(q) || String(e.student_name||"").toLowerCase().includes(q))
-      .map(e => { const p = projectionFor(e.id); const c = p ? compute(p, e) : null; return { e, p, c, st: c ? statusOf(c) : null }; })
+      .map(e => { const p = projectionFor(e.id); const vp = p ? viewOf(p, e) : null; const c = vp ? compute(vp, e) : null; return { e, p: vp, c, st: c ? statusOf(c) : null }; })
       .filter(r => ui.status === "all" || (ui.status === "none" ? !r.p : (r.st && r.st.key === ui.status)))
       .sort((a,b) => ui.sort === "behind"
           ? ((b.st && b.st.diff != null ? b.st.diff : -1e9) - (a.st && a.st.diff != null ? a.st.diff : -1e9))
@@ -957,7 +1043,7 @@ window.kumonPtcNav = function(client, role){
     const all = enrollments.filter(e => (e.subject === "Math" || e.subject === "Reading") && (!isTeacherScoped() || myGroupTeachers().includes(e.teacher)) && teacherInFilter(e.teacher, ui.teacher) && (ui.subject === "all" || e.subject === ui.subject));
     const withP = all.filter(e => projectionFor(e.id));
     const cnt = { ahead:0, ontrack:0, behind:0 };
-    withP.forEach(e => { const st = statusOf(compute(projectionFor(e.id), e)); if(cnt[st.key] != null) cnt[st.key]++; });
+    withP.forEach(e => { const st = statusOf(compute(viewOf(projectionFor(e.id), e), e)); if(cnt[st.key] != null) cnt[st.key]++; });
     const names = [...new Set([...staffTeachers, ...enrollments.map(e => e.teacher)].filter(Boolean))];
     const picker = isTeacherScoped()
       ? `<select id="fTeacher">${groupedTeacherOptions(myGroupTeachers(), ui.teacher, { scoped:true, withGroups:true })}</select>`
@@ -977,7 +1063,7 @@ window.kumonPtcNav = function(client, role){
         <select id="fSubject"><option value="all">Math &amp; Reading</option><option value="Math"${ui.subject === "Math" ? " selected" : ""}>Math</option><option value="Reading"${ui.subject === "Reading" ? " selected" : ""}>Reading</option></select>
         <select id="fSort"><option value="name">Sort: name</option><option value="behind"${ui.sort === "behind" ? " selected" : ""}>Sort: most behind first</option></select>
       </div>
-      <div class="card"><div class="table-scroll"><table class="stable"><thead><tr><th>Student</th><th>Subject</th><th>Teacher</th><th>Grade</th><th>Starting point</th><th>Now</th><th>Projection</th><th>Status</th><th></th></tr></thead><tbody>
+      <div class="card"><div class="table-scroll"><table class="stable"><thead><tr><th>Student</th><th>Subject</th><th>Teacher</th><th>Grade</th><th>${pjView === "current" ? "Plan from" : "Starting point"}</th><th>Now</th><th>Projection</th><th>Status</th><th></th></tr></thead><tbody>
       ${rows.length ? rows.slice(0, 600).map(r => {
         const s = studentById.get(r.e.student_id) || {};
         const bp = bestPos(r.e.subject, r.e);
@@ -1051,7 +1137,8 @@ window.kumonPtcNav = function(client, role){
   function renderDetail(){
     const e = enrollments.find(x => x.id === draft.subject_enrollment_id);
     if(!e){ route(); return; }
-    const c = compute(draft, e);
+    const vp = viewOf(draft, e);
+    const c = compute(vp, e);
     const st = statusOf(c);
     const L = LADDER[draft.subject];
     const today = todayISO();
@@ -1059,18 +1146,18 @@ window.kumonPtcNav = function(client, role){
     if(c.ok){
       const kisNow = c.lines ? c.lines.kis(today) : null;
       const startY = c.proj[0].y;
-      const yr = addMonths(draft.start_date, 12);
+      const yr = addMonths(vp.start_date, 12);
       const y1 = projAt(c, yr);
       let cross = null;
-      if(c.lines && startY < c.lines.kis(draft.start_date)){
+      if(c.lines && startY < c.lines.kis(vp.start_date)){
         const end = c.proj[c.proj.length-1].d;
-        for(let t = T(draft.start_date); t <= T(end); t += 2 * MS_DAY){ const d = iso(t); if(projAt(c, d) >= c.lines.kis(d)){ cross = d; break; } }
+        for(let t = T(vp.start_date); t <= T(end); t += 2 * MS_DAY){ const d = iso(t); if(projAt(c, d) >= c.lines.kis(d)){ cross = d; break; } }
       }
       const behindLv = kisNow != null ? Math.floor(kisNow/20) - Math.floor(startY/20) : null;
       ins = `<div class="insights">
-        <div class="ins"><div class="k">Grade level (KIS) for ${esc(draft.grade || "—")} now</div><div class="n">${kisNow != null ? "Level " + esc(bandName(draft.subject, kisNow)) : "—"}</div><div class="d">${kisNow == null ? "Set the grade to see the KIS and award lines." : behindLv > 0 ? `Starting point ${esc(draft.start_level)} = about ${behindLv} level${behindLv === 1 ? "" : "s"} to catch up.` : behindLv === 0 ? `Starting point ${esc(draft.start_level)} = at grade level.` : `Starting point ${esc(draft.start_level)} = ${-behindLv} level${behindLv === -1 ? "" : "s"} ahead of grade level.`}</div></div>
+        <div class="ins"><div class="k">Grade level (KIS) for ${esc(draft.grade || "—")} now</div><div class="n">${kisNow != null ? "Level " + esc(bandName(draft.subject, kisNow)) : "—"}</div><div class="d">${kisNow == null ? "Set the grade to see the KIS and award lines." : behindLv > 0 ? `${vp._view ? "From " + esc(vp.start_level) : "Starting point " + esc(draft.start_level)} = about ${behindLv} level${behindLv === 1 ? "" : "s"} to catch up.` : behindLv === 0 ? `${vp._view ? "From " + esc(vp.start_level) : "Starting point " + esc(draft.start_level)} = at grade level.` : `${vp._view ? "From " + esc(vp.start_level) : "Starting point " + esc(draft.start_level)} = ${-behindLv} level${behindLv === -1 ? "" : "s"} ahead of grade level.`}</div></div>
         <div class="ins"><div class="k">Target on 1st year (${esc(fmtMonth(yr))})</div><div class="n">Level ${esc(bandName(draft.subject, y1))}</div><div class="d">${(() => { const r = c.rows.filter(r => r.target <= yr).pop(); return r ? `Finishes ${esc(r.level)} by ${esc(fmtDate(r.target))}.` : "Still in the first level."; })()}</div></div>
-        <div class="ins"><div class="k">Catches up to grade level</div><div class="n">${cross ? "≈ " + esc(fmtDate(cross)) : (c.lines && startY >= c.lines.kis(draft.start_date) ? "Already there" : c.lines ? "Not within this plan" : "—")}</div><div class="d">${cross ? `Projection crosses the KIS line in Level ${esc(bandName(draft.subject, projAt(c, cross)))}.` : c.lines && startY < c.lines.kis(draft.start_date) ? "Add levels or more pages a day to see when." : ""}</div></div>
+        <div class="ins"><div class="k">Catches up to grade level</div><div class="n">${cross ? "≈ " + esc(fmtDate(cross)) : (c.lines && startY >= c.lines.kis(vp.start_date) ? "Already there" : c.lines ? "Not within this plan" : "—")}</div><div class="d">${cross ? `Projection crosses the KIS line in Level ${esc(bandName(draft.subject, projAt(c, cross)))}.` : c.lines && startY < c.lines.kis(draft.start_date) ? "Add levels or more pages a day to see when." : ""}</div></div>
         <div class="ins"><div class="k">Actual vs projection</div><div class="n">${statusPill(st)}</div><div class="d">${c.actual.length > 1 ? `Now at ${esc(c.actual[c.actual.length-1].txt || levelAndPage(draft.subject, c.actual[c.actual.length-1].y))} (${esc(c.actual[c.actual.length-1].label)}).` : "Fills in from the LWC each month."}</div></div>
       </div>`;
     }
@@ -1094,6 +1181,8 @@ window.kumonPtcNav = function(client, role){
           <div class="print-only print-title">GOAL SETTING SHEET · Kumon Iligan City</div>
         </div>
         <div class="sp-body">
+          ${pjView === "current" && !vp._view ? `<div class="banner no-print" style="margin-bottom:12px">Moving forward from ${esc(fmtDate(pjFrom))}: that's on or before this child's first day, so this is their first-day plan.</div>` : ""}
+          ${vp._view ? `<div class="banner no-print" style="margin-bottom:12px">Moving forward: this plan starts on <b>${esc(fmtDate(vp.start_date))}</b> at <b>${esc(vp.start_level)} ${esc(vp.start_page)}</b>, ${vp._view.src === "lwc" ? "from today's LWC" : vp._view.src === "closeout" ? "from the close-out before it" : vp._view.src === "estimate" ? "estimated between the close-outs either side of that date" : "from their starting point"}. Change the date at the top of the page. The starting point and date enrolled below are the first-day ones — they're what the Historical view uses.</div>` : ""}
           <div class="inputs">
             <label class="f">Grade<select data-f="grade">${gradeOpts}</select></label>
             <label class="f">Starting point<span class="pair"><select data-f="start_level">${lvOpts}</select><input type="number" min="1" max="200" data-f="start_page" value="${esc(draft.start_page)}" aria-label="Starting page"></span></label>
@@ -1137,7 +1226,8 @@ window.kumonPtcNav = function(client, role){
     grid:"#E8EAF0", ink:"#1B1F27", muted:"#636C7C", faint:"#9AA1AF", surface:"#FFFFFF" };
   function chartSeries(c, C){
     const today = todayISO();
-    const x0d = [draft.sy_start, draft.start_date].sort()[0];
+    const sp = c.p || draft;
+    const x0d = sp._view ? [sp.sy_start, sp.start_date].sort().pop() : [sp.sy_start, sp.start_date].sort()[0];   // moving forward: start the chart at the new start
     const x1d = [c.proj[c.proj.length-1].d, addMonths(today, 1)].sort().pop();
     const x0 = T(x0d), x1 = T(addMonths(x1d, 1));
     const mk = (fn) => { const pts = []; for(let t = x0; t <= x1; t += 15 * MS_DAY){ const d = iso(t); pts.push({ d, y: fn(d) }); } return pts; };
@@ -1233,6 +1323,7 @@ window.kumonPtcNav = function(client, role){
       <div class="xg">
         <div><b>Starting point</b>${esc(normLevel(draft.subject, draft.start_level))} ${esc(draft.start_page)}</div>
         <div><b>Date enrolled</b>${esc(fmtDate(draft.start_date))}</div>
+        ${(() => { const v = viewOf(draft, e); return v._view ? `<div><b>Plan from</b>${esc(v.start_level)} ${esc(v.start_page)} · ${esc(fmtDate(v.start_date))}</div>` : ""; })()}
         <div><b>School year starts</b>${esc(fmtDate(draft.sy_start))}</div>
         <div><b>Repeats per set</b>${esc(draft.default_rate)}×</div>
         <div><b>Pages per day</b>${esc(draft.default_ppd)}</div>
@@ -1283,7 +1374,7 @@ window.kumonPtcNav = function(client, role){
     .xsig .p-good{ background:#E4F5EC; color:#1E8E5A; } .xsig .p-warn{ background:#FBF0E1; color:#C2831F; } .xsig .p-muted{ background:#FBFBFE; color:#636C7C; border:1px solid #E1E4EB; }`;
   async function downloadSheet(kind){
     const e = enrollments.find(x => x.id === draft.subject_enrollment_id); if(!e) return;
-    const c = compute(draft, e); if(!c.ok){ alert("Pick the starting point first."); return; }
+    const c = compute(viewOf(draft, e), e); if(!c.ok){ alert("Pick the starting point first."); return; }
     toast(kind === "pdf" ? "Making the PDF…" : "Making the image…");
     try{
       await loadLib("html2canvas"); if(kind === "pdf") await loadLib("jspdf");
