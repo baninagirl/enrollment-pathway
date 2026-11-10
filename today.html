@@ -356,6 +356,11 @@
   .td-spark svg{ width:100%; height:auto; display:block; }
   .td-links{ display:flex; gap:10px; flex-wrap:wrap; }
   .td-links a{ background:var(--surface); padding:10px 14px; border-radius:12px; font-size:13.5px; font-weight:600; box-shadow:var(--shadow); text-decoration:none; }
+  .td-marks{ display:inline-flex; gap:6px; }
+  .td-mark{ font:inherit; font-size:12px; font-weight:600; border:1px solid var(--border); background:var(--surface); color:var(--ink); border-radius:99px; padding:4px 11px; cursor:pointer; transition:transform .15s var(--spring, ease), background-color .15s ease; }
+  .td-mark:hover{ background:var(--surface-2); } .td-mark:active{ transform:scale(.95); }
+  .td-mark[data-mark="picked"]{ border-color:var(--warn); color:var(--warn); }
+  .td-mark[disabled]{ opacity:.5; cursor:default; }
   .td-empty{ padding:14px 4px; color:var(--ink-muted); font-size:13.5px; }
 
   @media (max-width:520px){ .td-metrics{ grid-template-columns:repeat(2, minmax(0,1fr)); } }
@@ -1295,8 +1300,9 @@ window.kumonPtcNav = function(client, role){
       const list = withoutWorksheets();
       const fmtD = d => new Date(T(d)).toLocaleDateString("en-US", { timeZone: "UTC", weekday: "short", month: "short", day: "numeric" });
       return `<div class="td-kicker">Worksheets at home</div><h2>Children without worksheets</h2><p class="dek">They missed a visit with no pick-up and no reschedule, so they've had nothing to work on since. Longest first. Mark a pick-up or a reschedule on the Calendar when it happens.</p>
-        <div class="card td-list">${list.map(o => kidRow(o.sid, { items: o.enrs, extra: `<span class="td-chip ${o.days >= 7 ? "td-bad" : "td-warn"}">${o.sure ? "" : "at least "}${plural(o.days, "day")} · since ${esc(fmtD(o.since))}</span>${o.missedVisits > 1 ? `<span class="td-chip td-mute">${o.missedVisits} visits missed</span>` : ""}` })).join("") || `<div class="td-empty">Every child has worksheets at home.</div>`}</div>
-        <p class="td-sub">Counted from the Calendar's ticks, pick-ups and reschedules over the last ${HIST_WEEKS} weeks. Children on leave (marked absent) and KC subjects aren't counted.</p>
+        <div class="card td-list">${list.map(o => kidRow(o.sid, { items: o.enrs, extra: `<span class="td-chip ${o.days >= 7 ? "td-bad" : "td-warn"}">${plural(o.days, "day")} · since ${esc(fmtD(o.since))}</span>${o.missedVisits > 1 ? `<span class="td-chip td-mute">${o.missedVisits} visits missed</span>` : ""}
+          <span class="td-marks"><button type="button" class="td-mark" data-mark="picked" data-sid="${esc(o.sid)}" title="A parent took the worksheets home — marked on the ${esc(fmtD(o.lastMissed))} visit">Picked up</button><button type="button" class="td-mark" data-mark="came" data-sid="${esc(o.sid)}" title="They did come on ${esc(fmtD(o.lastMissed))} — the tick was missed">Came ${esc(fmtD(o.lastMissed).split(",")[0])}</button></span>` })).join("") || `<div class="td-empty">Every child has worksheets at home.</div>`}</div>
+        <p class="td-sub">Counted from the Calendar's ticks, pick-ups and reschedules since the week Picked up was added, and only on days the centre was ticking. Children on leave (marked absent) and KC subjects aren't counted. Marking here saves on their latest missed visit, the same as on the Calendar.</p>
         <div class="td-links"><a href="calendar.html">Open the Calendar</a></div>`;
     }
     if(k === "proj"){
@@ -1398,12 +1404,18 @@ window.kumonPtcNav = function(client, role){
      A visit that passes with no tick, no pick-up and no reschedule leaves the child without worksheets from
      that day until they next come in or someone picks up. Built from the last 8 weeks of the Calendar. */
   const HIST_WEEKS = 8;
+  const PICKUP_TRACKING_FROM = "2026-11-09";   // the week "Picked up" was added (phase119) — earlier misses can't be told apart from pick-ups
   let wsHomeCache = null;
   function withoutWorksheets(){
     if(wsHomeCache) return wsHomeCache;
     const today = todayISO(), att = D.attHist || [], moves = D.movesHist || [];
     // tracking starts with the first week anyone ticked anything — before that the Hub can't know
-    const trackFrom = att.reduce((m, r) => (!m || r.week_start < m) ? r.week_start : m, null);
+    const firstTick = att.reduce((m, r) => (!m || r.week_start < m) ? r.week_start : m, null);
+    const trackFrom = firstTick && firstTick > PICKUP_TRACKING_FROM ? firstTick : PICKUP_TRACKING_FROM;
+    // days someone ticked or marked anything — a day with no marks at all means nobody was keeping track, not that everyone missed
+    const markedDays = new Set();
+    for(const r of att){ if(!(r.arrived || r.picked_up)) continue; const wk0 = DAY_ORDER.indexOf(r.day) < 0 ? null : r.week_start;
+      if(!wk0) continue; const mon = new Date(T(wk0)).getUTCDay() === 0 ? addDays(wk0, 1) : wk0; markedDays.add(addDays(mon, DAY_ORDER.indexOf(r.day))); }
     const out = [];
     if(!trackFrom){ wsHomeCache = out; return out; }
     const onLeave = new Set(D.abs.filter(a => !a.resumed_at).map(a => a.student_id));
@@ -1426,7 +1438,8 @@ window.kumonPtcNav = function(client, role){
             const date = addDays(wk, DAY_ORDER.indexOf(mv ? mv.to_day : slot.day));
             if(date < start || date > today) continue;
             const recs = att.filter(r => ids.has(r.schedule_id) && r.day === slot.day && (r.week_start === wk || r.week_start === addDays(wk, -1)));
-            const v = visits.get(date) || { came: false, picked: false };
+            const v = visits.get(date) || { came: false, picked: false, rows: [] };
+            v.rows.push({ schedule_id: sc.id, day: slot.day, week_start: wk });
             if(recs.some(r => r.arrived)) v.came = true; if(recs.some(r => r.picked_up)) v.picked = true;
             visits.set(date, v);
           }
@@ -1435,17 +1448,48 @@ window.kumonPtcNav = function(client, role){
       const dates = [...visits.keys()].sort();
       let lastGot = null; for(const d of dates){ const v = visits.get(d); if(v.came || v.picked) lastGot = d; }
       // the first visit after the last hand-out that has already passed with nothing marked
-      const missed = dates.filter(d => (!lastGot || d > lastGot) && d < today && !visits.get(d).came && !visits.get(d).picked);
+      const missed = dates.filter(d => (!lastGot || d > lastGot) && d < today && markedDays.has(d) && !visits.get(d).came && !visits.get(d).picked);
       if(!missed.length) continue;
       const since = missed[0];
-      out.push({ sid, since, days: Math.round((T(today) - T(since)) / MS_DAY), missedVisits: missed.length, lastGot, sure: !!lastGot, enrs });
+      const last = missed[missed.length - 1];
+      out.push({ sid, since, days: Math.round((T(today) - T(since)) / MS_DAY), missedVisits: missed.length, lastGot, sure: !!lastGot, enrs, lastMissed: last, lastRows: visits.get(last).rows });
     }
     out.sort((a, b) => b.days - a.days);
     wsHomeCache = out; return out;
   }
 
+  /* ---------- marking a child from the "without worksheets" list (same rows the Calendar uses) ---------- */
+  let marking = false;
+  async function markVisit(sid, kind){
+    const o = withoutWorksheets().find(x => x.sid === sid); if(!o || marking) return;
+    marking = true; document.querySelectorAll(`[data-mark][data-sid="${CSS.escape(sid)}"]`).forEach(b => b.disabled = true);
+    const at = new Date().toISOString(), by = currentUser ? (currentUser.email || null) : null;
+    const payload = o.lastRows.map(r => { const cur = (D.attHist || []).find(a => a.schedule_id === r.schedule_id && a.day === r.day && a.week_start === r.week_start) || {};
+      return kind === "picked"
+        ? { schedule_id: r.schedule_id, day: r.day, week_start: r.week_start, arrived: !!cur.arrived, picked_up: true, picked_up_at: at, picked_up_by: by }
+        : { schedule_id: r.schedule_id, day: r.day, week_start: r.week_start, arrived: true, arrived_at: at }; });
+    let error = null;
+    for(let attempt = 0; attempt < 3; attempt++){
+      ({ error } = await sbClient.from("schedule_attendance").upsert(payload, { onConflict: "schedule_id,day,week_start" }));
+      if(!error) break;
+      if(/jwt|token|expired|401/i.test(String(error.message || ""))){ try{ await sbClient.auth.refreshSession(); }catch(_){ } }
+      await new Promise(r => setTimeout(r, 600 * (attempt + 1)));
+    }
+    marking = false;
+    const name = nameOf(sid), when = new Date(T(o.lastMissed)).toLocaleDateString("en-US", { timeZone: "UTC", weekday: "short", month: "short", day: "numeric" });
+    if(error){
+      console.warn(error); document.querySelectorAll(`[data-mark][data-sid="${CSS.escape(sid)}"]`).forEach(b => b.disabled = false);
+      toast(/row-level security|permission/i.test(String(error.message || "")) ? "Couldn't save — this student isn't in your group's list. Ask an admin." : "Couldn't save — check the connection and try again.");
+      return;
+    }
+    logHistory(kind === "picked" ? "worksheets_picked_up" : "toggle_arrived", kind === "picked" ? `Marked ${name}'s worksheets picked up for ${when} (from Today)` : `Marked ${name} arrived for ${when} (from Today)`, o.lastRows[0].schedule_id);
+    toast(kind === "picked" ? `${name}: worksheets picked up (${when}).` : `${name}: marked as came on ${when}.`);
+    await loadToday(); render();
+  }
+
   /* ---------- actions ---------- */
   document.addEventListener("click", (e) => {
+    const mk = e.target.closest("[data-mark]"); if(mk){ e.stopPropagation(); if(!mk.disabled) markVisit(mk.dataset.sid, mk.dataset.mark); return; }
     const sl = e.target.closest("[data-slot]"); if(sl){ tdUi.slot = Number(sl.dataset.slot); render(); return; }
     const ks = e.target.closest("[data-kissub]"); if(ks){ tdUi.kisSub = ks.dataset.kissub; render(); return; }
     const st = e.target.closest("[data-story]"); if(st){ openDrawer({ type: "story", k: st.dataset.story }); return; }
