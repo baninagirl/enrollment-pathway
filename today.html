@@ -1154,7 +1154,7 @@ window.kumonPtcNav = function(client, role){
       if(enrs.some(e => !has.has(e.id))) fl.push(`<span class="td-chip td-warn">No projection</span>`);
     }
     const tick = opts.tick ? `<span class="td-tick${opts.kid && opts.kid.arrived ? " yes" : ""}" title="${opts.kid && opts.kid.arrived ? "Arrived" : "Not yet"}"></span>` : "";
-    const teachers = tdUi.who === "all" ? [...new Set(enrs.map(e => e.teacher).filter(Boolean))].join(", ") : "";
+    const teachers = [...new Set(enrs.map(e => e.teacher).filter(Boolean))].join(", ");   // always shown, so lists say whose child it is
     return `<div class="td-kid${opts.kid && opts.kid.movedTo ? " out" : ""}" tabindex="0" role="button" data-kid="${esc(sid)}">${tick}${avatar(sid)}<div style="min-width:0"><div class="td-nm">${esc(nameOf(sid, opts.fallbackName))}</div><div class="td-sub">${esc(s && s.age_grade ? normGrade(s.age_grade) : "")}${teachers ? " · " + esc(teachers) : ""}</div></div>${enrs.map(e => subjChip(e, (bestPos(e.subject, e) || {}).txt)).join("")}<span class="td-flags">${opts.extra || fl.join("")}</span></div>`;
   }
 
