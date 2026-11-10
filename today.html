@@ -1260,7 +1260,7 @@ window.kumonPtcNav = function(client, role){
     </svg>` : `<div class="td-empty">No subjects with a grade and a level to compare yet.</div>`;
     const b = pts.filter(p => p.k.gap < 0), y1 = b.filter(p => p.k.months >= 12).length, m6 = b.filter(p => p.k.months >= 6 && p.k.months < 12).length;
     return `<section class="td-sec"><div class="td-kicker">Grade level</div><h2 class="td-title">Where ${tdUi.who === "all" ? "the centre's" : "your"} students stand against KIS</h2>
-      <p class="td-dek">Each dot is one student in one subject. The grey line is the Kumon Initial Standard for their grade today; dots to the left are behind it. Tap a dot to see that child's path.</p>
+      <p class="td-dek">Each dot is one student in one subject. The grey line is the Kumon International Standard for their grade today; dots to the left are behind it. Tap a dot to see that child's path.</p>
       <div class="card td-kis"><div class="td-kis-tools"><div class="seg">${["all","Math","Reading"].map(s => `<button class="${tdUi.kisSub === s ? "active" : ""}" data-kissub="${s}">${s === "all" ? "Both" : s}</button>`).join("")}</div><span class="td-sub">levels behind (−) or ahead (+) of KIS</span></div>
         <div class="td-kis-chart">${svg}</div>
         <div class="td-kis-foot"><div><b style="color:var(--good)">${pts.length - b.length}</b>at or past KIS</div><div><b style="color:var(--warn)">${b.length - y1 - m6}</b>behind under 6 months</div><div><b style="color:var(--bad)">${m6}</b>behind 6–12 months</div><div><b style="color:var(--bad)">${y1}</b>behind a year or more</div></div></div></section>`;
@@ -1302,7 +1302,6 @@ window.kumonPtcNav = function(client, role){
       return `<div class="td-kicker">Worksheets at home</div><h2>Children without worksheets</h2><p class="dek">They missed a visit with no pick-up and no reschedule, so they've had nothing to work on since. Longest first. Mark a pick-up or a reschedule on the Calendar when it happens.</p>
         <div class="card td-list">${list.map(o => kidRow(o.sid, { items: o.enrs, extra: `<span class="td-chip ${o.days >= 7 ? "td-bad" : "td-warn"}">${plural(o.days, "day")} · since ${esc(fmtD(o.since))}</span>${o.missedVisits > 1 ? `<span class="td-chip td-mute">${o.missedVisits} visits missed</span>` : ""}
           <span class="td-marks"><button type="button" class="td-mark" data-mark="picked" data-sid="${esc(o.sid)}" title="A parent took the worksheets home — marked on the ${esc(fmtD(o.lastMissed))} visit">Picked up</button><button type="button" class="td-mark" data-mark="came" data-sid="${esc(o.sid)}" title="They did come on ${esc(fmtD(o.lastMissed))} — the tick was missed">Came ${esc(fmtD(o.lastMissed).split(",")[0])}</button></span>` })).join("") || `<div class="td-empty">Every child has worksheets at home.</div>`}</div>
-        <p class="td-sub">Counted from the Calendar's ticks, pick-ups and reschedules since the week Picked up was added, and only on days the centre was ticking. Children on leave (marked absent) and KC subjects aren't counted. Marking here saves on their latest missed visit, the same as on the Calendar.</p>
         <div class="td-links"><a href="calendar.html">Open the Calendar</a></div>`;
     }
     if(k === "proj"){
