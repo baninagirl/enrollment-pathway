@@ -1034,7 +1034,9 @@ window.kumonPtcNav = function(client, role){
       .filter(e => (!isTeacherScoped() || myGroupTeachers().includes(e.teacher)) && teacherInFilter(e.teacher, ui.teacher))
       .filter(e => ui.subject === "all" || e.subject === ui.subject)
       .filter(e => !q || displayName(e.student_id, e.student_name).toLowerCase().includes(q) || String(e.student_name||"").toLowerCase().includes(q))
-      .map(e => { const p = projectionFor(e.id); const vp = p ? viewOf(p, e) : null; const c = vp ? compute(vp, e) : null; return { e, p: vp, c, st: c ? statusOf(c) : null }; })
+      .map(e => { const p = projectionFor(e.id); const vp = p ? viewOf(p, e) : null; const c = vp ? compute(vp, e) : null;
+        const st = p ? statusOf(vp === p ? c : compute(p, e)) : null;   // ahead / behind always measured from their first day — the same projection in both views
+        return { e, p: vp, c, st }; })
       .filter(r => ui.status === "all" || (ui.status === "none" ? !r.p : (r.st && r.st.key === ui.status)))
       .sort((a,b) => ui.sort === "behind"
           ? ((b.st && b.st.diff != null ? b.st.diff : -1e9) - (a.st && a.st.diff != null ? a.st.diff : -1e9))
@@ -1050,14 +1052,14 @@ window.kumonPtcNav = function(client, role){
     const all = enrollments.filter(e => (e.subject === "Math" || e.subject === "Reading") && (!isTeacherScoped() || myGroupTeachers().includes(e.teacher)) && teacherInFilter(e.teacher, ui.teacher) && (ui.subject === "all" || e.subject === ui.subject));
     const withP = all.filter(e => projectionFor(e.id));
     const cnt = { ahead:0, ontrack:0, behind:0 };
-    withP.forEach(e => { const st = statusOf(compute(viewOf(projectionFor(e.id), e), e)); if(cnt[st.key] != null) cnt[st.key]++; });
+    withP.forEach(e => { const st = statusOf(compute(projectionFor(e.id), e)); if(cnt[st.key] != null) cnt[st.key]++; });
     const names = [...new Set([...staffTeachers, ...enrollments.map(e => e.teacher)].filter(Boolean))];
     const picker = isTeacherScoped()
       ? `<select id="fTeacher">${groupedTeacherOptions(myGroupTeachers(), ui.teacher, { scoped:true, withGroups:true })}</select>`
       : `<select id="fTeacher">${groupedTeacherOptions(names, ui.teacher, { withAll:true, withGroups:true })}</select>`;
     const tile = (key, n, label, cls) => `<button class="stat ${cls||""}${ui.status === key ? " selected" : ""}" data-action="f-status" data-status="${key}"><span class="n">${n}</span><span class="l">${label}</span></button>`;
     $("#view").innerHTML = `
-      ${planBar(pjView === "current" ? `Ahead / behind is counted against a plan that starts on ${esc(fmtDate(pjFrom))}.` : "Ahead / behind is counted against each child's plan from their first day.")}
+      ${planBar(pjView === "current" ? `Same projections — the plans below start on ${esc(fmtDate(pjFrom))}. Ahead / behind is still counted from each child's first day.` : "Ahead / behind is counted from each child's first day.")}
       <div class="stats">
         ${tile("all", all.length, `Subjects · ${withP.length} with a projection`)}
         ${tile("none", all.length - withP.length, "No projection yet")}
@@ -1147,7 +1149,7 @@ window.kumonPtcNav = function(client, role){
     if(!e){ route(); return; }
     const vp = viewOf(draft, e);
     const c = compute(vp, e);
-    const st = statusOf(c);
+    const st = statusOf(vp === draft ? c : compute(draft, e));   // the same projection: ahead / behind from their first day in both views
     const L = LADDER[draft.subject];
     const today = todayISO();
     let ins = "";
@@ -1318,7 +1320,7 @@ window.kumonPtcNav = function(client, role){
   }
   function exportSheetHtml(e, c){
     const C = PRINT_COLORS;
-    const st = statusOf(c);
+    const st = statusOf(c.p && c.p._view ? compute(draft, e) : c);   // ahead / behind from their first day
     const chart = chartSvg(c, C);
     const legend = chart.vis.map(s => `<span style="display:inline-flex;align-items:center;gap:5px;margin-right:12px;"><i style="display:inline-block;width:14px;height:3px;border-radius:2px;background:${s.color}"></i>${esc(s.name)}</span>`).join("");
     const insights = $$(".insights .ins").map(x => `<div class="xi">${x.innerHTML}</div>`).join("");
