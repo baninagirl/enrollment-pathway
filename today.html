@@ -833,18 +833,34 @@ window.kumonPtcNav = function(client, role){
     });
   }
 
+  // Reads a whole table 1000 rows at a time. The first page also asks how many rows there are, so the
+  // rest of the pages are fetched all at once instead of one after another (big tables load much faster).
   async function selectAll(table, cols, build){
-    let out = [], from = 0;
-    for(;;){
-      let q = sbClient.from(table).select(cols).range(from, from + 999);
-      if(build) q = build(q);
-      const { data, error } = await q;
-      if(error){ console.warn(table, error); const err = new Error(error.message || "load failed"); err.loadFailed = true; throw err; }
-      out = out.concat(data || []);
-      if(!data || data.length < 1000) return out;
-      from += 1000;
+    const PAGE = 1000;
+    const fail = error => { console.warn(table, error); const err = new Error(error.message || "load failed"); err.loadFailed = true; return err; };
+    const page = (from, withCount) => { let q = sbClient.from(table).select(cols, withCount ? { count: "exact" } : undefined).range(from, from + PAGE - 1); if(build) q = build(q); return q; };
+    const first = await page(0, true);
+    if(first.error) throw fail(first.error);
+    let out = first.data || [];
+    if(out.length < PAGE) return out;
+    if(typeof first.count === "number" && first.count > PAGE){
+      const starts = []; for(let f = PAGE; f < first.count; f += PAGE) starts.push(f);
+      const rest = await Promise.all(starts.map(f => page(f, false)));
+      for(const r of rest){ if(r.error) throw fail(r.error); out = out.concat(r.data || []); }
+      // rows added while loading could spill onto one more page
+      let from = PAGE * (starts.length + 1), last = rest.length ? rest[rest.length - 1].data || [] : [];
+      while(last.length === PAGE){ const r = await page(from, false); if(r.error) throw fail(r.error); last = r.data || []; out = out.concat(last); from += PAGE; }
+      return out;
+    }
+    // no count available: one page after another, as before
+    for(let from = PAGE;; from += PAGE){
+      const r = await page(from, false);
+      if(r.error) throw fail(r.error);
+      out = out.concat(r.data || []);
+      if(!r.data || r.data.length < PAGE) return out;
     }
   }
+
 
   /* the KIS / award lines for one grade: value (in notches, 20 per level) at a date — same as the Projection page */
   function standardLines(subject, grade, sy){
@@ -1404,8 +1420,8 @@ window.kumonPtcNav = function(client, role){
       tdLoad("projections", async () => { D.proj = await selectAll("study_projections", "subject_enrollment_id", q => q.order("subject_enrollment_id")); }),
       tdLoad("PTC", async () => { const r = await sbClient.rpc("ptc_due", { p_days_ahead: 7 }); if(r.error) throw r.error; D.due = r.data || []; }),
       tdLoad("PTC done", async () => { D.ms = await selectAll("ptc_milestones", "student_id,month_no,due_date,status,done_on", q => q.gte("done_on", monthKey() + "-01").order("student_id")); }),
-      tdLoad("payments", async () => { D.rec = await selectAll("payment_receipts", "student_id,covers_month,status,created_at", q => q.gte("covers_month", monthKey() + "-01").lte("covers_month", monthEndOf(monthKey())).order("student_id")); }),
-      tdLoad("absences", async () => { D.abs = await selectAll("absence_records", "student_id,subject_enrollment_ids,marked_absent_at,resumed_at", q => q.order("marked_absent_at")); }),
+      tdLoad("payments", async () => { D.rec = await selectAll("payment_receipts", "student_id,covers_month,status,created_at", q => q.gte("covers_month", monthKey() + "-01").lte("covers_month", monthEndOf(monthKey())).order("student_id").order("id")); }),
+      tdLoad("absences", async () => { D.abs = await selectAll("absence_records", "student_id,subject_enrollment_ids,marked_absent_at,resumed_at", q => q.order("marked_absent_at").order("id")); }),
       loadToday()
     ]);
     // moves and arrivals are optional extras: a failed load just means none show
@@ -1419,21 +1435,24 @@ window.kumonPtcNav = function(client, role){
   // the parts that change during the day: this week's moves and arrived ticks
   async function loadToday(){
     const wk = weekStart();
-    await tdLoad("arrivals", async () => {
-      const rows = await selectAll("schedule_attendance", "*", q => q.in("week_start", [wk, addDays(wk, -1)]).order("schedule_id"));
-      const byKey = new Map(); rows.sort((a, b) => (a.week_start === wk) - (b.week_start === wk)).forEach(r => byKey.set(r.schedule_id + "|" + r.day, r)); D.att = [...byKey.values()];
-    });
-    await tdLoad("moves", async () => {
-      try{ D.moves = await selectAll("schedule_moves", "schedule_id,week_start,from_day,to_day,to_time", q => q.eq("week_start", moveWeek()).order("schedule_id")); }
-      catch(e){ if(/does not exist|schema cache/i.test(String(e.message || ""))){ D.moves = []; return; } throw e; }
-    });
     // the last 8 weeks of visits (came / picked up) and reschedules, for "no worksheets at home"
     const from = addDays(wk, -HIST_WEEKS * 7 - 1);
-    await tdLoad("visit history", async () => { D.attHist = await selectAll("schedule_attendance", "*", q => q.gte("week_start", from).order("week_start")); });
-    await tdLoad("reschedule history", async () => {
-      try{ D.movesHist = await selectAll("schedule_moves", "schedule_id,week_start,from_day,to_day", q => q.gte("week_start", from).order("week_start")); }
-      catch(e){ if(/does not exist|schema cache/i.test(String(e.message || ""))){ D.movesHist = []; return; } throw e; }
-    });
+    // all four at once (they don't depend on each other)
+    await Promise.all([
+      tdLoad("arrivals", async () => {
+        const rows = await selectAll("schedule_attendance", "*", q => q.in("week_start", [wk, addDays(wk, -1)]).order("schedule_id"));
+        const byKey = new Map(); rows.sort((a, b) => (a.week_start === wk) - (b.week_start === wk)).forEach(r => byKey.set(r.schedule_id + "|" + r.day, r)); D.att = [...byKey.values()];
+      }),
+      tdLoad("moves", async () => {
+        try{ D.moves = await selectAll("schedule_moves", "schedule_id,week_start,from_day,to_day,to_time", q => q.eq("week_start", moveWeek()).order("schedule_id")); }
+        catch(e){ if(/does not exist|schema cache/i.test(String(e.message || ""))){ D.moves = []; return; } throw e; }
+      }),
+      tdLoad("visit history", async () => { D.attHist = await selectAll("schedule_attendance", "schedule_id,day,week_start,arrived,picked_up", q => q.gte("week_start", from).order("week_start").order("schedule_id").order("day")); }),
+      tdLoad("reschedule history", async () => {
+        try{ D.movesHist = await selectAll("schedule_moves", "schedule_id,week_start,from_day,to_day", q => q.gte("week_start", from).order("week_start").order("schedule_id")); }
+        catch(e){ if(/does not exist|schema cache/i.test(String(e.message || ""))){ D.movesHist = []; return; } throw e; }
+      })
+    ]);
     wsHomeCache = null;
   }
 
