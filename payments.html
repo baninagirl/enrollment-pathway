@@ -1474,6 +1474,13 @@ window.kumonPtcNav = function(client, role){
               <span><b>${esc(e.subject || "Subject")}</b> · ${esc(e.teacher || "—")} <span class="muted" style="font-size:12px;">— last paid ${esc(fmtBillLabel(lp))}, absent from ${esc(fmtBillLabel(shiftMonth(lp, 1)))}</span></span>
             </label>`;
           }).join("")}
+          <label class="field" style="margin-top:6px;">Absent for the month of
+            <select name="absentFrom">
+              <option value="">Automatic — the month after each subject was last paid</option>
+              ${[-2, -1, 0, 1].map(d => { const ym = shiftMonth(selectedMonth, d); return `<option value="${esc(ym)}">${esc(fmtBillLabel(ym))}${d === 0 ? " (this month)" : ""}</option>`; }).join("")}
+            </select>
+          </label>
+          <span class="hint" style="font-size:11.5px; display:block; margin-top:-4px;">Retention counts the months away from here, and coming back means paying for this month first.</span>
         </div>
         <div class="modal-foot">
           <button type="button" class="btn ghost" data-action="close-modal">Cancel</button>
@@ -1502,12 +1509,15 @@ window.kumonPtcNav = function(client, role){
     const ids = new FormData(form).getAll("enrollment");
     if(!ids.length){ alert("Pick at least one subject."); return; }
     const picked = enrollments.filter(e => ids.includes(e.id));
+    // "Absent for the month of" (a tuition month, stored the way covers_month is) — empty = automatic.
+    // Stored as last_paid_month = the month before it, which is what Retention and the catch-up work from.
+    const absentFrom = (new FormData(form).get("absentFrom") || "").toString();
     const retry = async (fn) => { let r; for(let i = 0; i < 3; i++){ if(i){ await new Promise(z => setTimeout(z, 800 * i)); try{ await sbClient.auth.refreshSession(); }catch(_){ } } r = await fn(); if(!r.error) return r; } return r; };
     // 1) The absence record FIRST — it's what Retention / the Absent tab and Resume work from. If this can't be
     //    saved, nothing is changed (the child stays active), so no one can drop out of the follow-up list.
     const records = picked.map(e => ({
       student_id: studentId,
-      last_paid_month: lastFullyPaidMonthForSubject(studentId, e.subject, selectedMonth),
+      last_paid_month: /^\d{4}-\d{2}$/.test(absentFrom) ? shiftMonth(absentFrom, -1) : lastFullyPaidMonthForSubject(studentId, e.subject, selectedMonth),
       subject_enrollment_ids: [e.id],
       marked_absent_by: currentUser ? currentUser.email : null
     }));
@@ -1533,7 +1543,7 @@ window.kumonPtcNav = function(client, role){
       await Promise.all([loadEnrollments(), loadAbsences()]); render();
       return;
     }
-    logHistory("mark_absent", `Marked ${s ? displayName(s) : "a student"} absent — ${picked.map(e => e.subject).join(" + ")}`, "student", studentId);
+    logHistory("mark_absent", `Marked ${s ? displayName(s) : "a student"} absent — ${picked.map(e => e.subject).join(" + ")}${absentFrom ? " from " + fmtBillLabel(absentFrom) : ""}`, "student", studentId);
     closeModal();
     await Promise.all([loadEnrollments(), loadAbsences()]);
     render();
