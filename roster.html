@@ -722,14 +722,15 @@ window.kumonPtcNav = function(client, role){
   // if there is one; otherwise this falls back to the plain-text day notes some legacy
   // enrollments (like Miss Mira's imported roster) still carry, so the column isn't just
   // blank for a student nobody's opened Edit on yet.
+  function fmtSlots(slots){
+    return `<div class="sched-cell">${slots.filter(s => s && s.day).map(s =>
+      `<span class="sched-line">${esc(s.day)}${s.time ? " " + fmtTime12(s.time) : ""} <span class="mode-tag ${s.mode==="RI"?"ri":"ic"}">${s.mode==="RI"?"RI":"IC"}</span></span>`
+    ).join("")}</div>`;
+  }
   function fmtSchedule(enrollment){
     const sc = scheduleFor(enrollment.id);
     const slots = sc && Array.isArray(sc.slots) ? sc.slots.filter(s => s && s.day) : [];
-    if(slots.length){
-      return `<div class="sched-cell">${slots.map(s =>
-        `<span class="sched-line">${esc(s.day)}${s.time ? " " + fmtTime12(s.time) : ""} <span class="mode-tag ${s.mode==="RI"?"ri":"ic"}">${s.mode==="RI"?"RI":"IC"}</span></span>`
-      ).join("")}</div>`;
-    }
+    if(slots.length) return fmtSlots(slots);
     const legacy = parseScheduleText(enrollment.schedule);
     if(legacy.length){
       return `<div class="sched-cell">${legacy.map(s =>
@@ -1626,8 +1627,9 @@ window.kumonPtcNav = function(client, role){
   // someone clicks "Move to regular roster" or unticks Monitor in Edit — it no longer runs out at the
   // end of the month. monitor_since ("YYYY-MM") is the month monitoring started; monitor_cycle is only
   // the NEW label month now. Only live (current-cycle) rows can be monitors; archived snapshots never are.
+  // Live rows and closed-month rows alike (a closed month keeps is_monitor as it was at close-out).
   function isMonitorRow(e){
-    return !!e.is_monitor && !e.archived;
+    return !!e.is_monitor;
   }
   function monitorSinceKey(e){ return e.monitor_since || e.monitor_cycle || ""; }
   function monitorTagHtml(e){
@@ -1863,6 +1865,9 @@ window.kumonPtcNav = function(client, role){
       enrollment_type: e.enrollment_type || null, is_monitor: !!e.is_monitor, monitor_since: e.monitor_since || null, monitor_cycle: e.monitor_cycle || null,
       // Phase42: paid/unpaid for the month after this one, as it stood at close-out.
       payment_month: shiftMonth(cycleKey, 1), payment_status: paymentStatusFor(e.student_id, shiftMonth(cycleKey, 1)),
+      // Phase122: the schedule and Date enrolled as they were at close-out.
+      schedule_slots: (() => { const sc = scheduleFor(e.id); const sl = sc && Array.isArray(sc.slots) ? sc.slots.filter(x => x && x.day).map(x => ({ day: x.day, time: x.time || null, mode: x.mode === "RI" ? "RI" : "IC" })) : []; return sl.length ? sl : null; })(),
+      enrolled_on: enrolledISO(e) || null,
       closed_by_email: currentUser ? currentUser.email : null
     }));
 
@@ -1875,7 +1880,12 @@ window.kumonPtcNav = function(client, role){
     }));
     const candidateIds = candidates.map(e => e.id);
 
-    const { data: insertedHistory, error: histError } = await sbClient.from("enrollment_monthly_history").insert(rows).select();
+    let { data: insertedHistory, error: histError } = await sbClient.from("enrollment_monthly_history").insert(rows).select();
+    // phase122 not run yet: close out without the schedule / date columns rather than not at all
+    if(histError && /schedule_slots|enrolled_on/.test(histError.message || "")){
+      rows.forEach(r => { delete r.schedule_slots; delete r.enrolled_on; });
+      ({ data: insertedHistory, error: histError } = await sbClient.from("enrollment_monthly_history").insert(rows).select());
+    }
     if(histError){ alert("Couldn't archive: " + histError.message); return; }
     let historyIds = (insertedHistory || []).map(h => h.id);
 
@@ -2077,6 +2087,11 @@ window.kumonPtcNav = function(client, role){
       teacher: h.teacher, mode: h.mode, current_level: h.current_level, current_page: h.current_page,
       goal_level: h.goal_level, goal_page: h.goal_page, award: h.award, actual: h.actual,
       status: "active", // only active enrollments ever get closed out, so this always held then
+      // saved at close-out since phase122 / phase42 (older months don't have them)
+      schedule_slots: h.schedule_slots || null, enrolled_on: h.enrolled_on || null,
+      payment_status: h.payment_status || null, payment_month: h.payment_month || null, closedOut: true,
+      // who was on Monitor that month (phase34) — so a closed month splits Roster / Monitor Students like the live one
+      is_monitor: !!h.is_monitor, monitor_since: h.monitor_since || null, monitor_cycle: h.monitor_cycle || null, enrollment_type: h.enrollment_type || null,
       archived: true
     }));
   }
@@ -2087,8 +2102,9 @@ window.kumonPtcNav = function(client, role){
     // …and since phase95, anyone in her group (picked from the Teacher dropdown; she starts on her own).
     const scope = isTeacherScoped() ? new Set(myGroupTeachers()) : null;
     return rosterSourceRows().filter(e=>{
-      // Monitor students live in their own view; the regular roster leaves them out.
-      if(viewMode === "monitor" ? !isMonitorRow(e) : isMonitorRow(e)) return false;
+      // The Student Roster counts everyone, Monitor students included (they show their Monitor tag);
+      // the Monitor Students tab is just those ones.
+      if(viewMode === "monitor" && !isMonitorRow(e)) return false;
       if(scope !== null && !scope.has(e.teacher)) return false;
       if(filters.subject !== "all" && e.subject !== filters.subject) return false;
       if(!teacherInFilter(e.teacher, filters.teacher)) return false;
@@ -2162,11 +2178,11 @@ window.kumonPtcNav = function(client, role){
           <td><span class="pill ${e.subject==='Math'?'subj-math':'subj-reading'}">${esc(e.subject)}</span></td>
           <td>${esc(e.teacher||"—")}</td>
           <td>${fmtLevel(e.current_level, e.current_page)}</td>
-          <td>${e.archived ? `<span class="lvl empty-lvl" title="Schedules aren't part of a monthly close-out — only the roster's own numbers are.">not tracked</span>` : fmtSchedule(e)}</td>
+          <td>${e.archived ? (Array.isArray(e.schedule_slots) && e.schedule_slots.length ? fmtSlots(e.schedule_slots) : `<span class="lvl empty-lvl" title="This month was closed out before schedules were saved with it.">not tracked</span>`) : fmtSchedule(e)}</td>
           <td>${fmtMode(e.mode)}</td>
           <td><span class="pill ${(e.status||'active')==='inactive'?'status-inactive':'status-active'}">${(e.status||"active")==="inactive"?"Inactive":"Active"}</span></td>
-          <td>${e.archived || (e.status||"active")==="inactive" ? `<span class="lvl empty-lvl">—</span>` : fmtPaymentPill(e.student_id)}</td>
-          <td>${e.archived ? `<span class="lvl empty-lvl" title="A monthly close-out snapshot doesn't capture the original enrollment date.">not tracked</span>` : fmtEnrolledDate(e.enrolled_on || e.created_at)}</td>
+          <td>${e.archived ? savedPaymentPill(e.payment_status, e.payment_month || shiftMonth(monthKeyOf(viewMonth), 1)) : (e.status||"active")==="inactive" ? `<span class="lvl empty-lvl">—</span>` : fmtPaymentPill(e.student_id)}</td>
+          <td>${e.archived ? (e.enrolled_on ? fmtEnrolledDate(e.enrolled_on) : `<span class="lvl empty-lvl" title="This month was closed out before the enrollment date was saved with it.">not tracked</span>`) : fmtEnrolledDate(e.enrolled_on || e.created_at)}</td>
         </tr>
       `).join("");
     }
