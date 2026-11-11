@@ -1125,11 +1125,26 @@ window.kumonPtcNav = function(client, role){
     metric({ k:"payEnd", name:"Paid before month end", n: byEnd.length, of: studs.length, goal: 90,
       how:"Families who paid this month's tuition within the month (so far).", missLabel:"Not paid yet", miss: studs.filter(s => !byEnd.includes(s)).map(s => ({ sid: s.id })) });
 
-    // Remote at least 2x a month = a weekly RI class on their schedule
-    const riIds = new Set();
-    for(const sc of D.sched){ const sid = sc.student_id || (enrById.get(sc.subject_enrollment_id) || {}).student_id; if(ids.has(sid) && (sc.slots || []).some(x => x && x.mode === "RI")) riIds.add(sid); }
+    // "Remote 2× a month": a student counts once they have at least 2 RI visits on the Calendar this month.
+    // Each weekly RI slot gives one visit per matching weekday in the month; both subjects add together per child.
+    const riIds = new Set(), riCount = new Map();
+    {
+      const t = todayISO(), y = +t.slice(0,4), m = +t.slice(5,7), dim = new Date(Date.UTC(y, m, 0)).getUTCDate();
+      const perDay = {}; for(let d = 1; d <= dim; d++){ const k = DAY_ORDER[(new Date(Date.UTC(y, m-1, d)).getUTCDay() + 6) % 7]; perDay[k] = (perDay[k] || 0) + 1; }
+      const seen = new Set();
+      for(const sc of D.sched){
+        const sid = sc.student_id || (enrById.get(sc.subject_enrollment_id) || {}).student_id; if(!ids.has(sid)) continue;
+        for(const x of (sc.slots || [])){
+          if(!x || String(x.mode || "").trim().toUpperCase() !== "RI") continue;
+          const day = String(x.day || "").slice(0,3), key = sid + "|" + day + "|" + (x.time || "");
+          if(seen.has(key)) continue; seen.add(key);   // Math + Reading in the same RI visit = one visit
+          riCount.set(sid, (riCount.get(sid) || 0) + (perDay[day] || 0));
+        }
+      }
+      for(const [sid, n] of riCount) if(n >= 2) riIds.add(sid);
+    }
     metric({ k:"remote", name:"Remote 2× a month", n: riIds.size, of: studs.length, goal: 80,
-      how:"Students with a remote (RI) visit on their Calendar schedule — a weekly RI visit comes to 4 a month.", missLabel:"No remote visit", miss: studs.filter(s => !riIds.has(s.id)).map(s => ({ sid: s.id })) });
+      how:"Students with at least 2 RI visits on their Calendar this month. Each child counts once.", missLabel:"Under 2 RI visits", miss: studs.filter(s => !riIds.has(s.id)).map(s => ({ sid: s.id })) });
     return out;
   }
   function metricState(m){

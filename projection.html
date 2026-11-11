@@ -284,6 +284,9 @@
   .stable.plan td{ vertical-align:top; white-space:normal; }
   .topic{ color:var(--ink-muted); font-size:12px; margin-top:2px; max-width:420px; }
   .cellin{ width:64px !important; padding:5px 7px !important; font-weight:700; border-style:dashed !important; }
+  .cellin.datein{ width:138px !important; font-weight:600; }
+  .act-edit{ display:inline-flex; align-items:center; gap:6px; flex-wrap:wrap; }
+  .linkbtn{ border:none; background:none; padding:0; font:inherit; font-size:12px; font-weight:600; color:var(--accent); cursor:pointer; }
   .cellin.set{ border-style:solid !important; border-color:var(--accent) !important; background:var(--accent-soft) !important; }
   .tnum{ font-variant-numeric:tabular-nums; white-space:nowrap; }
   .cols{ display:grid; grid-template-columns:1fr 1fr; gap:14px; }
@@ -782,7 +785,20 @@ window.kumonPtcNav = function(client, role){
       const td = todayISO();
       if(b && td > p.start_date && (!out.actual.length || out.actual[out.actual.length-1].d < td)) out.actual.push({ d: td, y: b.y, label: "LWC today", txt: b.txt });
     }
-    out.rows.forEach(r => { const a = out.actual.find(x => !x.start && x.y >= r.endY - 1e-9); r.actual = a ? a.d : null; r.actualLabel = a ? a.label : ""; });
+    // Actual completion = the first check that shows them past the level. That date is only a real finish date
+    // when the check before it still had them ON this level and the two checks are about a month apart. Otherwise
+    // (e.g. no close-out between the start and today, so several levels "finish" today at once) all we know is
+    // that they finished BY that date — shown in grey with no late/early tag (actualKnown = false).
+    out.rows.forEach(r => {
+      const i = out.actual.findIndex(x => !x.start && x.y >= r.endY - 1e-9);
+      const a = i >= 0 ? out.actual[i] : null, prev = i > 0 ? out.actual[i - 1] : null;
+      r.actual = a ? a.d : null; r.actualLabel = a ? a.label : "";
+      r.actualKnown = !!(a && prev && prev.y >= r.endY - 20 - 1e-9 && (T(a.d) - T(prev.d)) / MS_DAY <= 40);
+      r.autoActual = r.actual; r.autoKnown = r.actualKnown;
+      // Typed in by hand (saved with the plan as levels[].done) — always wins over the automatic date.
+      const o = over.get(r.level) || {};
+      if(o.done && /^\d{4}-\d{2}-\d{2}$/.test(o.done)){ r.actual = o.done; r.actualKnown = true; r.actualLabel = "Entered by hand"; r.doneSet = true; }
+    });
     out.lines = standardLines(subject, p.grade, p.sy_start);
     return out;
   }
@@ -1215,7 +1231,13 @@ window.kumonPtcNav = function(client, role){
               <td><input class="cellin${r.ppdSet ? " set" : ""}" type="number" min="1" max="100" data-lv="${esc(r.level)}" data-k="ppd" value="${esc(r.ppd)}"></td>
               <td class="tnum">${r.months.toFixed(1)}</td>
               <td class="tnum"><b>${esc(fmtDate(r.target))}</b></td>
-              <td class="tnum">${r.actual ? (() => { const late = (T(r.actual) - T(r.target)) / MS_DAY; return `${esc(fmtDate(r.actual))} <span class="pill ${late > 15 ? "p-bad" : late < -15 ? "p-good" : "p-accent"}" title="${esc(r.actualLabel)}">${late > 15 ? Math.round(late) + "d late" : late < -15 ? Math.round(-late) + "d early" : "on time"}</span>`; })() : `<span class="faint">—</span>`}</td></tr>`).join("")}
+              <td class="tnum actcell">${(() => {
+                const tag = (r.actual && r.actualKnown) ? (() => { const late = (T(r.actual) - T(r.target)) / MS_DAY; return `<span class="pill ${late > 15 ? "p-bad" : late < -15 ? "p-good" : "p-accent"}" title="${esc(r.actualLabel)}">${late > 15 ? Math.round(late) + "d late" : late < -15 ? Math.round(-late) + "d early" : "on time"}</span>`; })() : "";
+                const val = r.doneSet || r.actualKnown ? r.actual : "";
+                const by = !r.doneSet && r.actual && !r.actualKnown ? `<span class="faint" title="Already past this level at the ${esc(r.actualLabel)} check. There's no check in between, so the exact finish day isn't known. Type the real day to fix it.">by ${esc(fmtDate(r.actual))}</span>` : "";
+                const reset = r.doneSet ? `<button class="linkbtn no-print" data-action="clear-done" data-lv="${esc(r.level)}" title="Go back to the automatic date${r.autoActual ? " (" + esc((r.autoKnown ? "" : "by ") + fmtDate(r.autoActual)) + ")" : ""}">Auto</button>` : "";
+                return `<span class="print-only">${r.actual ? esc((r.actualKnown ? "" : "by ") + fmtDate(r.actual)) : "—"}</span><span class="act-edit no-print"><input class="cellin datein${r.doneSet ? " set" : ""}" type="date" max="${esc(todayISO())}" data-lv="${esc(r.level)}" data-k="done" value="${esc(val || "")}" title="${r.doneSet ? "Entered by hand" : "Type the day they finished this level"}">${by}${tag}${reset}</span>`;
+              })()}</td></tr>`).join("")}
             </tbody></table></div></div>` : ""}
           <div class="cols">
             <div class="box"><div class="t">Skills &amp; abilities to develop first</div>
@@ -1346,7 +1368,7 @@ window.kumonPtcNav = function(client, role){
       <svg viewBox="0 0 1000 430" width="1000" height="430" xmlns="http://www.w3.org/2000/svg" style="display:block;width:100%;height:auto;border:1px solid #E1E4EB;border-radius:10px;">${chart.svg}</svg>
       <div class="xsec">Level plan</div>
       <table class="xt"><thead><tr><th>Level</th><th>Topics</th><th>Repeats</th><th>Total WS</th><th>Pages/day</th><th>Months</th><th>Target completion</th><th>Actual completion</th></tr></thead><tbody>
-        ${c.rows.map(r => `<tr><td><b>${esc(r.level)}</b></td><td class="xtp">${esc(r.topic)}</td><td>${r.rate}×</td><td>${r.total}</td><td>${r.ppd}</td><td>${r.months.toFixed(1)}</td><td><b>${esc(fmtDate(r.target))}</b></td><td>${r.actual ? esc(fmtDate(r.actual)) : "—"}</td></tr>`).join("")}
+        ${c.rows.map(r => `<tr><td><b>${esc(r.level)}</b></td><td class="xtp">${esc(r.topic)}</td><td>${r.rate}×</td><td>${r.total}</td><td>${r.ppd}</td><td>${r.months.toFixed(1)}</td><td><b>${esc(fmtDate(r.target))}</b></td><td>${r.actual ? esc((r.actualKnown ? "" : "by ") + fmtDate(r.actual)) : "—"}</td></tr>`).join("")}
       </tbody></table>
       <div class="xcols">
         <div class="xb"><div class="xk">Skills &amp; abilities to develop first</div>${picked.length ? `<ul>${picked.map(x => `<li>${esc(x.obs)} → ${esc(x.skill || "—")}</li>`).join("")}</ul>` : `<div class="xf">—</div>`}</div>
@@ -1498,9 +1520,17 @@ window.kumonPtcNav = function(client, role){
       draft.levels = draft.levels || [];
       let o = draft.levels.find(x => x.level === lv);
       if(!o){ o = { level: lv }; draft.levels.push(o); }
-      const def = k === "rate" ? Number(draft.default_rate) : Number(draft.default_ppd);
-      if(!v || v === def) delete o[k]; else o[k] = v;
-      draft.levels = draft.levels.filter(x => x.rate != null || x.ppd != null);
+      if(k === "done"){
+        // Actual completion typed by hand. Clearing the box goes back to the automatic date.
+        const d = t.value || "";
+        if(d && !/^\d{4}-\d{2}-\d{2}$/.test(d)){ renderDetail(); return; }
+        if(d > todayISO()){ alert("That day hasn't happened yet."); renderDetail(); return; }
+        if(d) o.done = d; else delete o.done;
+      } else {
+        const def = k === "rate" ? Number(draft.default_rate) : Number(draft.default_ppd);
+        if(!v || v === def) delete o[k]; else o[k] = v;
+      }
+      draft.levels = draft.levels.filter(x => x.rate != null || x.ppd != null || x.done);
       markDirty(true);
     }
   });
@@ -1513,6 +1543,11 @@ window.kumonPtcNav = function(client, role){
     const a = btn.dataset.action;
     if(a === "logout"){ await sbClient.auth.signOut(); return; }
     if(a === "f-status"){ ui.status = ui.status === btn.dataset.status ? "all" : btn.dataset.status; renderList(); return; }
+    if(a === "clear-done" && draft){
+      const o = (draft.levels || []).find(x => x.level === btn.dataset.lv); if(o) delete o.done;
+      draft.levels = (draft.levels || []).filter(x => x.rate != null || x.ppd != null || x.done);
+      markDirty(true); return;
+    }
     if(a === "toggle-line"){ const k = btn.dataset.k; chartOff.has(k) ? chartOff.delete(k) : chartOff.add(k); renderDetail(); return; }
     if(a === "save"){ btn.disabled = true; try{ await save(); } finally{ if(btn.isConnected && draftDirty) btn.disabled = false; } return; }
     if(a === "print"){ window.print(); return; }

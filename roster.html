@@ -754,9 +754,15 @@ window.kumonPtcNav = function(client, role){
   // Date enrolled — just this subject_enrollment row's own created_at, the day it was
   // added to the roster. Not captured in a monthly close-out snapshot (same limitation
   // as Schedule), so an archived row shows "not tracked" instead of guessing.
+  // The date shown in the Edit form: the set date (enrolled_on, phase120) or else the Philippine day the row was added.
+  function enrolledISO(e){
+    if(!e) return "";
+    if(e.enrolled_on) return String(e.enrolled_on).slice(0,10);
+    const t = Date.parse(e.created_at || ""); return isNaN(t) ? "" : new Date(t + 8*3600e3).toISOString().slice(0,10);
+  }
   function fmtEnrolledDate(iso){
     if(!iso) return `<span class="lvl empty-lvl">—</span>`;
-    const d = new Date(iso);
+    const d = /^\d{4}-\d{2}-\d{2}$/.test(String(iso)) ? new Date(iso + "T00:00:00") : new Date(iso);   // a plain date (enrolled_on) is that calendar day, not UTC midnight
     if(isNaN(d)) return `<span class="lvl empty-lvl">—</span>`;
     return esc(d.toLocaleDateString(undefined, { month:"short", day:"numeric", year:"numeric" }));
   }
@@ -2160,7 +2166,7 @@ window.kumonPtcNav = function(client, role){
           <td>${fmtMode(e.mode)}</td>
           <td><span class="pill ${(e.status||'active')==='inactive'?'status-inactive':'status-active'}">${(e.status||"active")==="inactive"?"Inactive":"Active"}</span></td>
           <td>${e.archived || (e.status||"active")==="inactive" ? `<span class="lvl empty-lvl">—</span>` : fmtPaymentPill(e.student_id)}</td>
-          <td>${e.archived ? `<span class="lvl empty-lvl" title="A monthly close-out snapshot doesn't capture the original enrollment date.">not tracked</span>` : fmtEnrolledDate(e.created_at)}</td>
+          <td>${e.archived ? `<span class="lvl empty-lvl" title="A monthly close-out snapshot doesn't capture the original enrollment date.">not tracked</span>` : fmtEnrolledDate(e.enrolled_on || e.created_at)}</td>
         </tr>
       `).join("");
     }
@@ -2284,6 +2290,7 @@ window.kumonPtcNav = function(client, role){
             </select>
           </label>
           <label class="field">Teacher<select name="teacher">${teacherOptions(enrollment.teacher)}</select></label>
+          <label class="field">Date enrolled<input type="date" name="enrolled_on" value="${esc(enrolledISO(enrollment))}" max="${esc(enrolledISO({ created_at:new Date().toISOString() }))}"></label>
           <label class="field" style="flex-direction:row; align-items:center; gap:8px; margin-bottom:2px;"><input type="hidden" name="monitor_field" value="1"><input type="checkbox" name="is_monitor" value="1" ${enrollment.is_monitor ? "checked" : ""} style="width:auto;"> Monitor student</label>
           <span class="hint" style="font-size:11.5px; margin:0 0 12px; display:block;">${enrollment.is_monitor
             ? `On monitor since ${esc(monitorCycleLabel(monitorSinceKey(enrollment)) || "—")}. Untick to move them to the regular roster.`
@@ -2492,6 +2499,9 @@ window.kumonPtcNav = function(client, role){
           current_level: fd.get("current_level") || null,
           current_page: fd.get("current_page") || null,
           mode: fd.get("mode") || null,
+          // Date enrolled (phase120) — only written when it actually changed, so untouched rows keep following created_at.
+          ...(fd.get("enrolled_on") !== null && (fd.get("enrolled_on") || "") !== enrolledISO(editingEnrollment)
+              ? { enrolled_on: fd.get("enrolled_on") || null } : {}),
           // NEW label month (separate from Monitor).
           ...(fd.get("new_cycle") !== null ? { monitor_cycle: (fd.get("new_cycle") || null) } : {}),
           // Monitor on/off — only written when it actually changed, so the start month only moves for real changes.
