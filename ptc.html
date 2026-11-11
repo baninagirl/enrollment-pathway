@@ -872,6 +872,12 @@ window.kumonPtcNav = function(client, role){
     notSiblings = new Set(n.map(r => r.a < r.b ? r.a + "|" + r.b : r.b + "|" + r.a));
   }); }
   let dueFailed = false;   // the last load of the due list failed (so an empty list doesn't mean "all done")
+  // A child's teachers = their teachers on the Student roster now (active subjects). The PTC list's own teacher names
+  // can include an old subject's teacher, which put children in the wrong teacher's list.
+  function teachersOfDue(d){
+    const t = [...new Set(enrollments.filter(e => e.student_id === d.student_id && e.status === "active").map(e => e.teacher).filter(Boolean))];
+    return t.length ? t : (d.teachers || []);
+  }
   async function loadDue(){
     let res = null;
     for(let attempt = 0; attempt < 3; attempt++){
@@ -1109,7 +1115,7 @@ window.kumonPtcNav = function(client, role){
     const q = ui.dueSearch.trim().toLowerCase();
     return due
       .filter(d => view === "now" ? d.due_date <= t : d.due_date > t)
-      .filter(d => (d.teachers || []).some(x => teacherInFilter(x, ui.dueTeacher)) || (!(d.teachers||[]).length && ui.dueTeacher === "all"))
+      .filter(d => teachersOfDue(d).some(x => teacherInFilter(x, ui.dueTeacher)) || (!teachersOfDue(d).length && ui.dueTeacher === "all"))
       .filter(d => !q || String(d.student_name || "").toLowerCase().includes(q))
       .filter(d => ui.dueStatus === "all" || (d.status || "open") === ui.dueStatus)
       .sort((a,b) => a.due_date < b.due_date ? -1 : a.due_date > b.due_date ? 1 : String(a.student_name).localeCompare(String(b.student_name)));
@@ -1149,13 +1155,13 @@ window.kumonPtcNav = function(client, role){
             ? (late === 0 ? `<span class="pill due-today">Due today</span>` : `<span class="pill due-over">${late} day${late === 1 ? "" : "s"} overdue</span>`)
             : `<span class="pill due-soon">in ${-late} day${late === -1 ? "" : "s"}</span>`;
           const b = bookedFor(d.student_id);
-          const canMark = isAdmin() || (d.teachers || []).some(x => myGroupTeachers().includes(x));
+          const canMark = isAdmin() || teachersOfDue(d).some(x => myGroupTeachers().includes(x));
           return `<tr>
             <td><b>${esc(d.student_name || "")}</b> ${(d.subjects || []).map(s => `<span class="pill ${s === "Reading" ? "subj-reading" : "subj-math"} name-subj-pill">${s === "Reading" ? "R" : "M"}</span>`).join("")}
               <div class="readonly-note" title="${d.first_day_set_by_hand ? "Set by hand on the student card" : "From their first training session"}">First day ${esc(fmtDate(d.first_day, { weekday: undefined, year:"numeric" }))}</div></td>
             <td><span class="pill mo">${ordinal(d.month_no)} month</span></td>
             <td class="tnum">${esc(fmtDate(d.due_date, d.due_date.slice(0,4) !== t.slice(0,4) ? { year:"numeric" } : {}))}<div style="margin-top:4px;">${when}</div></td>
-            <td style="white-space:normal; max-width:160px;">${esc((d.teachers || []).join(", ") || "—")}</td>
+            <td style="white-space:normal; max-width:160px;">${esc(teachersOfDue(d).join(", ") || "—")}</td>
             <td>${msStatusControl(d, canMark)}${d.status === "scheduled" && d.scheduled_on ? `<div class="sib">${esc(fmtDate(d.scheduled_on))}${d.scheduled_time ? ", " + esc(fmt12(d.scheduled_time)) : ""}</div>` : ""}${b ? `<div style="margin-top:4px;"><span class="pill booked" title="Booked in a PTC week — marking that session Done also marks this PTC done">PTC week: ${esc(fmtDate(b.date))}, ${esc(fmt12(b.time))}</span></div>` : ""}</td>
             <td>${d.note ? `<span class="note-chip ms-note">${esc(d.note)}</span>${d.updated_by ? `<div class="readonly-note">${esc(d.updated_by)}${d.updated_at ? " · " + esc(fmtDate(new Date(new Date(d.updated_at).getTime() + 8*3600e3).toISOString().slice(0,10))) : ""}</div>` : ""}` : ""}
               ${canMark ? `<button class="btn sm ghost" data-action="ms-note" data-student="${esc(d.student_id)}" data-month="${d.month_no}">${d.note ? "Edit note" : "+ Note"}</button>` : ""}</td>

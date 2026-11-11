@@ -907,8 +907,19 @@ window.kumonPtcNav = function(client, role){
 
   /* ---------- who is in scope ---------- */
   const isKcE = e => String((e && e.mode) || "").trim().toUpperCase() === "KC";   // Mode on the Student roster, per subject
-  const mineEnr = e => e && e.status === "active" && (tdUi.who === "all" || e.teacher === tdUi.who);
+  const mineEnr = e => e && e.status === "active" && teacherInFilter(e.teacher, tdUi.who);
   function scopeEnrollments(){ return D.enr.filter(mineEnr); }
+  // Whose child is this? Their teachers on the Student roster now (active subjects). Only a child with no active
+  // subject at all (e.g. absent in every subject) falls back to the subjects a record names, then to any past subject.
+  function ownerTeachers(sid, enrollmentIds){
+    const active = D.enr.filter(e => e.student_id === sid).map(e => e.teacher).filter(Boolean);
+    if(active.length) return [...new Set(active)];
+    const named = (enrollmentIds || []).map(id => D.enrAll.find(e => e.id === id)).filter(Boolean).map(e => e.teacher).filter(Boolean);
+    if(named.length) return [...new Set(named)];
+    const any = D.enrAll.filter(e => e.student_id === sid).sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || ""))).map(e => e.teacher).filter(Boolean);
+    return any.length ? [any[0]] : [];
+  }
+  const isMineStudent = (sid, enrollmentIds) => tdUi.who === "all" || ownerTeachers(sid, enrollmentIds).some(t => teacherInFilter(t, tdUi.who));
   function scopeStudentIds(){ return new Set(scopeEnrollments().map(e => e.student_id)); }
   function nameOf(sid, fallback){ const s = studentById.get(sid); if(!s) return fallback || ""; return [s.first_name, s.last_name].filter(Boolean).join(" ") || s.name || fallback || ""; }
   function firstName(sid){ const s = studentById.get(sid); return (s && (s.first_name || (s.name || "").split(/[ ,]/).filter(Boolean).pop())) || "This child"; }
@@ -1012,7 +1023,7 @@ window.kumonPtcNav = function(client, role){
   /* ---------- what needs you this week ---------- */
   function ptcThisWeek(){
     const ids = scopeStudentIds(), limit = addDays(todayISO(), 6);
-    return D.due.filter(d => d.due_date && d.due_date <= limit && (ids.has(d.student_id) || (tdUi.who !== "all" && (d.teachers || []).includes(tdUi.who))))
+    return D.due.filter(d => d.due_date && d.due_date <= limit && (ids.has(d.student_id) || (!D.enr.some(e => e.student_id === d.student_id) && isMineStudent(d.student_id))))
       .sort((a, b) => a.due_date < b.due_date ? -1 : a.due_date > b.due_date ? 1 : 0);
   }
   function noProjection(){
@@ -1088,16 +1099,17 @@ window.kumonPtcNav = function(client, role){
     // active list above: match the absence to the teacher through the subjects it was recorded for instead.
     const absIds = new Set();
     const enrAllById = new Map(D.enrAll.map(e => [e.id, e]));
-    const mineAbs = a => { const es = (a.subject_enrollment_ids || []).map(id => enrAllById.get(id)).filter(Boolean);
-      return es.length ? es.some(e => tdUi.who === "all" || e.teacher === tdUi.who) : ids.has(a.student_id); };
+    void enrAllById;
+    const mineAbs = a => isMineStudent(a.student_id, a.subject_enrollment_ids);   // by the child's current teacher, not an old subject's
     for(const a of D.abs){
       if(!mineAbs(a)) continue;
       const on = manilaDate(a.marked_absent_at), back = a.resumed_at ? manilaDate(a.resumed_at) : null;
-      if(on && on <= mEnd && (!back || back >= mStart)) absIds.add(a.student_id);
+      // only children still away: once they're back (e.g. marked paid and resumed), they drop off
+      if(on && on <= mEnd && !back) absIds.add(a.student_id);
     }
     const absOf = new Set([...ids, ...absIds]).size;   // their students plus the ones away this month
     metric({ k:"abs", name:"Absences", n: absIds.size, of: absOf, goal: 4, lower: true,
-      how:"Students marked absent (on Payments) at any point this month. Lower is better.", missLabel:"Absent this month", miss: [...absIds].map(sid => ({ sid })) });
+      how:"Students marked absent on Payments who haven't come back yet. Once they're resumed (for example when their payment is marked paid), they drop off. Lower is better.", missLabel:"Absent now", miss: [...absIds].map(sid => ({ sid })) });
 
     // Payments for this month
     const paidOn = new Map();
@@ -1145,7 +1157,8 @@ window.kumonPtcNav = function(client, role){
   }
   function kidRow(sid, opts){
     opts = opts || {};
-    const enrs = opts.items || scopeEnrollments().filter(e => e.student_id === sid);
+    let enrs = opts.items || scopeEnrollments().filter(e => e.student_id === sid);
+    if(!enrs.length && !opts.items) enrs = D.enr.filter(e => e.student_id === sid);   // e.g. an absent child: still show whose they are
     const s = studentById.get(sid), fl = [];
     if(!opts.extra){
       if(opts.kid){
@@ -1164,7 +1177,7 @@ window.kumonPtcNav = function(client, role){
       if(enrs.some(e => !has.has(e.id))) fl.push(`<span class="td-chip td-warn">No projection</span>`);
     }
     const tick = opts.tick ? `<span class="td-tick${opts.kid && opts.kid.arrived ? " yes" : ""}" title="${opts.kid && opts.kid.arrived ? "Arrived" : "Not yet"}"></span>` : "";
-    const teachers = [...new Set(enrs.map(e => e.teacher).filter(Boolean))].join(", ");   // always shown, so lists say whose child it is
+    const teachers = (enrs.length ? [...new Set(enrs.map(e => e.teacher).filter(Boolean))] : ownerTeachers(sid)).join(", ");   // always shown, so lists say whose child it is
     return `<div class="td-kid${opts.kid && opts.kid.movedTo ? " out" : ""}" tabindex="0" role="button" data-kid="${esc(sid)}">${tick}${avatar(sid)}<div style="min-width:0"><div class="td-nm">${esc(nameOf(sid, opts.fallbackName))}</div><div class="td-sub">${esc(s && s.age_grade ? normGrade(s.age_grade) : "")}${teachers ? " · " + esc(teachers) : ""}</div></div>${enrs.map(e => subjChip(e, (bestPos(e.subject, e) || {}).txt)).join("")}<span class="td-flags">${opts.extra || fl.join("")}</span></div>`;
   }
 
