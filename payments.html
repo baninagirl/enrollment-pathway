@@ -259,6 +259,7 @@
   }
   @media (max-width:860px){ .rail-pipeline{ display:none !important; } }
   .btn.paid-btn{ color:#1E7B46; border-color:#BFE3CC; background:#EEF8F2; }
+  .btn.wait-btn{ color:#9A5A0B; border-color:#F1D9B5; background:#FCF3E6; }
   /* Billing groups dialog */
   .bg-tools{ display:flex; gap:10px; padding:12px 20px; border-bottom:1px solid var(--border); flex-wrap:wrap; }
   .bg-tools input[type=search]{ flex:1 1 220px; min-width:0; }
@@ -1329,6 +1330,12 @@ window.kumonPtcNav = function(client, role){
     return { alloc, total: Math.round(Object.values(alloc).reduce((a,b)=>a+b,0) * 100) / 100 };
   }
   function markPaidLeft(studentId){ return markPaidAllocation(studentId, selectedMonth).total; }
+  // No Mark paid button because a logged payment (not verified yet) already covers the rest — say so,
+  // instead of the button just vanishing. Opens the payment history, where it can be checked or deleted.
+  function waitingChip(studentId){
+    const w = pendingPaidFor(studentId, selectedMonth); if(!(w > 0)) return "";
+    return `<button class="btn sm wait-btn" data-action="open-payment-history" data-student="${esc(studentId)}" title="${esc(peso(w))} was logged for ${esc(fmtBillLabel(selectedMonth))} and is waiting for a superadmin to verify it. It counts as Paid once verified.">Waiting · ${esc(peso(w))}</button>`;
+  }
   const markPaidBusy = new Set();
   async function markPaid(studentId){
     if(markPaidBusy.has(studentId)) return;   // a second click while the first is still open/saving would pay twice
@@ -2019,7 +2026,7 @@ window.kumonPtcNav = function(client, role){
       <td class="money">${peso(r.balance)}</td>
       <td>${statusPill(r.status)}</td>
       ${[1,2,3,4].map(n => `<td class="soa-col"><input type="checkbox" data-action="soa-toggle" data-student="${esc(s.id)}" data-n="${n}" ${soaHas(s.id, n) ? "checked" : ""} ${soaReady() ? "" : "disabled"} title="SOA ${n} sent"></td>`).join("")}
-      <td><div class="row-actions"><button class="iconbtn" data-action="open-payment-history" data-student="${esc(s.id)}" title="Payment history — undo a payment">🕘</button><button class="btn sm" data-action="open-log-payment" data-student="${esc(s.id)}">Log payment</button>${markPaidLeft(s.id) > 0 ? `<button class="btn sm paid-btn" data-action="mark-paid" data-student="${esc(s.id)}" title="Record this month's remaining tuition as paid, no receipt needed">Mark paid</button>` : ""}${canMarkAbsent() ? `<button class="btn sm danger" data-action="mark-absent" data-student="${esc(s.id)}">Mark absent</button>` : ""}</div></td>
+      <td><div class="row-actions"><button class="iconbtn" data-action="open-payment-history" data-student="${esc(s.id)}" title="Payment history — undo a payment">🕘</button><button class="btn sm" data-action="open-log-payment" data-student="${esc(s.id)}">Log payment</button>${markPaidLeft(s.id) > 0 ? `<button class="btn sm paid-btn" data-action="mark-paid" data-student="${esc(s.id)}" title="Record this month's remaining tuition as paid, no receipt needed">Mark paid</button>` : waitingChip(s.id)}${canMarkAbsent() ? `<button class="btn sm danger" data-action="mark-absent" data-student="${esc(s.id)}">Mark absent</button>` : ""}</div></td>
     </tr>`;
   }
 
@@ -2054,7 +2061,7 @@ window.kumonPtcNav = function(client, role){
         <td class="muted">${esc(x.dueSince)}</td>
         <td class="muted">${esc(fmtBillLabel(x.lastPaidMonth))}</td>
         <td class="money">${peso(x.due)}</td>
-        <td><div class="row-actions"><button class="iconbtn" data-action="open-payment-history" data-student="${esc(s.id)}" title="Payment history">🕘</button><button class="btn sm" data-action="open-log-payment" data-student="${esc(s.id)}">Log payment</button>${markPaidLeft(s.id) > 0 ? `<button class="btn sm paid-btn" data-action="mark-paid" data-student="${esc(s.id)}" title="Record this month's remaining tuition as paid, no receipt needed">Mark paid</button>` : ""}${canMarkAbsent() ? `<button class="btn sm danger" data-action="mark-absent" data-student="${esc(s.id)}">Mark absent</button>` : ""}</div></td>
+        <td><div class="row-actions"><button class="iconbtn" data-action="open-payment-history" data-student="${esc(s.id)}" title="Payment history">🕘</button><button class="btn sm" data-action="open-log-payment" data-student="${esc(s.id)}">Log payment</button>${markPaidLeft(s.id) > 0 ? `<button class="btn sm paid-btn" data-action="mark-paid" data-student="${esc(s.id)}" title="Record this month's remaining tuition as paid, no receipt needed">Mark paid</button>` : waitingChip(s.id)}${canMarkAbsent() ? `<button class="btn sm danger" data-action="mark-absent" data-student="${esc(s.id)}">Mark absent</button>` : ""}</div></td>
       </tr>`;
     }).join("");
   }
