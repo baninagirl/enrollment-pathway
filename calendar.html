@@ -137,7 +137,11 @@
   .cal-legend .dot.arrived{ background:transparent; border:1.5px solid var(--ink-muted); }
   .cal-count{ font-size:12px; color:var(--ink-muted); padding-bottom:9px; white-space:nowrap; }
 
-  .cal-wrap{ overflow-x:auto; border:1px solid var(--border); border-radius:14px; background:var(--surface); box-shadow:var(--shadow); }
+  /* The calendar scrolls inside its own box (both ways), so the day names stay pinned on top
+     and the time column stays pinned on the left while you scroll. */
+  .cal-wrap{ overflow:auto; max-height:calc(100vh - 24px); max-height:calc(100dvh - 24px);
+    border:1px solid var(--border); border-radius:14px; background:var(--surface); box-shadow:var(--shadow); }
+  @media (max-width:860px){ .cal-wrap{ max-height:calc(100vh - 120px); max-height:calc(100dvh - 120px - env(safe-area-inset-bottom, 0px)); } }
 
   .noshow-card{ margin-top:16px; border:1px solid var(--border); border-radius:14px; background:var(--surface); box-shadow:var(--shadow); padding:14px 16px; }
   .noshow-head{ font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; color:var(--ink-muted); margin-bottom:10px; }
@@ -149,10 +153,12 @@
   .cal-cell{ border-bottom:1px solid var(--border); border-right:1px solid var(--border); padding:8px; }
   .cal-grid > .cal-cell:nth-last-child(-n+1){ border-bottom:none; }
   .cal-head{
+    position:sticky; top:0; z-index:6; box-shadow:0 1px 0 var(--border);
     background:var(--surface-2); font-size:11px; font-weight:700; text-transform:uppercase;
     letter-spacing:.04em; color:var(--ink-muted); padding:11px 8px; text-align:center;
   }
   .cal-time-label{
+    position:sticky; left:0; z-index:4;
     font-size:11.5px; font-weight:700; color:var(--ink-muted); background:var(--surface-2);
     display:flex; align-items:center; justify-content:center; white-space:nowrap; min-height:56px;
   }
@@ -185,7 +191,13 @@
   .mode-tag{ font-size:9.5px; font-weight:700; opacity:.7; letter-spacing:.02em; }
   /* One-week moves */
   .cal-chip{ position:relative; }
-  .cal-chip[draggable="true"]{ cursor:grab; }
+  .cal-chip[draggable="true"]{ cursor:grab; -webkit-touch-callout:none; -webkit-user-select:none; user-select:none; }
+  .cal-head.cal-corner{ left:0; z-index:8; }
+  /* Touch drag (phones/tablets): hold a name, then slide it to another day/time */
+  .cal-chip.touch-lifted{ opacity:.35; }
+  .touch-ghost{ position:fixed; z-index:200; pointer-events:none; margin:0; transform:translate(-50%,-115%) rotate(-2deg) scale(1.04);
+    box-shadow:0 10px 28px rgba(0,0,0,.22); opacity:.95; max-width:220px; }
+  body.touch-dragging{ -webkit-user-select:none; user-select:none; }
   .cal-chip.moved{ outline:1.5px dashed currentColor; outline-offset:-1.5px; }
   .cal-chip .moved-sub{ font-weight:600; font-size:10px; opacity:.85; margin-left:22px; }
   .mv-btn{ position:absolute; top:3px; right:3px; width:18px; height:18px; padding:2px; border:none; border-radius:5px; background:transparent; color:inherit; opacity:0; cursor:pointer; }
@@ -232,6 +244,7 @@
   :root[data-theme="dark"]{ --cc:#E2A93B; --cc-soft:#3A2F12; --cc-ink:#F2C766; }
   @media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){ --cc:#E2A93B; --cc-soft:#3A2F12; --cc-ink:#F2C766; } }
   .cal-grid .cal-cell{ position:relative; }
+  .cal-grid .cal-cell.cal-head, .cal-grid .cal-cell.cal-time-label{ position:sticky; }
   .cc-add{ position:absolute; top:3px; right:3px; width:20px; height:20px; padding:0; border-radius:6px;
     border:1px solid var(--border); background:var(--surface); color:var(--ink-muted); cursor:pointer;
     display:flex; align-items:center; justify-content:center; opacity:0; transition:opacity .12s ease; z-index:2; }
@@ -1437,7 +1450,7 @@ window.kumonPtcNav = function(client, role){
       (byCell[key] = byCell[key] || []).push(e);
     }
 
-    let html = `<div class="cal-cell cal-head"></div>`;
+    let html = `<div class="cal-cell cal-head cal-corner"></div>`;
     for(const d of days) html += `<div class="cal-cell cal-head">${d}</div>`;
 
     const today = todayDow();
@@ -1927,6 +1940,7 @@ window.kumonPtcNav = function(client, role){
   document.addEventListener("dragstart", (e) => {
     const chip = e.target.closest && e.target.closest(".cal-chip[draggable]");
     if(!chip) return;
+    if(T.chip){ e.preventDefault(); return; }   // a finger is already doing the touch drag below
     dragKid = { kid: chip.dataset.kid, day: chip.dataset.day, time: chip.dataset.time };
     try{ e.dataTransfer.setData("text/plain", chip.dataset.kid); e.dataTransfer.effectAllowed = "move"; }catch(_){ }
     document.body.classList.add("cal-dragging");
@@ -1950,6 +1964,89 @@ window.kumonPtcNav = function(client, role){
     if(toDay === d.day && toTime === d.time) return;
     await moveVisit(d.kid, d.day, d.time, toDay, toTime);
   });
+
+  /* Touch drag — phones and tablets don't fire the drag events above, so: hold a name for a
+     moment (it lifts), slide it onto another day/time, let go. A quick swipe still scrolls. */
+  const T = { chip:null, timer:0, x0:0, y0:0, x:0, y:0, ghost:null, active:false, cell:null, raf:0, suppressClick:false };
+  function tReset(){
+    clearTimeout(T.timer); cancelAnimationFrame(T.raf);
+    if(T.ghost) T.ghost.remove();
+    if(T.chip) T.chip.classList.remove("touch-lifted");
+    document.body.classList.remove("cal-dragging","touch-dragging");
+    $$(".cal-cell.drop-here").forEach(x => x.classList.remove("drop-here"));
+    T.chip = null; T.ghost = null; T.active = false; T.cell = null;
+  }
+  function tCellAt(x, y){
+    if(T.ghost) T.ghost.style.display = "none";
+    const el = document.elementFromPoint(x, y);
+    if(T.ghost) T.ghost.style.display = "";
+    return el && el.closest ? el.closest("#calGrid .cal-cell[data-cell]") : null;
+  }
+  function tAutoScroll(){
+    if(!T.active) return;
+    const wrap = $("#calWrap"), r = wrap.getBoundingClientRect(), edge = 44, sp = 12;
+    let dx = 0, dy = 0;
+    if(T.x < r.left + 70 + edge) dx = -sp; else if(T.x > r.right - edge) dx = sp;   // 70 ≈ the pinned time column
+    if(T.y < r.top + 40 + edge) dy = -sp; else if(T.y > r.bottom - edge) dy = sp;    // 40 ≈ the pinned day row
+    if(dx || dy){ wrap.scrollLeft += dx; wrap.scrollTop += dy; tHover(); }
+    T.raf = requestAnimationFrame(tAutoScroll);
+  }
+  function tHover(){
+    T.ghost.style.left = T.x + "px"; T.ghost.style.top = T.y + "px";
+    const cell = tCellAt(T.x, T.y);
+    if(cell !== T.cell){
+      if(T.cell) T.cell.classList.remove("drop-here");
+      if(cell) cell.classList.add("drop-here");
+      T.cell = cell;
+    }
+  }
+  function tLift(){
+    const chip = T.chip; if(!chip || !chip.isConnected) return tReset();
+    T.active = true;
+    const g = chip.cloneNode(true); g.classList.add("touch-ghost"); g.removeAttribute("draggable");
+    g.style.width = chip.getBoundingClientRect().width + "px";
+    document.body.appendChild(g); T.ghost = g;
+    chip.classList.add("touch-lifted");
+    document.body.classList.add("cal-dragging","touch-dragging");
+    try{ navigator.vibrate && navigator.vibrate(12); }catch(_){ }
+    tHover(); T.raf = requestAnimationFrame(tAutoScroll);
+  }
+  document.addEventListener("touchstart", (e) => {
+    if(e.touches.length !== 1){ tReset(); return; }
+    const chip = e.target.closest && e.target.closest(".cal-chip[draggable]");
+    if(!chip) return;
+    if(e.target.closest("button, input, a, [data-mvopen], [data-pickup]")) return;   // taps on the chip's own buttons stay taps
+    tReset();
+    const t = e.touches[0];
+    T.chip = chip; T.x0 = T.x = t.clientX; T.y0 = T.y = t.clientY;
+    T.timer = setTimeout(tLift, 380);
+  }, { passive:true });
+  document.addEventListener("touchmove", (e) => {
+    if(!T.chip) return;
+    const t = e.touches[0]; T.x = t.clientX; T.y = t.clientY;
+    if(!T.active){
+      if(Math.abs(T.x - T.x0) > 8 || Math.abs(T.y - T.y0) > 8) tReset();   // moved before the hold finished = a scroll
+      return;
+    }
+    e.preventDefault();   // holding a name: the finger drags it, not the page
+    tHover();
+  }, { passive:false });
+  document.addEventListener("touchend", async (e) => {
+    if(!T.chip) return;
+    if(!T.active){ tReset(); return; }
+    e.preventDefault(); T.suppressClick = true; setTimeout(() => { T.suppressClick = false; }, 400);
+    const chip = T.chip, cell = T.cell;
+    const from = { kid: chip.dataset.kid, day: chip.dataset.day, time: chip.dataset.time };
+    tReset();
+    if(!cell) return;
+    const [toDay, toTime] = cell.dataset.cell.split("|");
+    if(toDay === from.day && toTime === from.time) return;
+    await moveVisit(from.kid, from.day, from.time, toDay, toTime);
+  }, { passive:false });
+  document.addEventListener("touchcancel", tReset);
+  // a held name shouldn't also open the phone's own drag / menu / tick the box underneath
+  document.addEventListener("contextmenu", (e) => { if(T.chip && e.target.closest && e.target.closest(".cal-chip[draggable]")) e.preventDefault(); });
+  document.addEventListener("click", (e) => { if(T.suppressClick){ e.preventDefault(); e.stopPropagation(); T.suppressClick = false; } }, true);
   document.addEventListener("click", (e) => {
     const b = e.target.closest && e.target.closest("[data-mvopen]");
     if(!b) return;
