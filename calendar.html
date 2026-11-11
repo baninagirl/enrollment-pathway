@@ -177,7 +177,26 @@
   .chip-num{ flex:none; min-width:16px; font-size:10.5px; font-weight:800; opacity:.6; font-variant-numeric:tabular-nums; text-align:right; }
   .cell-count{ font-size:11px; font-weight:800; color:var(--ink-muted); margin:0 26px 5px 2px; font-variant-numeric:tabular-nums; }
   .cell-count-sub{ font-weight:600; color:var(--ink-faint); }
-  .chip-row{ display:flex; align-items:center; gap:6px; cursor:pointer; }
+  .chip-row{ display:flex; align-items:center; gap:6px; cursor:pointer; flex:1; min-width:0; }
+  /* name on the left, the chip's little buttons (picked up, move) on the right — side by side, never on top of the name */
+  .chip-top{ display:flex; align-items:flex-start; gap:4px; }
+  .chip-acts{ display:flex; gap:1px; flex:none; margin:-2px -4px 0 0; }
+  .chip-name{ min-width:0; overflow-wrap:anywhere; }
+  @media (max-width:860px){
+    .cal-cell{ padding:6px; }
+    .cal-chip{ padding:5px 6px; }
+    .chip-row{ gap:4px; }
+    .cal-grid .cal-chip .teacher-sub, .cal-grid .cal-chip .moved-sub, .cal-grid .st-line{ margin-left:0; }
+    .cell-count{ margin-right:24px; }
+    /* phones: the buttons get their own little row under the name, so the name keeps the full width */
+    .chip-top{ display:contents; }
+    .chip-acts{ order:10; align-self:flex-end; margin:2px -3px -2px 0; gap:6px; }
+    .chip-acts .mv-btn, .chip-acts .pu-btn{ width:22px; height:22px; padding:3px; }
+  }
+  /* computers: the buttons only show on hover, so they float over the chip's corner instead of taking room */
+  @media (hover:hover) and (min-width:861px){
+    .chip-acts{ position:absolute; top:3px; right:3px; margin:0; background:inherit; border-radius:6px; }
+  }
   /* A quiet little dot instead of a standard checkbox — same ink color the chip's text
      already uses, so it sits in the chip rather than shouting over it. Hollow until
      checked, filled solid once someone's marked arrived. */
@@ -200,7 +219,7 @@
   body.touch-dragging{ -webkit-user-select:none; user-select:none; }
   .cal-chip.moved{ outline:1.5px dashed currentColor; outline-offset:-1.5px; }
   .cal-chip .moved-sub{ font-weight:600; font-size:10px; opacity:.85; margin-left:22px; }
-  .mv-btn{ position:absolute; top:3px; right:3px; width:18px; height:18px; padding:2px; border:none; border-radius:5px; background:transparent; color:inherit; opacity:0; cursor:pointer; }
+  .mv-btn{ position:static; flex:none; width:18px; height:18px; padding:2px; border:none; border-radius:5px; background:transparent; color:inherit; opacity:0; cursor:pointer; }
   .mv-btn svg{ width:100%; height:100%; display:block; }
   .cal-chip:hover .mv-btn, .mv-btn:focus-visible{ opacity:.7; } .mv-btn:hover{ opacity:1; background:rgba(0,0,0,.06); }
   @media (hover:none){ .mv-btn{ opacity:.6; } }
@@ -213,7 +232,7 @@
   .st-btn{ font:inherit; font-size:10.5px; font-weight:700; border:1px solid currentColor; background:var(--surface); color:inherit; border-radius:99px; padding:1px 8px; cursor:pointer; line-height:1.5; }
   .st-btn:hover{ background:var(--surface-2); }
   .st-btn.quiet{ border-color:transparent; background:transparent; text-decoration:underline; padding:1px 2px; }
-  .pu-btn{ position:absolute; top:3px; right:23px; width:18px; height:18px; padding:2px; border:none; border-radius:5px; background:transparent; color:inherit; opacity:0; cursor:pointer; }
+  .pu-btn{ position:static; flex:none; width:18px; height:18px; padding:2px; border:none; border-radius:5px; background:transparent; color:inherit; opacity:0; cursor:pointer; }
   .pu-btn svg{ width:100%; height:100%; display:block; }
   .cal-chip:hover .pu-btn, .pu-btn:focus-visible{ opacity:.7; } .pu-btn:hover{ opacity:1; background:rgba(0,0,0,.06); }
   @media (hover:none){ .pu-btn{ opacity:.6; } }
@@ -1516,13 +1535,13 @@ window.kumonPtcNav = function(client, role){
               ? `<span class="st-line missed">Missed${canPick ? ` <button type="button" class="st-btn" data-pickup="1" ${pickAttrs} title="A parent took the worksheets home">Picked up?</button>` : ""}</span>` : "";
           const pickBtn = firstOfKid && canPick && isToday && outcome !== "picked" ? `<button type="button" class="pu-btn" data-pickup="1" ${pickAttrs} title="Didn't come, but worksheets were picked up" aria-label="Mark worksheets picked up">${bag}</button>` : "";
           return `<div class="cal-chip ${cls} ${(isToday || isPast || movedPast) && arrived?"arrived":""}${it.moved ? " moved" : ""}${outcome === "picked" ? " picked" : outcome === "missed" ? " missed" : ""}" title="${esc(titleBits)}${it.moved ? esc(" — moved this week from " + it.origDay + " " + fmtTime(it.origTime)) : ""}"${dragAttrs}>
-            <label class="chip-row">${numTag}${checkbox}<span class="chip-name">${esc(chipDisplayName(it.studentName))}${lvlTag} ${modeTag}${ccCells.chips.has(ccChipKey(it.scheduleId, it.day, it.time, it.subject)) ? `<span class="cc-chip-dot" title="Has an open comment"></span>` : ""}</span></label>
-            ${teacherLine}${movedLine}${statusLine}${pickBtn}${moveBtn}
+            <div class="chip-top"><label class="chip-row">${numTag}${checkbox}<span class="chip-name">${esc(chipDisplayName(it.studentName))}${lvlTag} ${modeTag}${ccCells.chips.has(ccChipKey(it.scheduleId, it.day, it.time, it.subject)) ? `<span class="cc-chip-dot" title="Has an open comment"></span>` : ""}</span></label>${(pickBtn || moveBtn) ? `<span class="chip-acts">${pickBtn}${moveBtn}</span>` : ""}</div>
+            ${teacherLine}${movedLine}${statusLine}
           </div>`;
         }).join("")}${(ghostByCell[ck] || []).map(g => `<div class="cal-ghost" title="Moved for this week only">${esc(chipDisplayName(g.studentName))} → ${esc(g.day)} ${esc(fmtTime(g.time))}${g.subjects.length > 1 ? `<span class="ghost-sub">${esc(g.subjects.join(" + "))}</span>` : ""}</div>`).join("")}</div>`;
       }
     }
-    grid.style.gridTemplateColumns = `84px repeat(${days.length}, minmax(150px, 1fr))`;
+    grid.style.gridTemplateColumns = (matchMedia("(max-width:860px)").matches ? "62px" : "84px") + ` repeat(${days.length}, minmax(150px, 1fr))`;
     grid.innerHTML = html;
     if(cc.focusCell){ const el = grid.querySelector(`.cal-cell[data-cell="${CSS.escape(cc.focusCell)}"]`); if(el) el.classList.add("cc-focus"); }
 
