@@ -116,6 +116,18 @@
   .search-row select{ min-width:112px; }
   .search-row input[type=text], .search-row input[type=search]{ max-width:180px; }
   .table-scroll{ overflow-x:auto; }
+  /* Both roster tables scroll inside their own box (up/down and sideways), so the column names stay
+     on top, the # and student name stay on the left, and the sideways scrollbar is always on screen. */
+  .table-scroll.freeze{ overflow:auto; max-height:calc(100dvh / var(--z, 1) - 24px); }
+  @media (max-width:860px){ .table-scroll.freeze{ max-height:calc(100dvh - 120px - env(safe-area-inset-bottom, 0px)); } }
+  .freeze .stable{ border-collapse:separate; border-spacing:0; }
+  .freeze .stable thead th{ position:sticky; top:0; z-index:3; background:var(--surface); }
+  .freeze .stable td{ background:var(--surface); }
+  .freeze .stable th:first-child, .freeze .stable td:first-child:not([colspan]){ position:sticky; left:0; z-index:2; width:48px; min-width:48px; max-width:48px; }
+  .freeze .stable .namecol{ position:sticky; left:48px; z-index:2; box-shadow:inset -1px 0 0 var(--border); }
+  .freeze .stable thead th:first-child, .freeze .stable thead th.namecol{ z-index:4; }
+  .freeze .stable .section-label{ position:sticky; left:16px; }
+  @media (max-width:860px){ .freeze .stable .namecol{ white-space:normal; min-width:120px; max-width:150px; } .freeze .stable th:first-child, .freeze .stable td:first-child:not([colspan]){ width:40px; min-width:40px; max-width:40px; padding-left:10px; padding-right:6px; } .freeze .stable .namecol{ left:40px; } }
   /* width:auto + min-width:100% (not a fixed width:100%) lets the table stretch to fill a
      roomy container like before, but grow past it when a wide row (a long name, a 14-column
      report) needs more space — .table-scroll then scrolls horizontally instead of the browser
@@ -554,12 +566,12 @@ window.kumonPtcNav = function(client, role){
           </div>
         </div>
         <div id="bulkBar" class="bulk-bar" hidden></div>
-        <div class="table-scroll">
+        <div class="table-scroll freeze">
           <table class="stable">
             <thead><tr>
               <th class="selectcol" id="selectHeaderCell">#</th>
               <th id="monitorActionHead" hidden></th>
-              <th>Student</th><th>Grade</th><th>Subject</th><th>Teacher</th><th>LWC</th><th>Schedule</th><th>Mode</th><th>Status</th><th>Payment</th><th>Date enrolled</th>
+              <th class="namecol" id="rosterNameHead">Student</th><th>Grade</th><th>Subject</th><th>Teacher</th><th>LWC</th><th>Schedule</th><th>Mode</th><th>Status</th><th>Payment</th><th>Date enrolled</th>
             </tr></thead>
             <tbody id="rosterBody"></tbody>
           </table>
@@ -612,10 +624,10 @@ window.kumonPtcNav = function(client, role){
           <h3 id="repCardTitle">This cycle</h3>
           <span class="hint" id="repCount" style="font-size:12px; color:var(--ink-muted);"></span>
         </div>
-        <div class="table-scroll">
+        <div class="table-scroll freeze">
           <table class="stable">
             <thead><tr>
-              <th>#</th><th>Student</th><th>Subject</th><th>Tag</th><th>LWC</th><th>NWU</th><th>No. of days</th><th>No. of months</th><th>Test date</th><th>Test level</th><th>Test time</th><th>Test score</th><th>Test group</th><th>Grade</th><th id="repPaymentHead">Payment</th><th>Mode</th>
+              <th>#</th><th class="namecol">Student</th><th>Subject</th><th>Tag</th><th>LWC</th><th>NWU</th><th>No. of days</th><th>No. of months</th><th>Test date</th><th>Test level</th><th>Test time</th><th>Test score</th><th>Test group</th><th>Grade</th><th id="repPaymentHead">Payment</th><th>Mode</th>
             </tr></thead>
             <tbody id="repBody"></tbody>
           </table>
@@ -1943,8 +1955,8 @@ window.kumonPtcNav = function(client, role){
     rows.forEach(r => sections[reportSectionIndex(r, cycleKey)].rows.push(r));
     const hasExtra = sections[1].rows.length || sections[2].rows.length;
     body.innerHTML = sections.filter(sec => sec.rows.length).map(sec => `
-      ${sec.title ? `<tr class="section-row"><td colspan="16">${esc(sec.title)} (${sec.rows.length})</td></tr>`
-        : hasExtra ? `<tr class="section-row"><td colspan="16">Regular students (${sec.rows.length})</td></tr>` : ""}
+      ${sec.title ? `<tr class="section-row"><td colspan="16"><span class="section-label">${esc(sec.title)} (${sec.rows.length})</span></td></tr>`
+        : hasExtra ? `<tr class="section-row"><td colspan="16"><span class="section-label">Regular students (${sec.rows.length})</span></td></tr>` : ""}
       ${sec.rows.map((r, idx) => reportRowHtml(r, idx, editable)).join("")}`).join("");
   }
   function reportSectionIndex(r, cycleKey){
@@ -1956,7 +1968,7 @@ window.kumonPtcNav = function(client, role){
     return `
       <tr class="${editable?"clickrow":""}" ${editable?`data-action="edit-report" data-id="${r.id}"`:""}>
         <td class="rownum">${idx+1}</td>
-        <td><a class="name-link" href="student.html#s=${esc(r.student_id)}" data-action="open-profile" title="Open ${esc(displayName(r.student_id, r.student_name))}'s profile">${esc(displayName(r.student_id, r.student_name))}</a>${r.is_monitor ? monitorTagHtml(r) : ""}${newTagHtml(r)}</td>
+        <td class="namecol"><a class="name-link" href="student.html#s=${esc(r.student_id)}" data-action="open-profile" title="Open ${esc(displayName(r.student_id, r.student_name))}'s profile">${esc(displayName(r.student_id, r.student_name))}</a>${r.is_monitor ? monitorTagHtml(r) : ""}${newTagHtml(r)}</td>
         <td><span class="pill ${r.subject==='Math'?'subj-math':'subj-reading'}">${esc(r.subject||"")}</span></td>
         <td>${r.archived ? `<span class="lvl empty-lvl" title="Archived snapshots don't keep the reporting tag.">—</span>` : reportTagPill(r.enrollment_type)}</td>
         <td>${fmtPlain(r.lwc)}</td>
@@ -2098,6 +2110,7 @@ window.kumonPtcNav = function(client, role){
     }
     const actionHead = $("#monitorActionHead");
     if(actionHead) actionHead.hidden = !(inMonitor && editable);
+    const nameHead = $("#rosterNameHead"); if(nameHead) nameHead.classList.toggle("namecol", !(inMonitor && editable));   // the extra button column sits between # and the name there, so the name isn't pinned
     updateMonitorCount();
 
     // Editing, selecting and bulk actions only make sense against the live, current-cycle
@@ -2128,7 +2141,7 @@ window.kumonPtcNav = function(client, role){
             ? `<input type="checkbox" class="row-check" data-action="toggle-select" data-id="${e.id}" ${selectedIds.has(e.id)?"checked":""}>`
             : `<span class="rownum">${idx+1}</span>`}</td>
           ${inMonitor && editable ? `<td><button type="button" class="btn sm primary" data-action="monitor-promote" data-id="${e.id}">Move to regular roster</button></td>` : ""}
-          <td><a class="name-link" href="student.html#s=${esc(e.student_id)}" data-action="open-profile" title="Open ${esc(displayName(e.student_id, e.student_name))}'s profile">${esc(displayName(e.student_id, e.student_name))}</a>${monitorTagHtml(e)}${newTagHtml(e)}</td>
+          <td${inMonitor && editable ? "" : ` class="namecol"`}><a class="name-link" href="student.html#s=${esc(e.student_id)}" data-action="open-profile" title="Open ${esc(displayName(e.student_id, e.student_name))}'s profile">${esc(displayName(e.student_id, e.student_name))}</a>${monitorTagHtml(e)}${newTagHtml(e)}</td>
           <td>${esc(gradeFor(e.student_id) || "—")}</td>
           <td><span class="pill ${e.subject==='Math'?'subj-math':'subj-reading'}">${esc(e.subject)}</span></td>
           <td>${esc(e.teacher||"—")}</td>
