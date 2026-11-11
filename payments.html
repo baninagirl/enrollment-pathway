@@ -259,6 +259,11 @@
   }
   @media (max-width:860px){ .rail-pipeline{ display:none !important; } }
   .btn.paid-btn{ color:#1E7B46; border-color:#BFE3CC; background:#EEF8F2; }
+  .review-bulk{ display:flex; align-items:center; gap:12px; flex-wrap:wrap; padding:10px 18px; border-bottom:1px solid var(--border); background:var(--surface-2); }
+  .review-bulk .rb-all{ display:flex; align-items:center; gap:8px; font-weight:600; font-size:13.5px; cursor:pointer; }
+  .review-bulk input, .rv-check{ width:17px; height:17px; margin:0; accent-color:var(--accent); cursor:pointer; flex:none; }
+  .receipt-row .rv-check{ align-self:center; margin-right:4px; }
+  .receipt-row.sel{ background:var(--accent-soft); }
   .btn.wait-btn{ color:#9A5A0B; border-color:#F1D9B5; background:#FCF3E6; }
   /* Billing groups dialog */
   .bg-tools{ display:flex; gap:10px; padding:12px 20px; border-bottom:1px solid var(--border); flex-wrap:wrap; }
@@ -552,6 +557,7 @@ window.kumonPtcNav = function(client, role){
 
       <div class="card">
         <div class="card-head"><h3>Pending receipt review</h3><span class="pill pending" id="reviewCountBadge"></span></div>
+        <div id="reviewBulk" class="review-bulk" hidden></div>
         <div id="reviewBody"></div>
       </div>
     </div>
@@ -2163,10 +2169,28 @@ window.kumonPtcNav = function(client, role){
     render();
   }
 
+  // Bulk verify: tick rows (or Select all) and verify them in one go. Superadmins only.
+  const reviewSel = new Set();
+  let reviewBulkBusy = false;
   function renderReview(){
     const queue = receipts.filter(r => (r.status === "pending" || r.status === "flagged") && isMyStudent(r.student_id));
     $("#reviewCountBadge").textContent = queue.length ? `${queue.length} waiting` : "None waiting";
     const body = $("#reviewBody");
+    const ids = new Set(queue.map(r => r.id)); [...reviewSel].forEach(id => { if(!ids.has(id)) reviewSel.delete(id); });
+    const bulk = $("#reviewBulk");
+    if(bulk){
+      bulk.hidden = !(isSuperadmin() && queue.length);
+      if(!bulk.hidden){
+        const n = reviewSel.size, all = n === queue.length;
+        const amt = queue.filter(r => reviewSel.has(r.id)).reduce((a, r) => a + Number(r.amount || 0), 0);
+        bulk.innerHTML = `<label class="rb-all"><input type="checkbox" id="reviewSelAll" ${all ? "checked" : ""}> Select all ${queue.length}</label>
+          <span class="sub">${n ? `${n} selected · ${peso(amt)}` : "Tick payments to verify several at once"}</span>
+          <span style="flex:1"></span>
+          ${n ? `<button class="btn sm ghost" data-action="review-clear">Clear</button>` : ""}
+          <button class="btn sm good" data-action="verify-selected" ${n && !reviewBulkBusy ? "" : "disabled"}>${reviewBulkBusy ? "Verifying…" : `Verify selected${n ? " (" + n + ")" : ""}`}</button>`;
+        const sa = $("#reviewSelAll"); if(sa) sa.indeterminate = n > 0 && !all;
+      }
+    }
     if(!queue.length){
       body.innerHTML = `<div class="empty">Nothing waiting on review.</div>`;
       return;
@@ -2175,7 +2199,8 @@ window.kumonPtcNav = function(client, role){
       const s = students.find(x => x.id === r.student_id);
       const name = s ? displayName(s) : "(deleted student)";
       const monthLabel = new Date(reportYm(r.covers_month.slice(0,7)) + "-01T00:00:00").toLocaleDateString("en-US", { month:"short", year:"numeric" });
-      return `<div class="receipt-row">
+      return `<div class="receipt-row${reviewSel.has(r.id) ? " sel" : ""}">
+        ${isSuperadmin() ? `<input type="checkbox" class="rv-check" data-rv="${esc(r.id)}" ${reviewSel.has(r.id) ? "checked" : ""} aria-label="Select ${esc(name)}">` : ""}
         <div class="receipt-thumb">🧾</div>
         <div class="receipt-info">
           <b>${esc(name)}</b>
@@ -2446,6 +2471,43 @@ window.kumonPtcNav = function(client, role){
     return { ok: true, autoResumedName };
   }
 
+  async function verifySelected(){
+    if(!isSuperadmin() || reviewBulkBusy) return;
+    const ids = receipts.filter(r => reviewSel.has(r.id) && (r.status === "pending" || r.status === "flagged")).map(r => r.id);
+    if(!ids.length) return;
+    const total = receipts.filter(r => ids.includes(r.id)).reduce((a, r) => a + Number(r.amount || 0), 0);
+    if(!confirm(`Verify ${ids.length} payment${ids.length === 1 ? "" : "s"} (${peso(total)})?\n\nThey'll count as Paid right away.`)) return;
+    reviewBulkBusy = true; renderReview();
+    const patch = { status: "verified", reviewed_by: currentUser ? currentUser.id : null, reviewed_at: new Date().toISOString() };
+    const done = [];
+    let err = null;
+    try{
+      for(let i = 0; i < ids.length; i += 100){
+        const chunk = ids.slice(i, i + 100);
+        const { data, error } = await sbClient.from("payment_receipts").update(patch).in("id", chunk).select("id");
+        if(error){ err = error.message; break; }
+        (data || []).forEach(r => done.push(r.id));
+        if(!data || data.length !== chunk.length){ err = "the database didn't allow some of them"; break; }
+      }
+    } finally {
+      reviewBulkBusy = false;
+    }
+    if(done.length) logHistory("verified_receipt", `Verified ${done.length} payments at once (${peso(receipts.filter(r => done.includes(r.id)).reduce((a, r) => a + Number(r.amount || 0), 0))})`, "payment_receipt", null);
+    await loadReceipts();
+    // the same automatic Resume a single Verify does, for each one
+    const resumed = [], failed = [];
+    for(const id of done){
+      const nm = await maybeAutoResumeFromReceipt(id);
+      if(nm) resumed.push(nm);
+      failed.push(...autoResumeFailed);
+    }
+    done.forEach(id => reviewSel.delete(id));
+    render();
+    if(err) alert(`Verified ${done.length} of ${ids.length}. The rest couldn't be saved (${err}) — they're still ticked, so press Verify selected again.`);
+    else if(failed.length) alert(`Verified ${done.length}. ${failed.join(", ")} should come back now (their payment covers their return), but the automatic resume didn't go through — go to the Absent tab and press Resume.`);
+    else toast(`Verified ${done.length} payment${done.length === 1 ? "" : "s"}.${resumed.length ? " Automatically resumed: " + resumed.join(", ") + "." : ""}`);
+  }
+
   // Same subject count basis as Retention's own tuitionDueForAbsence — an absent student's
   // enrollments are inactive, so activeSubjectsFor would wrongly read as zero/one subject.
   function tuitionDueForAbsence(a){
@@ -2647,6 +2709,15 @@ window.kumonPtcNav = function(client, role){
   });
 
   document.addEventListener("change", (e)=>{
+    if(e.target.id === "reviewSelAll"){
+      const queue = receipts.filter(r => (r.status === "pending" || r.status === "flagged") && isMyStudent(r.student_id));
+      if(e.target.checked) queue.forEach(r => reviewSel.add(r.id)); else reviewSel.clear();
+      renderReview(); return;
+    }
+    if(e.target.classList && e.target.classList.contains("rv-check")){
+      const id = e.target.dataset.rv; e.target.checked ? reviewSel.add(id) : reviewSel.delete(id);
+      renderReview(); return;
+    }
     if(e.target.id === "searchInput"){ filters.search = e.target.value; render(); }
     if(e.target.id === "statusFilter"){ filters.status = e.target.value; render(); }
     if(e.target.id === "soaBulkN"){ soaBulkN = e.target.value; }
@@ -2729,6 +2800,8 @@ window.kumonPtcNav = function(client, role){
     else if(action === "back-to-groups"){ openGroupsModal(); }
     else if(action === "delete-group"){ await deleteGroup(btn.dataset.id); }
     else if(action === "view-receipt"){ e.preventDefault(); await viewReceipt(btn.dataset.id); }
+    else if(action === "review-clear"){ reviewSel.clear(); renderReview(); }
+    else if(action === "verify-selected"){ await verifySelected(); }
     else if(action === "verify-receipt"){
       if(!isSuperadmin()) return;
       const r = await setReceiptStatus(btn.dataset.id, "verified");
