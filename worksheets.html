@@ -924,7 +924,7 @@ window.kumonPtcNav = function(client, role){
   const DEFAULT_PPD = 10;                                  // a new projection's pages a day
   const isKC = e => String((e && e.mode) || "").trim().toUpperCase() === "KC";   // the Mode on the Student roster (per subject): KC works on a tablet — no paper worksheets
 
-  let wsEnrollments = [], wsHistory = [], wsCounts = [], wsOrders = [], wsProjections = [], wsKcStudents = new Set(), wsSettings = { cover_weeks: 4, calib: {} };
+  let wsEnrollments = [], wsHistory = [], wsCounts = [], wsOrders = [], wsProjections = [], wsKcStudents = new Set(), wsSettings = { cover_weeks: 4, order_every: "1m", lead_days: 7, spare_days: 7, calib: {} };
   let wsDataVer = 0;   // bumps whenever data loads, so cached plans are rebuilt
   const wsUi = { tab: "suggest", countSubject: "ME", checkId: null, stockSubject: "ME" };
 
@@ -1102,6 +1102,38 @@ window.kumonPtcNav = function(client, role){
     return { map, kids, counts: P.counts };
   }
 
+  /* ---------- the order's window: from the day this order arrives until the next order arrives (+ spare) ----------
+     Order today, it arrives in `lead` days, and it has to last until the next order arrives (`every` days later)
+     plus `spare` days in case that one is late. What the children use BEFORE it arrives comes off today's shelf. */
+  function planWin(){
+    const every = wsSettings.order_every === "2w" ? 14 : 30;
+    const lead = Math.max(0, Number(wsSettings.lead_days != null ? wsSettings.lead_days : 7) || 0);
+    const spare = Math.max(0, Number(wsSettings.spare_days != null ? wsSettings.spare_days : 7) || 0);
+    const t = todayISO();
+    // the day the order is put in (Order date box; today unless picked) — what the children use before then also comes off the shelf
+    // saved for everyone (ws_settings.order_date); once that day has passed it's just today again
+    const od = wsSettings.order_date;
+    const placed = (od && /^\d{4}-\d{2}-\d{2}$/.test(od) && od > t) ? od : t;
+    const wait = Math.round((T(placed) - T(t)) / MS_DAY);
+    const w = { every, lead, spare, placed, start: wait + lead, end: wait + lead + every + spare, arrive: addDays(placed, lead), nextArrive: addDays(placed, lead + every), until: addDays(placed, lead + every + spare) };
+    w.text = `${fmtDate(w.arrive, { year: undefined })} – ${fmtDate(w.until, { year: undefined })}`;
+    w.fromTo = `from ${fmtDate(w.arrive, { year: undefined })} to ${fmtDate(w.until, { year: undefined })}`;
+    return w;
+  }
+  // gap = copies used from today until the order arrives; map = copies needed while the order has to last
+  function demandWin(sub, w){
+    if(sub === "PSE") return { gap: {}, map: {}, kids: 0, counts: null };
+    const P = plansOf(sub); const gap = {}, map = {}; let kids = 0;
+    for(const pl of P.plans.values()){
+      const t = pl.t; if(t.e.status !== "active" || pl.kc) continue;
+      const last = t.pts[t.pts.length - 1]; if(!last) continue;
+      const g1 = simulate(sub, pl, Math.max(0, last.G), w.start, gap);
+      const g2 = simulate(sub, pl, g1, w.end - w.start, map);
+      if(g2 > g1) kids++;
+    }
+    return { gap, map, kids, counts: P.counts };
+  }
+
   /* ---------- stock now: last count + orders received since − what the children used since ---------- */
   function latestCount(sub){ return wsCounts.filter(c => c.subject === sub).sort((a, b) => (a.counted_on + a.created_at) < (b.counted_on + b.created_at) ? 1 : -1)[0] || null; }
   function addLines(map, lines, sign){ for(const lv in (lines || {})) for(const b in lines[lv]){ const n = Number(lines[lv][b]) || 0; if(!n) continue; const x = (map[lv] = map[lv] || {}); x[b] = (x[b] || 0) + sign * n; } }
@@ -1150,16 +1182,17 @@ window.kumonPtcNav = function(client, role){
   const round10 = n => Math.ceil(n / 10) * 10;
 
   function suggestionFor(sub){
-    const weeks = Math.max(1, Number(wsSettings.cover_weeks) || 4);
-    const d = demandFor(sub, weeks * 7), st = stockNow(sub), inc = incomingFor(sub);
+    const w = planWin();
+    const d = demandWin(sub, w), st = stockNow(sub), inc = incomingFor(sub);
     const out = {}; let total = 0;
     for(const lv of WS_LEVELS[sub]) for(const b of blocksOf(sub)){
       const need = getN(d.map, lv, b); if(need <= 0.05) continue;
-      const have = st ? Math.max(0, getN(st.map, lv, b)) : 0;
-      const n = Math.ceil(Math.max(0, need - have - getN(inc, lv, b)) - 1e-9);   // exact copies (Kumon takes any number)
+      // still on the shelf when this order arrives: today's shelf + what's on the way − what they use until then
+      const left = Math.max(0, (st ? Math.max(0, getN(st.map, lv, b)) : 0) + getN(inc, lv, b) - getN(d.gap, lv, b));
+      const n = Math.ceil(Math.max(0, need - left) - 1e-9);   // exact copies (Kumon takes any number)
       if(n > 0){ (out[lv] = out[lv] || {})[b] = n; total += n; }
     }
-    return { lines: out, total, weeks, stock: st, demand: d };
+    return { lines: out, total, win: w, weeks: Math.round(w.end / 7), stock: st, demand: d };
   }
 
   /* ---------- achievement tests: one test per child each time they finish a level ---------- */
@@ -1178,12 +1211,14 @@ window.kumonPtcNav = function(client, role){
   }
   function atLinesOfOrder(o){ const out = {}; (o.items || []).forEach(it => { const k = atOfItem(it.name); if(!k) return; const x = (out[k.sub] = out[k.sub] || {}); x[k.level] = (x[k.level] || 0) + (Number(it.qty) || 0); }); return out; }
   // tests needed: children whose path reaches the end of a level (page 200) in the next `days` days
-  function atDemand(sub, days){
+  // with `fromDays`: only children who finish a level between day `fromDays` and day `days` from today
+  function atDemand(sub, days, fromDays){
     const P = plansOf(sub); const L = WS_LEVELS[sub]; const need = {};
     for(const pl of P.plans.values()){
       const t = pl.t; if(t.e.status !== "active" || pl.kc) continue; const last = t.pts[t.pts.length - 1]; if(!last) continue;
+      const from = fromDays > 0 ? simulate(sub, pl, Math.max(0, last.G), fromDays, null) : null;
       const to = simulate(sub, pl, Math.max(0, last.G), days, null);
-      for(let li = 0; li < L.length; li++){ const end = (li + 1) * 200; if(end >= last.G && end <= to + 1e-6 && AT_LEVELS[sub].includes(L[li])) need[L[li]] = (need[L[li]] || 0) + AT_RETAKE; }
+      for(let li = 0; li < L.length; li++){ const end = (li + 1) * 200; if((from != null ? end > from + 1e-6 : end >= last.G) && end <= to + 1e-6 && AT_LEVELS[sub].includes(L[li])) need[L[li]] = (need[L[li]] || 0) + AT_RETAKE; }
     }
     return need;
   }
@@ -1206,19 +1241,20 @@ window.kumonPtcNav = function(client, role){
     return { map, count: c };
   }
   function atSuggestion(){
-    const weeks = Math.max(1, Number(wsSettings.cover_weeks) || 4);
+    const w = planWin(), weeks = Math.round(w.end / 7);
     const st = atStockNow(); const inc = { ME: {}, EEU: {} }; const cutoff = addDays(todayISO(), -45);
     wsOrders.filter(o => !o.received_on && (!o.order_date || o.order_date >= cutoff)).forEach(o => { const a = atLinesOfOrder(o); for(const sub in a) for(const lv in a[sub]) inc[sub][lv] = (inc[sub][lv] || 0) + a[sub][lv]; });
     const rows = [];
     for(const sub of ["ME","EEU"]){
-      const need = atDemand(sub, weeks * 7);
+      const need = atDemand(sub, w.end, w.start), before = w.start > 0 ? atDemand(sub, w.start) : {};
       for(const lv of AT_LEVELS[sub]){
-        const n = need[lv] || 0, have = st ? Math.max(0, Math.round((st.map[sub] || {})[lv] || 0)) : null, coming = inc[sub][lv] || 0;
-        const order = n > 0.05 ? Math.ceil(Math.max(0, n - (have || 0) - coming) - 1e-9) : 0;   // exact number of tests (no rounding to tens)
-        if(n > 0.05 || have) rows.push({ sub, lv, item: atItem(sub, lv), need: n, have, coming, order });
+        const n = need[lv] || 0, have = st ? Math.max(0, Math.round((st.map[sub] || {})[lv] || 0)) : null, coming = inc[sub][lv] || 0, gap = before[lv] || 0;
+        const left = Math.max(0, (have || 0) + coming - gap);   // still on the shelf when the order arrives
+        const order = n > 0.05 ? Math.ceil(Math.max(0, n - left) - 1e-9) : 0;   // exact number of tests (no rounding to tens)
+        if(n > 0.05 || have) rows.push({ sub, lv, item: atItem(sub, lv), need: n, have, coming, gap, order });
       }
     }
-    return { rows, weeks, stock: st };
+    return { rows, weeks, win: w, stock: st };
   }
 
   /* ---------- order check ---------- */
@@ -1270,7 +1306,7 @@ window.kumonPtcNav = function(client, role){
       wsLoad("history", async () => { wsHistory = await selectAll("enrollment_monthly_history", "id,subject_enrollment_id,cycle_key,current_level,current_page,lwc,nwu", q => q.order("id")); }),
       wsLoad("projections", async () => { wsProjections = await selectAll("study_projections", "subject_enrollment_id,subject,levels,default_rate,default_ppd", q => q.order("id")); }),
       loadCounts(), loadOrders(),
-      wsLoad("settings", async () => { const { data, error } = await sbClient.from("ws_settings").select("value").eq("id", "main").maybeSingle(); if(error) throw error; if(data && data.value) wsSettings = Object.assign({ cover_weeks: 4, calib: {} }, data.value); })
+      wsLoad("settings", async () => { const { data, error } = await sbClient.from("ws_settings").select("value").eq("id", "main").maybeSingle(); if(error) throw error; if(data && data.value) wsSettings = Object.assign({ cover_weeks: 4, order_every: "1m", lead_days: 7, spare_days: 7, calib: {} }, data.value); })
     ]);
   }
   function loadCounts(){ return wsLoad("counts", async () => { wsCounts = await selectAll("ws_counts", "*", q => q.order("id")); }); }
@@ -1322,15 +1358,18 @@ window.kumonPtcNav = function(client, role){
       return `<div class="card sect"><div class="sec-h"><h3>${WS_NAME[sub]}</h3><span class="faint">${s.total ? fmtN(s.total) + " copies" : ""}</span><span class="grow"></span>
           ${s.total ? `<button class="btn sm" data-action="kumon-file" data-sub="${sub}" title="Upload this on Kumon's Order screen with Import (${sub} tab)">File for Kumon's Import</button>` : ""}</div>
         ${!noCount && s.stock.uncounted.some(lv => s.lines[lv]) ? `<div class="banner">Not counted yet: ${esc(levelRange(sub, s.stock.uncounted.filter(lv => s.lines[lv])))} — these assume an empty shelf, so their numbers are the full need. <a href="#" data-tab="count" data-sub="${sub}">Count them</a>.</div>` : ""}
-        ${noCount ? `<div class="banner">No shelf count for ${WS_NAME[sub]} yet, so this assumes the shelf is empty — it's the full need for the next ${s.weeks} weeks. Do a <a href="#" data-tab="count" data-sub="${sub}">shelf count</a> to get a real suggestion.</div>` : ""}
-        ${gridHtml(sub, s.lines, { empty: noCount ? "No child needs this subject's worksheets in that time." : "Nothing to order — the shelf covers the next " + s.weeks + " weeks." })}
+        ${noCount ? `<div class="banner">No shelf count for ${WS_NAME[sub]} yet, so this assumes the shelf is empty — it's the full need for ${esc(s.win.text)}. Do a <a href="#" data-tab="count" data-sub="${sub}">shelf count</a> to get a real suggestion.</div>` : ""}
+        ${gridHtml(sub, s.lines, { empty: noCount ? "No child needs this subject's worksheets in that time." : "Nothing to order — what's on the shelf and on the way covers " + s.win.text + "." })}
         <div class="hint">${s.demand.kids} children · ${esc(factorLine(sub))}</div>
         ${atBlock(sub, at)}</div>`;
     }).join("");
     body.innerHTML = `<div class="card sect"><div class="ws-set">
         <span class="grow" style="order:2"></span><button class="btn primary sm" data-action="xlsx" style="order:3">Download Excel</button>
-        <label class="field inline">Plan for <select id="coverWeeks">${[2,3,4,5,6,8].map(w => `<option value="${w}"${Number(wsSettings.cover_weeks) === w ? " selected" : ""}>${w} weeks</option>`).join("")}</select></label>
-        <div class="hint" style="margin:0;">You order twice a month, so 4 weeks = two weeks until the next order + about a week for delivery + a week spare. The suggestion is what each block needs for that time, minus what's on the shelf and what's already ordered but not yet received — rounded up to whole copies.</div></div></div>
+        <label class="field inline">Order date <input type="date" id="wsOrderDate" value="${esc(planWin().placed)}" min="${esc(todayISO())}" style="width:auto"></label>
+        <label class="field inline">We order <select id="wsEvery"><option value="1m"${wsSettings.order_every !== "2w" ? " selected" : ""}>once a month</option><option value="2w"${wsSettings.order_every === "2w" ? " selected" : ""}>twice a month</option></select></label>
+        <label class="field inline">Delivery takes <select id="wsLead">${[3,5,7,10,14].map(n => `<option value="${n}"${Number(wsSettings.lead_days != null ? wsSettings.lead_days : 7) === n ? " selected" : ""}>${n} days</option>`).join("")}</select></label>
+        <label class="field inline">Spare <select id="wsSpare">${[[0,"none"],[7,"1 week"],[14,"2 weeks"]].map(([n, l]) => `<option value="${n}"${Number(wsSettings.spare_days != null ? wsSettings.spare_days : 7) === n ? " selected" : ""}>${l}</option>`).join("")}</select></label>
+        ${(() => { const w = planWin(); return `<div class="hint" style="margin:0;">Ordered ${w.placed === todayISO() ? "today" : "on " + esc(fmtDate(w.placed, { year: undefined }))}, this order arrives about <b>${esc(fmtDate(w.arrive, { year: undefined }))}</b> and has to last until the next order arrives, about <b>${esc(fmtDate(w.nextArrive, { year: undefined }))}</b>${w.spare ? `, plus ${w.spare / 7} ${w.spare === 7 ? "week" : "weeks"} spare` : ""}. So the suggestion is what the children will use <b>${esc(w.fromTo)}</b>, minus what will still be on the shelf when it arrives (today's shelf + what's on the way − what they use until then).</div>`; })()}</div></div></div>
       ${parts}
       ${calibCard()}
       <div class="card sect"><div class="sec-h"><h3>Pre-school (PSE · Z1, Z2)</h3></div><div class="hint">The Hub has no pre-school students, so there's no suggestion for Z1/Z2. Their stock still shows on Stock per level once they're counted.</div></div>`;
@@ -1341,18 +1380,18 @@ window.kumonPtcNav = function(client, role){
     const total = rows.reduce((x, r) => x + r.order, 0);
     const name = sub === "ME" ? "ME AT" : "EE (US) AT";
     return `<div class="at-block"><div class="sec-h"><h3>Achievement tests (${name})</h3><span class="faint">${total ? fmtN(total) + " tests" : ""}</span></div>
-      ${a.stock ? "" : `<div class="banner">The tests haven't been counted yet, so this is the full need for the next ${a.weeks} weeks. <a href="#" data-tab="count" data-sub="AT">Count the tests</a>.</div>`}
-      ${rows.length ? `<div class="ws-grid-wrap"><table class="ws-grid at-grid"><thead><tr><th>Level</th><th>Order</th><th>Tests needed</th><th>On the shelf</th><th>On the way</th></tr></thead><tbody>
-        ${rows.map(r => `<tr><th>${esc(r.lv)}</th><td class="tot">${r.order ? fmtN(r.order) : ""}</td><td>${r.need >= 0.5 ? fmtN(r.need) : ""}</td><td>${r.have == null ? "—" : r.have ? fmtN(r.have) : ""}</td><td>${r.coming ? fmtN(r.coming) : ""}</td></tr>`).join("")}
-      </tbody></table></div>` : `<div class="empty">No child finishes a level in the next ${a.weeks} weeks.</div>`}
-      <div class="hint">One test per child reaching page 200 of a level in that time, plus 20% for retakes, minus what's on the shelf and on the way — the exact number, rounded up to whole tests. Order under <b>Non-Chargeable Items</b>: search "${esc(name)}" and the level.</div></div>`;
+      ${a.stock ? "" : `<div class="banner">The tests haven't been counted yet, so this is the full need for ${esc(a.win.text)}. <a href="#" data-tab="count" data-sub="AT">Count the tests</a>.</div>`}
+      ${rows.length ? `<div class="ws-grid-wrap"><table class="ws-grid at-grid"><thead><tr><th>Level</th><th>Order</th><th>Tests needed (${esc(a.win.text)})</th><th>On the shelf now</th><th>On the way</th><th>Used before it arrives</th></tr></thead><tbody>
+        ${rows.map(r => `<tr><th>${esc(r.lv)}</th><td class="tot">${r.order ? fmtN(r.order) : ""}</td><td>${r.need >= 0.5 ? fmtN(r.need) : ""}</td><td>${r.have == null ? "—" : r.have ? fmtN(r.have) : ""}</td><td>${r.coming ? fmtN(r.coming) : ""}</td><td>${r.gap >= 0.5 ? fmtN(r.gap) : ""}</td></tr>`).join("")}
+      </tbody></table></div>` : `<div class="empty">No child finishes a level ${esc(a.win.fromTo)}.</div>`}
+      <div class="hint">One test per child reaching page 200 of a level ${esc(a.win.fromTo)}, plus 20% for retakes, minus what will still be on the shelf when the order arrives — the exact number, rounded up to whole tests. Order under <b>Non-Chargeable Items</b>: search "${esc(name)}" and the level.</div></div>`;
   }
   function atCard(){
     const a = atSuggestion(); const toOrder = a.rows.filter(r => r.order > 0);
     const rows = a.rows.filter(r => r.order > 0 || r.need >= 1).map(r => `<tr${r.order ? "" : ' class="faint"'}><td>${esc(r.item)}</td><td>${fmtN(r.need)}</td><td>${r.have == null ? "not counted" : fmtN(r.have)}</td><td>${r.coming ? fmtN(r.coming) : ""}</td><td><b>${r.order ? fmtN(r.order) : "—"}</b></td></tr>`).join("");
     return `<div class="card sect"><div class="sec-h"><h3>Achievement tests</h3><span class="faint">${toOrder.length ? toOrder.reduce((x, r) => x + r.order, 0) + " tests" : ""}</span></div>
-      ${a.stock ? "" : `<div class="banner">No shelf count for the tests yet, so this is the full need for the next ${a.weeks} weeks. <a href="#" data-tab="count" data-sub="AT">Count the tests</a> to get a real suggestion.</div>`}
-      ${rows ? `<div class="tbl"><table class="stable"><thead><tr><th>Kumon item</th><th>Tests needed (next ${a.weeks} wks)</th><th>On the shelf</th><th>On the way</th><th>Order</th></tr></thead><tbody>${rows}</tbody></table></div>` : `<div class="empty">No child finishes a level in the next ${a.weeks} weeks.</div>`}
+      ${a.stock ? "" : `<div class="banner">No shelf count for the tests yet, so this is the full need for ${esc(a.win.text)}. <a href="#" data-tab="count" data-sub="AT">Count the tests</a> to get a real suggestion.</div>`}
+      ${rows ? `<div class="tbl"><table class="stable"><thead><tr><th>Kumon item</th><th>Tests needed (${esc(a.win.text)})</th><th>On the shelf</th><th>On the way</th><th>Order</th></tr></thead><tbody>${rows}</tbody></table></div>` : `<div class="empty">No child finishes a level ${esc(a.win.fromTo)}.</div>`}
       <div class="hint">One test for each child who reaches the end of a level (page 200), plus 20% for retakes, rounded up to whole tests. Order these under <b>Non-Chargeable Items</b> (search "AT").</div></div>`;
   }
   // Kumon's Stock Summary "Used" for a closed month teaches the Hub how many copies a child really uses
@@ -1531,7 +1570,7 @@ window.kumonPtcNav = function(client, role){
   // One Excel file: a sheet per subject laid out like Kumon's order screen (every level, blocks 1…191), plus a notes sheet.
   function downloadXlsx(){
     if(!window.XLSX){ alert("The Excel maker didn't load — check the connection and refresh the page."); return; }
-    const wb = XLSX.utils.book_new(); const weeks = Math.max(1, Number(wsSettings.cover_weeks) || 4);
+    const wb = XLSX.utils.book_new(); const win = planWin();
     for(const sub of ["ME","EEU"]){
       const s = suggestionFor(sub); const blocks = blocksOf(sub);
       const rows = [["Level", ...blocks, "Total"]];
@@ -1550,17 +1589,17 @@ window.kumonPtcNav = function(client, role){
         XLSX.utils.book_append_sheet(wb, aws, sub === "ME" ? "ME AT" : "EE (US) AT");
       } }
     const notes = [
-      ["Worksheet order suggestion"], ["Made", todayISO()], ["Plans for", weeks + " weeks"],
+      ["Worksheet order suggestion"], ["Made", todayISO()], ["Order date", win.placed], ["Arrives about", win.arrive], ["Has to last until", win.until + (win.spare ? " (includes " + win.spare + " days spare)" : "")],
       ["Math — how it's worked out", factorLine("ME")], ["English — how it's worked out", factorLine("EEU")],
       ["Math shelf count", latestCount("ME") ? latestCount("ME").counted_on : "none — assumes an empty shelf"],
       ["English shelf count", latestCount("EEU") ? latestCount("EEU").counted_on : "none — assumes an empty shelf"],
       [], ["Each number is copies of a 10-worksheet block (1 = sheets 1–10, 11 = sheets 11–20 …), rounded up to whole copies."],
-      ["It is what the children need for the weeks above, minus what's on the shelf and what's ordered but not yet received."]
+      ["It is what the children will use between those two dates, minus what will still be on the shelf when it arrives (today's shelf + ordered but not yet received − what they use before it arrives)."]
     ];
     const nws = XLSX.utils.aoa_to_sheet(notes); nws["!cols"] = [{ wch: 24 }, { wch: 40 }];
     XLSX.utils.book_append_sheet(wb, nws, "Notes");
     XLSX.writeFile(wb, `worksheet-order-${todayISO()}.xlsx`);
-    logHistory("ws_export", `Downloaded the worksheet order suggestion (${weeks} weeks)`, null);
+    logHistory("ws_export", `Downloaded the worksheet order suggestion (for ${win.arrive} to ${win.until})`, null);
   }
   // The file Kumon's order screen takes in with Import: same shape as its own Export (Worksheet_ME_261109.xlsx) —
   // one subject, sheet "Sheet1", header "Level" + block numbers, every level in Kumon's order, empty = none.
@@ -1639,7 +1678,10 @@ window.kumonPtcNav = function(client, role){
   document.addEventListener("change", async (e) => {
     if(e.target.id === "pdfIn" && e.target.files.length){ await uploadPdfs([...e.target.files]); return; }
     if(e.target.id === "countFile" && e.target.files.length){ await importCountFile(e.target.files[0]); e.target.value = ""; return; }
-    if(e.target.id === "coverWeeks"){ if(await saveSettings({ cover_weeks: Number(e.target.value) })) render(); return; }
+    if(e.target.id === "wsOrderDate"){ const v = e.target.value; await saveSettings({ order_date: /^\d{4}-\d{2}-\d{2}$/.test(v) && v > todayISO() ? v : null }); render(); return; }
+    if(e.target.id === "wsEvery"){ if(await saveSettings({ order_every: e.target.value })) render(); return; }
+    if(e.target.id === "wsLead"){ if(await saveSettings({ lead_days: Number(e.target.value) })) render(); return; }
+    if(e.target.id === "wsSpare"){ if(await saveSettings({ spare_days: Number(e.target.value) })) render(); return; }
   });
 
   let started = false;
