@@ -595,7 +595,34 @@ window.kumonPtcNav = function(client, role){
           </table>
         </div>
       </div>
+      ${currentRole === "superadmin" ? `
+      <div class="card" id="renameCard">
+        <div class="card-head"><h3>Rename a teacher</h3></div>
+        <div style="padding:16px 20px; display:grid; gap:12px;">
+          <p class="hint" style="margin:0;">Changes the name everywhere at once: their students, schedules, closed months, PTC, their login, the Staff list, teacher groups and Training slots. Use this instead of just retyping the name on a login above.</p>
+          <div style="display:flex; flex-wrap:wrap; gap:10px; align-items:flex-end;">
+            <label class="field" style="margin:0;">Current name<input type="text" id="rnOld" list="rnOldList" autocomplete="off" placeholder="e.g. Miss Frixie" style="min-width:200px;"></label>
+            <label class="field" style="margin:0;">New name<input type="text" id="rnNew" autocomplete="off" placeholder="e.g. Miss Frixssy" style="min-width:200px;"></label>
+            <button class="btn primary" data-action="rename-teacher">Rename everywhere</button>
+          </div>
+          <datalist id="rnOldList">${[...new Set([...trainers, ...profiles.map(p => p.teacher_name).filter(Boolean)])].sort().map(t => `<option value="${esc(t)}">`).join("")}</datalist>
+          <div id="rnResult" class="hint" aria-live="polite"></div>
+        </div>
+      </div>` : ""}
     `;
+  }
+
+  // Rename a teacher everywhere (phase126 rename_teacher). Returns true if it went through.
+  async function renameTeacherEverywhere(oldName, newName){
+    const { data, error } = await sbClient.rpc("rename_teacher", { p_old: oldName, p_new: newName });
+    if(error){
+      alert(/rename_teacher|schema cache|does not exist/i.test(error.message || "")
+        ? "Renaming everywhere needs phase126-rename-teacher-everywhere.sql to be run in Supabase first."
+        : "Couldn't rename: " + error.message);
+      return null;
+    }
+    logHistory("rename_teacher", `Renamed teacher "${oldName}" to "${newName}" everywhere (${(data && data.total) || 0} changes)`, "profile", null);
+    return data || { total: 0, changed: [], skipped: [] };
   }
 
   function genPassword(){
@@ -719,6 +746,24 @@ window.kumonPtcNav = function(client, role){
   }
 
   document.addEventListener("click", async (e)=>{
+    const rnBtn = e.target.closest && e.target.closest('[data-action="rename-teacher"]');
+    if(rnBtn){
+      const oldName = ($("#rnOld").value || "").trim(), newName = ($("#rnNew").value || "").trim();
+      if(!oldName || !newName){ alert("Type the current name and the new name."); return; }
+      if(oldName === newName){ alert("The new name is the same as the current one."); return; }
+      if(!confirm(`Rename "${oldName}" to "${newName}" everywhere?\n\nTheir students, schedules, closed months, PTC, login, Staff list, groups and Training slots will all use the new name.`)) return;
+      rnBtn.disabled = true; rnBtn.textContent = "Renaming…";
+      const r = await renameTeacherEverywhere(oldName, newName);
+      rnBtn.disabled = false; rnBtn.textContent = "Rename everywhere";
+      if(!r) return;
+      [profiles, trainers] = await Promise.all([loadProfiles(), loadTrainers()]);
+      await renderAdmin();
+      const out = $("#rnResult");
+      if(out) out.innerHTML = r.total
+        ? `Done — "${esc(oldName)}" is now "${esc(newName)}" (${r.total} changes${(r.changed || []).length ? ": " + r.changed.map(x => esc(String(x.where).split(".")[0].replace(/_/g, " ")) + " " + x.rows).join(", ") : ""}). Everyone sees it after reloading their page.`
+        : `Nothing was called "${esc(oldName)}", so nothing changed. Check the spelling (capitals and spaces count).`;
+      return;
+    }
     const btn = e.target.closest("[data-action]");
     if(!btn) return;
     if(btn.dataset.action === "logout"){ await sbClient.auth.signOut(); }
@@ -781,6 +826,14 @@ window.kumonPtcNav = function(client, role){
     if(e.target.dataset && e.target.dataset.action === "change-teacher-name"){
       const id = e.target.dataset.id;
       const teacher_name = e.target.value.trim() || null;
+      const before = (profiles.find(p => p.id === id) || {}).teacher_name || "";
+      // Changing a teacher's name on a login: rename it everywhere, so their students keep following them
+      if(before && teacher_name && before !== teacher_name && currentRole === "superadmin"
+         && confirm(`Rename "${before}" to "${teacher_name}" everywhere?\n\nOK = their students, schedules, groups and everything else move to the new name (recommended).\nCancel = only this login changes, and it will no longer match their students.`)){
+        const r = await renameTeacherEverywhere(before, teacher_name);
+        if(r){ [profiles, trainers] = await Promise.all([loadProfiles(), loadTrainers()]); await renderAdmin(); return; }
+        e.target.value = before; return;
+      }
       const { error } = await sbClient.from("profiles").update({ teacher_name }).eq("id", id);
       if(error){ alert("Couldn't save that: " + error.message); return; }
       const renamedProfile = profiles.find(p => p.id === id);

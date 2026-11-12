@@ -733,7 +733,7 @@ window.kumonPtcNav = function(client, role){
 
   /* teacher groups (phase95), same as the other pages */
   const DEFAULT_TEACHER_GROUPS = [
-    { key:"g1", name:"Group 1 (7A–3A61)", teachers:["Sir GB","Miss Mira","Miss Frixie","Miss Queenie","Miss Jess","Miss Sugar","Miss KC"] },
+    { key:"g1", name:"Group 1 (7A–3A61)", teachers:["Sir GB","Miss Mira","Miss Frixssy","Miss Queenie","Miss Jess","Miss Sugar","Miss KC"] },
     { key:"g2", name:"Group 2 (BCD)", teachers:["Sir Hamid","Miss Kath","Miss Kristine","Miss Nazel","Miss Rona"] },
     { key:"g3", name:"Group 3 (E–O)", teachers:["Sir Mark","Sir Francis","Sir Erickson","Miss Shaina","Miss Kate"] }
   ];
@@ -1369,7 +1369,7 @@ window.kumonPtcNav = function(client, role){
         <label class="field inline">We order <select id="wsEvery"><option value="1m"${wsSettings.order_every !== "2w" ? " selected" : ""}>once a month</option><option value="2w"${wsSettings.order_every === "2w" ? " selected" : ""}>twice a month</option></select></label>
         <label class="field inline">Delivery takes <select id="wsLead">${[3,5,7,10,14].map(n => `<option value="${n}"${Number(wsSettings.lead_days != null ? wsSettings.lead_days : 7) === n ? " selected" : ""}>${n} days</option>`).join("")}</select></label>
         <label class="field inline">Spare <select id="wsSpare">${[[0,"none"],[7,"1 week"],[14,"2 weeks"]].map(([n, l]) => `<option value="${n}"${Number(wsSettings.spare_days != null ? wsSettings.spare_days : 7) === n ? " selected" : ""}>${l}</option>`).join("")}</select></label>
-        ${(() => { const w = planWin(); return `<div class="hint" style="margin:0;">Ordered ${w.placed === todayISO() ? "today" : "on " + esc(fmtDate(w.placed, { year: undefined }))}, this order arrives about <b>${esc(fmtDate(w.arrive, { year: undefined }))}</b> and has to last until the next order arrives, about <b>${esc(fmtDate(w.nextArrive, { year: undefined }))}</b>${w.spare ? `, plus ${w.spare / 7} ${w.spare === 7 ? "week" : "weeks"} spare` : ""}. So the suggestion is what the children will use <b>${esc(w.fromTo)}</b>, minus what will still be on the shelf when it arrives (today's shelf + what's on the way − what they use until then).</div>`; })()}</div></div></div>
+        ${(() => { const w = planWin(); return `<div class="hint" style="margin:0;">Ordered ${w.placed === todayISO() ? "today" : "on " + esc(fmtDate(w.placed, { year: undefined }))}, this order arrives about <b>${esc(fmtDate(w.arrive, { year: undefined }))}</b>. Your next order is about <b>${esc(fmtDate(addDays(w.placed, w.every), { year: undefined }))}</b>, so this one has to last until that one arrives, about <b>${esc(fmtDate(w.nextArrive, { year: undefined }))}</b>${w.spare ? `, plus ${w.spare / 7} ${w.spare === 7 ? "week" : "weeks"} spare` : ""}. So the suggestion is what the children will use <b>${esc(w.fromTo)}</b>, minus what will still be on the shelf when it arrives (today's shelf + what's on the way − what they use until then).</div>`; })()}</div></div></div>
       ${parts}
       ${calibCard()}
       <div class="card sect"><div class="sec-h"><h3>Pre-school (PSE · Z1, Z2)</h3></div><div class="hint">The Hub has no pre-school students, so there's no suggestion for Z1/Z2. Their stock still shows on Stock per level once they're counted.</div></div>`;
@@ -1589,7 +1589,7 @@ window.kumonPtcNav = function(client, role){
         XLSX.utils.book_append_sheet(wb, aws, sub === "ME" ? "ME AT" : "EE (US) AT");
       } }
     const notes = [
-      ["Worksheet order suggestion"], ["Made", todayISO()], ["Order date", win.placed], ["Arrives about", win.arrive], ["Has to last until", win.until + (win.spare ? " (includes " + win.spare + " days spare)" : "")],
+      ["Worksheet order suggestion"], ["Made", todayISO()], ["Order date", win.placed], ["Next order about", addDays(win.placed, win.every)], ["Arrives about", win.arrive], ["Has to last until", win.until + (win.spare ? " (includes " + win.spare + " days spare)" : "")],
       ["Math — how it's worked out", factorLine("ME")], ["English — how it's worked out", factorLine("EEU")],
       ["Math shelf count", latestCount("ME") ? latestCount("ME").counted_on : "none — assumes an empty shelf"],
       ["English shelf count", latestCount("EEU") ? latestCount("EEU").counted_on : "none — assumes an empty shelf"],

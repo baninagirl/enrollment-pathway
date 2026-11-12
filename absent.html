@@ -553,6 +553,10 @@ window.kumonPtcNav = function(client, role){
     const [y,m] = ym.split("-").map(Number);
     return new Date(y, m-1, 1).toLocaleDateString("en-US", { month:"long", year:"numeric" });
   }
+  // Tuition months are NAMED the way Payments names them: for the report month before the month the
+  // tuition covers (December's tuition, due Nov 25, is shown as "November 2026"). last_paid_month and
+  // covers_month are stored as the covered month, so every one of them goes through this for display.
+  function billLabel(ym){ return ym ? fmtMonthLabel(shiftMonth(ym, -1)) : "—"; }
   function monthRangeLabel(ym){
     if(!ym) return "—";
     const [y,m] = ym.split("-").map(Number);
@@ -835,7 +839,7 @@ window.kumonPtcNav = function(client, role){
      group has an "All of Group N" choice. A teacher (or trainer_teacher) can open anyone in her own group,
      one at a time or the whole group; she starts on her own students. */
   const DEFAULT_TEACHER_GROUPS = [
-    { key:"g1", name:"Group 1 (7A–3A61)", teachers:["Sir GB","Miss Mira","Miss Frixie","Miss Queenie","Miss Jess","Miss Sugar","Miss KC"] },
+    { key:"g1", name:"Group 1 (7A–3A61)", teachers:["Sir GB","Miss Mira","Miss Frixssy","Miss Queenie","Miss Jess","Miss Sugar","Miss KC"] },
     { key:"g2", name:"Group 2 (BCD)", teachers:["Sir Hamid","Miss Kath","Miss Kristine","Miss Nazel","Miss Rona"] },
     { key:"g3", name:"Group 3 (E–O)", teachers:["Sir Mark","Sir Francis","Sir Erickson","Miss Shaina","Miss Kate"] }
   ];
@@ -1034,7 +1038,7 @@ window.kumonPtcNav = function(client, role){
           <td>${esc(displayName(s))}${absenceBadges(a)}</td>
           <td class="muted">${esc(gradeFor(a.student_id) || "—")}</td>
           <td class="muted">${esc(teacherList)}</td>
-          <td class="muted">${esc(fmtMonthLabel(a.last_paid_month))}</td>
+          <td class="muted">${esc(billLabel(a.last_paid_month))}</td>
           <td>${bucketPillHtml(x.months)}</td>
           ${moneyCells}
           <td>${logBtn}</td>
@@ -1048,7 +1052,7 @@ window.kumonPtcNav = function(client, role){
         <td class="muted">${esc(gradeFor(a.student_id) || "—")}</td>
         <td class="muted">${esc(teacherList)}</td>
         <td class="muted">${esc(new Date(a.marked_absent_at).toLocaleDateString(undefined,{month:"short",day:"numeric",year:"numeric"}))}</td>
-        <td class="muted">${esc(fmtMonthLabel(a.last_paid_month))}</td>
+        <td class="muted">${esc(billLabel(a.last_paid_month))}</td>
         <td>${statusHtml}</td>
         ${a.resumed_at ? `<td class="muted">—</td><td class="muted">—</td><td class="muted">—</td>` : moneyCells}
         <td>${logBtn}</td>
@@ -1113,7 +1117,7 @@ window.kumonPtcNav = function(client, role){
     const mine = receipts.filter(r => r.student_id === studentId).sort((a,b) => new Date(b.created_at) - new Date(a.created_at));
     if(!mine.length) return `<div class="hint">No payments logged for this student yet.</div>`;
     return mine.map(r => {
-      const monthLabel = r.covers_month ? fmtMonthLabel(r.covers_month.slice(0,7)) : "—";
+      const monthLabel = r.covers_month ? billLabel(r.covers_month.slice(0,7)) : "—";
       const label = (r.status||"").charAt(0).toUpperCase() + (r.status||"").slice(1);
       const split = Object.entries(allocationOf(r)).map(([k,v]) => `${k} ${peso(v)}`).join(" · ");
       return `<div class="note-item"><div class="note-meta"><b>${peso(r.amount)}</b> — ${esc(monthLabel)} <span class="pill ${esc(r.status)}">${esc(label)}</span>${split ? ` <span style="color:var(--ink-muted); font-size:12px;">${esc(split)}</span>` : ""}</div></div>`;
@@ -1133,8 +1137,8 @@ window.kumonPtcNav = function(client, role){
       <div class="modal-body">
         <div>
           <div class="hint">Absence</div>
-          <div>Marked absent ${esc(new Date(a.marked_absent_at).toLocaleDateString(undefined,{month:"short",day:"numeric",year:"numeric"}))}${a.marked_absent_by ? " by " + esc(a.marked_absent_by) : ""} — last paid through ${esc(fmtMonthLabel(a.last_paid_month))}.</div>
-          ${a.resumed_at ? `<div>Resumed ${esc(new Date(a.resumed_at).toLocaleDateString(undefined,{month:"short",day:"numeric",year:"numeric"}))}${a.resumed_by ? " by " + esc(a.resumed_by) : ""}.</div>` : `<div>To catch up: ${peso(due)} due for ${esc(fmtMonthLabel(catchUpMonthFor(a)))} — ${peso(paid)} paid, ${peso(balance)} balance. A verified payment covering the balance brings them back automatically, tagged RESUME.</div>`}
+          <div>Marked absent ${esc(new Date(a.marked_absent_at).toLocaleDateString(undefined,{month:"short",day:"numeric",year:"numeric"}))}${a.marked_absent_by ? " by " + esc(a.marked_absent_by) : ""} — last paid through ${esc(billLabel(a.last_paid_month))}.</div>
+          ${a.resumed_at ? `<div>Resumed ${esc(new Date(a.resumed_at).toLocaleDateString(undefined,{month:"short",day:"numeric",year:"numeric"}))}${a.resumed_by ? " by " + esc(a.resumed_by) : ""}.</div>` : `<div>To catch up: ${peso(due)} due for ${esc(billLabel(catchUpMonthFor(a)))} — ${peso(paid)} paid, ${peso(balance)} balance. A verified payment covering the balance brings them back automatically, tagged RESUME.</div>`}
         </div>
         <div>
           <div class="hint">Payment history</div>
