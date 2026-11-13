@@ -1161,6 +1161,9 @@ window.kumonPtcNav = function(client, role){
     draft = p ? JSON.parse(JSON.stringify(p)) : newDraft(e);
     if(!Array.isArray(draft.levels)) draft.levels = [];
     if(!Array.isArray(draft.skills)) draft.skills = [];
+    // Pin Moving forward's current level/date as soon as the plan opens, so editing the Starting level or
+    // Start date afterwards never moves it (it's only worked out once, then kept).
+    if(!draft.mf_date){ const cur = viewStartInfo(draft, e); if(cur){ draft.mf_level = cur.level; draft.mf_page = cur.page; draft.mf_date = cur.date; } }
     draftDirty = !p; draftTouched = false;
     renderDetail();
   }
