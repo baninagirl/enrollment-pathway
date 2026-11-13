@@ -713,9 +713,18 @@ window.kumonPtcNav = function(client, role){
   let pjFrom = (() => { try{ const v = sessionStorage.getItem("kumonProjFrom"); return /^\d{4}-\d{2}-\d{2}$/.test(v || "") ? v : firstOfMonth(); }catch(_){ return firstOfMonth(); } })();
   // Where the child was on the "from" date: exact at a month's close-out (the 1st of the next month), today's LWC
   // from today on, and in between an estimate along the line between the two closest known points.
+  // Moving forward starts from a fixed reference: the level and date when the teacher made the projection
+  // (saved as mf_level / mf_page / mf_date, phase132, and editable). Projections saved before that use the day
+  // they were first made; a brand-new one uses today.
   function viewStartInfo(p, enr){
     if(!p || !enr) return null;
-    const today = todayISO(), d = pjFrom > today ? today : pjFrom;
+    if(p.mf_date && levelIndex(p.subject, p.mf_level) >= 0){
+      if(p.mf_date <= p.start_date) return null;
+      return { level: normLevel(p.subject, p.mf_level), page: Math.max(1, Math.min(200, Number(p.mf_page) || 1)), date: p.mf_date, src: "saved" };
+    }
+    const today = todayISO();
+    let d = p.created_at ? String(p.created_at).slice(0, 10) : today;
+    if(d > today) d = today;
     if(d <= p.start_date) return null;   // on or before their first day: that's the Historical view
     const sp = levelIndex(p.subject, p.start_level);
     const pts = [];
@@ -1004,7 +1013,7 @@ window.kumonPtcNav = function(client, role){
     return `<div class="pj-plan no-print">
       <span class="pj-plan-k">Show the plan</span>
       <div class="seg" role="tablist" aria-label="Which plan"><button type="button" class="${cur ? "" : "active"}" data-pjview="history">From their first day</button><button type="button" class="${cur ? "active" : ""}" data-pjview="current">Moving forward</button></div>
-      ${cur ? `<label class="pj-from">current date <input type="date" id="pjFrom" value="${esc(pjFrom)}" max="${esc(todayISO())}" aria-label="Start the moving-forward plan on"></label>${pjFrom !== firstOfMonth() ? `<button type="button" class="btn sm ghost" id="pjFromReset">Reset to the 1st</button>` : ""}` : ""}
+      ${cur ? `<span class="pj-plan-note">Starts from the current level and date when the projection was made.</span>` : ""}
       ${note ? `<span class="pj-plan-note">${note}</span>` : ""}
     </div>`;
   }
@@ -1224,8 +1233,8 @@ window.kumonPtcNav = function(client, role){
           <div class="inputs">
             <label class="f">Grade<select data-f="grade">${gradeOpts}</select></label>
             ${vp._view
-              ? `<div class="f">Current level<span class="pj-ro">${esc(vp.start_level)} ${esc(vp.start_page)}</span></div>
-                 <div class="f">Current date<span class="pj-ro">${esc(fmtDate(vp.start_date))}</span></div>`
+              ? `<label class="f">Current level<span class="pair"><select data-f="mf_level">${L.map(x => `<option${x === vp.start_level ? " selected" : ""}>${esc(x)}</option>`).join("")}</select><input type="number" min="1" max="200" data-f="mf_page" value="${esc(vp.start_page)}" aria-label="Current page"></span></label>
+                 <label class="f">Current date<input type="date" data-f="mf_date" value="${esc(vp.start_date)}" max="${esc(todayISO())}"></label>`
               : `<label class="f">Starting level<span class="pair"><select data-f="start_level">${lvOpts}</select><input type="number" min="1" max="200" data-f="start_page" value="${esc(draft.start_page)}" aria-label="Starting page"></span></label>
                  <label class="f">Start date<input type="date" data-f="start_date" value="${esc(draft.start_date)}">${(() => { const ro = rosterDateFor(e); return ro && ro !== draft.start_date ? `<button type="button" class="linkbtn" data-action="use-roster-date" data-d="${esc(ro)}" title="The Student Roster's Date enrolled for ${esc(draft.subject)}">Roster says ${esc(fmtDate(ro))} — use it</button>` : ""; })()}</label>`}
             <label class="f">School year starts<input type="date" data-f="sy_start" value="${esc(draft.sy_start)}"></label>
@@ -1477,6 +1486,9 @@ window.kumonPtcNav = function(client, role){
       levels: draft.levels || [], skills: draft.skills || [], plan_note: (draft.plan_note || "").trim() || null, notes: draft.notes || null,
       updated_by_name: myName(), updated_at: new Date().toISOString()
     };
+    // Moving forward's reference (phase132): keep the one set, else freeze where they are now, the first time it's saved
+    { const ref = draft.mf_date ? { level: draft.mf_level, page: draft.mf_page, date: draft.mf_date } : viewStartInfo(draft, e);
+      if(ref){ row.mf_level = normLevel(draft.subject, ref.level); row.mf_page = Number(ref.page) || 1; row.mf_date = ref.date; } }
     const isNew = !projectionFor(draft.subject_enrollment_id);
     let data, error;
     if(isNew){
@@ -1488,6 +1500,13 @@ window.kumonPtcNav = function(client, role){
     }else{
       ({ data, error } = await sbClient.from("study_projections").update(row).eq("subject_enrollment_id", row.subject_enrollment_id).select());
       if(!error && (!data || !data.length)) error = { message: "the database didn't allow it" };
+    }
+    if(error && /mf_(level|page|date)/.test(error.message || "")){
+      // phase132 not run yet: save without the Moving forward reference
+      delete row.mf_level; delete row.mf_page; delete row.mf_date;
+      if(isNew) ({ data, error } = await sbClient.from("study_projections").insert([row]).select());
+      else { ({ data, error } = await sbClient.from("study_projections").update(row).eq("subject_enrollment_id", row.subject_enrollment_id).select()); if(!error && (!data || !data.length)) error = { message: "the database didn't allow it" }; }
+      if(!error) toast("Saved — but the current level and date need phase132-moving-forward-reference.sql to be kept.");
     }
     if(error){ alert("Couldn't save: " + error.message); return; }
     logHistory(isNew ? "projection_new" : "projection_edit", `${isNew ? "Set up" : "Updated"} ${draft.subject} projection: ${displayName(draft.student_id, e && e.student_name)} (${row.start_level} ${row.start_page})`, data && data[0] && data[0].id, row);
@@ -1519,6 +1538,20 @@ window.kumonPtcNav = function(client, role){
     if(t.id === "fSubject"){ ui.subject = t.value; renderList(); return; }
     if(t.id === "fSort"){ ui.sort = t.value; renderList(); return; }
     if(!draft) return;
+    if(t.dataset.f && /^mf_/.test(t.dataset.f)){
+      const f = t.dataset.f; let v = t.value;
+      const e0 = enrollments.find(x => x.id === draft.subject_enrollment_id);
+      const cur = viewStartInfo(draft, e0);   // what's showing now becomes the saved reference
+      if(cur && !draft.mf_date){ draft.mf_level = cur.level; draft.mf_page = cur.page; draft.mf_date = cur.date; }
+      if(f === "mf_date"){
+        if(!/^\d{4}-\d{2}-\d{2}$/.test(v || "")){ renderDetail(); return; }
+        if(Number(v.slice(0, 4)) < 2000) return;   // still typing the year
+        if(v > todayISO()) v = todayISO();
+        if(v <= draft.start_date){ alert("The current date has to be after the start date."); renderDetail(); return; }
+      }
+      if(f === "mf_page"){ v = Math.max(1, Math.min(200, Math.round(Number(v) || 1))); }
+      draft[f] = v; markDirty(true); return;
+    }
     if(t.dataset.f && t.dataset.f !== "plan_note"){
       const f = t.dataset.f; let v = t.value;
       if(["start_page","default_rate","default_ppd","level_count"].includes(f)){ v = Number(v); if(!v || v < 1){ renderDetail(); return; } }
