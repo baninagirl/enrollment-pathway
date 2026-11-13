@@ -286,6 +286,7 @@
   .cellin{ width:64px !important; padding:5px 7px !important; font-weight:700; border-style:dashed !important; }
   .cellin.datein{ width:138px !important; font-weight:600; }
   .act-edit{ display:inline-flex; align-items:center; gap:6px; flex-wrap:wrap; }
+  .pj-ro{ display:flex; align-items:center; min-height:34px; font-weight:700; }
   .linkbtn{ border:none; background:none; padding:0; font:inherit; font-size:12px; font-weight:600; color:var(--accent); cursor:pointer; }
   .cellin.set{ border-style:solid !important; border-color:var(--accent) !important; background:var(--accent-soft) !important; }
   .tnum{ font-variant-numeric:tabular-nums; white-space:nowrap; }
@@ -962,7 +963,7 @@ window.kumonPtcNav = function(client, role){
     const tasks = [
       (async () => { try{ const { data } = await sbClient.from("settings").select("value").eq("id","staff").maybeSingle(); const v = (data && data.value) || {}; staffTeachers = Array.isArray(v.teachers) ? v.teachers : (Array.isArray(v.trainers) ? v.trainers : []); }catch(e){} await loadTeacherGroups(); })(),
       (async () => { try{ students = await selectAll("students", "id,name,first_name,last_name,age_grade,first_day,status", q => q.order("id")); studentById = new Map(students.map(s => [s.id, s])); }catch(e){ loadProblem = true; } })(),
-      (async () => { try{ enrollments = await selectAll("subject_enrollments", "id,student_id,student_name,subject,teacher,status,current_level,current_page,lwc,created_at", q => q.eq("status","active").order("id")); }catch(e){ loadProblem = true; } })(),
+      (async () => { try{ enrollments = await loadEnrollmentRows(); }catch(e){ loadProblem = true; } })(),
       (async () => { try{ histRows = await selectAll("enrollment_monthly_history", "id,subject_enrollment_id,cycle_key,cycle_label,current_level,current_page,lwc", q => q.order("id")); }catch(e){ loadProblem = true; } })(),
       loadProjections(),
       (async () => { try{ diagnostics = await selectAll("diagnostics", "id,student_id,date,subject,start_point,outcome", q => q.order("id")); }catch(e){ loadProblem = true; } })(),
@@ -991,7 +992,7 @@ window.kumonPtcNav = function(client, role){
     window.addEventListener("hashchange", () => { if(draftTouched && !confirm("You have unsaved changes to this projection. Leave without saving?")){ history_back_guard(); return; } route(); });
     sbClient.channel("realtime:projection-page")
       .on("postgres_changes", { event:"*", schema:"public", table:"study_projections" }, async () => { await loadProjections(); if(!currentEnrollmentId()) renderList(); })
-      .on("postgres_changes", { event:"*", schema:"public", table:"subject_enrollments" }, async () => { try{ enrollments = await selectAll("subject_enrollments", "id,student_id,student_name,subject,teacher,status,current_level,current_page,lwc,created_at", q => q.eq("status","active").order("id")); }catch(e){ return; } if(!currentEnrollmentId()) renderList(); else if(!draftDirty) renderDetail(); })
+      .on("postgres_changes", { event:"*", schema:"public", table:"subject_enrollments" }, async () => { try{ enrollments = await loadEnrollmentRows(); }catch(e){ return; } if(!currentEnrollmentId()) renderList(); else if(!draftDirty) renderDetail(); })
       .subscribe();
   }
   let lastHash = "";
@@ -1003,7 +1004,7 @@ window.kumonPtcNav = function(client, role){
     return `<div class="pj-plan no-print">
       <span class="pj-plan-k">Show the plan</span>
       <div class="seg" role="tablist" aria-label="Which plan"><button type="button" class="${cur ? "" : "active"}" data-pjview="history">From their first day</button><button type="button" class="${cur ? "active" : ""}" data-pjview="current">Moving forward</button></div>
-      ${cur ? `<label class="pj-from">starting <input type="date" id="pjFrom" value="${esc(pjFrom)}" max="${esc(todayISO())}" aria-label="Start the moving-forward plan on"></label>${pjFrom !== firstOfMonth() ? `<button type="button" class="btn sm ghost" id="pjFromReset">Reset to the 1st</button>` : ""}` : ""}
+      ${cur ? `<label class="pj-from">current date <input type="date" id="pjFrom" value="${esc(pjFrom)}" max="${esc(todayISO())}" aria-label="Start the moving-forward plan on"></label>${pjFrom !== firstOfMonth() ? `<button type="button" class="btn sm ghost" id="pjFromReset">Reset to the 1st</button>` : ""}` : ""}
       ${note ? `<span class="pj-plan-note">${note}</span>` : ""}
     </div>`;
   }
@@ -1019,6 +1020,7 @@ window.kumonPtcNav = function(client, role){
     if(e.target && e.target.id === "pjFrom"){
       const v = e.target.value;
       if(!/^\d{4}-\d{2}-\d{2}$/.test(v || "")){ syncViewSeg(); return; }
+      if(Number(v.slice(0, 4)) < 2000) return;   // still typing the year
       pjFrom = v > todayISO() ? todayISO() : v; try{ sessionStorage.setItem("kumonProjFrom", pjFrom); }catch(_){ }
       syncViewSeg(); if(draft) renderDetail(); else renderList();
     }
@@ -1089,7 +1091,7 @@ window.kumonPtcNav = function(client, role){
         <select id="fSubject"><option value="all">Math &amp; Reading</option><option value="Math"${ui.subject === "Math" ? " selected" : ""}>Math</option><option value="Reading"${ui.subject === "Reading" ? " selected" : ""}>Reading</option></select>
         <select id="fSort"><option value="name">Sort: name</option><option value="behind"${ui.sort === "behind" ? " selected" : ""}>Sort: most behind first</option></select>
       </div>
-      <div class="card"><div class="table-scroll"><table class="stable"><thead><tr><th>Student</th><th>Subject</th><th>Teacher</th><th>Grade</th><th>${pjView === "current" ? "Plan from" : "Starting point"}</th><th>Now</th><th>Projection</th><th>Status</th><th></th></tr></thead><tbody>
+      <div class="card"><div class="table-scroll"><table class="stable"><thead><tr><th>Student</th><th>Subject</th><th>Teacher</th><th>Grade</th><th>${pjView === "current" ? "Current level · date" : "Starting level · start date"}</th><th>Now</th><th>Projection</th><th>Status</th><th></th></tr></thead><tbody>
       ${rows.length ? rows.slice(0, 600).map(r => {
         const s = studentById.get(r.e.student_id) || {};
         const bp = bestPos(r.e.subject, r.e);
@@ -1129,12 +1131,20 @@ window.kumonPtcNav = function(client, role){
     if(!start && e.current_level && levelIndex(subject, e.current_level) >= 0){ start = { level: normLevel(subject, e.current_level), page: parseInt(e.current_page, 10) || 1 }; fromNow = true; }
     if(!start) start = { level: LADDER[subject][0], page: 1 };
     // Starting from where they are today (no DT or history to go on) → the projection starts today too.
-    const sd = fromNow ? todayISO() : (s.first_day || (dts[0] && dts[0].date) || (e.created_at ? String(e.created_at).slice(0,10) : todayISO()));
+    // each subject's own Date enrolled from the Student Roster first — Math and Reading can start on different days
+    const sd = fromNow ? todayISO() : (rosterDateFor(e) || s.first_day || (dts[0] && dts[0].date) || (e.created_at ? String(e.created_at).slice(0,10) : todayISO()));
     const d = DEFAULTS[subject] || DEFAULTS.Math;
     return { subject_enrollment_id: e.id, student_id: e.student_id, subject, grade: normGrade(s.age_grade) || "",
       start_level: normLevel(subject, start.level), start_page: Math.max(1, Math.min(200, start.page || 1)), start_date: sd, sy_start: syStartFor(sd),
       default_rate: d.rate, default_ppd: d.ppd, level_count: 8, levels: [], skills: [], plan_note: "", notes: "" };
   }
+  // The Student Roster's Date enrolled for this subject (subject_enrollments.enrolled_on, phase120), if set.
+  async function loadEnrollmentRows(){
+    const cols = "id,student_id,student_name,subject,teacher,status,current_level,current_page,lwc,created_at";
+    try{ return await selectAll("subject_enrollments", cols + ",enrolled_on", q => q.eq("status","active").order("id")); }
+    catch(e){ if(/enrolled_on/.test(String(e && e.message || ""))) return await selectAll("subject_enrollments", cols, q => q.eq("status","active").order("id")); throw e; }
+  }
+  function rosterDateFor(e){ return e && e.enrolled_on ? String(e.enrolled_on).slice(0, 10) : null; }
   function openDetail(id){
     const e = enrollments.find(x => x.id === id);
     if(!e){ $("#view").innerHTML = `<div class="card"><div class="empty">This subject isn't on your list (it may be inactive or another group's). <a href="#">Back to the list</a></div></div>`; return; }
@@ -1213,8 +1223,11 @@ window.kumonPtcNav = function(client, role){
               : `Starts <b>${esc(fmtDate(draft.start_date))}</b> at <b>${esc(normLevel(draft.subject, draft.start_level))} ${esc(draft.start_page)}</b> — their first day.`)}
           <div class="inputs">
             <label class="f">Grade<select data-f="grade">${gradeOpts}</select></label>
-            <label class="f">Starting point<span class="pair"><select data-f="start_level">${lvOpts}</select><input type="number" min="1" max="200" data-f="start_page" value="${esc(draft.start_page)}" aria-label="Starting page"></span></label>
-            <label class="f">Date enrolled<input type="date" data-f="start_date" value="${esc(draft.start_date)}"></label>
+            ${vp._view
+              ? `<div class="f">Current level<span class="pj-ro">${esc(vp.start_level)} ${esc(vp.start_page)}</span></div>
+                 <div class="f">Current date<span class="pj-ro">${esc(fmtDate(vp.start_date))}</span></div>`
+              : `<label class="f">Starting level<span class="pair"><select data-f="start_level">${lvOpts}</select><input type="number" min="1" max="200" data-f="start_page" value="${esc(draft.start_page)}" aria-label="Starting page"></span></label>
+                 <label class="f">Start date<input type="date" data-f="start_date" value="${esc(draft.start_date)}">${(() => { const ro = rosterDateFor(e); return ro && ro !== draft.start_date ? `<button type="button" class="linkbtn" data-action="use-roster-date" data-d="${esc(ro)}" title="The Student Roster's Date enrolled for ${esc(draft.subject)}">Roster says ${esc(fmtDate(ro))} — use it</button>` : ""; })()}</label>`}
             <label class="f">School year starts<input type="date" data-f="sy_start" value="${esc(draft.sy_start)}"></label>
             <label class="f">Repeats per set<input type="number" min="1" max="20" step="1" data-f="default_rate" value="${esc(draft.default_rate)}"></label>
             <label class="f">Pages per day<input type="number" min="1" max="100" step="1" data-f="default_ppd" value="${esc(draft.default_ppd)}"></label>
@@ -1512,6 +1525,7 @@ window.kumonPtcNav = function(client, role){
       if(f === "start_page") v = Math.min(200, Math.round(v));
       if(f === "level_count") v = Math.min(30, Math.round(v));
       if((f === "start_date" || f === "sy_start") && !/^\d{4}-\d{2}-\d{2}$/.test(v || "")){ renderDetail(); return; }   // a cleared or half-typed date keeps the old one
+      if((f === "start_date" || f === "sy_start") && Number(v.slice(0, 4)) < 2000) return;   // still typing the year (2 → 0002): wait, don't redraw
       if(f === "start_date" && v && draft.sy_start === syStartFor(draft.start_date)) draft.sy_start = syStartFor(v);   // keep the school year in step
       draft[f] = v; markDirty(true); return;
     }
@@ -1524,6 +1538,7 @@ window.kumonPtcNav = function(client, role){
         // Actual completion typed by hand. Clearing the box goes back to the automatic date.
         const d = t.value || "";
         if(d && !/^\d{4}-\d{2}-\d{2}$/.test(d)){ renderDetail(); return; }
+        if(d && Number(d.slice(0, 4)) < 2000) return;   // still typing the year: wait, don't redraw
         if(d > todayISO()){ alert("That day hasn't happened yet."); renderDetail(); return; }
         if(d) o.done = d; else delete o.done;
       } else {
@@ -1548,6 +1563,7 @@ window.kumonPtcNav = function(client, role){
       draft.levels = (draft.levels || []).filter(x => x.rate != null || x.ppd != null || x.done);
       markDirty(true); return;
     }
+    if(a === "use-roster-date" && draft){ const v = btn.dataset.d; if(draft.sy_start === syStartFor(draft.start_date)) draft.sy_start = syStartFor(v); draft.start_date = v; markDirty(true); return; }
     if(a === "toggle-line"){ const k = btn.dataset.k; chartOff.has(k) ? chartOff.delete(k) : chartOff.add(k); renderDetail(); return; }
     if(a === "save"){ btn.disabled = true; try{ await save(); } finally{ if(btn.isConnected && draftDirty) btn.disabled = false; } return; }
     if(a === "print"){ window.print(); return; }
