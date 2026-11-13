@@ -594,7 +594,7 @@ window.kumonPtcNav = function(client, role){
   // they were marked absent ahead of time — the first month after their last paid one, whichever is later.
   // (Stored the way covers_month is; shown with Payments' names through billLabel.)
   function catchUpMonthFor(a){
-    const first = shiftMonth(a.last_paid_month, 1), now = monthKeyOfToday();
+    const first = shiftMonth(a.last_paid_month, 1), now = shiftMonth(monthKeyOfToday(), 1);   // = Payments' "this month"
     return first > now ? first : now;
   }
   // Teachers to choose from when a child comes back: everyone teaching an active subject right now.
@@ -1112,7 +1112,7 @@ window.kumonPtcNav = function(client, role){
       <form id="resumeForm" data-absence="${esc(a.id)}">
         <div class="modal-body" style="display:grid; gap:12px;">
           ${returnTeacherFieldsHtml(a, pickedReturnTeachers(a))}
-          <div class="hint">${withinPolicy ? "Within the 4-month window: progress continues, no new assessment, registration is free." : "It's been more than 4 months, so the usual return policy (continued progress, free registration) no longer applies."} They're tagged RESUME for reporting.</div>
+          <div class="hint">${withinPolicy ? "Within the 4-month window: progress continues, no new assessment, registration is free." : "It's been more than 4 months, so the usual return policy (continued progress, free registration) no longer applies."} They're tagged ${withinPolicy ? "RESUME" : "RETURNEE"} and show on New Students for this month.</div>
         </div>
         <div class="modal-foot">
           <button type="button" class="btn ghost" data-action="close-modal">Cancel</button>
@@ -1127,6 +1127,7 @@ window.kumonPtcNav = function(client, role){
     try{ await doResume(form.dataset.absence, readReturnTeachers(form)); }
     finally{ delete form.dataset.busy; if(sb && sb.isConnected){ sb.disabled = false; sb.textContent = "Resume"; } }
   }
+  function currentCycleKey(){ const d = new Date(); const m = new Date(d.getFullYear(), d.getMonth() + (d.getDate() > 20 ? 1 : 0), 1); return m.getFullYear() + "-" + String(m.getMonth() + 1).padStart(2, "0"); }
   async function doResume(absenceId, teacherMap){
     const a = absences.find(x => x.id === absenceId);
     if(!a) return;
@@ -1140,10 +1141,13 @@ window.kumonPtcNav = function(client, role){
       .eq("id", absenceId).is("resumed_at", null).select("id");
     if(e2){ alert("Couldn't resume: " + e2.message); return; }
     if(!closed || !closed.length){ closeModal(); alert(`${displayName(s)} was already resumed (or this record was removed). The list has been refreshed.`); await Promise.all([loadEnrollments(), loadAbsences()]); render(); return; }
+    // RESUME within 4 months of their last payment, RETURNEE after; they show on New Students this report month
+    const gone = monthDiff(a.last_paid_month, monthKeyOfToday());
+    const tag = gone !== null && gone > 4 ? "new_returnee" : "resume";
     if(ids.length){
-      const { data: back, error: e1 } = await sbClient.from("subject_enrollments")
-        .update({ status:"active", enrollment_type:"resume", enrollment_type_set_at: nowIso, updated_at: nowIso })
-        .in("id", ids).select("id");
+      const upd = { status:"active", enrollment_type: tag, enrollment_type_set_at: nowIso, updated_at: nowIso, resumed_month: currentCycleKey() };
+      let { data: back, error: e1 } = await sbClient.from("subject_enrollments").update(upd).in("id", ids).select("id");
+      if(e1 && /resumed_month/.test(e1.message || "")){ delete upd.resumed_month; ({ data: back, error: e1 } = await sbClient.from("subject_enrollments").update(upd).in("id", ids).select("id")); }
       if(e1 || !back || back.length !== ids.length){
         // Put the record back to open so the child doesn't drop off the follow-up list half-resumed.
         await sbClient.from("absence_records").update({ resumed_at: null, resumed_by: null }).eq("id", absenceId);
@@ -1161,7 +1165,7 @@ window.kumonPtcNav = function(client, role){
         else moved.push(`${e.subject || "subject"} → ${want}`);
       }
     }
-    logHistory("resume_absence", `Resumed ${displayName(s)} (tagged RESUME)${moved.length ? " — " + moved.join(", ") : ""}`, "absence_record", absenceId);
+    logHistory("resume_absence", `Resumed ${displayName(s)} (tagged ${tag === "new_returnee" ? "RETURNEE" : "RESUME"})${moved.length ? " — " + moved.join(", ") : ""}`, "absence_record", absenceId);
     closeModal();
     await Promise.all([loadEnrollments(), loadAbsences()]);
     render();

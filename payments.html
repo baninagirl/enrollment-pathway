@@ -2158,18 +2158,25 @@ window.kumonPtcNav = function(client, role){
   // Brings a child back the safe way: close the absence record first (only if it's still open), then switch
   // the subjects back on; if that second step fails, the record is opened again, so nothing is left half-done.
   // Returns { ok } or { already } (someone else resumed it) or { message } (nothing changed).
-  async function safeResume(a, resumedBy, teacherMap){
+  // New Students month a resumed child shows under: the month their payment is for (Payments' name for it),
+  // or — resumed by hand — the report month we're in now (21st–20th).
+  function currentCycleKey(){ const d = new Date(); const m = new Date(d.getFullYear(), d.getMonth() + (d.getDate() > 20 ? 1 : 0), 1); return m.getFullYear() + "-" + String(m.getMonth() + 1).padStart(2, "0"); }
+  async function safeResume(a, resumedBy, teacherMap, resumeMonth){
     const nowIso = new Date().toISOString();
     const ids = a.subject_enrollment_ids || [];
+    // RESUME within 4 months of their last payment; RETURNEE after that
+    const gone = monthDiff(a.last_paid_month, monthKeyOfToday());
+    const tag = gone !== null && gone > 4 ? "new_returnee" : "resume";
+    const rMonth = resumeMonth || currentCycleKey();
     const { data: closed, error: e2 } = await sbClient.from("absence_records")
       .update({ resumed_at: nowIso, resumed_by: resumedBy })
       .eq("id", a.id).is("resumed_at", null).select("id");
     if(e2) return { message: e2.message };
     if(!closed || !closed.length) return { already: true };
     if(ids.length){
-      const { data: back, error: e1 } = await sbClient.from("subject_enrollments")
-        .update({ status:"active", enrollment_type:"resume", enrollment_type_set_at: nowIso, updated_at: nowIso })
-        .in("id", ids).select("id");
+      const upd = { status:"active", enrollment_type: tag, enrollment_type_set_at: nowIso, updated_at: nowIso, resumed_month: rMonth };
+      let { data: back, error: e1 } = await sbClient.from("subject_enrollments").update(upd).in("id", ids).select("id");
+      if(e1 && /resumed_month/.test(e1.message || "")){ delete upd.resumed_month; ({ data: back, error: e1 } = await sbClient.from("subject_enrollments").update(upd).in("id", ids).select("id")); }
       if(e1 || !back || back.length !== ids.length){
         await sbClient.from("absence_records").update({ resumed_at: null, resumed_by: null }).eq("id", a.id);
         if(back && back.length && !e1) await sbClient.from("subject_enrollments").update({ status:"inactive", updated_at: nowIso }).in("id", back.map(x => x.id));
@@ -2186,7 +2193,7 @@ window.kumonPtcNav = function(client, role){
         else console.warn("teacher switch failed", error);
       }
     }
-    return { ok: true, moved };
+    return { ok: true, moved, tag, month: rMonth };
   }
   function resumeTeacherChoices(){
     return [...new Set(enrollments.filter(e => (e.status || "active") === "active").map(e => (e.teacher || "").trim()).filter(Boolean))].sort();
@@ -2211,7 +2218,7 @@ window.kumonPtcNav = function(client, role){
       <form id="resumeForm" data-absence="${esc(a.id)}">
         <div class="modal-body" style="display:grid; gap:12px;">
           ${fields}
-          <div class="hint">${withinPolicy ? "Within the 4-month window: progress continues, no new assessment, registration is free." : "It's been more than 4 months, so the usual return policy (continued progress, free registration) no longer applies."} They're tagged RESUME for reporting.</div>
+          <div class="hint">${withinPolicy ? "Within the 4-month window: progress continues, no new assessment, registration is free." : "It's been more than 4 months, so the usual return policy (continued progress, free registration) no longer applies."} They're tagged ${withinPolicy ? "RESUME" : "RETURNEE"} and show on New Students for this month.</div>
         </div>
         <div class="modal-foot">
           <button type="button" class="btn ghost" data-action="close-modal">Cancel</button>
@@ -2232,7 +2239,7 @@ window.kumonPtcNav = function(client, role){
         alert(res.already ? `${displayName(s)} was already resumed (or this record was removed). The list has been refreshed.` : "Couldn't resume (" + res.message + "). Nothing was changed — try again.");
         await Promise.all([loadEnrollments(), loadAbsences()]); render(); return;
       }
-      logHistory("resume_absence", `Resumed ${displayName(s)} (tagged RESUME)${res.moved && res.moved.length ? " — " + res.moved.join(", ") : ""}`, "absence_record", a.id);
+      logHistory("resume_absence", `Resumed ${displayName(s)} (tagged ${res.tag === "new_returnee" ? "RETURNEE" : "RESUME"})${res.moved && res.moved.length ? " — " + res.moved.join(", ") : ""}`, "absence_record", a.id);
       closeModal();
       await Promise.all([loadEnrollments(), loadAbsences()]);
       render();
@@ -2614,7 +2621,7 @@ window.kumonPtcNav = function(client, role){
     const due = tuitionDueForAbsence(a);
     const paid = paidForAbsence(a, ym);
     if(paid < due) return null;
-    const res = await safeResume(a, currentUser ? currentUser.email + " (auto, via payment)" : "auto (via payment)", r.return_teachers || null);
+    const res = await safeResume(a, currentUser ? currentUser.email + " (auto, via payment)" : "auto (via payment)", r.return_teachers || null, shiftMonth(ym, -1));
     if(!res.ok){
       await Promise.all([loadEnrollments(), loadAbsences()]);
       if(res.already) return null;   // someone resumed them already — nothing to say
@@ -2627,7 +2634,7 @@ window.kumonPtcNav = function(client, role){
     const s = students.find(x => x.id === r.student_id);
     const subjLabel = absenceSubjectsOf(a).join(" + ");
     const name = (s ? displayName(s) : "Student") + (subjLabel ? ` (${subjLabel})` : "");
-    logHistory("auto_resume", `${name} automatically resumed (tagged RESUME) — payment covers their return${res.moved && res.moved.length ? " — " + res.moved.join(", ") : ""}`, "absence_record", a.id);
+    logHistory("auto_resume", `${name} automatically resumed (tagged ${res.tag === "new_returnee" ? "RETURNEE" : "RESUME"}) — payment covers their return${res.moved && res.moved.length ? " — " + res.moved.join(", ") : ""}`, "absence_record", a.id);
     return name;
   }
 

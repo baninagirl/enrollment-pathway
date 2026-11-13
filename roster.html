@@ -1680,7 +1680,7 @@ window.kumonPtcNav = function(client, role){
   // Head-office reporting tag (same list as the reporting sheet). Stored in enrollment_type.
   var REPORT_TAGS = [
     { value:"new", label:"NEW" }, { value:"eo", label:"EO" }, { value:"resume", label:"RESUME" },
-    { value:"new_returnee", label:"NEW / RETURNEE" }, { value:"resume_transfer_in", label:"RESUME TRANSFER-IN" }
+    { value:"new_returnee", label:"RETURNEE" }, { value:"resume_transfer_in", label:"RESUME TRANSFER-IN" }
   ];
   function reportTagPill(v){
     const t = REPORT_TAGS.find(x => x.value === v);
