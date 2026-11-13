@@ -2242,7 +2242,8 @@ window.kumonPtcNav = function(client, role){
     const base = valid(el.value) ? el.value : (valid(el.max) && el.max < todayIso() ? el.max : valid(el.min) && el.min > todayIso() ? el.min : todayIso());
     viewY = +base.slice(0, 4); viewM = +base.slice(5, 7) - 1;
     pop = document.createElement("div"); pop.className = "hdp"; pop.setAttribute("role", "dialog"); pop.setAttribute("aria-label", "Choose a date");
-    document.body.appendChild(pop); render(); place();
+    // on the <html> element, not <body>: big screens zoom the body, which would push the calendar off-screen
+    document.documentElement.appendChild(pop); render(); place();
     const f = pop.querySelector(".hdp-day.sel") || pop.querySelector(".hdp-day.today") || pop.querySelector(".hdp-day:not(:disabled)"); if(f) f.focus({ preventScroll: true });
   }
 
