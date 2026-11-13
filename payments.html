@@ -1344,34 +1344,68 @@ window.kumonPtcNav = function(client, role){
   }
   const markPaidBusy = new Set();
   async function markPaid(studentId){
-    if(markPaidBusy.has(studentId)) return;   // a second click while the first is still open/saving would pay twice
-    markPaidBusy.add(studentId);
-    try{ await markPaidNow(studentId); } finally{ markPaidBusy.delete(studentId); }
+    if(markPaidBusy.has(studentId)) return;   // still saving from the last click
+    await markPaidNow(studentId);
   }
+  // Mark paid asks WHICH tuition month first (the Payments month by default), then saves it.
   async function markPaidNow(studentId){
     const s = students.find(x => x.id === studentId);
     if(!s) return;
     // Fresh list first, so a payment someone just logged isn't counted twice.
     if(!(await loadReceipts())){ toast("Couldn't check the latest payments — try again in a moment."); return; }
     render();
-    const { alloc, total } = markPaidAllocation(studentId, selectedMonth);
-    if(!total){ toast("Nothing left to pay this month."); return; }
-    const parts = Object.entries(alloc).map(([k,v]) => `${k} ${peso(v)}`).join(" + ");
-    const verifiedNow = isSuperadmin();
-    if(!confirm(`Mark ${displayName(s)} paid for ${fmtBillLabel(selectedMonth)}?\n\n${parts} = ${peso(total)}\n\n` +
-      (verifiedNow ? "This counts as paid right away." : "It counts once a superadmin verifies it."))) return;
-    // Someone may have logged a payment while the box was open: check again before saving.
-    if(!(await loadReceipts())){ toast("Couldn't check the latest payments — nothing was saved. Try again."); return; }
-    if(markPaidAllocation(studentId, selectedMonth).total !== total){ render(); toast("The amount changed meanwhile (another payment came in) — nothing was saved. Click Mark paid again."); return; }
-    const row = { student_id: studentId, amount: total, allocation: alloc, covers_month: monthToDate(selectedMonth),
-      reference_number: "Marked paid (no receipt)", uploaded_by: currentUser ? currentUser.email : null,
-      receipt_path: null, status: verifiedNow ? "verified" : "pending" };
-    if(verifiedNow){ row.reviewed_by = currentUser ? currentUser.id : null; row.reviewed_at = new Date().toISOString(); }
-    const { error } = await sbClient.from("payment_receipts").insert(row);
-    if(error){ toast("Couldn't mark paid: " + error.message); return; }
-    logHistory("mark_paid", `Marked ${displayName(s)} paid — ${peso(total)} for ${fmtBillLabel(selectedMonth)}`, "student", studentId);
-    await loadReceipts(); render();
-    toast(verifiedNow ? `${displayName(s)} marked paid.` : "Marked paid — it counts once a superadmin verifies it.");
+    openMarkPaidModal(studentId);
+  }
+  function markPaidMonths(){ return [-2, -1, 0, 1].map(d => shiftMonth(selectedMonth, d)); }
+  function markPaidSummary(studentId, ym){
+    const { alloc, total } = markPaidAllocation(studentId, ym);
+    if(!total) return `<b>Already paid</b> for ${esc(fmtBillLabel(ym))} — nothing left to mark.`;
+    return `${Object.entries(alloc).map(([k, v]) => `${esc(k)} ${esc(peso(v))}`).join(" + ")} = <b>${esc(peso(total))}</b>`;
+  }
+  function openMarkPaidModal(studentId){
+    const s = students.find(x => x.id === studentId); if(!s) return;
+    const months = markPaidMonths();
+    $("#modal").innerHTML = `
+      <div class="modal-head"><h3>Mark paid — ${esc(displayName(s))}</h3><button class="iconbtn" data-action="close-modal">✕</button></div>
+      <form id="markPaidForm" data-student="${esc(studentId)}">
+        <div class="modal-body" style="display:grid; gap:12px;">
+          <label class="field">Paid for the month of
+            <select name="month" id="markPaidMonth">
+              ${months.map(ym => `<option value="${esc(ym)}"${ym === selectedMonth ? " selected" : ""}>${esc(fmtBillLabel(ym))} — due ${esc(dueDateLabel(ym))}${ym === selectedMonth ? " (this month)" : ""}</option>`).join("")}
+            </select>
+          </label>
+          <div class="hint" id="markPaidSummary" style="font-size:14px;">${markPaidSummary(studentId, selectedMonth)}</div>
+          <div class="hint" style="font-size:12px;">${isSuperadmin() ? "This counts as paid right away." : "It counts once a superadmin verifies it."} No receipt needed.</div>
+        </div>
+        <div class="modal-foot">
+          <button type="button" class="btn ghost" data-action="close-modal">Cancel</button>
+          <button type="submit" class="btn good" id="markPaidSave"${markPaidAllocation(studentId, selectedMonth).total ? "" : " disabled"}>Mark paid</button>
+        </div>
+      </form>`;
+    $("#modalBackdrop").hidden = false;
+  }
+  async function submitMarkPaid(form){
+    const studentId = form.dataset.student, ym = (new FormData(form).get("month") || selectedMonth).toString();
+    const s = students.find(x => x.id === studentId); if(!s) return;
+    if(markPaidBusy.has(studentId)) return;
+    markPaidBusy.add(studentId);
+    try{
+      // Someone may have logged a payment while the box was open: check again before saving.
+      if(!(await loadReceipts())){ toast("Couldn't check the latest payments — nothing was saved. Try again."); return; }
+      const { alloc, total } = markPaidAllocation(studentId, ym);
+      if(!total){ closeModal(); render(); toast(`${displayName(s)} is already paid for ${fmtBillLabel(ym)}.`); return; }
+      const verifiedNow = isSuperadmin();
+      const row = { student_id: studentId, amount: total, allocation: alloc, covers_month: monthToDate(ym),
+        reference_number: "Marked paid (no receipt)", uploaded_by: currentUser ? currentUser.email : null,
+        receipt_path: null, status: verifiedNow ? "verified" : "pending" };
+      if(verifiedNow){ row.reviewed_by = currentUser ? currentUser.id : null; row.reviewed_at = new Date().toISOString(); }
+      const { error } = await sbClient.from("payment_receipts").insert(row);
+      if(error){ toast("Couldn't mark paid: " + error.message); return; }
+      logHistory("mark_paid", `Marked ${displayName(s)} paid — ${peso(total)} for ${fmtBillLabel(ym)}`, "student", studentId);
+      closeModal();
+      await loadReceipts(); render();
+      toast(verifiedNow ? `${displayName(s)} marked paid for ${fmtBillLabel(ym)}.` : `Marked paid for ${fmtBillLabel(ym)} — it counts once a superadmin verifies it.`);
+    } finally { markPaidBusy.delete(studentId); }
   }
 
   function allocFieldsHtml(studentId, ym){
@@ -2124,7 +2158,7 @@ window.kumonPtcNav = function(client, role){
   // Brings a child back the safe way: close the absence record first (only if it's still open), then switch
   // the subjects back on; if that second step fails, the record is opened again, so nothing is left half-done.
   // Returns { ok } or { already } (someone else resumed it) or { message } (nothing changed).
-  async function safeResume(a, resumedBy){
+  async function safeResume(a, resumedBy, teacherMap){
     const nowIso = new Date().toISOString();
     const ids = a.subject_enrollment_ids || [];
     const { data: closed, error: e2 } = await sbClient.from("absence_records")
@@ -2142,31 +2176,68 @@ window.kumonPtcNav = function(client, role){
         return { message: e1 ? e1.message : "the database didn't allow switching the subjects back on" };
       }
     }
-    return { ok: true };
+    // the teacher each subject goes back to (picked when the payment was logged, or in the Resume box)
+    const moved = [];
+    for(const id of ids){
+      const want = teacherMap && teacherMap[id], e = enrollments.find(x => x.id === id);
+      if(want && (!e || want !== e.teacher)){
+        const { error } = await sbClient.from("subject_enrollments").update({ teacher: want, updated_at: nowIso }).eq("id", id);
+        if(!error) moved.push(`${(e && e.subject) || "subject"} → ${want}`);
+        else console.warn("teacher switch failed", error);
+      }
+    }
+    return { ok: true, moved };
   }
-  async function resumeAbsence(absenceId){
+  function resumeTeacherChoices(){
+    return [...new Set(enrollments.filter(e => (e.status || "active") === "active").map(e => (e.teacher || "").trim()).filter(Boolean))].sort();
+  }
+  function resumeAbsence(absenceId){
     if(!isBillingAdmin()) return; // belt-and-suspenders — the Absent tab itself is admin/superadmin only
     const a = absences.find(x => x.id === absenceId);
     if(!a) return;
     const s = students.find(x => x.id === a.student_id);
     const monthsGone = monthDiff(a.last_paid_month, monthKeyOfToday());
     const withinPolicy = monthsGone !== null && monthsGone <= 4;
-    const ok = confirm(
-      `Mark ${displayName(s)} as resumed?\n\n` +
-      (withinPolicy
-        ? "They're within the 4-month window — progress continues, no new assessment, registration is free."
-        : "It's been more than 4 months, so the usual return policy (continued progress, free registration) no longer applies.") +
-      `\n\nThis reactivates their enrollment${a.subject_enrollment_ids && a.subject_enrollment_ids.length > 1 ? "s" : ""} and tags them RESUME for reporting.`
-    );
-    if(!ok) return;
-    const res = await safeResume(a, currentUser ? currentUser.email : null);
-    if(!res.ok){
-      alert(res.already ? `${displayName(s)} was already resumed (or this record was removed). The list has been refreshed.` : "Couldn't resume (" + res.message + "). Nothing was changed — try again.");
-      await Promise.all([loadEnrollments(), loadAbsences()]); render(); return;
-    }
-    logHistory("resume_absence", `Resumed ${displayName(s)} (tagged RESUME)`, "absence_record", absenceId);
-    await Promise.all([loadEnrollments(), loadAbsences()]);
-    render();
+    const picked = (receipts.filter(x => x.student_id === a.student_id && x.return_teachers && (x.status === "pending" || x.status === "verified"))
+      .sort((x, y) => String(y.created_at || "").localeCompare(String(x.created_at || "")))[0] || {}).return_teachers || {};
+    const fields = (a.subject_enrollment_ids || []).map(id => {
+      const e = enrollments.find(x => x.id === id) || {};
+      const sel = picked[id] || e.teacher || "";
+      const list = resumeTeacherChoices(); if(sel && !list.includes(sel)) list.unshift(sel);
+      return `<label class="field">${esc(e.subject || "Subject")} — teacher when they come back<select name="rt_${esc(id)}">${list.map(t => `<option value="${esc(t)}"${t === sel ? " selected" : ""}>${esc(t)}</option>`).join("")}</select></label>`;
+    }).join("");
+    $("#modal").innerHTML = `
+      <div class="modal-head"><h3>Resume — ${esc(displayName(s))}</h3><button class="iconbtn" data-action="close-modal">✕</button></div>
+      <form id="resumeForm" data-absence="${esc(a.id)}">
+        <div class="modal-body" style="display:grid; gap:12px;">
+          ${fields}
+          <div class="hint">${withinPolicy ? "Within the 4-month window: progress continues, no new assessment, registration is free." : "It's been more than 4 months, so the usual return policy (continued progress, free registration) no longer applies."} They're tagged RESUME for reporting.</div>
+        </div>
+        <div class="modal-foot">
+          <button type="button" class="btn ghost" data-action="close-modal">Cancel</button>
+          <button type="submit" class="btn good">Resume</button>
+        </div>
+      </form>`;
+    $("#modalBackdrop").hidden = false;
+  }
+  async function submitResume(form){
+    if(form.dataset.busy) return; form.dataset.busy = "1";
+    const sb = form.querySelector('button[type="submit"]'); if(sb){ sb.disabled = true; sb.textContent = "Resuming…"; }
+    try{
+      const a = absences.find(x => x.id === form.dataset.absence); if(!a) return;
+      const s = students.find(x => x.id === a.student_id);
+      const teacherMap = {}; form.querySelectorAll('select[name^="rt_"]').forEach(sel => { if(sel.value) teacherMap[sel.name.slice(3)] = sel.value; });
+      const res = await safeResume(a, currentUser ? currentUser.email : null, teacherMap);
+      if(!res.ok){
+        alert(res.already ? `${displayName(s)} was already resumed (or this record was removed). The list has been refreshed.` : "Couldn't resume (" + res.message + "). Nothing was changed — try again.");
+        await Promise.all([loadEnrollments(), loadAbsences()]); render(); return;
+      }
+      logHistory("resume_absence", `Resumed ${displayName(s)} (tagged RESUME)${res.moved && res.moved.length ? " — " + res.moved.join(", ") : ""}`, "absence_record", a.id);
+      closeModal();
+      await Promise.all([loadEnrollments(), loadAbsences()]);
+      render();
+      toast(`${displayName(s)} is back on the roster.`);
+    } finally { delete form.dataset.busy; if(sb && sb.isConnected){ sb.disabled = false; sb.textContent = "Resume"; } }
   }
 
   // Bulk verify: tick rows (or Select all) and verify them in one go. Superadmins only.
@@ -2536,12 +2607,14 @@ window.kumonPtcNav = function(client, role){
     return names.length ? [...new Set(names)].join(", ") : null;
   }
   async function autoResumeOneAbsence(r, a){
-    const catchUpYm = shiftMonth(a.last_paid_month, 1);
-    if(r.covers_month !== monthToDate(catchUpYm)) return null; // this payment isn't for their catch-up month
+    // A verified payment for any month after their last paid one brings them back once that month is
+    // fully paid for their subject(s) — usually it's the month they come back in.
+    const ym = String(r.covers_month || "").slice(0, 7);
+    if(!ym || ym <= a.last_paid_month) return null;
     const due = tuitionDueForAbsence(a);
-    const paid = paidForAbsence(a, catchUpYm);
+    const paid = paidForAbsence(a, ym);
     if(paid < due) return null;
-    const res = await safeResume(a, currentUser ? currentUser.email + " (auto, via payment)" : "auto (via payment)");
+    const res = await safeResume(a, currentUser ? currentUser.email + " (auto, via payment)" : "auto (via payment)", r.return_teachers || null);
     if(!res.ok){
       await Promise.all([loadEnrollments(), loadAbsences()]);
       if(res.already) return null;   // someone resumed them already — nothing to say
@@ -2554,7 +2627,7 @@ window.kumonPtcNav = function(client, role){
     const s = students.find(x => x.id === r.student_id);
     const subjLabel = absenceSubjectsOf(a).join(" + ");
     const name = (s ? displayName(s) : "Student") + (subjLabel ? ` (${subjLabel})` : "");
-    logHistory("auto_resume", `${name} automatically resumed (tagged RESUME) — payment covers their return`, "absence_record", a.id);
+    logHistory("auto_resume", `${name} automatically resumed (tagged RESUME) — payment covers their return${res.moved && res.moved.length ? " — " + res.moved.join(", ") : ""}`, "absence_record", a.id);
     return name;
   }
 
@@ -2626,6 +2699,18 @@ window.kumonPtcNav = function(client, role){
     if(e.target.id === "markAbsentForm"){
       e.preventDefault();
       await submitMarkAbsent(e.target);
+      return;
+    }
+    if(e.target.id === "resumeForm"){
+      e.preventDefault();
+      await submitResume(e.target);
+      return;
+    }
+    if(e.target.id === "markPaidForm"){
+      e.preventDefault();
+      const btn = $("#markPaidSave"); if(btn){ btn.disabled = true; btn.textContent = "Saving…"; }
+      await submitMarkPaid(e.target);
+      const b2 = $("#markPaidSave"); if(b2){ b2.disabled = false; b2.textContent = "Mark paid"; }
       return;
     }
     if(e.target.id === "logPaymentForm"){
@@ -2709,6 +2794,12 @@ window.kumonPtcNav = function(client, role){
   });
 
   document.addEventListener("change", (e)=>{
+    if(e.target.id === "markPaidMonth"){
+      const f = e.target.form, sid = f && f.dataset.student, ym = e.target.value;
+      const sum = $("#markPaidSummary"); if(sum) sum.innerHTML = markPaidSummary(sid, ym);
+      const btn = $("#markPaidSave"); if(btn) btn.disabled = !markPaidAllocation(sid, ym).total;
+      return;
+    }
     if(e.target.id === "reviewSelAll"){
       const queue = receipts.filter(r => (r.status === "pending" || r.status === "flagged") && isMyStudent(r.student_id));
       if(e.target.checked) queue.forEach(r => reviewSel.add(r.id)); else reviewSel.clear();

@@ -590,7 +590,42 @@ window.kumonPtcNav = function(client, role){
   // "Tuition due" here means: what it'd take, for that one month, to come back current.
   // Same 4-month return policy applies regardless (see resumeAbsence) — this is just the
   // billing side of it.
-  function catchUpMonthFor(a){ return shiftMonth(a.last_paid_month, 1); }
+  // The tuition month a child pays to come back: this month's (they attend from now on), or — if
+  // they were marked absent ahead of time — the first month after their last paid one, whichever is later.
+  // (Stored the way covers_month is; shown with Payments' names through billLabel.)
+  function catchUpMonthFor(a){
+    const first = shiftMonth(a.last_paid_month, 1), now = monthKeyOfToday();
+    return first > now ? first : now;
+  }
+  // Teachers to choose from when a child comes back: everyone teaching an active subject right now.
+  function teacherChoices(){
+    return [...new Set(enrollments.filter(e => (e.status || "active") === "active").map(e => (e.teacher || "").trim()).filter(Boolean))].sort();
+  }
+  function teacherSelectHtml(name, selected){
+    const list = teacherChoices(); if(selected && !list.includes(selected)) list.unshift(selected);
+    return `<select name="${esc(name)}">${list.map(t => `<option value="${esc(t)}"${t === selected ? " selected" : ""}>${esc(t)}</option>`).join("")}</select>`;
+  }
+  // One row per absent subject: "Math — teacher [Sir X ▾]". Defaults: the teacher picked when the payment
+  // was logged (if any), else their teacher before they left.
+  function returnTeacherFieldsHtml(a, picked){
+    return (a.subject_enrollment_ids || []).map(id => {
+      const e = enrollments.find(x => x.id === id) || {};
+      const sel = (picked && picked[id]) || e.teacher || "";
+      return `<label class="field">${esc(e.subject || "Subject")} — teacher when they come back${teacherSelectHtml("rt_" + id, sel)}</label>`;
+    }).join("");
+  }
+  function readReturnTeachers(form){
+    const out = {};
+    form.querySelectorAll('select[name^="rt_"]').forEach(sel => { if(sel.value) out[sel.name.slice(3)] = sel.value; });
+    return out;
+  }
+  // The most recent payment logged for this child's return that says which teacher to go back to.
+  function pickedReturnTeachers(a){
+    const r = receipts.filter(x => x.student_id === a.student_id && x.return_teachers && (x.status === "pending" || x.status === "verified") && (x.created_at || "") >= (a.marked_absent_at || ""))
+      .sort((x, y) => String(y.created_at || "").localeCompare(String(x.created_at || "")))[0];
+    return r ? r.return_teachers : null;
+  }
+  function pendingTowardAbsence(a){ return paidTowardAbsence(a, ["pending", "flagged"]); }
   // Grade 7 and above is charged a flat ₱2,350 per subject; everyone else uses their own
   // per-subject rate (students.monthly_tuition, ₱2,200 by default). Grades look like
   // "P7", "7", "G7", "Grade 7"; PK1-PK3 and K are always below grade 7.
@@ -1032,7 +1067,10 @@ window.kumonPtcNav = function(client, role){
         <td class="money">${peso(paid)}</td>
         <td class="money${balance<=0?" good":""}">${peso(balance)}</td>
       `;
-      const logBtn = !a.resumed_at ? `<button class="btn sm" data-action="log-payment" data-absence="${esc(a.id)}">Log payment</button>` : `<span class="lvl empty-lvl">—</span>`;
+      const waiting = !a.resumed_at && balance > 0 && pendingTowardAbsence(a) >= balance;
+      const logBtn = a.resumed_at ? `<span class="lvl empty-lvl">—</span>`
+        : waiting ? `<span class="pill pending" title="A payment for ${esc(billLabel(catchUpMonthFor(a)))} is waiting for a superadmin to verify it on Payments. Once verified, they're back on their teacher's roster automatically.">Waiting for review</span>`
+        : `<button class="btn sm" data-action="log-payment" data-absence="${esc(a.id)}">Log payment</button>`;
       if(isTracking){
         return `<tr class="clickrow" data-action="open-details" data-absence="${esc(a.id)}">
           <td>${esc(displayName(s))}${absenceBadges(a)}</td>
@@ -1061,20 +1099,38 @@ window.kumonPtcNav = function(client, role){
   }
 
   // ---------------- Resume ----------------
-  async function resumeAbsence(absenceId){
+  // Resume: a small box to pick each subject's teacher (default: the one picked when the payment was
+  // logged, else their teacher before), then it switches them back on under that teacher.
+  function resumeAbsence(absenceId){
     const a = absences.find(x => x.id === absenceId);
     if(!a) return;
     const s = students.find(x => x.id === a.student_id);
     const monthsGone = monthDiff(a.last_paid_month, monthKeyOfToday());
     const withinPolicy = monthsGone !== null && monthsGone <= 4;
-    const ok = confirm(
-      `Mark ${displayName(s)} as resumed?\n\n` +
-      (withinPolicy
-        ? "They're within the 4-month window — progress continues, no new assessment, registration is free."
-        : "It's been more than 4 months, so the usual return policy (continued progress, free registration) no longer applies.") +
-      `\n\nThis reactivates their enrollment${a.subject_enrollment_ids && a.subject_enrollment_ids.length > 1 ? "s" : ""} and tags them RESUME for reporting.`
-    );
-    if(!ok) return;
+    $("#modal").innerHTML = `
+      <div class="modal-head"><h3>Resume — ${esc(displayName(s))}</h3><button class="iconbtn" data-action="close-modal">✕</button></div>
+      <form id="resumeForm" data-absence="${esc(a.id)}">
+        <div class="modal-body" style="display:grid; gap:12px;">
+          ${returnTeacherFieldsHtml(a, pickedReturnTeachers(a))}
+          <div class="hint">${withinPolicy ? "Within the 4-month window: progress continues, no new assessment, registration is free." : "It's been more than 4 months, so the usual return policy (continued progress, free registration) no longer applies."} They're tagged RESUME for reporting.</div>
+        </div>
+        <div class="modal-foot">
+          <button type="button" class="btn ghost" data-action="close-modal">Cancel</button>
+          <button type="submit" class="btn good">Resume</button>
+        </div>
+      </form>`;
+    $("#modalBackdrop").hidden = false;
+  }
+  async function submitResume(form){
+    if(form.dataset.busy) return; form.dataset.busy = "1";
+    const sb = form.querySelector('button[type="submit"]'); if(sb){ sb.disabled = true; sb.textContent = "Resuming…"; }
+    try{ await doResume(form.dataset.absence, readReturnTeachers(form)); }
+    finally{ delete form.dataset.busy; if(sb && sb.isConnected){ sb.disabled = false; sb.textContent = "Resume"; } }
+  }
+  async function doResume(absenceId, teacherMap){
+    const a = absences.find(x => x.id === absenceId);
+    if(!a) return;
+    const s = students.find(x => x.id === a.student_id);
     const nowIso = new Date().toISOString();
     const ids = a.subject_enrollment_ids || [];
     // Close the absence record first, and only if it's still open — if someone already resumed it (another tab,
@@ -1083,7 +1139,7 @@ window.kumonPtcNav = function(client, role){
       .update({ resumed_at: nowIso, resumed_by: currentUser ? currentUser.email : null })
       .eq("id", absenceId).is("resumed_at", null).select("id");
     if(e2){ alert("Couldn't resume: " + e2.message); return; }
-    if(!closed || !closed.length){ alert(`${displayName(s)} was already resumed (or this record was removed). The list has been refreshed.`); await Promise.all([loadEnrollments(), loadAbsences()]); render(); return; }
+    if(!closed || !closed.length){ closeModal(); alert(`${displayName(s)} was already resumed (or this record was removed). The list has been refreshed.`); await Promise.all([loadEnrollments(), loadAbsences()]); render(); return; }
     if(ids.length){
       const { data: back, error: e1 } = await sbClient.from("subject_enrollments")
         .update({ status:"active", enrollment_type:"resume", enrollment_type_set_at: nowIso, updated_at: nowIso })
@@ -1095,9 +1151,21 @@ window.kumonPtcNav = function(client, role){
         await Promise.all([loadEnrollments(), loadAbsences()]); render(); return;
       }
     }
-    logHistory("resume_absence", `Resumed ${displayName(s)} (tagged RESUME)`, "absence_record", absenceId);
+    // the teacher each subject goes back to
+    const moved = [];
+    for(const id of ids){
+      const want = teacherMap && teacherMap[id], e = enrollments.find(x => x.id === id);
+      if(want && e && want !== e.teacher){
+        const { error } = await sbClient.from("subject_enrollments").update({ teacher: want, updated_at: nowIso }).eq("id", id);
+        if(error) alert(`Resumed, but couldn't switch ${e.subject || "a subject"} to ${want} (${error.message}). Change the teacher on the Student Roster.`);
+        else moved.push(`${e.subject || "subject"} → ${want}`);
+      }
+    }
+    logHistory("resume_absence", `Resumed ${displayName(s)} (tagged RESUME)${moved.length ? " — " + moved.join(", ") : ""}`, "absence_record", absenceId);
+    closeModal();
     await Promise.all([loadEnrollments(), loadAbsences()]);
     render();
+    toast(`${displayName(s)} is back on the roster.`);
   }
 
   // ---------------- Details modal (click a row) ----------------
@@ -1131,7 +1199,7 @@ window.kumonPtcNav = function(client, role){
     const due = tuitionDueForAbsence(a);
     const paid = verifiedPaidForAbsence(a);
     const balance = Math.max(0, due - paid);
-    const resumeBtn = !a.resumed_at ? `<button type="button" class="btn good" data-action="resume-absence" data-absence="${esc(a.id)}">Resume anyway</button>` : "";
+    const resumeBtn = !a.resumed_at ? `<button type="button" class="btn good" data-action="resume-absence" data-absence="${esc(a.id)}">Resume</button>` : "";
     $("#modal").innerHTML = `
       <div class="modal-head"><h3>${esc(displayName(s))}</h3><button class="iconbtn" data-action="close-modal">✕</button></div>
       <div class="modal-body">
@@ -1196,7 +1264,10 @@ window.kumonPtcNav = function(client, role){
       <div class="modal-head"><h3>Log a payment — ${esc(displayName(s))}</h3><button class="iconbtn" data-action="close-modal">✕</button></div>
       <form id="logPaymentForm" data-absence="${esc(a.id)}">
         <div class="modal-body">
-          <label class="field">Covers month<input type="month" name="coversMonth" value="${esc(catchUpMonthFor(a))}" required></label>
+          <label class="field">Pays for the month of
+            <select name="coversMonth" required>${(() => { const out = []; for(let ym = shiftMonth(a.last_paid_month, 1); ym <= shiftMonth(catchUpMonthFor(a), 1); ym = shiftMonth(ym, 1)) out.push(ym); return out; })().map(ym => `<option value="${esc(ym)}"${ym === catchUpMonthFor(a) ? " selected" : ""}>${esc(billLabel(ym))}${ym === catchUpMonthFor(a) ? " (to come back now)" : ""}</option>`).join("")}</select>
+          </label>
+          ${returnTeacherFieldsHtml(a, pickedReturnTeachers(a))}
           <div class="field-row" style="flex-wrap:wrap;">${absenceSubjects(a).map(subj => `<label class="field">${esc(subj)} amount<input type="number" data-subject="${esc(subj)}" min="0" step="0.01" value="${catchUpLeftForSubject(a, subj)}"></label>`).join("")}</div>
           <div class="hint" style="margin-top:-6px;">Put 0 on a subject this payment isn't for.</div>
           <div class="hint" style="margin-top:-6px;">Catch-up balance: ${peso(catchUpSuggestion(a))} (${(a.subject_enrollment_ids||[]).length||1} subject${((a.subject_enrollment_ids||[]).length||1)===1?"":"s"} × ${peso(tuitionRateFor(students.find(x=>x.id===a.student_id)))}, less anything already paid or logged).</div>
@@ -1216,8 +1287,9 @@ window.kumonPtcNav = function(client, role){
   }
   async function submitLogPayment(form){
     if(form.dataset.busy) return;   // a double click would log the payment twice
-    form.dataset.busy = "1"; const sb = form.querySelector('button[type="submit"]'); if(sb) sb.disabled = true;
-    try{ await submitLogPaymentNow(form); } finally{ delete form.dataset.busy; if(sb && sb.isConnected) sb.disabled = false; }
+    form.dataset.busy = "1"; const sb = form.querySelector('button[type="submit"]');
+    if(sb){ sb.disabled = true; sb.textContent = "Saving…"; }
+    try{ await submitLogPaymentNow(form); } finally{ delete form.dataset.busy; if(sb && sb.isConnected){ sb.disabled = false; sb.textContent = "Log payment"; } }
   }
   async function submitLogPaymentNow(form){
     const absenceId = form.dataset.absence;
@@ -1233,22 +1305,26 @@ window.kumonPtcNav = function(client, role){
     const coversMonth = fd.get("coversMonth");
     if(!coversMonth) return;
     if(!amount){ alert("Enter an amount for at least one subject."); return; }
-    const { error } = await sbClient.from("payment_receipts").insert({
+    const row = {
       student_id: a.student_id,
       amount,
       allocation,
       covers_month: monthToDate(coversMonth),
       reference_number: (fd.get("reference")||"").toString().trim() || null,
       uploaded_by: (fd.get("uploadedBy")||"").toString().trim() || null,
-      status: "pending"
-    });
+      status: "pending",
+      // phase128: which teacher each subject goes back to when this payment brings them back
+      return_teachers: readReturnTeachers(form)
+    };
+    let { error } = await sbClient.from("payment_receipts").insert(row);
+    if(error && /return_teachers/.test(error.message || "")){ delete row.return_teachers; ({ error } = await sbClient.from("payment_receipts").insert(row)); }
     if(error){ alert("Couldn't log payment: " + error.message); return; }
     const payingStudent = students.find(x => x.id === a.student_id);
     logHistory("log_payment", `Logged ${peso(amount)} catch-up payment for ${payingStudent ? displayName(payingStudent) : "a student"}`, "payment_receipt", null);
     await loadReceipts();
     closeModal();
     renderList();
-    toast("Payment logged — it counts once a superadmin verifies it in Payments.");
+    toast("Payment logged. Once a superadmin verifies it, they're back on the roster automatically.");
   }
   function closeModal(){
     $("#modalBackdrop").hidden = true;
@@ -1271,6 +1347,10 @@ window.kumonPtcNav = function(client, role){
     if(e.target.id === "logPaymentForm"){
       e.preventDefault();
       submitLogPayment(e.target);
+    }
+    if(e.target.id === "resumeForm"){
+      e.preventDefault();
+      submitResume(e.target);
     }
   });
 
@@ -1300,7 +1380,7 @@ window.kumonPtcNav = function(client, role){
     else if(action === "clear-bucket-filter"){ bucketFilter = null; render(); }
     else if(action === "open-details"){ openDetailsModal(btn.dataset.absence); }
     else if(action === "log-payment"){ openLogPaymentModal(btn.dataset.absence); }
-    else if(action === "resume-absence"){ await resumeAbsence(btn.dataset.absence); closeModal(); }
+    else if(action === "resume-absence"){ resumeAbsence(btn.dataset.absence); }
   });
 
   boot();
