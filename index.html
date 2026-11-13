@@ -1478,7 +1478,7 @@ window.kumonPtcNav = function(client, role){
   }
 
   // Monitor students' schedules (phase25), shown on the calendar next to DT and trainings. Each monitor
-  // enrollment's own schedule row is plotted under its monitoring trainer (Miss Queenie / Miss Frixie), so
+  // enrollment's own schedule row is plotted under its monitoring trainer (Miss Queenie / Miss Frixssy), so
   // picking her in the staff filter shows her monitor sessions too. A student monitored for both subjects at
   // the same time gets one chip, not two. Unlike the regular schedule, Student Roster's own students count
   // here (that's where the imported monitor students live), and only slots with a clock time can be placed.
@@ -1778,7 +1778,7 @@ window.kumonPtcNav = function(client, role){
   const SLOT_DEFAULTS_BY_KIND = {
     dt: { start:"10:00", end:"18:30", len:60, days:[1,2,3,4,5,6], breakFrom:"12:00", breakTo:"13:30", perSlot:2, satTimes:"9:30 AM, 10:30 AM, 1:30 PM" },
     // Training slots are only offered for these trainers (by core name); change under "Trainers" in the finder.
-    st: { start:"09:00", end:"18:00", len:60, days:[1,2,3,4,5,6], breakFrom:"", breakTo:"", trainers:["queenie","frixie","mira"] }
+    st: { start:"09:00", end:"18:00", len:60, days:[1,2,3,4,5,6], breakFrom:"", breakTo:"", trainers:["queenie","frixssy","mira"] }
   };
   const slotTool = { kind:"dt", weekStart:null, prefs:null };
   // The finder's settings are SHARED by everyone (one row in Supabase: settings "slot_prefs"), so the
@@ -1928,7 +1928,7 @@ window.kumonPtcNav = function(client, role){
         </div>
         <div class="hint">${isDt
           ? "Open hours with no diagnostic booked, whoever is doing it. Trainings and regular schedules are ignored. A DT is one hour, nothing runs through the break. Set DTs per time slot if more than one can run at the same time. Tap Open to book it."
-          : "Shown for the trainers ticked above (Miss Queenie, Miss Frixie and Miss Mira by default). A trainer is blocked at a time if they have a student training, a regular class or a monitor student then. Tap a name to schedule a training."}
+          : "Shown for the trainers ticked above (Miss Queenie, Miss Frixssy and Miss Mira by default). A trainer is blocked at a time if they have a student training, a regular class or a monitor student then. Tap a name to schedule a training."}
           ${people.length ? "" : ` <b>No ${isDt ? "DT teachers" : "trainers"} are set up yet — add them in Settings.</b>`}</div>
         ${starts.length && days.length
           ? `<div class="table-scroll" style="max-height:48vh; overflow:auto;"><table class="slot-grid"><thead>${head}</thead><tbody>${body}</tbody></table></div>`
@@ -2331,7 +2331,7 @@ window.kumonPtcNav = function(client, role){
     if(tag === "new") return `<span class="pill good">NEW</span>`;
     if(tag === "eo") return `<span class="pill subj">EO</span>`;
     if(tag === "resume") return `<span class="pill warn">RESUME</span>`;
-    if(tag === "new_returnee") return `<span class="pill warn">NEW / RETURNEE</span>`;
+    if(tag === "new_returnee") return `<span class="pill warn">RETURNEE</span>`;
     if(tag === "resume_transfer_in") return `<span class="pill warn">RESUME TRANSFER-IN</span>`;
     return `<span class="pill muted">—</span>`;
   }
@@ -2432,8 +2432,21 @@ window.kumonPtcNav = function(client, role){
         // everything else follows the student's own month (First day, else DT date, else added).
         const enr = STATE.enrollments.find(e => e.studentId === s.id && e.subject === sub && !e.archived);
         const rowMonth = (enr && enr.addedMonth) || studentCohortMonthKey(s);
-        if(STATE.studentMonthMode === "all" || rowMonth === monthKey) rows.push({ s, subj: sub, isBoth });
+        // A child who came back from Retention also shows in the month they resumed (tagged RESUME / RETURNEE).
+        const resumedHere = enr && enr.resumedMonth === monthKey;
+        if(STATE.studentMonthMode === "all" || rowMonth === monthKey || resumedHere) rows.push({ s, subj: sub, isBoth });
       });
+    });
+
+    // Children who came back from Retention (resumed_month) show in the month they came back — also the ones
+    // who were imported from the old roster and so aren't otherwise on this list.
+    STATE.enrollments.forEach(enr => {
+      if(!enr.resumedMonth || enr.archived) return;
+      if(STATE.studentMonthMode !== "all" && enr.resumedMonth !== monthKey) return;
+      if(rows.some(r => r.s.id === enr.studentId && r.subj === enr.subject)) return;
+      const st = studentById(enr.studentId); if(!st) return;
+      if(qTokens.length){ const hay = normSearch(st.name + " " + (st.firstName||"") + " " + (st.lastName||"") + " " + (st.parentName||"")); if(!qTokens.every(t => hay.includes(t))) return; }
+      rows.push({ s: st, subj: enr.subject, isBoth: false });
     });
 
     const isReport = STATE.studentsView === "report";
@@ -2946,7 +2959,7 @@ window.kumonPtcNav = function(client, role){
     { value:"new", label:"NEW" },
     { value:"eo", label:"EO" },
     { value:"resume", label:"RESUME" },
-    { value:"new_returnee", label:"NEW / RETURNEE" },
+    { value:"new_returnee", label:"RETURNEE" },
     { value:"resume_transfer_in", label:"RESUME TRANSFER-IN" }
   ];
   // Class teacher picker for Add / Edit student. One dropdown per subject the student takes
