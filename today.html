@@ -1521,7 +1521,10 @@ window.kumonPtcNav = function(client, role){
     const o = withoutWorksheets().find(x => x.sid === sid); if(!o || marking) return;
     marking = true; document.querySelectorAll(`[data-mark][data-sid="${CSS.escape(sid)}"]`).forEach(b => b.disabled = true);
     const at = new Date().toISOString(), by = currentUser ? (currentUser.email || null) : null;
-    const payload = o.lastRows.map(r => { const cur = (D.attHist || []).find(a => a.schedule_id === r.schedule_id && a.day === r.day && a.week_start === r.week_start) || {};
+    // one row per schedule + day + week (two times on one day / a shared Math+Reading schedule would repeat it,
+    // and the database refuses a save that names the same row twice)
+    const seenK = new Set();
+    const payload = o.lastRows.filter(r => { const k = r.schedule_id + "|" + r.day + "|" + r.week_start; if(seenK.has(k)) return false; seenK.add(k); return true; }).map(r => { const cur = (D.attHist || []).find(a => a.schedule_id === r.schedule_id && a.day === r.day && a.week_start === r.week_start) || {};
       return kind === "picked"
         ? { schedule_id: r.schedule_id, day: r.day, week_start: r.week_start, arrived: !!cur.arrived, picked_up: true, picked_up_at: at, picked_up_by: by }
         : { schedule_id: r.schedule_id, day: r.day, week_start: r.week_start, arrived: true, arrived_at: at }; });

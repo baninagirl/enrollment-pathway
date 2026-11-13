@@ -1198,10 +1198,12 @@ window.kumonPtcNav = function(client, role){
     }
     return { data: out, error: null };
   }
+  // Returns true when the payments list really loaded (close-out needs that before it saves Paid/Unpaid).
   async function loadReceipts(){
     const { data, error } = await fetchAll("payment_receipts", "id,student_id,status,covers_month,amount", q => q.order("id"));
-    if(error){ console.warn(error); return; }   // keep what's on screen
+    if(error){ console.warn(error); return false; }   // keep what's on screen
     receipts = data || [];
+    return true;
   }
 
   // ---------------- Payment tag (mirrors Payments' own billing math) ----------------
@@ -1851,6 +1853,9 @@ window.kumonPtcNav = function(client, role){
       `Level, Goal, Schedule, Mode, Award and Actual are untouched.`
     );
     if(!ok) return;
+    // Paid / Unpaid is saved with the month for good, so get a fresh payments list first — never save from a
+    // list that didn't load (everyone would be saved as Unpaid).
+    if(!(await loadReceipts())){ alert("Couldn't load the payments, so nothing was closed out (Paid / Unpaid would be saved wrong). Check the connection and press Close out again."); return; }
 
     const rows = candidates.map(e => ({
       subject_enrollment_id: e.id, student_id: e.student_id, student_name: e.student_name,

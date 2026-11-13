@@ -1324,7 +1324,11 @@ window.kumonPtcNav = function(client, role){
     rows.forEach(r => pendingPicks.set(r.scheduleId + "|" + r.origDay, picked));
     renderCalendar();
     const wk = currentWeekStart(), at = picked ? new Date().toISOString() : null, by = picked && currentUser ? (currentUser.email || null) : null;
-    const payload = rows.map(r => { const cur = attendanceFor(r.scheduleId, r.origDay);   // includes a tick that's still saving
+    // One row per schedule + day: two times on one day, or Math + Reading sharing one older schedule, would
+    // otherwise send the same row twice, and the database refuses the whole save.
+    const seen = new Set();
+    const payload = rows.filter(r => { const k = r.scheduleId + "|" + r.origDay; if(seen.has(k)) return false; seen.add(k); return true; })
+      .map(r => { const cur = attendanceFor(r.scheduleId, r.origDay);   // includes a tick that's still saving
       return { schedule_id: r.scheduleId, day: r.origDay, week_start: wk, arrived: !!(cur && cur.arrived), picked_up: picked, picked_up_at: at, picked_up_by: by }; });
     let error = null;
     for(let attempt = 0; attempt < 3; attempt++){

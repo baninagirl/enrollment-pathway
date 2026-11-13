@@ -1312,10 +1312,16 @@ window.kumonPtcNav = function(client, role){
   function loadCounts(){ return wsLoad("counts", async () => { wsCounts = await selectAll("ws_counts", "*", q => q.order("id")); }); }
   function loadOrders(){ return wsLoad("orders", async () => { wsOrders = await selectAll("ws_orders", "*", q => q.order("id")); }); }
   async function saveSettings(patch){
-    const value = Object.assign({}, wsSettings, patch);
+    // Read the saved settings fresh and change only what was edited — never write back this page's copy,
+    // which is just the defaults if the settings didn't load (that would erase everyone's saved settings).
+    const cur = await sbClient.from("ws_settings").select("value").eq("id", "main").maybeSingle();
+    if(cur.error){ toast("Couldn't save — the saved settings couldn't be read. Refresh the page and try again."); return false; }
+    const base = (cur.data && cur.data.value) || (wsLoadIssues.has("settings") ? null : wsSettings);
+    if(!base){ toast("Couldn't save — refresh the page first (the settings didn't load)."); return false; }
+    const value = Object.assign({}, base, patch);
     const { data, error } = await sbClient.from("ws_settings").upsert([{ id: "main", value }], { onConflict: "id" }).select("id");
     if(error || !data || !data.length){ toast("Couldn't save: " + (error ? error.message : "the database didn't allow it")); return false; }
-    wsSettings = value; wsDataVer++; return true;
+    wsSettings = Object.assign({}, wsSettings, value); wsLoadIssues.delete("settings"); wsDataVer++; return true;
   }
 
   /* ---------- rendering ---------- */
