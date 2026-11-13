@@ -2119,5 +2119,166 @@ window.kumonPtcNav = function(client, role){
   }
 })();
 </script>
+<!-- Apple-style date picker (same block on every page; delete it to go back to the browser's own) -->
+<script>
+/* =====================================================================
+   Kumon Hub date picker — an Apple-style calendar for every date box.
+   Linked right after hub-theme.css on each page. It works on every
+   <input type="date">, including ones the page draws later:
+   - computers (mouse/trackpad): clicking the box opens this calendar;
+   - phones and tablets: the phone's own wheel picker is kept (already Apple-like);
+   - typing a date with the keyboard still works as before.
+   The input keeps its normal YYYY-MM-DD value and fires the usual
+   "input" and "change" events, so no page code had to change.
+   Remove the <script> line to go back to the browser's own picker.
+   ===================================================================== */
+(function(){
+  if(window.__hubDatePicker) return; window.__hubDatePicker = true;
+  const fine = () => window.matchMedia && window.matchMedia("(pointer: fine)").matches;
+  const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+  const DOW = ["Su","Mo","Tu","We","Th","Fr","Sa"];
+  const pad = n => String(n).padStart(2, "0");
+  const isoOf = (y, m, d) => `${y}-${pad(m + 1)}-${pad(d)}`;
+  const todayIso = () => { const t = new Date(); return isoOf(t.getFullYear(), t.getMonth(), t.getDate()); };
+  const valid = v => /^\d{4}-\d{2}-\d{2}$/.test(v || "");
+
+  const css = `
+  input[type="date"]::-webkit-calendar-picker-indicator{ opacity:.55; cursor:pointer; }
+  @media (pointer: fine){ input[type="date"]{ cursor:pointer; } }
+  .hdp{ position:fixed; z-index:10000; width:288px; padding:14px; border-radius:18px;
+    background:var(--glass, rgba(255,255,255,.86)); -webkit-backdrop-filter:saturate(180%) blur(22px); backdrop-filter:saturate(180%) blur(22px);
+    border:1px solid var(--border, #E4E4EA); box-shadow:var(--shadow-modal, 0 30px 80px -20px rgba(20,22,30,.4));
+    font-family:Inter, -apple-system, system-ui, sans-serif; color:var(--ink, #1D1D1F); font-variant-numeric:tabular-nums;
+    transform-origin:top left; animation:hdpIn .16s var(--spring, cubic-bezier(.2,.8,.2,1)); }
+  @keyframes hdpIn{ from{ opacity:0; transform:scale(.96) translateY(-4px); } to{ opacity:1; transform:none; } }
+  @media (prefers-reduced-motion: reduce){ .hdp{ animation:none; } }
+  .hdp-head{ display:flex; align-items:center; gap:4px; margin-bottom:8px; }
+  .hdp-title{ flex:1; display:flex; align-items:center; gap:6px; border:0; background:none; padding:6px 8px; margin-left:-6px; border-radius:10px;
+    font:inherit; font-size:15px; font-weight:700; color:var(--ink, #1D1D1F); cursor:pointer; text-align:left; }
+  .hdp-title:hover{ background:var(--surface-2, #F7F7FA); }
+  .hdp-title svg{ width:12px; height:12px; color:var(--accent, #3454D1); transition:transform .2s; }
+  .hdp-title[aria-expanded="true"] svg{ transform:rotate(90deg); }
+  .hdp-nav{ width:32px; height:32px; border:0; border-radius:50%; background:none; color:var(--accent, #3454D1); cursor:pointer; display:grid; place-items:center; }
+  .hdp-nav:hover{ background:var(--accent-soft, #EBEFFD); }
+  .hdp-nav:disabled{ opacity:.3; cursor:default; background:none; }
+  .hdp-nav svg{ width:16px; height:16px; }
+  .hdp-grid{ display:grid; grid-template-columns:repeat(7, 1fr); gap:2px; }
+  .hdp-dow{ font-size:11px; font-weight:600; color:var(--ink-faint, #9496A0); text-align:center; padding:4px 0 6px; }
+  .hdp-day{ height:34px; border:0; border-radius:50%; background:none; font:inherit; font-size:14px; color:var(--ink, #1D1D1F); cursor:pointer; }
+  .hdp-day:hover{ background:var(--surface-2, #F2F2F6); }
+  .hdp-day.out{ color:var(--ink-faint, #9496A0); opacity:.55; }
+  .hdp-day.today{ color:var(--accent, #3454D1); font-weight:700; }
+  .hdp-day.sel{ background:var(--accent, #3454D1); color:var(--accent-ink, #fff); font-weight:700; }
+  .hdp-day:disabled{ opacity:.25; cursor:default; background:none; }
+  .hdp-day:focus-visible, .hdp-cell:focus-visible, .hdp-nav:focus-visible, .hdp-title:focus-visible, .hdp-foot button:focus-visible{ outline:none; box-shadow:var(--ring, 0 0 0 4px rgba(52,84,209,.18)); }
+  .hdp-ym{ display:grid; grid-template-columns:repeat(3, 1fr); gap:6px; }
+  .hdp-years{ display:flex; gap:6px; overflow-x:auto; padding:2px 2px 10px; margin-bottom:6px; border-bottom:1px solid var(--border, #E4E4EA); scrollbar-width:none; }
+  .hdp-years::-webkit-scrollbar{ display:none; }
+  .hdp-cell{ border:0; border-radius:10px; background:none; padding:10px 0; font:inherit; font-size:14px; font-weight:600; color:var(--ink, #1D1D1F); cursor:pointer; }
+  .hdp-years .hdp-cell{ flex:none; padding:7px 12px; border-radius:99px; background:var(--surface-2, #F2F2F6); }
+  .hdp-cell:hover{ background:var(--accent-soft, #EBEFFD); }
+  .hdp-cell.sel{ background:var(--accent, #3454D1); color:var(--accent-ink, #fff); }
+  .hdp-cell:disabled{ opacity:.3; cursor:default; background:none; }
+  .hdp-foot{ display:flex; justify-content:space-between; margin-top:10px; padding-top:10px; border-top:1px solid var(--border, #E4E4EA); }
+  .hdp-foot button{ border:0; background:none; font:inherit; font-size:14px; font-weight:600; color:var(--accent, #3454D1); cursor:pointer; padding:4px 6px; border-radius:8px; }
+  .hdp-foot button:hover{ background:var(--accent-soft, #EBEFFD); }
+  .hdp-foot button.muted{ color:var(--ink-muted, #5F6068); }
+  .hdp-foot button:disabled{ opacity:.3; cursor:default; background:none; }`;
+  const st = document.createElement("style"); st.textContent = css; (document.head || document.documentElement).appendChild(st);
+
+  const chev = d => `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="${d}"/></svg>`;
+  let pop = null, input = null, viewY = 0, viewM = 0, mode = "days";
+
+  function bounds(){ return { min: valid(input.min) ? input.min : null, max: valid(input.max) ? input.max : null }; }
+  function allowed(iso){ const b = bounds(); return !(b.min && iso < b.min) && !(b.max && iso > b.max); }
+
+  function render(){
+    const sel = valid(input.value) ? input.value : null, today = todayIso(), b = bounds();
+    let body;
+    if(mode === "days"){
+      const first = new Date(viewY, viewM, 1).getDay(), dim = new Date(viewY, viewM + 1, 0).getDate(), prevDim = new Date(viewY, viewM, 0).getDate();
+      const cells = [];
+      for(let i = first - 1; i >= 0; i--){ const d = prevDim - i, m = viewM - 1; const dt = new Date(viewY, m, d); cells.push({ iso: isoOf(dt.getFullYear(), dt.getMonth(), dt.getDate()), d, out: true }); }
+      for(let d = 1; d <= dim; d++) cells.push({ iso: isoOf(viewY, viewM, d), d });
+      while(cells.length % 7 || cells.length < 42){ const k = cells.length - first - dim + 1; const dt = new Date(viewY, viewM + 1, k); cells.push({ iso: isoOf(dt.getFullYear(), dt.getMonth(), dt.getDate()), d: k, out: true }); if(cells.length >= 42) break; }
+      body = `<div class="hdp-grid">${DOW.map(x => `<div class="hdp-dow">${x}</div>`).join("")}${cells.map(c =>
+        `<button type="button" class="hdp-day${c.out ? " out" : ""}${c.iso === today ? " today" : ""}${c.iso === sel ? " sel" : ""}" data-iso="${c.iso}"${allowed(c.iso) ? "" : " disabled"} aria-label="${c.iso}">${c.d}</button>`).join("")}</div>`;
+    } else {
+      const minY = b.min ? +b.min.slice(0, 4) : new Date().getFullYear() - 15, maxY = b.max ? +b.max.slice(0, 4) : new Date().getFullYear() + 5;
+      const years = []; for(let y = minY; y <= maxY; y++) years.push(y);
+      body = `<div class="hdp-years">${years.map(y => `<button type="button" class="hdp-cell${y === viewY ? " sel" : ""}" data-y="${y}">${y}</button>`).join("")}</div>
+        <div class="hdp-ym">${MONTHS.map((m, i) => { const lo = isoOf(viewY, i, 1), hi = isoOf(viewY, i, new Date(viewY, i + 1, 0).getDate());
+          const ok = !(b.max && lo > b.max) && !(b.min && hi < b.min);
+          return `<button type="button" class="hdp-cell${i === viewM ? " sel" : ""}" data-m="${i}"${ok ? "" : " disabled"}>${m.slice(0, 3)}</button>`; }).join("")}</div>`;
+    }
+    const prevOk = !b.min || isoOf(viewY, viewM, 1) > b.min, nextOk = !b.max || (viewM === 11 ? isoOf(viewY + 1, 0, 1) : isoOf(viewY, viewM + 1, 1)) <= b.max;
+    pop.innerHTML = `<div class="hdp-head">
+        <button type="button" class="hdp-title" data-act="mode" aria-expanded="${mode !== "days"}">${MONTHS[viewM]} ${viewY} ${chev("M6 3l5 5-5 5")}</button>
+        ${mode === "days" ? `<button type="button" class="hdp-nav" data-act="prev" aria-label="Previous month"${prevOk ? "" : " disabled"}>${chev("M10 3L5 8l5 5")}</button>
+        <button type="button" class="hdp-nav" data-act="next" aria-label="Next month"${nextOk ? "" : " disabled"}>${chev("M6 3l5 5-5 5")}</button>` : ""}
+      </div>${body}
+      <div class="hdp-foot"><button type="button" class="muted" data-act="clear"${input.required ? " disabled" : ""}>Clear</button><button type="button" data-act="today"${allowed(todayIso()) ? "" : " disabled"}>Today</button></div>`;
+    if(mode !== "days"){ const s = pop.querySelector(".hdp-years .sel"); if(s) s.scrollIntoView({ block: "nearest", inline: "center" }); }
+  }
+  function place(){
+    const r = input.getBoundingClientRect(), w = 288, h = pop.offsetHeight || 360;
+    let left = Math.min(Math.max(8, r.left), window.innerWidth - w - 8);
+    let top = r.bottom + 6; if(top + h > window.innerHeight - 8) top = Math.max(8, r.top - h - 6);
+    pop.style.left = left + "px"; pop.style.top = top + "px";
+  }
+  function setValue(iso){
+    const old = input.value; input.value = iso;
+    if(old !== iso){ input.dispatchEvent(new Event("input", { bubbles: true })); input.dispatchEvent(new Event("change", { bubbles: true })); }
+  }
+  function close(){ if(pop){ pop.remove(); pop = null; } if(input){ const i = input; input = null; try{ i.focus({ preventScroll: true }); }catch(_){ } } }
+  function open(el){
+    if(pop) close();
+    input = el; mode = "days";
+    const base = valid(el.value) ? el.value : (valid(el.max) && el.max < todayIso() ? el.max : valid(el.min) && el.min > todayIso() ? el.min : todayIso());
+    viewY = +base.slice(0, 4); viewM = +base.slice(5, 7) - 1;
+    pop = document.createElement("div"); pop.className = "hdp"; pop.setAttribute("role", "dialog"); pop.setAttribute("aria-label", "Choose a date");
+    document.body.appendChild(pop); render(); place();
+    const f = pop.querySelector(".hdp-day.sel") || pop.querySelector(".hdp-day.today") || pop.querySelector(".hdp-day:not(:disabled)"); if(f) f.focus({ preventScroll: true });
+  }
+
+  document.addEventListener("mousedown", e => {
+    const el = e.target.closest && e.target.closest('input[type="date"]');
+    if(pop && !pop.contains(e.target) && el !== input) close();
+    if(!el || el.disabled || el.readOnly || !fine()) return;
+    e.preventDefault();               // stop the browser's own picker
+    if(pop && el === input){ close(); return; }
+    open(el);
+  }, true);
+  document.addEventListener("click", e => {
+    if(!pop || !pop.contains(e.target)) return;
+    const b = e.target.closest("button"); if(!b || b.disabled) return;
+    const act = b.dataset.act;
+    if(b.dataset.iso){ setValue(b.dataset.iso); close(); return; }
+    if(b.dataset.y){ viewY = +b.dataset.y; render(); return; }
+    if(b.dataset.m){ viewM = +b.dataset.m; mode = "days"; render(); return; }
+    if(act === "mode"){ mode = mode === "days" ? "months" : "days"; render(); return; }
+    if(act === "prev"){ if(--viewM < 0){ viewM = 11; viewY--; } render(); return; }
+    if(act === "next"){ if(++viewM > 11){ viewM = 0; viewY++; } render(); return; }
+    if(act === "today"){ setValue(todayIso()); close(); return; }
+    if(act === "clear"){ setValue(""); close(); return; }
+  });
+  document.addEventListener("keydown", e => {
+    if(!pop) return;
+    if(e.key === "Escape"){ e.preventDefault(); close(); return; }
+    const a = document.activeElement;
+    if(a && a.classList && a.classList.contains("hdp-day") && /^Arrow/.test(e.key)){
+      e.preventDefault();
+      const step = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -7, ArrowDown: 7 }[e.key];
+      const d = new Date(a.dataset.iso + "T00:00:00"); d.setDate(d.getDate() + step);
+      const iso = isoOf(d.getFullYear(), d.getMonth(), d.getDate());
+      if(d.getMonth() !== viewM || d.getFullYear() !== viewY){ viewY = d.getFullYear(); viewM = d.getMonth(); render(); }
+      const n = pop.querySelector(`.hdp-day[data-iso="${iso}"]:not(.out)`) || pop.querySelector(`.hdp-day[data-iso="${iso}"]`); if(n) n.focus();
+    }
+  });
+  window.addEventListener("resize", () => { if(pop) place(); });
+  document.addEventListener("scroll", e => { if(pop && !pop.contains(e.target)) place(); }, true);
+})();
+
+</script>
 </body>
 </html>
