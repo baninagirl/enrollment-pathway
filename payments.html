@@ -715,6 +715,13 @@ window.kumonPtcNav = function(client, role){
     const monthName = start.toLocaleDateString("en-US", { month:"long" });
     return `${monthName} 1–${end.getDate()}, ${y}`;
   }
+  // Full wording for a bill month (Nov 16), like the old monthly sheets: "October 2026 — due Oct 25 · tuition for November".
+  function shortDueLabel(ym){
+    const [y,m] = shiftMonth(ym, -1).split("-").map(Number);
+    return new Date(y, m-1, 25).toLocaleDateString("en-US", { month:"short", day:"numeric" });
+  }
+  function tuitionForLabel(ym){ const [y,m] = ym.split("-").map(Number); return new Date(y, m-1, 1).toLocaleDateString("en-US", { month:"long" }); }
+  function billFullLabel(ym){ return `${fmtBillLabel(ym)} — due ${shortDueLabel(ym)} · tuition for ${tuitionForLabel(ym)}`; }
   function dueDateLabel(ym){
     const prev = shiftMonth(ym, -1);
     const [y,m] = prev.split("-").map(Number);
@@ -1235,8 +1242,8 @@ window.kumonPtcNav = function(client, role){
   function bulkPaidHtml(){
     const ym = bulkPaidMonthNow(), plan = bulkPaidPlan(ym);
     const owesEarlier = plan.filter(x => oldestOwedMonth(x.id, ym) < ym).length;
-    return `<label class="bar-field">Tuition for
-        <select id="bulkPaidMonth">${markPaidMonths().map(m => `<option value="${esc(m)}" ${m === ym ? "selected" : ""}>${esc(fmtBillLabel(m))}</option>`).join("")}</select>
+    return `<label class="bar-field">Payment month
+        <select id="bulkPaidMonth">${markPaidMonths().map(m => `<option value="${esc(m)}" ${m === ym ? "selected" : ""}>${esc(fmtBillLabel(m))} · for ${esc(tuitionForLabel(m))}</option>`).join("")}</select>
       </label>
       <button type="button" class="btn sm good" data-action="bulk-mark-paid" ${plan.length ? "" : "disabled"}>Mark ${plan.length} paid for ${esc(fmtBillLabel(ym))}</button>
       ${(() => { const u = bulkUnpaidPlan(ym); return `<button type="button" class="btn sm danger" data-action="bulk-mark-unpaid" ${u.remove.length ? "" : "disabled"} title="Removes Mark paid entries (no receipt) for ${esc(fmtBillLabel(ym))}. Payments with a receipt are never removed here.">Mark ${u.kids} unpaid</button>${u.locked ? `<span class="bar-note">${u.locked} already verified — only a superadmin can undo those</span>` : ""}`; })()}
@@ -1529,9 +1536,9 @@ window.kumonPtcNav = function(client, role){
       <div class="modal-head"><h3>Mark paid — ${esc(displayName(s))}</h3><button class="iconbtn" data-action="close-modal">✕</button></div>
       <form id="markPaidForm" data-student="${esc(studentId)}">
         <div class="modal-body" style="display:grid; gap:12px;">
-          <label class="field">Tuition for
+          <label class="field">Payment month
             <select name="month" id="markPaidMonth">
-              ${months.map(ym => `<option value="${esc(ym)}"${ym === pick ? " selected" : ""}>${esc(fmtBillLabel(ym))} — due ${esc(dueDateLabel(ym))}${ym === selectedMonth ? " (this month)" : ""}</option>`).join("")}
+              ${months.map(ym => `<option value="${esc(ym)}"${ym === pick ? " selected" : ""}>${esc(billFullLabel(ym))}${ym === selectedMonth ? " (this month)" : ""}</option>`).join("")}
             </select>
           </label>
           <div class="hint" id="markPaidSummary" style="font-size:14px;">${markPaidSummary(studentId, pick)}</div>
@@ -2164,7 +2171,7 @@ window.kumonPtcNav = function(client, role){
   }
 
   function renderTable(){
-    $("#tableTitle").textContent = `${fmtBillLabel(selectedMonth)} — due ${dueDateLabel(selectedMonth)}`;
+    $("#tableTitle").textContent = billFullLabel(selectedMonth);
     const rows = filteredRows();
     $("#tableCount").textContent = rows.length ? `${rows.length} student${rows.length===1?"":"s"}` : "";
     const body = $("#paymentsBody");
@@ -2479,9 +2486,9 @@ window.kumonPtcNav = function(client, role){
           <label class="field">Student
             <select name="studentId" required>${studentOptions(studentId)}</select>
           </label>
-          <label class="field">Tuition for
+          <label class="field">Payment month
             <select name="coversMonth" required>
-              ${markPaidMonths().map(ym => `<option value="${esc(reportYm(ym))}"${ym === (studentId ? oldestOwedMonth(studentId, selectedMonth) : selectedMonth) ? " selected" : ""}>${esc(fmtBillLabel(ym))} — due ${esc(dueDateLabel(ym))}${ym === selectedMonth ? " (this month)" : ""}</option>`).join("")}
+              ${markPaidMonths().map(ym => `<option value="${esc(reportYm(ym))}"${ym === (studentId ? oldestOwedMonth(studentId, selectedMonth) : selectedMonth) ? " selected" : ""}>${esc(billFullLabel(ym))}${ym === selectedMonth ? " (this month)" : ""}</option>`).join("")}
             </select>
           </label>
           <div id="payMonthWarn"></div>
@@ -2559,7 +2566,7 @@ window.kumonPtcNav = function(client, role){
       return `<div class="receipt-row">
         <div class="receipt-thumb">🧾</div>
         <div class="receipt-info">
-          <b>${peso(r.amount)} — ${esc(monthLabel)}</b>${allocationLabel(r) ? `<span class="sub">${esc(allocationLabel(r))}</span>` : ""}
+          <b>${peso(r.amount)} — ${esc(monthLabel)}</b>${r.covers_month ? `<span class="sub">tuition for ${esc(tuitionForLabel(r.covers_month.slice(0,7)))}</span>` : ""}${allocationLabel(r) ? `<span class="sub">${esc(allocationLabel(r))}</span>` : ""}
           <span class="sub"><span class="pill ${esc(r.status)}">${esc(label)}</span>${r.reference_number ? " · ref #" + esc(r.reference_number) : ""}${r.uploaded_by ? " · logged by " + esc(r.uploaded_by) : ""}</span>
           ${r.status === "flagged" && r.status_note ? `<span class="note">Flagged: ${esc(r.status_note)}</span>` : ""}
           ${r.receipt_path ? `<a href="#" data-action="view-receipt" data-id="${esc(r.id)}" style="font-size:12px;">View receipt photo</a>` : ""}

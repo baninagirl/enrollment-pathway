@@ -1282,6 +1282,33 @@ window.kumonPtcNav = function(client, role){
   // The report's paid/unpaid is for the month AFTER the report month (October's report shows
   // November's tuition) — saved with each row when the month is closed out (phase42).
   function reportPaymentMonth(){ return shiftMonth(monthKeyOf(viewMonth), 1); }
+  // Closed months (Nov 16): Paid / Unpaid is worked out LIVE from today's payments, so a late payment still
+  // shows up in a closed month. Tuition due = rate × the subjects that child had in that month's report.
+  function closedPaymentStatus(studentId, ym, cycleKey){
+    const s = students.find(x => x.id === studentId);
+    if(!s) return null;
+    const subj = new Set(history.filter(h => h.cycle_key === cycleKey && h.student_id === studentId).map(h => h.subject)).size || 1;
+    return verifiedPaidFor(studentId, ym) >= tuitionRateFor(s) * subj ? "paid" : "unpaid";
+  }
+  function livePaymentPillClosed(studentId, ym, cycleKey){
+    const st = closedPaymentStatus(studentId, ym, cycleKey), bill = fmtMonthLabelYm(shiftYmBack(ym));
+    if(st === "paid") return `<span class="pill payment-paid" title="${esc(bill)} bill — checked against today's payments">Paid</span>`;
+    if(st === "unpaid") return `<span class="pill payment-unpaid" title="${esc(bill)} bill — still unpaid today">Unpaid</span>`;
+    return `<span class="lvl empty-lvl">—</span>`;
+  }
+  // Potential absent (Nov 16): on the open month's report, a child who was on LAST month's closed report and still
+  // hasn't paid last month's bill. Only a flag — nobody is marked absent by it, and it disappears once they pay.
+  function potentialAbsent(r){
+    if(!isCurrentCycle() || (r.status || "active") !== "active") return false;
+    const prevKey = shiftMonth(monthKeyOf(viewMonth), -1);
+    if(!history.some(h => h.cycle_key === prevKey && h.subject_enrollment_id === r.id)) return false;
+    return closedPaymentStatus(r.student_id, shiftMonth(prevKey, 1), prevKey) === "unpaid";
+  }
+  function potentialAbsentPill(r){
+    if(!potentialAbsent(r)) return "";
+    const bill = monthLabel(monthFromKey(shiftMonth(monthKeyOf(viewMonth), -1)));
+    return ` <span class="pill payment-overdue" title="Still unpaid for the ${esc(bill)} bill. Mark them absent on Payments if they're not continuing, or mark paid if they paid.">Potential absent</span>`;
+  }
   function savedPaymentPill(status, ym){
     if(status === "paid") return `<span class="pill payment-paid" title="${esc(fmtMonthLabelYm(shiftYmBack(ym)))} report — saved at close-out">Paid</span>`;
     if(status === "unpaid") return `<span class="pill payment-unpaid" title="${esc(fmtMonthLabelYm(shiftYmBack(ym)))} report — saved at close-out">Unpaid</span>`;
@@ -1865,7 +1892,7 @@ window.kumonPtcNav = function(client, role){
       early +
       `Close out ${cycleLabel} for ${candidates.length} enrollment${candidates.length===1?"":"s"}?\n\n` +
       `This archives their current LWC, NWU, No. of days, No. of months, and Achievement test numbers under ${cycleLabel}, then clears those fields. ${nextLabel} becomes the open month.\n\n` +
-      `Level, Goal, Schedule, Mode, Award and Actual are untouched.`
+      `Actual is set to each child's LWC. Level, Schedule and Mode are untouched. A full backup is made first.`
     );
     if(!ok) return;
     // Paid / Unpaid is saved with the month for good, so get a fresh payments list first — never save from a
@@ -1891,7 +1918,7 @@ window.kumonPtcNav = function(client, role){
       goal_level: e.goal_level, goal_page: e.goal_page,
       lwc: e.lwc, nwu: e.nwu, no_of_days: e.no_of_days, no_of_months_current_level: e.no_of_months_current_level,
       test_date: e.test_date, test_level: e.test_level, test_time: e.test_time, test_score: e.test_score, test_group: e.test_group,
-      award: e.award, actual: e.actual,
+      award: e.award, actual: (e.lwc && String(e.lwc).trim()) ? e.lwc : e.actual,   // Actual = the month's last LWC (Nov 16)
       // Phase34: keep who was New / Monitor that month, so the report's sections still work for closed months.
       enrollment_type: e.enrollment_type || null, is_monitor: !!e.is_monitor, monitor_since: e.monitor_since || null, monitor_cycle: e.monitor_cycle || null,
       // Phase42: paid/unpaid for the month after this one, as it stood at close-out.
@@ -1905,7 +1932,7 @@ window.kumonPtcNav = function(client, role){
     // Snapshot each enrollment's own current numbers before they're cleared, so an undo can
     // put the exact prior values back rather than just guessing at blanks.
     const priorFieldValues = candidates.map(e => ({
-      id: e.id,
+      id: e.id, actual: e.actual,
       lwc: e.lwc, nwu: e.nwu, no_of_days: e.no_of_days, no_of_months_current_level: e.no_of_months_current_level,
       test_date: e.test_date, test_level: e.test_level, test_time: e.test_time, test_score: e.test_score, test_group: e.test_group
     }));
@@ -1936,6 +1963,14 @@ window.kumonPtcNav = function(client, role){
       alert(`Archived, but ${clearError ? "clearing the numbers stopped partway (" + clearError.message + ")" : "the database didn't allow clearing some of them"}: ${left} of ${candidateIds.length} enrollments still show last month's NWU / days / test numbers.\n\nThe archive is saved. Clear those numbers on the Reporting page before teachers fill in the new month.`);
     }
 
+    // Actual = this month's last LWC (Nov 16, phase142). One database call per 500 subjects.
+    let actualErr = null;
+    for(let i = 0; i < candidateIds.length && !actualErr; i += 500){
+      const { error } = await sbClient.rpc("set_actual_from_lwc", { p_ids: candidateIds.slice(i, i + 500) });
+      if(error) actualErr = error;
+    }
+    if(actualErr) alert(`Archived, but Actual couldn't be filled in from the LWC (${/set_actual_from_lwc|schema cache|does not exist/i.test(actualErr.message || "") ? "run phase142 in Supabase" : actualErr.message}). Everything else went through.`);
+
     // Move the open month on (phase38).
     const prevOpenKey = openMonthKey;
     let advanced = false;
@@ -1945,7 +1980,9 @@ window.kumonPtcNav = function(client, role){
     await Promise.all([loadEnrollments(), loadHistory()]);
     if(advanced) viewMonth = monthFromKey(openKey());
     renderBoth();
-    alert(`${candidates.length} enrollment${candidates.length===1?"":"s"} closed out for ${cycleLabel}.${advanced ? ` ${nextLabel} is now the open month.` : ""}`);
+    const unpaidKids = [...new Set(candidates.map(e => e.student_id))].filter(sid => closedPaymentStatus(sid, shiftMonth(cycleKey, 1), cycleKey) === "unpaid").length;
+    alert(`${candidates.length} enrollment${candidates.length===1?"":"s"} closed out for ${cycleLabel}.${advanced ? ` ${nextLabel} is now the open month.` : ""}` +
+      (unpaidKids ? `\n\n${unpaidKids} child${unpaidKids===1?" is":"ren are"} still unpaid for the ${cycleLabel} bill. They show as "Potential absent" on the ${nextLabel} report until they pay or are marked absent.` : ""));
 
     const label = `Close out ${cycleLabel} (${candidates.length})`;
     logHistory("close_out_month", label, "enrollment_monthly_history", cycleKey);
@@ -2038,7 +2075,7 @@ window.kumonPtcNav = function(client, role){
         <td>${fmtPlain(r.test_score)}</td>
         <td>${fmtPlain(r.test_group)}</td>
         <td>${esc(gradeFor(r.student_id) || "—")}</td>
-        <td>${editable ? fmtPaymentPill(r.student_id, reportPaymentMonth()) : savedPaymentPill(r.payment_status, r.payment_month || reportPaymentMonth())}</td>
+        <td>${editable ? fmtPaymentPill(r.student_id, reportPaymentMonth()) + potentialAbsentPill(r) : livePaymentPillClosed(r.student_id, r.payment_month || reportPaymentMonth(), monthKeyOf(viewMonth))}</td>
         <td>${fmtMode(r.mode)}</td>
       </tr>`;
   }
@@ -2054,7 +2091,7 @@ window.kumonPtcNav = function(client, role){
       <form id="reportForm">
         <div class="modal-body">
           <label class="field">Reporting tag${reportTagSelect(e.enrollment_type || "", "enrollment_type")}</label>
-          <p class="hint" style="font-size:12px; color:var(--ink-muted); margin:0;">${esc(monthLabel(viewMonth))}'s numbers. The LWC is the same as the level and page on the Student Roster — saving it here updates both. Goal, Schedule, Mode, Award and Actual are edited from the Student Roster view.</p>
+          <p class="hint" style="font-size:12px; color:var(--ink-muted); margin:0;">${esc(monthLabel(viewMonth))}'s numbers. The LWC is the same as the level and page on the Student Roster — saving it here updates both. Schedule and Mode are edited from the Student Roster view; Actual is filled in from the LWC when the month is closed out.</p>
           <div class="field-row">
             <label class="field">LWC<input type="text" name="lwc" value="${v("lwc")}" placeholder="e.g. 3A 80"></label>
             <label class="field">NWU (worksheets used)<input type="text" name="nwu" value="${v("nwu")}" placeholder="e.g. 31"></label>
@@ -2212,7 +2249,7 @@ window.kumonPtcNav = function(client, role){
           <td>${e.archived ? (Array.isArray(e.schedule_slots) && e.schedule_slots.length ? fmtSlots(e.schedule_slots) : `<span class="lvl empty-lvl" title="This month was closed out before schedules were saved with it.">not tracked</span>`) : fmtSchedule(e)}</td>
           <td>${fmtMode(e.mode)}</td>
           <td><span class="pill ${(e.status||'active')==='inactive'?'status-inactive':'status-active'}">${(e.status||"active")==="inactive"?"Inactive":"Active"}</span></td>
-          <td>${e.archived ? savedPaymentPill(e.payment_status, e.payment_month || shiftMonth(monthKeyOf(viewMonth), 1)) : (e.status||"active")==="inactive" ? `<span class="lvl empty-lvl">—</span>` : fmtPaymentPill(e.student_id)}</td>
+          <td>${e.archived ? livePaymentPillClosed(e.student_id, e.payment_month || shiftMonth(monthKeyOf(viewMonth), 1), monthKeyOf(viewMonth)) : (e.status||"active")==="inactive" ? `<span class="lvl empty-lvl">—</span>` : fmtPaymentPill(e.student_id)}</td>
           <td>${e.archived ? (e.enrolled_on ? fmtEnrolledDate(e.enrolled_on) : `<span class="lvl empty-lvl" title="This month was closed out before the enrollment date was saved with it.">not tracked</span>`) : fmtEnrolledDate(e.enrolled_on || e.created_at)}</td>
         </tr>
       `).join("");
@@ -2442,10 +2479,8 @@ window.kumonPtcNav = function(client, role){
             <label class="field">LWC page<input type="text" name="current_page" placeholder="No change"></label>
           </div>
           <div class="field-row">
-            <label class="field">Goal level<input type="text" name="goal_level" placeholder="No change"></label>
-            <label class="field">Goal page<input type="text" name="goal_page" placeholder="No change"></label>
           </div>
-          <p class="hint" style="font-size:11.5px; color:var(--ink-faint); margin:0;">Changing subject on a mixed Math/Reading batch? The level fields above use whichever code you type, so set Current/Goal level here too if the old ones won't make sense under the new subject.</p>
+          <p class="hint" style="font-size:11.5px; color:var(--ink-faint); margin:0;">Changing subject on a mixed Math/Reading batch? The level fields above use whichever code you type, so set Current level here too if the old ones won't make sense under the new subject.</p>
         </div>
         <div class="modal-foot">
           <div></div>
@@ -2713,6 +2748,9 @@ window.kumonPtcNav = function(client, role){
         updated_at: new Date().toISOString()
       };
       const reportEnrollment = enrollments.find(en => en.id === id);
+      // Level follows LWC (Nov 16): "C 11" / "C11" / "2A 120" / "AII 50" → level C / 2A / AII, page 11 / 120 / 50.
+      { const m = String(patch.lwc || "").trim().toUpperCase().match(/^([0-9]?[A-Z]+)\s*-?\s*(\d+)?$/);
+        if(m){ patch.current_level = m[1]; if(m[2]) patch.current_page = m[2]; } }
       // Reporting tag — only written when it actually changed, so its set-at date only moves for real corrections.
       const newTag = fd.get("enrollment_type") || null;
       if(fd.get("enrollment_type") !== null && newTag !== ((reportEnrollment && reportEnrollment.enrollment_type) || null)){
@@ -2737,7 +2775,7 @@ window.kumonPtcNav = function(client, role){
       if(status && status !== "__nochange__") patch.status = status;
       const repTag = (fd.get("enrollment_type") || "__nochange__").toString();
       if(repTag !== "__nochange__"){ patch.enrollment_type = repTag === "__clear__" ? null : repTag; patch.enrollment_type_set_at = new Date().toISOString(); }
-      ["current_level","current_page","goal_level","goal_page"].forEach(key=>{
+      ["current_level","current_page"].forEach(key=>{
         const v = (fd.get(key)||"").toString().trim();
         if(v) patch[key] = v;
       });
