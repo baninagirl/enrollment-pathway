@@ -1211,8 +1211,41 @@ window.kumonPtcNav = function(client, role){
         <select id="bulkPaidMonth">${markPaidMonths().map(m => `<option value="${esc(m)}" ${m === ym ? "selected" : ""}>${esc(fmtBillLabel(m))}</option>`).join("")}</select>
       </label>
       <button type="button" class="btn sm good" data-action="bulk-mark-paid" ${plan.length ? "" : "disabled"}>Mark ${plan.length} paid for ${esc(fmtBillLabel(ym))}</button>
+      ${(() => { const u = bulkUnpaidPlan(ym); return `<button type="button" class="btn sm danger" data-action="bulk-mark-unpaid" ${u.remove.length ? "" : "disabled"} title="Removes Mark paid entries (no receipt) for ${esc(fmtBillLabel(ym))}. Payments with a receipt are never removed here.">Mark ${u.kids} unpaid</button>${u.locked ? `<span class="bar-note">${u.locked} already verified — only a superadmin can undo those</span>` : ""}`; })()}
       ${soaSelected.size > plan.length ? `<span class="bar-note">${soaSelected.size - plan.length} already paid</span>` : ""}
       ${owesEarlier ? `<span class="bar-note warn">${owesEarlier} still owe${owesEarlier === 1 ? "s" : ""} an earlier month</span>` : ""}`;
+  }
+  // Bulk Mark unpaid: removes the "Marked paid (no receipt)" entries for the chosen month. Payments with a
+  // receipt / reference are never touched here (use the row's 🕘 history for those). Teachers can only remove
+  // ones still waiting for review — same rule as the 🗑 button; a superadmin can remove verified ones too.
+  function bulkUnpaidPlan(ym){
+    const sel = soaSelected, monthDate = monthToDate(ym);
+    const mine = receipts.filter(r => sel.has(r.student_id) && r.covers_month === monthDate
+      && r.reference_number === "Marked paid (no receipt)" && (r.status === "pending" || r.status === "verified"));
+    const remove = mine.filter(r => canDeleteReceipt(r));
+    return { remove, kids: new Set(remove.map(r => r.student_id)).size, locked: new Set(mine.filter(r => !canDeleteReceipt(r)).map(r => r.student_id)).size };
+  }
+  async function bulkMarkUnpaid(){
+    if(bulkPaidBusy) return;
+    bulkPaidBusy = true;
+    try{
+      if(!(await loadReceipts())){ toast("Couldn't check the latest payments — nothing was changed. Try again."); return; }
+      const ym = bulkPaidMonthNow(), { remove } = bulkUnpaidPlan(ym);
+      if(!remove.length){ render(); toast(`Nothing to mark unpaid for ${fmtBillLabel(ym)}.`); return; }
+      const { data: gone, error } = await sbClient.from("payment_receipts").delete().in("id", remove.map(r => r.id)).select("id");
+      if(error){ toast("Couldn't mark them unpaid: " + error.message); return; }
+      const goneIds = new Set((gone || []).map(r => r.id)), removed = remove.filter(r => goneIds.has(r.id));
+      if(!removed.length){ await loadReceipts(); render(); toast("Couldn't mark them unpaid — they may have just been verified."); return; }
+      const kids = new Set(removed.map(r => r.student_id)).size;
+      const label = `Marked ${kids} student${kids === 1 ? "" : "s"} unpaid for ${fmtBillLabel(ym)}`;
+      logHistory("mark_unpaid_bulk", label + ` (removed ${removed.length} Mark paid entr${removed.length === 1 ? "y" : "ies"})`);
+      soaSelected.clear();
+      await loadReceipts(); render();
+      toast(label + (removed.length < remove.length ? ` — ${remove.length - removed.length} couldn't be removed (already verified).` : "."));
+      pushUndo(label,
+        async ()=>{ const { error } = await sbClient.from("payment_receipts").insert(removed); if(error) throw error; await loadReceipts(); render(); },
+        async ()=>{ const { error } = await sbClient.from("payment_receipts").delete().in("id", removed.map(r => r.id)); if(error) throw error; await loadReceipts(); render(); });
+    } finally { bulkPaidBusy = false; }
   }
   let bulkPaidBusy = false;
   async function bulkMarkPaid(){
@@ -2982,6 +3015,7 @@ window.kumonPtcNav = function(client, role){
       }
     }
     else if(action === "bulk-mark-paid"){ await bulkMarkPaid(); }
+    else if(action === "bulk-mark-unpaid"){ await bulkMarkUnpaid(); }
     else if(action === "mark-paid"){ markPaid(btn.dataset.student); }
     else if(action === "open-log-payment"){ openLogPaymentModal(btn.dataset.student || null); }
     else if(action === "mark-absent"){ openMarkAbsentModal(btn.dataset.student); }
