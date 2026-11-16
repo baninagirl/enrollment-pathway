@@ -727,11 +727,11 @@ window.kumonPtcNav = function(client, role){
       const months = [];
       const histKeys = [...new Set(hist.map(h => h.cycle_key))].sort();
       histKeys.forEach(k => months.push({ key:k, closed:true, rows: hist.filter(h => h.cycle_key === k).map(h => ({
-        sid:h.student_id, name:h.student_name, subject:h.subject, mode:h.mode, lwc:h.lwc, nwu:h.nwu,
+        sid:h.student_id, name:h.student_name, teacher:h.teacher, subject:h.subject, mode:h.mode, lwc:h.lwc, nwu:h.nwu,
         test:[h.test_date, h.test_level, h.test_time, h.test_score, h.test_group], enrolled:h.enrolled_on, slots:h.schedule_slots })) }));
       if(openKey && !histKeys.includes(openKey)) months.push({ key:openKey, closed:false, rows: enrolls.filter(e => (e.status||"active") === "active").map(e => {
         const sc = schedFor(e.id);
-        return { sid:e.student_id, name:e.student_name, subject:e.subject, mode:e.mode, lwc:e.lwc, nwu:e.nwu,
+        return { sid:e.student_id, name:e.student_name, teacher:e.teacher, subject:e.subject, mode:e.mode, lwc:e.lwc, nwu:e.nwu,
           test:[e.test_date, e.test_level, e.test_time, e.test_score, e.test_group],
           enrolled: e.enrolled_on || (e.created_at ? new Date(Date.parse(e.created_at) + 8*3600e3).toISOString().slice(0,10) : ""),
           slots: sc && Array.isArray(sc.slots) ? sc.slots : null }; }) });
@@ -746,27 +746,37 @@ window.kumonPtcNav = function(client, role){
 
       months.forEach(mo => {
         const label = xlMonthName(mo.key).split(" ")[0].toUpperCase();
-        const ws = wb.addWorksheet(`${xlShortMonth(mo.key)} report${mo.closed ? "" : " (open)"}`.slice(0, 31), { views:[{ state:"frozen", xSplit:7, ySplit:2 }] });
+        const ws = wb.addWorksheet(`${xlShortMonth(mo.key)} report${mo.closed ? "" : " (open)"}`.slice(0, 31), { views:[{ state:"frozen", xSplit:8, ySplit:2 }] });
         const payCols = billKeys.filter(k => k <= xlShift(mo.key, 1));   // payment history up to this report's next bill
-        const base = 15, totalCols = base + payCols.length;
+        const base = 16, totalCols = base + payCols.length;
         // Row 1: groups · Row 2: sub-headers (same layout as the old sheet)
-        const top = ["SCHEDULE","","GRADE","SUBJECT","DATE ENROLLED","NAME","",`${label} REPORT`,"LWU","NWU","ACHIEVEMENT TEST","","","","", ...payCols.map((_,i) => i ? "" : "PAYMENT HISTORY")];
-        const sub = ["TIME","SCHED","","","","LAST NAME","FIRST NAME","KC/PAPER","","","DATE","LEVEL","TIME","SCORE","GROUP", ...payCols.map(k => `${xlShortMonth(k)}\nfor ${xlMonthName(xlShift(k,1)).split(" ")[0]}`)];
+        const top = ["TEACHER","SCHEDULE","","GRADE","SUBJECT","DATE ENROLLED","NAME","",`${label} REPORT`,"LWU","NWU","ACHIEVEMENT TEST","","","","", ...payCols.map((_,i) => i ? "" : "PAYMENT HISTORY")];
+        const sub = ["","TIME","SCHED","","","","LAST NAME","FIRST NAME","KC/PAPER","","","DATE","LEVEL","TIME","SCORE","GROUP", ...payCols.map(k => `${xlShortMonth(k)}\nfor ${xlMonthName(xlShift(k,1)).split(" ")[0]}`)];
         ws.addRow(top); ws.addRow(sub);
-        ["A1:B1","F1:G1","K1:O1"].forEach(r => ws.mergeCells(r));
-        ["C1:C2","D1:D2","E1:E2","I1:I2","J1:J2"].forEach(r => ws.mergeCells(r));
+        ["B1:C1","G1:H1","L1:P1"].forEach(r => ws.mergeCells(r));
+        ["A1:A2","D1:D2","E1:E2","F1:F2","J1:J2","K1:K2"].forEach(r => ws.mergeCells(r));
         if(payCols.length > 1) ws.mergeCells(1, base+1, 1, totalCols);
-        for(let c = 1; c <= totalCols; c++){ styleHead(ws.getCell(1, c), DARK); styleHead(ws.getCell(2, c), [3,4,5,9,10].includes(c) ? DARK : LIGHT); }
+        for(let c = 1; c <= totalCols; c++){ styleHead(ws.getCell(1, c), DARK); styleHead(ws.getCell(2, c), [1,4,5,6,10,11].includes(c) ? DARK : LIGHT); }
         ws.getRow(1).height = 34; ws.getRow(2).height = 34;
 
         const subjCount = new Map(); mo.rows.forEach(r => subjCount.set(r.sid, (subjCount.get(r.sid) || 0) + 1));
         const rows = mo.rows.map(r => ({ ...r, nm: nameOf(r.sid, r.name) }))
-          .sort((a,b) => (a.nm.last + " " + a.nm.first).localeCompare(b.nm.last + " " + b.nm.first) || String(a.subject).localeCompare(String(b.subject)));
+          .sort((a,b) => String(a.teacher || "~").localeCompare(String(b.teacher || "~")) || (a.nm.last + " " + a.nm.first).localeCompare(b.nm.last + " " + b.nm.first) || String(a.subject).localeCompare(String(b.subject)));
+        let lastTeacher = null;
         rows.forEach(r => {
+          if((r.teacher || "") !== lastTeacher){
+            lastTeacher = r.teacher || "";
+            const n = rows.filter(x => (x.teacher || "") === lastTeacher).length;
+            const sec = ws.addRow([`${(lastTeacher || "No teacher").toUpperCase()}  (${n})`]);
+            ws.mergeCells(sec.number, 1, sec.number, totalCols);
+            const c = sec.getCell(1); c.font = { bold:true, size:12 }; c.alignment = { vertical:"middle" };
+            c.fill = { type:"pattern", pattern:"solid", fgColor:{ argb:"FFE8F1DF" } }; c.border = box; sec.height = 22;
+          }
           const sl = (Array.isArray(r.slots) ? r.slots : []).filter(x => x && x.day)
             .sort((a,b) => XL_DAYS.indexOf(String(a.day).slice(0,3).toUpperCase()) - XL_DAYS.indexOf(String(b.day).slice(0,3).toUpperCase()));
           const st = students.get(r.sid) || {};
           const row = ws.addRow([
+            r.teacher || "",
             sl.map(x => xlTime12(x.time)).join("\n"),
             sl.map(x => `${String(x.day).slice(0,3).toUpperCase()} (${x.mode === "RI" ? "RI" : "IC"})`).join("\n"),
             st.age_grade || "", (r.subject || "").toUpperCase(), xlDate(r.enrolled),
@@ -775,12 +785,12 @@ window.kumonPtcNav = function(client, role){
             ...payCols.map(k => payCell(r.sid, k, subjCount.get(r.sid) || 1))
           ]);
           row.eachCell({ includeEmpty:true }, (cell, col) => {
-            cell.border = box; cell.alignment = { vertical:"middle", wrapText:true, horizontal: col <= 2 || col >= 8 ? "center" : "left" };
+            cell.border = box; cell.alignment = { vertical:"middle", wrapText:true, horizontal: (col >= 2 && col <= 3) || col >= 9 ? "center" : "left" };
             if(col > base){ const v = String(cell.value || "");
               cell.font = { color:{ argb: v === "Paid" ? "FF1E7B4A" : v === "Unpaid" ? "FFC23B2B" : "FF8A6A1A" }, bold: v === "Unpaid" }; }
           });
         });
-        const widths = [11,13,8,10,15,18,24,15,10,8,13,9,9,8,9, ...payCols.map(() => 15)];
+        const widths = [16,11,13,8,10,15,18,24,15,10,8,13,9,9,8,9, ...payCols.map(() => 15)];
         widths.forEach((w,i) => ws.getColumn(i+1).width = w);
       });
 
