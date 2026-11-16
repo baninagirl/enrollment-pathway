@@ -669,46 +669,151 @@ window.kumonPtcNav = function(client, role){
     setTimeout(() => URL.revokeObjectURL(a.href), 4000);
   }
 
-  // Excel copy of a backup (Nov 16): one tab per table, readable in Excel / Google Sheets. SheetJS loads only when needed.
-  const BACKUP_SHEET_NAMES = {
-    students:"Students", subject_enrollments:"Subjects", payment_receipts:"Payments", enrollment_monthly_history:"Closed months",
-    absence_records:"Absences", absence_notes:"Absence notes", study_projections:"Projections", schedules:"Schedules",
-    schedule_moves:"Schedule moves", billing_groups:"Family groups", payment_soa:"SOA ticks", settings:"Settings",
-    ptc_weeks:"PTC weeks", ptc_sessions:"PTC sessions", ptc_families:"PTC families", ptc_milestones:"PTC milestones",
-    ws_settings:"Worksheet settings", ws_orders:"Worksheet orders", ws_counts:"Worksheet counts"
-  };
-  function loadSheetJs(){
-    if(window.XLSX) return Promise.resolve();
+  // Excel copy of a backup (Nov 16): laid out like the old monthly Google Sheet report — one tab per report month
+  // (Schedule · Grade · Subject · Date enrolled · Name · KC/Paper · LWU · NWU · Achievement test · Payment history),
+  // plus a Payments tab. ExcelJS (styles, merged headers) loads only when needed.
+  function loadExcelJs(){
+    if(window.ExcelJS) return Promise.resolve();
     return new Promise((ok, bad) => {
       const sc = document.createElement("script");
-      sc.src = "https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js";
+      sc.src = "https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js";
       sc.onload = () => ok(); sc.onerror = () => bad(new Error("Couldn't load the Excel tool — check the connection."));
       document.head.appendChild(sc);
     });
   }
+  const XL_DAYS = ["MON","TUE","WED","THU","FRI","SAT","SUN"];
+  function xlTime12(t){ if(!t) return ""; let [h,m] = String(t).split(":").map(Number); const ap = h >= 12 ? "PM" : "AM"; h = h % 12 || 12; return `${h}:${String(m||0).padStart(2,"0")} ${ap}`; }
+  function xlMonthName(key){ const [y,m] = key.split("-").map(Number); return new Date(y, m-1, 1).toLocaleDateString("en-US", { month:"long", year:"numeric" }); }
+  function xlShortMonth(key){ const [y,m] = key.split("-").map(Number); return new Date(y, m-1, 1).toLocaleDateString("en-US", { month:"short", year:"numeric" }); }
+  function xlShift(key, d){ const [y,m] = key.split("-").map(Number); const t = new Date(y, m-1+d, 1); return `${t.getFullYear()}-${String(t.getMonth()+1).padStart(2,"0")}`; }
+  function xlDate(iso){ if(!iso) return ""; const d = new Date(String(iso).slice(0,10) + "T00:00:00"); return isNaN(d) ? String(iso) : d.toLocaleDateString("en-US", { month:"short", day:"numeric", year:"numeric" }); }
+  function xlRate(st){ const g = String((st && st.age_grade) || "").trim().toUpperCase(); const n = (g.match(/(\d+)/) || [])[1];
+    return (!/^(K|PK)/.test(g) && n && Number(n) >= 7) ? 2350 : (Number(st && st.monthly_tuition) || 2200); }
+
   async function downloadBackupXlsx(id, btn){
     btn.disabled = true; btn.textContent = "Preparing…";
     try{
-      await loadSheetJs();
+      await loadExcelJs();
       const { data, error } = await sbClient.from("hub_backups").select("*").eq("id", id).maybeSingle();
       if(error || !data) throw new Error(error ? error.message : "Backup not found.");
-      const wb = XLSX.utils.book_new();
-      const info = [["Kumon Hub backup"], ["Name", data.label || ""], ["Made", new Date(data.created_at).toLocaleString()], ["By", data.made_by || ""], [], ["Tab", "Rows"]];
-      const tables = Object.keys(data.data || {});
-      const order = Object.keys(BACKUP_SHEET_NAMES).filter(t => tables.includes(t)).concat(tables.filter(t => !BACKUP_SHEET_NAMES[t]));
-      order.forEach(t => info.push([BACKUP_SHEET_NAMES[t] || t, (data.data[t] || []).length]));
-      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(info), "About");
-      order.forEach(t => {
-        const rows = (data.data[t] || []).map(r => {
-          const o = {};
-          Object.entries(r).forEach(([k, v]) => { o[k] = v !== null && typeof v === "object" ? JSON.stringify(v) : v; });
-          return o;
+      const D = data.data || {};
+      const students = new Map((D.students || []).map(x => [x.id, x]));
+      const enrolls = D.subject_enrollments || [], hist = D.enrollment_monthly_history || [], pays = D.payment_receipts || [];
+      const scheds = D.schedules || [];
+      const groups = new Map((D.billing_groups || []).map(g => [g.id, g.name]));
+      const openRow = (D.settings || []).find(x => x.id === "open_month");
+      const openKey = (openRow && openRow.value && openRow.value.key) || null;
+      const schedFor = eid => { const xs = scheds.filter(sc => sc.subject_enrollment_id === eid);
+        return xs.sort((a,b) => ((b.status === "active") - (a.status === "active")) || String(b.created_at||"").localeCompare(String(a.created_at||"")))[0] || null; };
+      const nameOf = (sid, fallback) => { const st = students.get(sid);
+        if(st && (st.last_name || st.first_name)) return { last: st.last_name || "", first: st.first_name || "" };
+        const t = String(fallback || (st && st.name) || ""); const k = t.indexOf(","); return k > 0 ? { last: t.slice(0,k).trim(), first: t.slice(k+1).trim() } : { last: t, first: "" }; };
+
+      // Payment months (by bill month = covers − 1), oldest first.
+      const billKeys = [...new Set(pays.filter(r => r.covers_month).map(r => xlShift(String(r.covers_month).slice(0,7), -1)))].sort();
+      const payCell = (sid, billKey, subjCount) => {
+        const covers = xlShift(billKey, 1) + "-01";
+        const mine = pays.filter(r => r.student_id === sid && String(r.covers_month).slice(0,10) === covers);
+        const ver = mine.filter(r => r.status === "verified").reduce((a,r) => a + Number(r.amount||0), 0);
+        const pen = mine.filter(r => r.status === "pending").reduce((a,r) => a + Number(r.amount||0), 0);
+        const due = xlRate(students.get(sid)) * Math.max(subjCount, 1);
+        if(ver >= due) return "Paid";
+        if(ver > 0) return `Partial ₱${ver.toLocaleString("en-US")}`;
+        if(pen > 0) return "Waiting";
+        return "Unpaid";
+      };
+
+      // Report rows per month: closed months from Monthly history, the open month from the live subjects.
+      const months = [];
+      const histKeys = [...new Set(hist.map(h => h.cycle_key))].sort();
+      histKeys.forEach(k => months.push({ key:k, closed:true, rows: hist.filter(h => h.cycle_key === k).map(h => ({
+        sid:h.student_id, name:h.student_name, subject:h.subject, mode:h.mode, lwc:h.lwc, nwu:h.nwu,
+        test:[h.test_date, h.test_level, h.test_time, h.test_score, h.test_group], enrolled:h.enrolled_on, slots:h.schedule_slots })) }));
+      if(openKey && !histKeys.includes(openKey)) months.push({ key:openKey, closed:false, rows: enrolls.filter(e => (e.status||"active") === "active").map(e => {
+        const sc = schedFor(e.id);
+        return { sid:e.student_id, name:e.student_name, subject:e.subject, mode:e.mode, lwc:e.lwc, nwu:e.nwu,
+          test:[e.test_date, e.test_level, e.test_time, e.test_score, e.test_group],
+          enrolled: e.enrolled_on || (e.created_at ? new Date(Date.parse(e.created_at) + 8*3600e3).toISOString().slice(0,10) : ""),
+          slots: sc && Array.isArray(sc.slots) ? sc.slots : null }; }) });
+
+      const wb = new ExcelJS.Workbook();
+      wb.creator = "Kumon Hub"; wb.created = new Date(data.created_at);
+      const DARK = "FF7AA95C", LIGHT = "FFC0D9A8";
+      const thin = { style:"thin", color:{ argb:"FF000000" } };
+      const box = { top:thin, left:thin, bottom:thin, right:thin };
+      const styleHead = (cell, fill) => { cell.font = { bold:true, size:11, color:{ argb:"FF000000" } }; cell.alignment = { horizontal:"center", vertical:"bottom", wrapText:true };
+        cell.fill = { type:"pattern", pattern:"solid", fgColor:{ argb:fill } }; cell.border = box; };
+
+      months.forEach(mo => {
+        const label = xlMonthName(mo.key).split(" ")[0].toUpperCase();
+        const ws = wb.addWorksheet(`${xlShortMonth(mo.key)} report${mo.closed ? "" : " (open)"}`.slice(0, 31), { views:[{ state:"frozen", xSplit:7, ySplit:2 }] });
+        const payCols = billKeys.filter(k => k <= xlShift(mo.key, 1));   // payment history up to this report's next bill
+        const base = 15, totalCols = base + payCols.length;
+        // Row 1: groups · Row 2: sub-headers (same layout as the old sheet)
+        const top = ["SCHEDULE","","GRADE","SUBJECT","DATE ENROLLED","NAME","",`${label} REPORT`,"LWU","NWU","ACHIEVEMENT TEST","","","","", ...payCols.map((_,i) => i ? "" : "PAYMENT HISTORY")];
+        const sub = ["TIME","SCHED","","","","LAST NAME","FIRST NAME","KC/PAPER","","","DATE","LEVEL","TIME","SCORE","GROUP", ...payCols.map(k => `${xlShortMonth(k)}\nfor ${xlMonthName(xlShift(k,1)).split(" ")[0]}`)];
+        ws.addRow(top); ws.addRow(sub);
+        ["A1:B1","F1:G1","K1:O1"].forEach(r => ws.mergeCells(r));
+        ["C1:C2","D1:D2","E1:E2","I1:I2","J1:J2"].forEach(r => ws.mergeCells(r));
+        if(payCols.length > 1) ws.mergeCells(1, base+1, 1, totalCols);
+        for(let c = 1; c <= totalCols; c++){ styleHead(ws.getCell(1, c), DARK); styleHead(ws.getCell(2, c), [3,4,5,9,10].includes(c) ? DARK : LIGHT); }
+        ws.getRow(1).height = 34; ws.getRow(2).height = 34;
+
+        const subjCount = new Map(); mo.rows.forEach(r => subjCount.set(r.sid, (subjCount.get(r.sid) || 0) + 1));
+        const rows = mo.rows.map(r => ({ ...r, nm: nameOf(r.sid, r.name) }))
+          .sort((a,b) => (a.nm.last + " " + a.nm.first).localeCompare(b.nm.last + " " + b.nm.first) || String(a.subject).localeCompare(String(b.subject)));
+        rows.forEach(r => {
+          const sl = (Array.isArray(r.slots) ? r.slots : []).filter(x => x && x.day)
+            .sort((a,b) => XL_DAYS.indexOf(String(a.day).slice(0,3).toUpperCase()) - XL_DAYS.indexOf(String(b.day).slice(0,3).toUpperCase()));
+          const st = students.get(r.sid) || {};
+          const row = ws.addRow([
+            sl.map(x => xlTime12(x.time)).join("\n"),
+            sl.map(x => `${String(x.day).slice(0,3).toUpperCase()} (${x.mode === "RI" ? "RI" : "IC"})`).join("\n"),
+            st.age_grade || "", (r.subject || "").toUpperCase(), xlDate(r.enrolled),
+            r.nm.last.toUpperCase(), r.nm.first.toUpperCase(), r.mode === "KC" ? "KC" : (r.mode ? "PAPER" : ""),
+            r.lwc || "", r.nwu || "", xlDate(r.test[0]) || "", r.test[1] || "", r.test[2] || "", r.test[3] || "", r.test[4] || "",
+            ...payCols.map(k => payCell(r.sid, k, subjCount.get(r.sid) || 1))
+          ]);
+          row.eachCell({ includeEmpty:true }, (cell, col) => {
+            cell.border = box; cell.alignment = { vertical:"middle", wrapText:true, horizontal: col <= 2 || col >= 8 ? "center" : "left" };
+            if(col > base){ const v = String(cell.value || "");
+              cell.font = { color:{ argb: v === "Paid" ? "FF1E7B4A" : v === "Unpaid" ? "FFC23B2B" : "FF8A6A1A" }, bold: v === "Unpaid" }; }
+          });
         });
-        const ws = rows.length ? XLSX.utils.json_to_sheet(rows) : XLSX.utils.aoa_to_sheet([["(empty)"]]);
-        XLSX.utils.book_append_sheet(wb, ws, (BACKUP_SHEET_NAMES[t] || t).slice(0, 31));
+        const widths = [11,13,8,10,15,18,24,15,10,8,13,9,9,8,9, ...payCols.map(() => 15)];
+        widths.forEach((w,i) => ws.getColumn(i+1).width = w);
       });
+
+      // Payments: every payment, newest first.
+      const pw = wb.addWorksheet("Payments", { views:[{ state:"frozen", ySplit:1 }] });
+      pw.addRow(["LAST NAME","FIRST NAME","FAMILY GROUP","PAYMENT MONTH","TUITION FOR","AMOUNT","STATUS","REFERENCE","LOGGED BY","LOGGED ON"]);
+      for(let c = 1; c <= 10; c++) styleHead(pw.getCell(1, c), LIGHT);
+      pays.slice().sort((a,b) => String(b.created_at||"").localeCompare(String(a.created_at||""))).forEach(r => {
+        const nm = nameOf(r.student_id), st = students.get(r.student_id) || {}, ck = String(r.covers_month || "").slice(0,7);
+        const row = pw.addRow([nm.last.toUpperCase(), nm.first.toUpperCase(), groups.get(st.billing_group_id) || "",
+          ck ? xlMonthName(xlShift(ck, -1)) : "", ck ? xlMonthName(ck).split(" ")[0] : "", Number(r.amount || 0),
+          r.status === "verified" ? "Verified" : r.status === "pending" ? "Waiting for review" : r.status === "rejected" ? "Rejected" : (r.status || ""),
+          r.reference_number || "", r.uploaded_by || "", r.created_at ? new Date(r.created_at).toLocaleString("en-US", { timeZone:"Asia/Manila", month:"short", day:"numeric", year:"numeric", hour:"numeric", minute:"2-digit" }) : ""]);
+        row.getCell(6).numFmt = '"₱"#,##0';
+        row.eachCell({ includeEmpty:true }, c => { c.border = box; });
+      });
+      [18,24,16,16,12,11,18,26,30,22].forEach((w,i) => pw.getColumn(i+1).width = w);
+
+      // About
+      const ab = wb.addWorksheet("About");
+      [["Kumon Hub backup"], ["Name", data.label || ""], ["Made", new Date(data.created_at).toLocaleString()], ["By", data.made_by || ""], [],
+       ["Payment months follow the old sheets: \"October 2026\" = billed Oct 15, due Oct 25, tuition for November."],
+       ["Paid = fully paid and verified · Partial = part paid · Waiting = logged, not verified yet."],
+       ["To restore the Hub, use the JSON download of this backup, not this file."]].forEach(r => ab.addRow(r));
+      ab.getCell("A1").font = { bold:true, size:14 }; ab.getColumn(1).width = 18; ab.getColumn(2).width = 40;
+
+      const buf = await wb.xlsx.writeBuffer();
       const stamp = new Date(data.created_at).toISOString().slice(0,16).replace(/[:T]/g, "-");
-      XLSX.writeFile(wb, `kumon-hub-backup-${stamp}.xlsx`);
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(new Blob([buf], { type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
+      a.download = `kumon-hub-report-${stamp}.xlsx`;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 4000);
     }catch(err){ alert("Couldn't make the Excel file: " + err.message); }
     finally{ btn.disabled = false; btn.textContent = "Excel"; }
   }
