@@ -970,24 +970,39 @@ window.kumonPtcNav = function(client, role){
     if(isTeacherScoped() && currentTeacherName){ filters.teacher = currentTeacherName; }
     render();
 
+  // Realtime: many changes at once (a bulk update) become ONE reload, 1.5s after the last change,
+  // and never two of the same reload running together. Stops tabs from flooding the database.
+  const __rtTimers = {}, __rtRunning = {}, __rtAgain = {};
+  function __rtLater(key, fn){
+    return () => {
+      clearTimeout(__rtTimers[key]);
+      __rtTimers[key] = setTimeout(async () => {
+        if(__rtRunning[key]){ __rtAgain[key] = true; return; }
+        __rtRunning[key] = true;
+        try{ await fn(); }catch(e){ console.warn("live reload", key, e); }
+        finally{ __rtRunning[key] = false; if(__rtAgain[key]){ __rtAgain[key] = false; __rtLater(key, fn)(); } }
+      }, 1500);
+    };
+  }
+
     sbClient.channel("realtime:payment_receipts")
-      .on("postgres_changes", { event:"*", schema:"public", table:"payment_receipts" }, async ()=>{ await loadReceipts(); render(); })
+      .on("postgres_changes", { event:"*", schema:"public", table:"payment_receipts" }, __rtLater("payment_receipts", async ()=>{ await loadReceipts(); render(); }))
       .subscribe();
     sbClient.channel("realtime:billing_groups")
-      .on("postgres_changes", { event:"*", schema:"public", table:"billing_groups" }, async ()=>{ await loadBillingGroups(); render(); })
+      .on("postgres_changes", { event:"*", schema:"public", table:"billing_groups" }, __rtLater("billing_groups", async ()=>{ await loadBillingGroups(); render(); }))
       .subscribe();
     sbClient.channel("realtime:payments-students")
-      .on("postgres_changes", { event:"*", schema:"public", table:"students" }, async ()=>{ await loadStudents(); render(); })
+      .on("postgres_changes", { event:"*", schema:"public", table:"students" }, __rtLater("students", async ()=>{ await loadStudents(); render(); }))
       .subscribe();
     sbClient.channel("realtime:payments-enrollments")
-      .on("postgres_changes", { event:"*", schema:"public", table:"subject_enrollments" }, async ()=>{ await loadEnrollments(); render(); })
+      .on("postgres_changes", { event:"*", schema:"public", table:"subject_enrollments" }, __rtLater("subject_enrollments", async ()=>{ await loadEnrollments(); render(); }))
       .subscribe();
     let soaTimer = null;
     sbClient.channel("realtime:payment_soa")
       .on("postgres_changes", { event:"*", schema:"public", table:"payment_soa" }, ()=>{ clearTimeout(soaTimer); soaTimer = setTimeout(async ()=>{ if(soaFlushing) await soaFlushing; await loadSoa(); render(); }, 700); })
       .subscribe();
     sbClient.channel("realtime:payments-absences")
-      .on("postgres_changes", { event:"*", schema:"public", table:"absence_records" }, async ()=>{ await loadAbsences(); render(); })
+      .on("postgres_changes", { event:"*", schema:"public", table:"absence_records" }, __rtLater("absence_records", async ()=>{ await loadAbsences(); render(); }))
       .subscribe();
   }
 

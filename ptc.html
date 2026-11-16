@@ -798,7 +798,7 @@ window.kumonPtcNav = function(client, role){
       if(what.has("families")) await loadFamilies();
       if(what.has("milestones")){ await Promise.all([loadMilestones(), loadDue()]); if(window.kumonPtcNavRefresh) window.kumonPtcNavRefresh(); }
       render(); if(modalState && modalState.live) renderModal();
-    }, 500);
+    }, 1500);
     const ch = sbClient.channel("realtime:ptc-page");
     [["ptc_weeks","weeks"],["ptc_sessions","sessions"],["ptc_families","families"],["ptc_milestones","milestones"]].forEach(([t,k]) =>
       ch.on("postgres_changes", { event:"*", schema:"public", table:t }, () => reload(k)));

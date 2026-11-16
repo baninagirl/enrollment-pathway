@@ -822,14 +822,29 @@ window.kumonPtcNav = function(client, role){
     populateTeacherFilter();
     render();
 
+  // Realtime: many changes at once (a bulk update) become ONE reload, 1.5s after the last change,
+  // and never two of the same reload running together. Stops tabs from flooding the database.
+  const __rtTimers = {}, __rtRunning = {}, __rtAgain = {};
+  function __rtLater(key, fn){
+    return () => {
+      clearTimeout(__rtTimers[key]);
+      __rtTimers[key] = setTimeout(async () => {
+        if(__rtRunning[key]){ __rtAgain[key] = true; return; }
+        __rtRunning[key] = true;
+        try{ await fn(); }catch(e){ console.warn("live reload", key, e); }
+        finally{ __rtRunning[key] = false; if(__rtAgain[key]){ __rtAgain[key] = false; __rtLater(key, fn)(); } }
+      }, 1500);
+    };
+  }
+
     sbClient.channel("realtime:absence-records")
-      .on("postgres_changes", { event:"*", schema:"public", table:"absence_records" }, async ()=>{ await loadAbsences(); render(); })
+      .on("postgres_changes", { event:"*", schema:"public", table:"absence_records" }, __rtLater("absence_records", async ()=>{ await loadAbsences(); render(); }))
       .subscribe();
     sbClient.channel("realtime:absent-enrollments")
-      .on("postgres_changes", { event:"*", schema:"public", table:"subject_enrollments" }, async ()=>{ await loadEnrollments(); render(); })
+      .on("postgres_changes", { event:"*", schema:"public", table:"subject_enrollments" }, __rtLater("subject_enrollments", async ()=>{ await loadEnrollments(); render(); }))
       .subscribe();
     sbClient.channel("realtime:absent-receipts")
-      .on("postgres_changes", { event:"*", schema:"public", table:"payment_receipts" }, async ()=>{ await loadReceipts(); render(); })
+      .on("postgres_changes", { event:"*", schema:"public", table:"payment_receipts" }, __rtLater("payment_receipts", async ()=>{ await loadReceipts(); render(); }))
       .subscribe();
   }
 

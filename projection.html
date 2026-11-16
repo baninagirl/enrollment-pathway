@@ -999,9 +999,24 @@ window.kumonPtcNav = function(client, role){
     route();
     if(loadProblem) toast("Some of the data couldn't load (connection problem). Refresh the page before making changes.");
     window.addEventListener("hashchange", () => { if(draftTouched && !confirm("You have unsaved changes to this projection. Leave without saving?")){ history_back_guard(); return; } route(); });
+  // Realtime: many changes at once (a bulk update) become ONE reload, 1.5s after the last change,
+  // and never two of the same reload running together. Stops tabs from flooding the database.
+  const __rtTimers = {}, __rtRunning = {}, __rtAgain = {};
+  function __rtLater(key, fn){
+    return () => {
+      clearTimeout(__rtTimers[key]);
+      __rtTimers[key] = setTimeout(async () => {
+        if(__rtRunning[key]){ __rtAgain[key] = true; return; }
+        __rtRunning[key] = true;
+        try{ await fn(); }catch(e){ console.warn("live reload", key, e); }
+        finally{ __rtRunning[key] = false; if(__rtAgain[key]){ __rtAgain[key] = false; __rtLater(key, fn)(); } }
+      }, 1500);
+    };
+  }
+
     sbClient.channel("realtime:projection-page")
-      .on("postgres_changes", { event:"*", schema:"public", table:"study_projections" }, async () => { await loadProjections(); if(!currentEnrollmentId()) renderList(); })
-      .on("postgres_changes", { event:"*", schema:"public", table:"subject_enrollments" }, async () => { try{ enrollments = await loadEnrollmentRows(); }catch(e){ return; } if(!currentEnrollmentId()) renderList(); else if(!draftDirty) renderDetail(); })
+      .on("postgres_changes", { event:"*", schema:"public", table:"study_projections" }, __rtLater("study_projections", async () => { await loadProjections(); if(!currentEnrollmentId()) renderList(); }))
+      .on("postgres_changes", { event:"*", schema:"public", table:"subject_enrollments" }, __rtLater("subject_enrollments", async () => { try{ enrollments = await loadEnrollmentRows(); }catch(e){ return; } if(!currentEnrollmentId()) renderList(); else if(!draftDirty) renderDetail(); }))
       .subscribe();
   }
   let lastHash = "";

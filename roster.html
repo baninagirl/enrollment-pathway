@@ -1140,20 +1140,35 @@ window.kumonPtcNav = function(client, role){
     if(isTeacherScoped() && currentTeacherName){ filters.teacher = currentTeacherName; reportFilters.teacher = currentTeacherName; }
     renderView();
 
+  // Realtime: many changes at once (a bulk update) become ONE reload, 1.5s after the last change,
+  // and never two of the same reload running together. Stops tabs from flooding the database.
+  const __rtTimers = {}, __rtRunning = {}, __rtAgain = {};
+  function __rtLater(key, fn){
+    return () => {
+      clearTimeout(__rtTimers[key]);
+      __rtTimers[key] = setTimeout(async () => {
+        if(__rtRunning[key]){ __rtAgain[key] = true; return; }
+        __rtRunning[key] = true;
+        try{ await fn(); }catch(e){ console.warn("live reload", key, e); }
+        finally{ __rtRunning[key] = false; if(__rtAgain[key]){ __rtAgain[key] = false; __rtLater(key, fn)(); } }
+      }, 1500);
+    };
+  }
+
     sbClient.channel("realtime:subject_enrollments")
-      .on("postgres_changes", { event:"*", schema:"public", table:"subject_enrollments" }, async ()=>{ await loadEnrollments(); renderBoth(); })
+      .on("postgres_changes", { event:"*", schema:"public", table:"subject_enrollments" }, __rtLater("subject_enrollments", async ()=>{ await loadEnrollments(); renderBoth(); }))
       .subscribe();
     sbClient.channel("realtime:roster-schedules")
-      .on("postgres_changes", { event:"*", schema:"public", table:"schedules" }, async ()=>{ await loadSchedules(); })
+      .on("postgres_changes", { event:"*", schema:"public", table:"schedules" }, __rtLater("schedules", async ()=>{ await loadSchedules(); }))
       .subscribe();
     sbClient.channel("realtime:enrollment-history")
-      .on("postgres_changes", { event:"*", schema:"public", table:"enrollment_monthly_history" }, async ()=>{ await loadHistory(); if(viewMode==="report") renderReport(); })
+      .on("postgres_changes", { event:"*", schema:"public", table:"enrollment_monthly_history" }, __rtLater("enrollment_monthly_history", async ()=>{ await loadHistory(); if(viewMode==="report") renderReport(); }))
       .subscribe();
     // So the PAID tag flips the moment a receipt gets verified in Payments, without anyone
     // needing to reload Roster — "payment verification automatically renews the tag" only
     // actually feels automatic if it shows up live like this.
     sbClient.channel("realtime:roster-payment-receipts")
-      .on("postgres_changes", { event:"*", schema:"public", table:"payment_receipts" }, async ()=>{ await loadReceipts(); renderBoth(); })
+      .on("postgres_changes", { event:"*", schema:"public", table:"payment_receipts" }, __rtLater("payment_receipts", async ()=>{ await loadReceipts(); renderBoth(); }))
       .subscribe();
   }
 

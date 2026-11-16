@@ -847,7 +847,7 @@ window.kumonPtcNav = function(client, role){
       const kinds = new Set(calReloadKinds); calReloadKinds.clear();
       await Promise.all([kinds.has("schedules") && loadSchedules(), kinds.has("enrollments") && loadEnrollments(), kinds.has("attendance") && loadAttendance(), kinds.has("moves") && loadMoves()].filter(Boolean));
       renderCalendar();
-    }, 700);
+    }, 1500);
   }
   // A new week (or a tab left open overnight): reload this week's ticks.
   let calWeekShown = null;

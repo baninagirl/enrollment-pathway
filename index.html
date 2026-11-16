@@ -783,7 +783,7 @@ window.kumonPtcNav = function(client, role){
           }
           load();
           sb.channel("realtime:" + table)
-            .on("postgres_changes", { event: "*", schema: "public", table }, () => { clearTimeout(timer); timer = setTimeout(load, 300); })
+            .on("postgres_changes", { event: "*", schema: "public", table }, () => { clearTimeout(timer); timer = setTimeout(load, 1500); })
             .subscribe();
         },
         doc(id){ return docRef(table, id); },
