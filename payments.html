@@ -89,6 +89,7 @@
   .btn.good:hover{ background:var(--good-soft); }
   .btn.warn{ color:var(--warn); border-color:var(--warn-soft); }
   .btn.warn:hover{ background:var(--warn-soft); }
+  .banner.warn-box{ background:var(--warn-soft); color:var(--ink); border:1px solid var(--warn); border-radius:10px; padding:10px 12px; font-size:13px; line-height:1.45; }
   .btn.ghost{ border-color:transparent; background:transparent; }
   .btn.sm{ padding:6px 10px; font-size:12.5px; border-radius:7px; }
   .btn:disabled{ opacity:.5; cursor:not-allowed; }
@@ -1351,6 +1352,30 @@ window.kumonPtcNav = function(client, role){
     return { alloc, total: Math.round(Object.values(alloc).reduce((a,b)=>a+b,0) * 100) / 100 };
   }
   function markPaidLeft(studentId){ return markPaidAllocation(studentId, selectedMonth).total; }
+  // ---- Oldest month a child still owes (Nov 16 fix) ----
+  // After the 20th, "this month" on Payments is already the NEXT bill, so a late payer's money used
+  // to land on the wrong month. Mark paid / Log payment now start on the oldest month that is still
+  // owed: a month counts as owed when something is still left to pay on it AND the child had a
+  // payment logged the month before (so a new student is never asked to pay months before they joined).
+  function anythingLoggedFor(studentId, ym){
+    const monthDate = monthToDate(ym);
+    return receipts.some(r => r.student_id === studentId && (r.status === "verified" || r.status === "pending") && r.covers_month === monthDate && Number(r.amount||0) > 0);
+  }
+  function oldestOwedMonth(studentId, ym){
+    for(const d of [-2, -1]){
+      const m = shiftMonth(ym, d);
+      if(markPaidAllocation(studentId, m).total > 0 && anythingLoggedFor(studentId, shiftMonth(m, -1))) return m;
+    }
+    return ym;
+  }
+  // Warning shown when the month picked is later than one that's still owed.
+  function earlierOwedWarning(studentId, ym){
+    const owed = oldestOwedMonth(studentId, ym);
+    if(owed >= ym) return "";
+    const s = students.find(x => x.id === studentId);
+    const left = markPaidAllocation(studentId, owed).total;
+    return `<div class="banner warn-box" style="margin:0;"><b>${esc(s ? displayName(s) : "This child")} still owes ${esc(fmtBillLabel(owed))}</b> (${esc(peso(left))} left). Most of the time the money is for that month — pick ${esc(fmtBillLabel(owed))} above unless the family really paid ahead.</div>`;
+  }
   // No Mark paid button because a logged payment (not verified yet) already covers the rest — say so,
   // instead of the button just vanishing. Opens the payment history, where it can be checked or deleted.
   function waitingChip(studentId){
@@ -1380,21 +1405,23 @@ window.kumonPtcNav = function(client, role){
   function openMarkPaidModal(studentId){
     const s = students.find(x => x.id === studentId); if(!s) return;
     const months = markPaidMonths();
+    const pick = oldestOwedMonth(studentId, selectedMonth);
     $("#modal").innerHTML = `
       <div class="modal-head"><h3>Mark paid — ${esc(displayName(s))}</h3><button class="iconbtn" data-action="close-modal">✕</button></div>
       <form id="markPaidForm" data-student="${esc(studentId)}">
         <div class="modal-body" style="display:grid; gap:12px;">
-          <label class="field">Paid for the month of
+          <label class="field">Tuition for
             <select name="month" id="markPaidMonth">
-              ${months.map(ym => `<option value="${esc(ym)}"${ym === selectedMonth ? " selected" : ""}>${esc(fmtBillLabel(ym))} — due ${esc(dueDateLabel(ym))}${ym === selectedMonth ? " (this month)" : ""}</option>`).join("")}
+              ${months.map(ym => `<option value="${esc(ym)}"${ym === pick ? " selected" : ""}>${esc(fmtBillLabel(ym))} — due ${esc(dueDateLabel(ym))}${ym === selectedMonth ? " (this month)" : ""}</option>`).join("")}
             </select>
           </label>
-          <div class="hint" id="markPaidSummary" style="font-size:14px;">${markPaidSummary(studentId, selectedMonth)}</div>
+          <div class="hint" id="markPaidSummary" style="font-size:14px;">${markPaidSummary(studentId, pick)}</div>
+          <div id="markPaidWarn">${earlierOwedWarning(studentId, pick)}</div>
           <div class="hint" style="font-size:12px;">${isSuperadmin() ? "This counts as paid right away." : "It counts once a superadmin verifies it."} No receipt needed.</div>
         </div>
         <div class="modal-foot">
           <button type="button" class="btn ghost" data-action="close-modal">Cancel</button>
-          <button type="submit" class="btn good" id="markPaidSave"${markPaidAllocation(studentId, selectedMonth).total ? "" : " disabled"}>Mark paid</button>
+          <button type="submit" class="btn good" id="markPaidSave"${markPaidAllocation(studentId, pick).total ? "" : " disabled"}>Mark paid for ${esc(fmtBillLabel(pick))}</button>
         </div>
       </form>`;
     $("#modalBackdrop").hidden = false;
@@ -1481,6 +1508,8 @@ window.kumonPtcNav = function(client, role){
     refreshAllocTotal();
     const h = form.querySelector("#paySuggestHint");
     if(h) h.textContent = paymentSuggestHint(sid, ym);
+    const w = form.querySelector("#payMonthWarn");
+    if(w) w.innerHTML = earlierOwedWarning(sid, ym);
   }
   function rowFor(s, ym){
     const due = tuitionDueFor(s);
@@ -2330,7 +2359,12 @@ window.kumonPtcNav = function(client, role){
           <label class="field">Student
             <select name="studentId" required>${studentOptions(studentId)}</select>
           </label>
-          <label class="field">Month<input type="month" name="coversMonth" value="${esc(reportYm(selectedMonth))}" required></label>
+          <label class="field">Tuition for
+            <select name="coversMonth" required>
+              ${markPaidMonths().map(ym => `<option value="${esc(reportYm(ym))}"${ym === (studentId ? oldestOwedMonth(studentId, selectedMonth) : selectedMonth) ? " selected" : ""}>${esc(fmtBillLabel(ym))} — due ${esc(dueDateLabel(ym))}${ym === selectedMonth ? " (this month)" : ""}</option>`).join("")}
+            </select>
+          </label>
+          <div id="payMonthWarn"></div>
           <div id="payAllocFields"></div>
           <div class="hint" id="paySuggestHint" style="margin-top:-6px;"></div>
           <div class="field-row">
@@ -2347,6 +2381,8 @@ window.kumonPtcNav = function(client, role){
       </form>
     `;
     $("#modalBackdrop").hidden = false;
+    { const f = $("#logPaymentForm"), sid = f && f.elements.studentId.value;
+      if(sid) f.elements.coversMonth.value = reportYm(oldestOwedMonth(sid, selectedMonth)); }
     refreshLogPaymentSuggestion();
   }
 
@@ -2819,7 +2855,8 @@ window.kumonPtcNav = function(client, role){
     if(e.target.id === "markPaidMonth"){
       const f = e.target.form, sid = f && f.dataset.student, ym = e.target.value;
       const sum = $("#markPaidSummary"); if(sum) sum.innerHTML = markPaidSummary(sid, ym);
-      const btn = $("#markPaidSave"); if(btn) btn.disabled = !markPaidAllocation(sid, ym).total;
+      const btn = $("#markPaidSave"); if(btn){ btn.disabled = !markPaidAllocation(sid, ym).total; btn.textContent = "Mark paid for " + fmtBillLabel(ym); }
+      const w = $("#markPaidWarn"); if(w) w.innerHTML = earlierOwedWarning(sid, ym);
       return;
     }
     if(e.target.id === "reviewSelAll"){
@@ -2835,6 +2872,9 @@ window.kumonPtcNav = function(client, role){
     if(e.target.id === "statusFilter"){ filters.status = e.target.value; render(); }
     if(e.target.id === "soaBulkN"){ soaBulkN = e.target.value; }
     if(e.target.id === "teacherFilter"){ filters.teacher = e.target.value; render(); }
+    if(e.target.closest && e.target.closest("#logPaymentForm") && e.target.name === "studentId" && e.target.value){
+      const cm = e.target.form.elements.coversMonth; if(cm) cm.value = reportYm(oldestOwedMonth(e.target.value, selectedMonth));
+    }
     if(e.target.closest && e.target.closest("#logPaymentForm") && (e.target.name === "studentId" || e.target.name === "coversMonth")) refreshLogPaymentSuggestion();
   });
   document.addEventListener("input", (e)=>{
