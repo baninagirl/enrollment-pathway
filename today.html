@@ -304,11 +304,20 @@
   .td-legend button{ appearance:none; background:none; border:0; font:inherit; color:inherit; display:inline-flex; align-items:center; gap:5px; padding:6px 8px; border-radius:99px; cursor:pointer; }
   .td-legend button:hover{ background:var(--surface-2); color:var(--ink); }
   .td-legend button b{ color:var(--ink); }
-  .td-todo{ display:flex; flex-direction:column; gap:0; }
+  .td-todo{ display:flex; flex-direction:column; gap:0; margin-top:16px; padding:4px 20px; }
+  .td-todo .td-todo-item:first-child{ border-top:none; }
+  .td-todo-open{ display:inline-flex; align-items:center; gap:4px; background:var(--surface); border:1px solid var(--border); padding:8px 12px 8px 14px; border-radius:99px; font-size:13px; font-weight:600; color:var(--ink); text-decoration:none; white-space:nowrap; transition:background-color .15s ease; }
+  .td-todo-open:hover{ background:var(--surface-2); }
+  .td-todo-open svg{ color:var(--ink-faint); }
+  .td-todo-calm{ display:flex; align-items:center; gap:14px; padding:14px 16px 14px 20px; margin:0; }
+  .td-todo-ok{ width:30px; height:30px; border-radius:50%; background:var(--good-soft); color:var(--good); display:grid; place-items:center; flex:none; }
+  .td-todo-calm-tx{ flex:1; min-width:0; display:flex; flex-direction:column; gap:2px; }
+  .td-todo-calm-tx b{ font-size:14.5px; font-weight:600; }
+  .td-todo-calm-tx span{ font-size:13px; color:var(--ink-muted); }
   .td-todo-add{ display:flex; gap:8px; flex-wrap:wrap; padding:4px 0 10px; }
   .td-todo-add input[type=text]{ flex:1 1 220px; min-width:0; }
   .td-todo-add input, .td-todo-add select{ height:38px; border:1px solid var(--border); border-radius:10px; padding:0 10px; font:inherit; background:var(--surface); color:var(--ink); }
-  .td-todo-item{ display:flex; align-items:center; gap:10px; padding:8px 4px; border-top:1px solid var(--border); }
+  .td-todo-item{ display:flex; align-items:center; gap:10px; padding:6px 0; border-top:1px solid var(--border); flex-wrap:wrap; }
   .td-todo-item .tx{ flex:1; min-width:0; font-size:14px; overflow-wrap:anywhere; }
   .td-todo-item.done .tx{ color:var(--ink-faint); text-decoration:line-through; }
   .td-todo-item .x{ appearance:none; border:0; background:none; color:var(--ink-faint); cursor:pointer; font-size:16px; padding:6px 8px; border-radius:8px; }
@@ -1684,8 +1693,12 @@ window.kumonPtcNav = function(client, role){
         <span class="tx">${esc(t.text)}</span>${from}${due}${flag}</div>`;
     };
     const n = urgent.filter(t => !t.done).length;
-    return `<section class="td-sec"><div class="td-sec-head"><div><div class="td-kicker">To-dos</div><h2 class="td-title">${n ? `${n} urgent ${n === 1 ? "to-do" : "to-dos"}${viewingOther ? ` for ${esc(tdUi.who)}` : ""}` : "Nothing urgent"}</h2></div><a class="td-sub" href="todos.html">Open To-dos</a></div>
-      <div class="card td-todo">${urgent.length ? urgent.map(item).join("") : `<div class="td-empty" style="padding:10px 4px">Nothing overdue, due today or flagged. <a href="todos.html">See all to-dos</a></div>`}</div></section>`;
+    const openBtn = `<a class="td-todo-open" href="todos.html">Open To-dos<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></a>`;
+    if(!urgent.length) return `<section class="td-sec"><div class="card td-todo-calm">
+        <span class="td-todo-ok" aria-hidden="true"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5 9-10"/></svg></span>
+        <div class="td-todo-calm-tx"><b>No urgent to-dos${viewingOther ? ` for ${esc(tdUi.who)}` : ""}</b><span>Nothing overdue, due today or flagged.</span></div>${openBtn}</div></section>`;
+    return `<section class="td-sec"><div class="td-sec-head"><div><div class="td-kicker">To-dos</div><h2 class="td-title">${n} urgent ${n === 1 ? "to-do" : "to-dos"}${viewingOther ? ` for ${esc(tdUi.who)}` : ""}</h2></div>${openBtn}</div>
+      <div class="card td-todo">${urgent.map(item).join("")}</div></section>`;
   }
   async function addTodo(){
     const tx = ($("#todoText") || {}).value || "", text = tx.trim(); if(!text) return;

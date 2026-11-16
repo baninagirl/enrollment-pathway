@@ -398,7 +398,7 @@
 
   /* ===== To-dos (Nov 16): Reminders-style list + calendar of deadlines ===== */
   .rm-top{ display:flex; align-items:flex-end; justify-content:space-between; gap:16px; flex-wrap:wrap; margin-bottom:18px; }
-  .rm-h1{ margin:2px 0 0; font-size:26px; font-weight:700; letter-spacing:-.01em; }
+  .rm-h1{ margin:0; font-family:"Sora", system-ui, sans-serif; font-size:24px; font-weight:700; letter-spacing:-.03em; line-height:1.2; }
   .rm-top-r{ display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
   .rm-who{ display:flex; gap:8px; align-items:center; font-size:13px; color:var(--ink-muted); font-weight:600; }
   .rm-who select{ height:36px; border-radius:10px; border:1px solid var(--border); background:var(--surface); color:var(--ink); padding:0 10px; font:inherit; }
@@ -408,20 +408,20 @@
   .rm-wrap{ display:flex; gap:20px; align-items:flex-start; flex-wrap:wrap; }
   .rm-side{ flex:0 0 300px; }
   .rm-tiles{ display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:10px; }
-  .rm-tile{ border:0; text-align:left; background:var(--surface); border-radius:14px; padding:11px 13px; display:flex; flex-direction:column; gap:9px; cursor:pointer; box-shadow:0 1px 2px rgba(16,20,30,.06); color:var(--ink); font:inherit; }
+  .rm-tile{ border:1px solid var(--border); text-align:left; background:var(--surface); border-radius:14px; padding:11px 13px; display:flex; flex-direction:column; gap:9px; cursor:pointer; box-shadow:0 1px 2px rgba(16,20,30,.06); color:var(--ink); font:inherit; }
   .rm-tile:hover{ background:var(--surface-2); }
   .rm-tile:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
   .rm-tile-top{ display:flex; align-items:center; justify-content:space-between; }
   .rm-tile-ic{ width:30px; height:30px; border-radius:50%; background:var(--c); display:grid; place-items:center; }
   .rm-tile-top b{ font-size:22px; font-weight:700; font-variant-numeric:tabular-nums; }
   .rm-tile-lab{ font-size:14px; font-weight:600; color:var(--ink-muted); }
-  .rm-tile.on{ background:var(--c); color:#fff; }
+  .rm-tile.on{ background:var(--c); border-color:transparent; color:#fff; }
   .rm-tile.on .rm-tile-lab{ color:#fff; }
   .rm-tile.on .rm-tile-ic{ background:rgba(255,255,255,.28); }
   .rm-main{ flex:1 1 520px; min-width:0; padding:24px 28px; }
   .rm-head{ display:flex; align-items:baseline; justify-content:space-between; color:var(--c); }
-  .rm-head h2{ margin:0; font-size:32px; font-weight:800; letter-spacing:-.02em; color:var(--c); }
-  .rm-head b{ font-size:30px; font-weight:800; }
+  .rm-head h2{ margin:0; font-family:"Sora", system-ui, sans-serif; font-size:26px; font-weight:700; letter-spacing:-.03em; color:var(--c); }
+  .rm-head b{ font-family:"Sora", system-ui, sans-serif; font-size:24px; font-weight:700; }
   .rm-group{ font-size:12.5px; font-weight:700; color:var(--ink-muted); padding:16px 0 2px; }
   .rm-group.over{ color:var(--bad); }
   .rm-item{ display:flex; align-items:flex-start; gap:6px; border-bottom:1px solid var(--border); transition:opacity .4s ease; }
@@ -440,11 +440,12 @@
   .rm-over{ color:var(--bad); font-weight:600; }
   .rm-from{ background:var(--surface-2); border:1px solid var(--border); border-radius:99px; padding:0 8px; font-weight:600; font-size:11.5px; }
   .rm-flag{ appearance:none; border:0; background:none; color:var(--ink-faint); cursor:pointer; padding:11px 4px 11px 8px; border-radius:8px; flex:none; }
-  .rm-flag:hover{ color:#E8890C; }
-  .rm-flag.on{ color:#E8890C; }
+  .rm-flag:hover{ color:var(--warn); }
+  .rm-flag.on{ color:var(--warn); }
   .rm-add{ display:flex; gap:12px; align-items:flex-start; padding:14px 0 8px; border-bottom:1px solid var(--border); }
   .rm-plus{ width:22px; height:22px; border-radius:50%; background:var(--accent); display:grid; place-items:center; flex:none; margin-top:5px; }
   .rm-add-fields{ flex:1; min-width:0; display:flex; flex-direction:column; gap:6px; }
+  .rm-add-fields textarea#rmText{ border:1px solid var(--border); border-radius:10px; padding:8px 10px; font:500 14px Inter, system-ui, sans-serif; color:var(--ink); background:var(--surface); resize:vertical; }
   .rm-add-fields input[type=text]#rmText{ border:0; outline:0; background:transparent; font:500 15px Inter, system-ui, sans-serif; color:var(--ink); padding:4px 0; }
   .rm-add-row{ display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
   .rm-add-row input, .rm-add-row select{ height:34px; border:1px solid var(--border); border-radius:9px; padding:0 9px; font:inherit; font-size:13px; background:var(--surface); color:var(--ink); }
@@ -455,7 +456,7 @@
   /* calendar */
   .rm-cal{ flex:1 1 640px; min-width:0; padding:20px 22px; display:flex; flex-direction:column; gap:10px; }
   .rm-cal-head{ display:flex; align-items:center; gap:8px; }
-  .rm-cal-head h2{ margin:0; flex:1; font-size:22px; font-weight:800; }
+  .rm-cal-head h2{ margin:0; flex:1; font-family:"Sora", system-ui, sans-serif; font-size:22px; font-weight:700; letter-spacing:-.03em; }
   .rm-cal-head h2 span{ color:var(--ink-faint); font-weight:600; }
   .rm-dows{ display:grid; grid-template-columns:repeat(7, minmax(0,1fr)); font-size:11px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; color:var(--ink-muted); }
   .rm-dows span{ text-align:right; padding:0 8px; }
@@ -466,7 +467,7 @@
   .rm-cell.sel{ background:var(--accent-soft); }
   .rm-cell:focus-visible{ outline:2px solid var(--accent); outline-offset:-2px; }
   .rm-num{ align-self:flex-end; min-width:24px; height:24px; padding:0 4px; box-sizing:border-box; border-radius:12px; display:grid; place-items:center; font-size:13px; font-weight:600; }
-  .rm-num.today{ background:#D93A2F; color:#fff; }
+  .rm-num.today{ background:var(--bad); color:#fff; }
   .rm-cell-items{ display:flex; flex-direction:column; gap:2px; min-width:0; }
   .rm-pill{ display:flex; align-items:center; gap:5px; font-size:11.5px; font-weight:500; min-width:0; }
   .rm-pill i{ width:7px; height:7px; border-radius:50%; flex:none; }
@@ -476,7 +477,7 @@
   .rm-more{ font-size:11px; color:var(--ink-muted); }
   .rm-day{ flex:0 1 340px; min-width:0; padding:22px; }
   .rm-day-dow{ font-size:12.5px; font-weight:700; color:var(--ink-muted); }
-  .rm-day h3{ margin:0 0 6px; font-size:26px; font-weight:800; color:var(--accent); }
+  .rm-day h3{ margin:0 0 6px; font-family:"Sora", system-ui, sans-serif; font-size:22px; font-weight:700; letter-spacing:-.03em; color:var(--accent); }
   @media (max-width:900px){
     .rm-side{ flex:1 1 100%; }
     .rm-tiles{ grid-template-columns:repeat(3, minmax(0,1fr)); }
@@ -768,13 +769,56 @@ window.kumonPtcNav = function(client, role){
 
   /* ---------- state ---------- */
   let todos = [], profiles = [], loaded = false, missing = false, flagCols = true;
-  const ui = { view: "list", smart: "today", whose: null, month: todayISO().slice(0,7), day: todayISO(), adding: false, editing: null };
+  const ui = { multi: false, view: "list", smart: "today", whose: null, month: todayISO().slice(0,7), day: todayISO(), adding: false, editing: null };
   try{ const v = localStorage.getItem("kumonTodosView"); if(v === "list" || v === "calendar") ui.view = v; }catch(_){ }
   const fading = new Set();   // just ticked: shown crossed out for a moment, like Reminders
 
   function ownerId(){ return ui.whose || (currentUser && currentUser.id); }
+  const ALL = "__all__";
+  const isGroupKey = v => typeof v === "string" && v.startsWith("group:");
+  const isAllView = () => ui.whose === ALL || isGroupKey(ui.whose);
+  /* teacher groups (same setting the other pages use) */
+  let teacherGroups = [
+    { key:"g1", name:"Group 1 (7A–3A61)", teachers:["Sir GB","Miss Mira","Miss Frixssy","Miss Queenie","Miss Jess","Miss Sugar","Miss KC"] },
+    { key:"g2", name:"Group 2 (BCD)", teachers:["Sir Hamid","Miss Kath","Miss Kristine","Miss Nazel","Miss Rona"] },
+    { key:"g3", name:"Group 3 (E–O)", teachers:["Sir Mark","Sir Francis","Sir Erickson","Miss Shaina","Miss Kate"] }
+  ];
+  async function loadTeacherGroups(){
+    try{
+      const { data } = await sbClient.from("settings").select("value").eq("id","teacher_groups").maybeSingle();
+      const g = data && data.value && Array.isArray(data.value.groups) ? data.value.groups.filter(x => x && x.key && Array.isArray(x.teachers)) : null;
+      if(g && g.length) teacherGroups = g;
+    }catch(e){ console.warn("teacher groups", e); }
+  }
+  const groupOf = name => teacherGroups.find(g => g.teachers.includes(name)) || null;
+  const groupShort = g => String(g.name || g.key).replace(/\s*\(.*\)\s*$/, "");
+  // The accounts a choice stands for: everyone, a whole group, or one person.
+  function ownersFor(v){
+    if(v === ALL) return teacherProfiles().map(p => p.id);
+    if(isGroupKey(v)){ const g = teacherGroups.find(x => "group:" + x.key === v); return g ? teacherProfiles().filter(p => g.teachers.includes(p.teacher_name)).map(p => p.id) : []; }
+    return [v];
+  }
+  // Teachers' accounts (for "Everyone"): anyone with a teacher role, not you.
+  function teacherProfiles(){ return profiles.filter(p => (p.role === "teacher" || p.role === "trainer_teacher") && p.id !== currentUser.id); }
+  // Owner options for adding / moving a to-do: My list first, then Everyone, then each teacher A–Z.
+  function ownerOptions(selected, withEveryone){
+    const sel = v => v === selected ? " selected" : "";
+    const others = profiles.filter(p => p.id !== currentUser.id).sort((a, b) => String(a.teacher_name || a.email).localeCompare(String(b.teacher_name || b.email)));
+    const opt = p => `<option value="${esc(p.id)}"${sel(p.id)}>For ${esc(p.teacher_name || p.email)}</option>`;
+    let html = `<option value="${esc(currentUser.id)}"${sel(currentUser.id)}>My list</option>`
+      + (withEveryone ? `<option value="${ALL}"${sel(ALL)}>Everyone (all ${teacherProfiles().length} teachers)</option>` : "");
+    const used = new Set();
+    teacherGroups.forEach(g => {
+      const ps = others.filter(p => g.teachers.includes(p.teacher_name)); if(!ps.length) return;
+      ps.forEach(p => used.add(p.id));
+      html += `<optgroup label="${esc(g.name)}">` + (withEveryone ? `<option value="group:${esc(g.key)}"${sel("group:" + g.key)}>Everyone in ${esc(groupShort(g))} (${ps.filter(p => p.role === "teacher" || p.role === "trainer_teacher").length})</option>` : "") + ps.map(opt).join("") + `</optgroup>`;
+    });
+    const rest = others.filter(p => !used.has(p.id));
+    if(rest.length) html += `<optgroup label="Not in a group">` + rest.map(opt).join("") + `</optgroup>`;
+    return html;
+  }
   function nameOfUser(id){ if(currentUser && id === currentUser.id) return "you"; const p = profiles.find(x => x.id === id); return p ? (p.teacher_name || p.email) : "admin"; }
-  function mine(){ return todos.filter(t => t.owner_id === ownerId()); }
+  function mine(){ if(isAllView()){ const ids = new Set(ownersFor(ui.whose)); return todos.filter(t => ids.has(t.owner_id)); } return todos.filter(t => t.owner_id === ownerId()); }
   const fromAdmin = t => t.created_by && t.created_by !== t.owner_id;
   function lists(){
     const m = mine(), today = todayISO(), open = m.filter(t => !t.done || fading.has(t.id));
@@ -789,11 +833,11 @@ window.kumonPtcNav = function(client, role){
   }
   const SMART = [
     { k:"today", label:"Today", color:"var(--accent)", icon:'<path d="M8 3v4M16 3v4M4 10h16M5 5h14v15H5z"/>' },
-    { k:"scheduled", label:"Scheduled", color:"#D93A2F", icon:'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>' },
-    { k:"all", label:"All", color:"#4A5262", icon:'<path d="M5 7h14M5 12h14M5 17h14"/>' },
-    { k:"flagged", label:"Flagged", color:"#E8890C", icon:'<path d="M6 21V4h11l-1.5 4L17 12H6"/>' },
+    { k:"scheduled", label:"Scheduled", color:"var(--bad)", icon:'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>' },
+    { k:"all", label:"All", color:"var(--ink-muted)", icon:'<path d="M5 7h14M5 12h14M5 17h14"/>' },
+    { k:"flagged", label:"Flagged", color:"var(--warn)", icon:'<path d="M6 21V4h11l-1.5 4L17 12H6"/>' },
     { k:"admin", label:"From admin", color:"#7A4CC2", icon:'<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>' },
-    { k:"done", label:"Done", color:"#8A93A3", icon:'<path d="M5 12l5 5 9-10"/>' }
+    { k:"done", label:"Done", color:"var(--ink-faint)", icon:'<path d="M5 12l5 5 9-10"/>' }
   ];
 
   /* ---------- loading ---------- */
@@ -805,6 +849,7 @@ window.kumonPtcNav = function(client, role){
       flagCols = !todos.length || ("flagged" in todos[0]);
     }catch(e){ missing = /teacher_todos|schema cache|does not exist/i.test(String(e.message || "")); if(!missing) toast("Couldn't load to-dos — refresh to try again."); }
     if(isAdmin() && !profiles.length){
+      await loadTeacherGroups();
       const { data } = await sbClient.from("profiles").select("id,email,role,teacher_name,access_removed_at").order("teacher_name");
       profiles = (data || []).filter(p => !p.access_removed_at && (p.teacher_name || p.id === currentUser.id));
     }
@@ -812,7 +857,7 @@ window.kumonPtcNav = function(client, role){
   }
 
   /* ---------- rendering ---------- */
-  const flagSvg = on => `<svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true" fill="${on ? "#E8890C" : "none"}" stroke="${on ? "#E8890C" : "currentColor"}" stroke-width="1.8" stroke-linejoin="round"><path d="M6 21V4h11l-1.5 4L17 12H6"/></svg>`;
+  const flagSvg = on => `<svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true" fill="${on ? "var(--warn)" : "none"}" stroke="${on ? "var(--warn)" : "currentColor"}" stroke-width="1.8" stroke-linejoin="round"><path d="M6 21V4h11l-1.5 4L17 12H6"/></svg>`;
   function row(t){
     const today = todayISO(), done = t.done && !fading.has(t.id), justDone = fading.has(t.id);
     const over = !t.done && t.due_date && t.due_date < today;
@@ -821,7 +866,7 @@ window.kumonPtcNav = function(client, role){
       <button type="button" class="rm-body" data-act="edit" data-id="${esc(t.id)}">
         <span class="rm-title">${esc(t.text)}</span>
         ${t.note ? `<span class="rm-note">${esc(t.note)}</span>` : ""}
-        <span class="rm-meta">${t.due_date ? `<span class="${over ? "rm-over" : ""}">${esc(whenLabel(t.due_date))}${over ? " · overdue" : ""}</span>` : ""}${fromAdmin(t) ? `<span class="rm-from">from ${esc(nameOfUser(t.created_by))}</span>` : ""}</span>
+        <span class="rm-meta">${t.due_date ? `<span class="${over ? "rm-over" : ""}">${esc(whenLabel(t.due_date))}${over ? " · overdue" : ""}</span>` : ""}${fromAdmin(t) ? `<span class="rm-from">from ${esc(nameOfUser(t.created_by))}</span>` : ""}${isAllView() && ui.view === "calendar" ? `<span class="rm-from">${esc(nameOfUser(t.owner_id))}</span>` : ""}</span>
       </button>
       ${flagCols ? `<button type="button" class="rm-flag${t.flagged ? " on" : ""}" data-act="flag" data-id="${esc(t.id)}" aria-pressed="${t.flagged ? "true" : "false"}" aria-label="${t.flagged ? "Unflag" : "Flag as important"}">${flagSvg(t.flagged)}</button>` : ""}
     </div>`;
@@ -839,16 +884,19 @@ window.kumonPtcNav = function(client, role){
     return out;
   }
   function addRow(dayIso){
-    const ownerSel = isAdmin() ? `<select id="rmOwner" aria-label="Whose list">${profiles.map(p => `<option value="${esc(p.id)}"${p.id === ownerId() ? " selected" : ""}>${p.id === currentUser.id ? "My list" : "For " + esc(p.teacher_name || p.email)}</option>`).join("")}</select>` : "";
+    const ownerSel = isAdmin() ? `<select id="rmOwner" aria-label="Whose list">${ownerOptions(ownerId(), true)}</select>` : "";
     return `<form class="rm-add" id="rmAdd">
       <span class="rm-plus" aria-hidden="true"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></span>
       <div class="rm-add-fields">
-        <label class="rm-sr" for="rmText">New to-do</label><input type="text" id="rmText" maxlength="300" placeholder="New To-do" autocomplete="off">
+        <label class="rm-sr" for="rmText">New to-do</label>${ui.multi
+          ? `<textarea id="rmText" rows="5" placeholder="One to-do per line — each line becomes its own to-do"></textarea>`
+          : `<input type="text" id="rmText" maxlength="300" placeholder="New To-do" autocomplete="off">`}
         <div class="rm-add-row">
           <label class="rm-sr" for="rmNote">Note</label><input type="text" id="rmNote" maxlength="500" placeholder="Notes" autocomplete="off">
           <label class="rm-sr" for="rmDue">Date</label><input type="date" id="rmDue" value="${esc(dayIso || (ui.smart === "today" ? todayISO() : ""))}">
           ${flagCols ? `<button type="button" class="rm-flag" id="rmFlag" data-act="addflag" aria-pressed="false" aria-label="Flag as important">${flagSvg(false)}</button>` : ""}
           ${ownerSel}
+          <button type="button" class="btn ghost sm" data-act="multi">${ui.multi ? "One at a time" : "Add several"}</button>
           <button type="submit" class="btn primary sm">Add</button>
         </div>
       </div>
@@ -859,7 +907,11 @@ window.kumonPtcNav = function(client, role){
     const tiles = SMART.map(x => `<button type="button" class="rm-tile${x.k === k ? " on" : ""}" data-act="smart" data-k="${x.k}" style="--c:${x.color}" aria-pressed="${x.k === k}">
         <span class="rm-tile-top"><span class="rm-tile-ic"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">${x.icon}</svg></span><b>${L[x.k].length}</b></span>
         <span class="rm-tile-lab">${x.label}</span></button>`).join("");
-    const gs = groups(k, L[k]).filter(g => g.items.length);
+    const gs = isAllView()
+      ? [...new Set(L[k].map(t => t.owner_id))].map(o => { const nm = nameOfUser(o), g = groupOf(nm), gi = g ? teacherGroups.indexOf(g) : 99;
+            return { title: (g ? groupShort(g) + " · " : "") + nm, gi, nm, items: L[k].filter(t => t.owner_id === o).sort((a, b) => (a.due_date || "9999") < (b.due_date || "9999") ? -1 : 1) }; })
+          .sort((a, b) => a.gi - b.gi || a.nm.localeCompare(b.nm))
+      : groups(k, L[k]).filter(g => g.items.length);
     const body = gs.length ? gs.map(g => `${g.title ? `<div class="rm-group${g.over ? " over" : ""}">${esc(g.title)}</div>` : ""}${g.items.map(row).join("")}`).join("")
       : `<div class="rm-empty">${k === "today" ? "Nothing due today." : k === "done" ? "Nothing finished yet." : "Nothing here."}</div>`;
     return `<div class="rm-wrap">
@@ -881,7 +933,7 @@ window.kumonPtcNav = function(client, role){
       const its = items.filter(t => t.due_date === d).sort((a, b) => (a.done - b.done) || (b.flagged - a.flagged));
       cells.push(`<button type="button" class="rm-cell${inM ? "" : " out"}${d === ui.day ? " sel" : ""}" data-act="day" data-d="${d}" aria-label="${esc(fmt(d, { weekday:"long", month:"long", day:"numeric" }))}${its.length ? ", " + its.length + " to-do" + (its.length > 1 ? "s" : "") : ""}">
         <span class="rm-num${d === today ? " today" : ""}">${Number(d.slice(8))}</span>
-        <span class="rm-cell-items">${its.slice(0, 3).map(t => `<span class="rm-pill${t.done ? " done" : !t.done && d < today ? " over" : ""}"><i style="background:${t.done ? "#C9CDD6" : t.flagged ? "#E8890C" : d < today ? "#D93A2F" : "var(--accent)"}"></i><em>${esc(t.text)}</em></span>`).join("")}${its.length > 3 ? `<span class="rm-more">+${its.length - 3} more</span>` : ""}</span>
+        <span class="rm-cell-items">${its.slice(0, 3).map(t => `<span class="rm-pill${t.done ? " done" : !t.done && d < today ? " over" : ""}"><i style="background:${t.done ? "#C9CDD6" : t.flagged ? "var(--warn)" : d < today ? "var(--bad)" : "var(--accent)"}"></i><em>${esc(t.text)}</em></span>`).join("")}${its.length > 3 ? `<span class="rm-more">+${its.length - 3} more</span>` : ""}</span>
       </button>`);
     }
     const dayItems = items.filter(t => t.due_date === ui.day).sort((a, b) => (a.done - b.done) || (b.flagged - a.flagged));
@@ -907,8 +959,8 @@ window.kumonPtcNav = function(client, role){
     const view = $("#view");
     const tIn = $("#rmText"), keep = tIn ? { t: tIn.value, n: ($("#rmNote") || {}).value || "", d: ($("#rmDue") || {}).value || "", f: !!($("#rmFlag") && $("#rmFlag").classList.contains("on")), focus: document.activeElement === tIn } : null;
     if(missing){ view.innerHTML = `<div class="banner">The to-do list needs phase144-teacher-todos.sql (and phase145) to be run in Supabase first.</div>`; return; }
-    const who = isAdmin() ? `<label class="rm-who">Showing <select id="rmWhose">${profiles.map(p => `<option value="${esc(p.id)}"${p.id === ownerId() ? " selected" : ""}>${p.id === currentUser.id ? "My to-dos" : esc(p.teacher_name || p.email)}</option>`).join("")}</select></label>` : "";
-    $("#pageHead").innerHTML = `<div class="rm-top"><div><div class="td-kicker">To-dos</div><h1 class="rm-h1">${ownerId() === currentUser.id ? "Your to-dos" : esc(nameOfUser(ownerId())) + "'s to-dos"}</h1></div>
+    const who = isAdmin() ? `<label class="rm-who">Showing <select id="rmWhose">${ownerOptions(ownerId(), true).replace(">My list<", ">My to-dos<").replace(/>For /g, ">").replace(/>Everyone \(all (\d+) teachers\)</, ">All teachers<").replace(/>Everyone in ([^<(]+?) \(\d+\)</g, ">All of $1<")}</select></label>` : "";
+    $("#pageHead").innerHTML = `<div class="rm-top"><div><div class="td-kicker">To-dos</div><h1 class="rm-h1">${ui.whose === ALL ? "All teachers' to-dos" : isGroupKey(ui.whose) ? esc(groupShort(teacherGroups.find(g => "group:" + g.key === ui.whose) || { name: "Group" })) + " to-dos" : ownerId() === currentUser.id ? "Your to-dos" : esc(nameOfUser(ownerId())) + "'s to-dos"}</h1></div>
       <div class="rm-top-r">${who}<div class="rm-seg" role="group" aria-label="View"><button type="button" data-act="view" data-v="list" aria-pressed="${ui.view === "list"}">List</button><button type="button" data-act="view" data-v="calendar" aria-pressed="${ui.view === "calendar"}">Calendar</button></div></div></div>`;
     view.innerHTML = ui.view === "calendar" ? renderCalendar() : renderList();
     if(keep){ const a = $("#rmText"); if(a){ a.value = keep.t; if(keep.focus) a.focus(); } const n = $("#rmNote"); if(n) n.value = keep.n; const d = $("#rmDue"); if(d && keep.d) d.value = keep.d; const f = $("#rmFlag"); if(f && keep.f){ f.classList.add("on"); f.setAttribute("aria-pressed","true"); f.innerHTML = flagSvg(true); } }
@@ -916,19 +968,27 @@ window.kumonPtcNav = function(client, role){
 
   /* ---------- actions ---------- */
   async function addTodo(){
-    const text = (($("#rmText") || {}).value || "").trim(); if(!text) { const a = $("#rmText"); if(a) a.focus(); return; }
+    const lines = String(($("#rmText") || {}).value || "").split(/\r?\n/).map(x => x.replace(/^\s*[-•*\d.)]+\s+/, "").trim()).filter(Boolean).map(x => x.slice(0, 300));
+    const text = lines[0] || ""; if(!text) { const a = $("#rmText"); if(a) a.focus(); return; }
     const note = (($("#rmNote") || {}).value || "").trim(), due = ($("#rmDue") || {}).value || null;
     const flagged = !!($("#rmFlag") && $("#rmFlag").classList.contains("on"));
-    const owner = ($("#rmOwner") || {}).value || ownerId();
-    const row = { owner_id: owner, text, due_date: due, created_by: currentUser.id, created_by_email: currentUser.email || null };
-    if(flagCols){ row.note = note || null; row.flagged = flagged; } else if(note) row.text = text + " — " + note;
-    const { data, error } = await sbClient.from("teacher_todos").insert(row).select().single();
+    const owner = ($("#rmOwner") || {}).value || (isAllView() ? ALL : ownerId());
+    const owners = ownersFor(owner);
+    if(!owners.length){ toast("No teacher accounts found."); return; }
+    const rows = [];
+    owners.forEach(o => lines.forEach(line => { const r = { owner_id: o, text: line, due_date: due, created_by: currentUser.id, created_by_email: currentUser.email || null };
+      if(flagCols){ r.note = note || null; r.flagged = flagged; } else if(note) r.text = line + " — " + note; rows.push(r); }));
+    if(rows.length > 2000){ toast("That's too many at once — split it up."); return; }
+    const { data, error } = await sbClient.from("teacher_todos").insert(rows).select();
     if(error){ toast(/note|flagged/.test(error.message || "") ? "Run phase145 in Supabase for notes and flags." : "Couldn't add that: " + error.message); return; }
-    todos.push(data);
+    todos.push(...(data || []));
     ["#rmText","#rmNote"].forEach(s => { const el = $(s); if(el) el.value = ""; });
     const f = $("#rmFlag"); if(f){ f.classList.remove("on"); f.innerHTML = flagSvg(false); f.setAttribute("aria-pressed","false"); }
     render(); const a = $("#rmText"); if(a) a.focus();
-    if(owner !== currentUser.id){ toast(`Added to ${nameOfUser(owner)}'s list.`); logHistory("todo_assign", `Gave ${nameOfUser(owner)} a to-do: ${text}`, data.id); }
+    const what = lines.length > 1 ? `${lines.length} to-dos` : "a to-do";
+    if(owner === ALL || isGroupKey(owner)){ const who = owner === ALL ? "every teacher" : groupShort(teacherGroups.find(g => "group:" + g.key === owner) || {}); toast(`Added ${what} to ${owners.length} ${owners.length === 1 ? "teacher's list" : "teachers' lists"}.`); logHistory("todo_assign", `Gave ${who} (${owners.length}) ${what}: ${lines.join("; ").slice(0, 300)}`); }
+    else if(lines.length > 1) toast(`Added ${lines.length} to-dos.`);
+    else if(owner !== currentUser.id){ toast(`Added to ${nameOfUser(owner)}'s list.`); logHistory("todo_assign", `Gave ${nameOfUser(owner)} a to-do: ${text}`, data && data[0] && data[0].id); }
   }
   async function save(t, patch, undoPatch){
     Object.assign(t, patch); render();
@@ -945,7 +1005,7 @@ window.kumonPtcNav = function(client, role){
   }
   function openEdit(id){
     const t = todos.find(x => x.id === id); if(!t) return;
-    const ownerSel = isAdmin() ? `<label class="field">On whose list<select name="owner">${profiles.map(p => `<option value="${esc(p.id)}"${p.id === t.owner_id ? " selected" : ""}>${p.id === currentUser.id ? "Mine" : esc(p.teacher_name || p.email)}</option>`).join("")}</select></label>` : "";
+    const ownerSel = isAdmin() ? `<label class="field">On whose list<select name="owner">${ownerOptions(t.owner_id, false)}</select></label>` : "";
     $("#modal").innerHTML = `<div class="modal-head"><h3>Edit to-do</h3><button class="iconbtn" data-act="close" aria-label="Close">✕</button></div>
       <form id="rmEdit" data-id="${esc(t.id)}"><div class="modal-body" style="display:grid; gap:12px;">
         <label class="field">To-do<input type="text" name="text" maxlength="300" required value="${esc(t.text)}"></label>
@@ -985,6 +1045,7 @@ window.kumonPtcNav = function(client, role){
     else if(a === "view"){ ui.view = b.dataset.v; try{ localStorage.setItem("kumonTodosView", ui.view); }catch(_){ } render(); }
     else if(a === "toggle"){ e.stopPropagation(); await toggle(b.dataset.id); }
     else if(a === "flag"){ const t = todos.find(x => x.id === b.dataset.id); if(t) await save(t, { flagged: !t.flagged }, { flagged: t.flagged }); }
+    else if(a === "multi"){ const cur = ($("#rmText") || {}).value || ""; ui.multi = !ui.multi; render(); const el = $("#rmText"); if(el){ el.value = ui.multi ? cur : cur.split("\n")[0]; el.focus(); } }
     else if(a === "addflag"){ const on = !b.classList.contains("on"); b.classList.toggle("on", on); b.setAttribute("aria-pressed", String(on)); b.innerHTML = flagSvg(on); }
     else if(a === "edit") openEdit(b.dataset.id);
     else if(a === "close") closeModal();
