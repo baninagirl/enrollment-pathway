@@ -1871,6 +1871,17 @@ window.kumonPtcNav = function(client, role){
     // Paid / Unpaid is saved with the month for good, so get a fresh payments list first — never save from a
     // list that didn't load (everyone would be saved as Unpaid).
     if(!(await loadReceipts())){ alert("Couldn't load the payments, so nothing was closed out (Paid / Unpaid would be saved wrong). Check the connection and press Close out again."); return; }
+    // phase141: a full backup first. If it can't be made, nothing is closed out.
+    {
+      const { error: bkErr } = await sbClient.rpc("make_hub_backup", { p_label: `Before close out ${cycleLabel}` });
+      if(bkErr){
+        alert(/make_hub_backup|schema cache|does not exist/i.test(bkErr.message || "")
+          ? "Close out makes a backup first, and backups aren't set up yet (run phase141-backups.sql in Supabase).\n\nNothing was closed out."
+          : `Couldn't make the backup before closing out (${bkErr.message}).\n\nNothing was closed out. Try again in a moment.`);
+        return;
+      }
+      logHistory("backup", `Made a backup: Before close out ${cycleLabel}`);
+    }
 
     const rows = candidates.map(e => ({
       subject_enrollment_id: e.id, student_id: e.student_id, student_name: e.student_name,

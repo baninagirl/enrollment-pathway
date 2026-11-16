@@ -596,6 +596,17 @@ window.kumonPtcNav = function(client, role){
         </div>
       </div>
       ${currentRole === "superadmin" ? `
+      <div class="card" id="backupCard">
+        <div class="card-head"><h3>Backups</h3></div>
+        <div style="padding:16px 20px; display:grid; gap:12px;">
+          <p class="hint" style="margin:0;">A backup is a full copy of students, subjects, payments, closed months, absences, projections, schedules and settings. Close out makes one by itself first. Download one now and then to keep a copy on your computer too.</p>
+          <div style="display:flex; flex-wrap:wrap; gap:10px; align-items:flex-end;">
+            <label class="field" style="margin:0;">Name (optional)<input type="text" id="bkLabel" autocomplete="off" placeholder="e.g. Before fixing payments" style="min-width:240px;"></label>
+            <button class="btn primary" data-action="make-backup">Make a backup now</button>
+          </div>
+          <div id="bkList" aria-live="polite"><div class="hint">Loading backups…</div></div>
+        </div>
+      </div>
       <div class="card" id="renameCard">
         <div class="card-head"><h3>Rename a teacher</h3></div>
         <div style="padding:16px 20px; display:grid; gap:12px;">
@@ -610,6 +621,52 @@ window.kumonPtcNav = function(client, role){
         </div>
       </div>` : ""}
     `;
+    if(currentRole === "superadmin") loadBackups();
+  }
+
+  // ---- Backups (phase141) ----
+  async function loadBackups(){
+    const box = $("#bkList"); if(!box) return;
+    const { data, error } = await sbClient.from("hub_backups").select("id,created_at,label,made_by,row_counts").order("created_at", { ascending:false }).limit(30);
+    if(error){
+      box.innerHTML = `<div class="hint">${/hub_backups|schema cache|does not exist/i.test(error.message || "") ? "Backups need phase141-backups.sql to be run in Supabase first." : "Couldn't load backups: " + esc(error.message)}</div>`;
+      return;
+    }
+    if(!data || !data.length){ box.innerHTML = `<div class="hint">No backups yet.</div>`; return; }
+    box.innerHTML = `<div class="table-scroll"><table class="stable">
+      <thead><tr><th>When</th><th>Name</th><th>What's in it</th><th></th></tr></thead>
+      <tbody>${data.map(b => {
+        const c = b.row_counts || {};
+        return `<tr>
+          <td style="white-space:nowrap;">${esc(new Date(b.created_at).toLocaleString(undefined,{month:"short",day:"numeric",year:"numeric",hour:"numeric",minute:"2-digit"}))}</td>
+          <td>${esc(b.label || "Backup")}<div class="hint">${esc(b.made_by || "")}</div></td>
+          <td class="hint">${esc(c.students ?? "?")} students · ${esc(c.subject_enrollments ?? "?")} subjects · ${esc(c.payment_receipts ?? "?")} payments · ${esc(c.enrollment_monthly_history ?? "?")} closed-month rows</td>
+          <td style="text-align:right; white-space:nowrap;"><button class="btn sm" data-action="download-backup" data-id="${esc(b.id)}">Download</button>
+            <div class="hint" style="font-size:11px; user-select:all;" title="Backup id (needed only to restore)">${esc(b.id.slice(0,8))}</div></td>
+        </tr>`;
+      }).join("")}</tbody></table></div>`;
+  }
+  async function makeBackup(btn){
+    const label = (($("#bkLabel") || {}).value || "").trim() || "Made from Admin";
+    btn.disabled = true; btn.textContent = "Backing up…";
+    const { data, error } = await sbClient.rpc("make_hub_backup", { p_label: label });
+    btn.disabled = false; btn.textContent = "Make a backup now";
+    if(error){ alert(/make_hub_backup|schema cache|does not exist/i.test(error.message || "") ? "Backups need phase141-backups.sql to be run in Supabase first." : "Couldn't make a backup: " + error.message); return; }
+    logHistory("backup", `Made a backup: ${label}`, "hub_backup", data && data.id);
+    if($("#bkLabel")) $("#bkLabel").value = "";
+    await loadBackups();
+  }
+  async function downloadBackup(id, btn){
+    btn.disabled = true; btn.textContent = "Preparing…";
+    const { data, error } = await sbClient.from("hub_backups").select("*").eq("id", id).maybeSingle();
+    btn.disabled = false; btn.textContent = "Download";
+    if(error || !data){ alert("Couldn't download that backup" + (error ? ": " + error.message : ".")); return; }
+    const stamp = new Date(data.created_at).toISOString().slice(0,16).replace(/[:T]/g, "-");
+    const blob = new Blob([JSON.stringify(data)], { type:"application/json" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob); a.download = `kumon-hub-backup-${stamp}.json`;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 4000);
   }
 
   // Rename a teacher everywhere (phase126 rename_teacher). Returns true if it went through.
@@ -746,6 +803,10 @@ window.kumonPtcNav = function(client, role){
   }
 
   document.addEventListener("click", async (e)=>{
+    const bkMake = e.target.closest && e.target.closest('[data-action="make-backup"]');
+    if(bkMake){ await makeBackup(bkMake); return; }
+    const bkDl = e.target.closest && e.target.closest('[data-action="download-backup"]');
+    if(bkDl){ await downloadBackup(bkDl.dataset.id, bkDl); return; }
     const rnBtn = e.target.closest && e.target.closest('[data-action="rename-teacher"]');
     if(rnBtn){
       const oldName = ($("#rnOld").value || "").trim(), newName = ($("#rnNew").value || "").trim();
