@@ -102,6 +102,8 @@
   .soa-col input, .sel-col input{ width:16px; height:16px; margin:0; cursor:pointer; accent-color:var(--brand, #3b4fd8); }
   .soa-bar{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; padding:10px 16px; border-bottom:1px solid var(--border); background:var(--surface-2, #f6f7fb); font-size:13px; }
   .soa-bar select{ width:auto; }
+  .review-pause{ display:flex; align-items:center; gap:12px; flex-wrap:wrap; justify-content:space-between; padding:10px 18px; border-bottom:1px solid var(--border); font-size:13px; color:var(--ink-muted); }
+  .review-pause.on{ background:var(--warn-soft); color:var(--ink); }
   .soa-bar .bar-sep{ width:1px; align-self:stretch; background:var(--border); margin:0 6px; }
   .soa-bar .bar-field{ display:flex; align-items:center; gap:6px; font-weight:600; color:var(--ink-muted); }
   .soa-bar .bar-note{ color:var(--ink-muted); font-size:12.5px; }
@@ -562,6 +564,7 @@ window.kumonPtcNav = function(client, role){
 
       <div class="card">
         <div class="card-head"><h3>Pending receipt review</h3><span class="pill pending" id="reviewCountBadge"></span></div>
+        <div id="reviewPause"></div>
         <div id="reviewBulk" class="review-bulk" hidden></div>
         <div id="reviewBody"></div>
       </div>
@@ -645,7 +648,7 @@ window.kumonPtcNav = function(client, role){
   // Verify / Flag / Reject, and deleting anything that's no longer pending, are superadmin-only
   // (enforced in the database by phase32 — this just keeps the buttons from showing).
   function isSuperadmin(){ return currentRole === "superadmin"; }
-  function canDeleteReceipt(r){ return !!r && (isSuperadmin() || r.status === "pending"); }
+  function canDeleteReceipt(r){ return !!r && (isSuperadmin() || r.status === "pending" || (reviewPaused && r.reference_number === "Marked paid (no receipt)")); }
 
   // Site-wide edit history (Activity page, admin/superadmin only) — every page logs its own
   // significant writes into the same edit_history table. Fire-and-forget on purpose: a slow
@@ -1063,6 +1066,31 @@ window.kumonPtcNav = function(client, role){
     // Teacher pickers/filters use the Teachers list (Pipeline → Settings → Staff); before it existed, Trainers did double duty.
     trainers = Array.isArray(v.teachers) ? v.teachers : (Array.isArray(v.trainers) ? v.trainers : []);
     await loadTeacherGroups();
+    await loadReviewPause();
+  }
+  // ---- Review pause (Nov 16): while ON, teachers' Mark paid counts right away (no superadmin review) and
+  // Mark unpaid / 🗑 can remove any Mark paid entry, like editing a sheet. Payments with a receipt are unchanged.
+  // Saved in settings ("payments_review"), so the superadmin switches it with one click — the database rules
+  // read the same setting (phase139).
+  let reviewPaused = false;
+  async function loadReviewPause(){
+    const { data } = await sbClient.from("settings").select("value").eq("id","payments_review").maybeSingle();
+    reviewPaused = !!(data && data.value && data.value.paused);
+  }
+  async function setReviewPause(on){
+    const { error } = await sbClient.from("settings").upsert({ id: "payments_review", value: { paused: !!on } });
+    if(error){ toast("Couldn't change that: " + error.message); return; }
+    reviewPaused = !!on;
+    logHistory("review_pause", on ? "Paused review: teachers' Mark paid counts right away" : "Turned review back on: teachers' Mark paid waits for a superadmin");
+    render(); toast(on ? "Review paused — teachers' Mark paid now counts right away." : "Review is back on.");
+  }
+  function markPaidVerifiesNow(){ return isSuperadmin() || reviewPaused; }
+  function reviewPauseHtml(){
+    if(isSuperadmin()) return `<div class="review-pause ${reviewPaused ? "on" : ""}">
+        <span>${reviewPaused ? "<b>Review is paused.</b> Teachers' Mark paid counts right away, and they can mark unpaid freely." : "Teachers' Mark paid waits here for you to verify."}</span>
+        <button type="button" class="btn sm ${reviewPaused ? "primary" : ""}" data-action="toggle-review-pause" data-on="${reviewPaused ? "0" : "1"}">${reviewPaused ? "Turn review back on" : "Pause review"}</button>
+      </div>`;
+    return reviewPaused ? `<div class="review-pause on"><span>Mark paid and Mark unpaid count right away — no review needed for now.</span></div>` : "";
   }
   // ---- SOA ticks: built so a tick never "goes away" on its own ----
   //  • every click is remembered as wanted (soaWanted) until the database confirms it — a reload or a live update
@@ -1255,7 +1283,7 @@ window.kumonPtcNav = function(client, role){
       if(!(await loadReceipts())){ toast("Couldn't check the latest payments — nothing was saved. Try again."); return; }
       const ym = bulkPaidMonthNow(), plan = bulkPaidPlan(ym);
       if(!plan.length){ render(); toast(`Everyone selected is already paid for ${fmtBillLabel(ym)}.`); return; }
-      const verifiedNow = isSuperadmin(), now = new Date().toISOString();
+      const verifiedNow = markPaidVerifiesNow(), now = new Date().toISOString();
       const rows = plan.map(x => {
         const row = { student_id: x.id, amount: x.total, allocation: x.alloc, covers_month: monthToDate(ym),
           reference_number: "Marked paid (no receipt)", uploaded_by: currentUser ? currentUser.email : null,
@@ -1508,7 +1536,7 @@ window.kumonPtcNav = function(client, role){
           </label>
           <div class="hint" id="markPaidSummary" style="font-size:14px;">${markPaidSummary(studentId, pick)}</div>
           <div id="markPaidWarn">${earlierOwedWarning(studentId, pick)}</div>
-          <div class="hint" style="font-size:12px;">${isSuperadmin() ? "This counts as paid right away." : "It counts once a superadmin verifies it."} No receipt needed.</div>
+          <div class="hint" style="font-size:12px;">${markPaidVerifiesNow() ? "This counts as paid right away." : "It counts once a superadmin verifies it."} No receipt needed.</div>
         </div>
         <div class="modal-foot">
           <button type="button" class="btn ghost" data-action="close-modal">Cancel</button>
@@ -1527,7 +1555,7 @@ window.kumonPtcNav = function(client, role){
       if(!(await loadReceipts())){ toast("Couldn't check the latest payments — nothing was saved. Try again."); return; }
       const { alloc, total } = markPaidAllocation(studentId, ym);
       if(!total){ closeModal(); render(); toast(`${displayName(s)} is already paid for ${fmtBillLabel(ym)}.`); return; }
-      const verifiedNow = isSuperadmin();
+      const verifiedNow = markPaidVerifiesNow();
       const row = { student_id: studentId, amount: total, allocation: alloc, covers_month: monthToDate(ym),
         reference_number: "Marked paid (no receipt)", uploaded_by: currentUser ? currentUser.email : null,
         receipt_path: null, status: verifiedNow ? "verified" : "pending" };
@@ -2390,6 +2418,7 @@ window.kumonPtcNav = function(client, role){
     $("#reviewCountBadge").textContent = queue.length ? `${queue.length} waiting` : "None waiting";
     const body = $("#reviewBody");
     const ids = new Set(queue.map(r => r.id)); [...reviewSel].forEach(id => { if(!ids.has(id)) reviewSel.delete(id); });
+    const pauseEl = $("#reviewPause"); if(pauseEl) pauseEl.innerHTML = reviewPauseHtml();
     const bulk = $("#reviewBulk");
     if(bulk){
       bulk.hidden = !(isSuperadmin() && queue.length);
@@ -3015,6 +3044,7 @@ window.kumonPtcNav = function(client, role){
       }
     }
     else if(action === "bulk-mark-paid"){ await bulkMarkPaid(); }
+    else if(action === "toggle-review-pause"){ if(isSuperadmin()) await setReviewPause(btn.dataset.on === "1"); }
     else if(action === "bulk-mark-unpaid"){ await bulkMarkUnpaid(); }
     else if(action === "mark-paid"){ markPaid(btn.dataset.student); }
     else if(action === "open-log-payment"){ openLogPaymentModal(btn.dataset.student || null); }
