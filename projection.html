@@ -718,7 +718,10 @@ window.kumonPtcNav = function(client, role){
      - "current": moving forward — starts on the 1st of this month from where they were at last month's close-out
        (or from today's LWC if that month isn't closed out yet). Same repeats and pages a day; nothing saved changes. */
   let pjView = (() => { try{ return sessionStorage.getItem("kumonProjView") === "current" ? "current" : "history"; }catch(_){ return "history"; } })();
-  const firstOfMonth = () => todayISO().slice(0, 7) + "-01";
+  // Linked to the reporting month (Nov 16): "moving forward" starts on the first day of the CURRENT report cycle —
+  // the 21st after the last report month ended (e.g. Oct 21 for the November report, Oct 21–Nov 20).
+  const firstOfMonth = () => { const t = todayISO(); const [y, m, d] = t.split("-").map(Number);
+    const start = d >= 21 ? new Date(Date.UTC(y, m - 1, 21)) : new Date(Date.UTC(y, m - 2, 21)); return start.toISOString().slice(0, 10); };
   let pjFrom = (() => { try{ const v = sessionStorage.getItem("kumonProjFrom"); return /^\d{4}-\d{2}-\d{2}$/.test(v || "") ? v : firstOfMonth(); }catch(_){ return firstOfMonth(); } })();
   // Where the child was on the "from" date: exact at a month's close-out (the 1st of the next month), today's LWC
   // from today on, and in between an estimate along the line between the two closest known points.
@@ -742,7 +745,7 @@ window.kumonPtcNav = function(client, role){
       if(h.subject_enrollment_id !== enr.id || !h.cycle_key) continue;
       const b = bestPos(p.subject, h); if(!b) continue;
       const [yy, mm] = h.cycle_key.split("-").map(Number);
-      pts.push({ d: iso(Date.UTC(yy, mm, 1)), y: b.y, src: "closeout", key: h.cycle_key });   // a close-out = where they start the next month
+      pts.push({ d: iso(Date.UTC(yy, mm - 1, 21)), y: b.y, src: "closeout", key: h.cycle_key });   // a close-out (report month ends the 20th) = where they start the next report cycle, the 21st
     }
     const now = bestPos(p.subject, enr); if(now) pts.push({ d: today, y: now.y, src: "lwc" });
     pts.sort((x, z) => x.d < z.d ? -1 : x.d > z.d ? 1 : 0);
@@ -1077,7 +1080,16 @@ window.kumonPtcNav = function(client, role){
   }
 
   /* ======================= list ======================= */
-  function projectionFor(enrId){ return projections.find(p => p.subject_enrollment_id === enrId) || null; }
+  // A saved projection always follows the Student Roster (Nov 16): the child's grade and this subject's Date enrolled
+  // come from the roster, so a change there shows here straight away (and is saved with the projection next time).
+  function projectionFor(enrId){
+    const p = projections.find(x => x.subject_enrollment_id === enrId) || null;
+    if(!p) return null;
+    const e = enrollments.find(x => x.id === enrId), st = e ? studentById.get(e.student_id) : null;
+    const g = st ? normGrade(st.age_grade) : "", ro = rosterDateFor(e);
+    if((!g || g === p.grade) && (!ro || ro === p.start_date)) return p;
+    return Object.assign({}, p, g ? { grade: g } : {}, ro ? { start_date: ro } : {});
+  }
   function listRows(){
     const q = ui.search.trim().toLowerCase();
     return enrollments
@@ -1134,7 +1146,7 @@ window.kumonPtcNav = function(client, role){
           <td><b>${esc(displayName(r.e.student_id, r.e.student_name))}</b></td>
           <td><span class="pill ${r.e.subject === "Reading" ? "subj-reading" : "subj-math"}">${esc(r.e.subject)}</span></td>
           <td>${esc(r.e.teacher || "—")}</td>
-          <td>${esc((r.p && r.p.grade) || normGrade(s.age_grade) || "—")}</td>
+          <td>${esc(normGrade(s.age_grade) || (r.p && r.p.grade) || "—")}</td>
           <td>${r.p ? `${esc(r.p.start_level)} ${esc(r.p.start_page)} <span class="faint">· ${esc(fmtMonth(r.p.start_date))}</span>` : `<span class="faint">—</span>`}</td>
           <td>${now}</td>
           <td class="muted">${target}</td>

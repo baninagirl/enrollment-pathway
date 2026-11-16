@@ -2383,7 +2383,11 @@ window.kumonPtcNav = function(client, role){
             </select>
           </label>
           <label class="field">Teacher<select name="teacher">${teacherOptions(enrollment.teacher)}</select></label>
-          <label class="field">Date enrolled<input type="date" name="enrolled_on" value="${esc(enrolledISO(enrollment))}" max="${esc(enrolledISO({ created_at:new Date().toISOString() }))}"></label>
+          <div class="field-row">
+            ${(()=>{ const g = gradeFor(enrollment.student_id); const opts = gradeOptions(g); return `<label class="field">Grade<select name="editGrade">${g && !GRADE_OPTIONS.includes(g) ? `<option value="${esc(g)}" selected>${esc(g)}</option>` : ""}${opts}</select></label>`; })()}
+            <label class="field">Date enrolled<input type="date" name="enrolled_on" value="${esc(enrolledISO(enrollment))}" max="${esc(enrolledISO({ created_at:new Date().toISOString() }))}"></label>
+          </div>
+          <span class="hint" style="font-size:11.5px; margin:-4px 0 12px; display:block;">Grade is the child's (both subjects). Date enrolled is this subject's; it also sets the start date on Projection.</span>
           <label class="field" style="flex-direction:row; align-items:center; gap:8px; margin-bottom:2px;"><input type="hidden" name="monitor_field" value="1"><input type="checkbox" name="is_monitor" value="1" ${enrollment.is_monitor ? "checked" : ""} style="width:auto;"> Monitor student</label>
           <span class="hint" style="font-size:11.5px; margin:0 0 12px; display:block;">${enrollment.is_monitor
             ? `On monitor since ${esc(monitorCycleLabel(monitorSinceKey(enrollment)) || "—")}. Untick to move them to the regular roster.`
@@ -2613,6 +2617,14 @@ window.kumonPtcNav = function(client, role){
           // Nothing else is saved yet, so the form stays open with what was typed.
           if(why){ alert(`Couldn't save the class days (${why}). Nothing was changed — check the connection and press Save again.`); return; }
         }
+        // Grade (Nov 16) — the student's own record, so it changes for both subjects, Payments' rate and Projection.
+        { const g = (fd.get("editGrade") ?? "").toString().trim();
+          if(fd.get("editGrade") !== null && g !== (gradeFor(editingEnrollment.student_id) || "")){
+            const { error: gErr } = await sbClient.from("students").update({ age_grade: g || null }).eq("id", editingEnrollment.student_id);
+            if(gErr){ alert("Couldn't change the grade (" + gErr.message + "). Nothing else was changed — press Save again."); return; }
+            const st = students.find(x => x.id === editingEnrollment.student_id); if(st) st.age_grade = g || null;
+            logHistory("edit_grade", `Changed ${editingEnrollment.student_name || "a student"}'s grade to ${g || "—"}`, "student", editingEnrollment.student_id);
+          } }
         if(renameTo){
           const { error: rnErr } = await sbClient.rpc("rename_student", { p_student_id: editingEnrollment.student_id, p_first: renameTo.nf, p_last: renameTo.nl });
           if(rnErr){ alert("The class days were saved, but the name couldn't be changed (" + rnErr.message + "). Nothing else was changed — press Save again."); return; }
