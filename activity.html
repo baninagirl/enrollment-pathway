@@ -201,6 +201,15 @@ window.kumonPtcNav = function(client, role){
     }
   }
   if(td) td.hidden = !ok;
+  // To-dos (Nov 16): right after Today, on every page.
+  var tdo = document.getElementById("navTodosLink");
+  if(!tdo && ok && td && td.parentNode){
+    tdo = document.createElement("a"); tdo.className = "navbtn"; tdo.id = "navTodosLink"; tdo.href = "todos.html"; tdo.title = "To-dos";
+    tdo.innerHTML = (td.querySelector("svg") ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="5" cy="7" r="1.6"/><circle cx="5" cy="12" r="1.6"/><circle cx="5" cy="17" r="1.6"/><path d="M10 7h10M10 12h10M10 17h10"/></svg>' : "") + "To-dos";
+    if(/todos\.html$/.test(location.pathname)) tdo.classList.add("active");
+    td.parentNode.insertBefore(tdo, td.nextSibling);
+  }
+  if(tdo) tdo.hidden = !ok;
   // Worksheets (phase118): admins and superadmins only — the link is added here so every page gets it.
   var wsAdm = role === "admin" || role === "superadmin", ws = document.getElementById("navWsLink");
   if(!ws && wsAdm){

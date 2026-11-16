@@ -297,6 +297,23 @@
   .td-warn{ background:var(--warn-soft); color:var(--warn); } .td-bad{ background:var(--bad-soft); color:var(--bad); } .td-good{ background:var(--good-soft); color:var(--good); }
   .td-flags{ margin-left:auto; display:flex; gap:5px; flex-wrap:wrap; }
   .td-tick{ width:22px; height:22px; border-radius:50%; border:1.5px solid var(--border); flex:none; }
+  .td-tick-btn{ appearance:none; background:none; border:0; padding:11px; margin:-11px -4px -11px -11px; border-radius:50%; cursor:pointer; flex:none; display:grid; place-items:center; touch-action:manipulation; }
+  .td-tick-btn:hover .td-tick{ border-color:var(--good); }
+  .td-tick-btn:focus-visible{ outline:2px solid var(--accent); outline-offset:-4px; }
+  .td-tick-btn[disabled]{ opacity:.5; cursor:progress; }
+  .td-legend button{ appearance:none; background:none; border:0; font:inherit; color:inherit; display:inline-flex; align-items:center; gap:5px; padding:6px 8px; border-radius:99px; cursor:pointer; }
+  .td-legend button:hover{ background:var(--surface-2); color:var(--ink); }
+  .td-legend button b{ color:var(--ink); }
+  .td-todo{ display:flex; flex-direction:column; gap:0; }
+  .td-todo-add{ display:flex; gap:8px; flex-wrap:wrap; padding:4px 0 10px; }
+  .td-todo-add input[type=text]{ flex:1 1 220px; min-width:0; }
+  .td-todo-add input, .td-todo-add select{ height:38px; border:1px solid var(--border); border-radius:10px; padding:0 10px; font:inherit; background:var(--surface); color:var(--ink); }
+  .td-todo-item{ display:flex; align-items:center; gap:10px; padding:8px 4px; border-top:1px solid var(--border); }
+  .td-todo-item .tx{ flex:1; min-width:0; font-size:14px; overflow-wrap:anywhere; }
+  .td-todo-item.done .tx{ color:var(--ink-faint); text-decoration:line-through; }
+  .td-todo-item .x{ appearance:none; border:0; background:none; color:var(--ink-faint); cursor:pointer; font-size:16px; padding:6px 8px; border-radius:8px; }
+  .td-todo-item .x:hover{ background:var(--surface-2); color:var(--bad); }
+  .td-todo-more{ appearance:none; border:0; background:none; color:var(--ink-muted); font:inherit; font-size:12.5px; cursor:pointer; padding:8px 4px; text-align:left; }
   .td-tick.yes{ background:var(--good); border-color:var(--good); position:relative; }
   .td-tick.yes::after{ content:""; position:absolute; left:6px; top:6px; width:9px; height:5px; border-left:2px solid #fff; border-bottom:2px solid #fff; transform:rotate(-45deg); }
 
@@ -400,6 +417,15 @@ window.kumonPtcNav = function(client, role){
     }
   }
   if(td) td.hidden = !ok;
+  // To-dos (Nov 16): right after Today, on every page.
+  var tdo = document.getElementById("navTodosLink");
+  if(!tdo && ok && td && td.parentNode){
+    tdo = document.createElement("a"); tdo.className = "navbtn"; tdo.id = "navTodosLink"; tdo.href = "todos.html"; tdo.title = "To-dos";
+    tdo.innerHTML = (td.querySelector("svg") ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="5" cy="7" r="1.6"/><circle cx="5" cy="12" r="1.6"/><circle cx="5" cy="17" r="1.6"/><path d="M10 7h10M10 12h10M10 17h10"/></svg>' : "") + "To-dos";
+    if(/todos\.html$/.test(location.pathname)) tdo.classList.add("active");
+    td.parentNode.insertBefore(tdo, td.nextSibling);
+  }
+  if(tdo) tdo.hidden = !ok;
   // Worksheets (phase118): admins and superadmins only — the link is added here so every page gets it.
   var wsAdm = role === "admin" || role === "superadmin", ws = document.getElementById("navWsLink");
   if(!ws && wsAdm){
@@ -1026,8 +1052,9 @@ window.kumonPtcNav = function(client, role){
     for(const c of classesToday()){
       const m = toMin(c.time); if(!bySlot.has(m)) bySlot.set(m, new Map());
       const kids = bySlot.get(m), k = c.studentId;
-      if(!kids.has(k)) kids.set(k, { studentId: k, items: [], movedFrom: null, movedTo: null, arrived: false, ri: false });
+      if(!kids.has(k)) kids.set(k, { studentId: k, items: [], keys: [], movedFrom: null, movedTo: null, arrived: false, ri: false });
       const kid = kids.get(k); kid.items.push(c.e);
+      if(!c.movedTo && !kid.keys.includes(c.scheduleId + "|" + c.origDay)) kid.keys.push(c.scheduleId + "|" + c.origDay);
       if(c.movedFrom) kid.movedFrom = c.movedFrom; if(c.movedTo) kid.movedTo = c.movedTo;
       if(c.mode === "RI") kid.ri = true;
       if(arrivedFor(c.scheduleId, c.origDay)) kid.arrived = true;
@@ -1207,7 +1234,10 @@ window.kumonPtcNav = function(client, role){
       const has = new Set(D.proj.map(p => p.subject_enrollment_id));
       if(enrs.some(e => !has.has(e.id))) fl.push(`<span class="td-chip td-warn">No projection</span>`);
     }
-    const tick = opts.tick ? `<span class="td-tick${opts.kid && opts.kid.arrived ? " yes" : ""}" title="${opts.kid && opts.kid.arrived ? "Arrived" : "Not yet"}"></span>` : "";
+    const canTick = opts.tick && opts.kid && !opts.kid.movedTo && opts.kid.keys && opts.kid.keys.length;
+    const tick = !opts.tick ? "" : canTick
+      ? `<button type="button" class="td-tick-btn" data-arrive="${esc(opts.kid.keys.join(","))}" data-on="${opts.kid.arrived ? "0" : "1"}" aria-pressed="${opts.kid.arrived ? "true" : "false"}" aria-label="${opts.kid.arrived ? "Arrived — tap to undo" : "Mark arrived"}" title="${opts.kid.arrived ? "Arrived — tap to undo" : "Tap when they arrive"}"><span class="td-tick${opts.kid.arrived ? " yes" : ""}"></span></button>`
+      : `<span class="td-tick${opts.kid && opts.kid.arrived ? " yes" : ""}" title="${opts.kid && opts.kid.arrived ? "Arrived" : "Not yet"}"></span>`;
     const teachers = (enrs.length ? [...new Set(enrs.map(e => e.teacher).filter(Boolean))] : ownerTeachers(sid)).join(", ");   // always shown, so lists say whose child it is
     return `<div class="td-kid${opts.kid && opts.kid.movedTo ? " out" : ""}" tabindex="0" role="button" data-kid="${esc(sid)}">${tick}${avatar(sid)}<div style="min-width:0"><div class="td-nm">${esc(nameOf(sid, opts.fallbackName))}</div><div class="td-sub">${esc(s && s.age_grade ? normGrade(s.age_grade) : "")}${teachers ? " · " + esc(teachers) : ""}</div></div>${enrs.map(e => subjChip(e, (bestPos(e.subject, e) || {}).txt)).join("")}<span class="td-flags">${opts.extra || fl.join("")}</span></div>`;
   }
@@ -1242,7 +1272,7 @@ window.kumonPtcNav = function(client, role){
     const sl = slots.find(s => s.m === tdUi.slot);
     return `<section class="td-sec"><div class="td-kicker">Your day</div><h2 class="td-title">${esc(title)}</h2>
       <div class="card td-day"><div class="td-ring">${ring([[arr, "var(--good)"], [pick, "var(--warn)"], [uniq.length - arr - pick, "var(--accent)"]], uniq.length, `${arr}<tspan font-size="${180 * 0.11}" fill="var(--ink-faint)">/${uniq.length}</tspan>`, "arrived so far")}
-        <div class="td-legend"><span><i style="background:var(--good)"></i>Arrived</span><span><i style="background:var(--warn)"></i>Picked up</span><span><i style="background:var(--accent)"></i>Not yet</span></div></div>
+        <div class="td-legend"><button type="button" data-ring="arrived"><i style="background:var(--good)"></i>Arrived <b>${arr}</b></button><button type="button" data-ring="picked"><i style="background:var(--warn)"></i>Picked up <b>${pick}</b></button><button type="button" data-ring="notyet"><i style="background:var(--accent)"></i>Not yet <b>${uniq.length - arr - pick}</b></button></div></div>
       <div style="min-width:0">${slots.length ? `<div class="td-tl"><div class="td-tl-track"></div>${slots.map((s, i) => `<button class="td-tl-block${now >= s.m + 60 ? " past" : ""}${s.m === tdUi.slot ? " on" : ""}" data-slot="${s.m}" style="left:${X(s.m)}%;width:calc(${Math.min(60, (slots[i + 1] ? slots[i + 1].m : s.m + 60) - s.m) / (B - A) * 100}% - 4px)" title="${fmtT(s.m)}: ${plural(s.kids.length, "child", "children")}">${s.kids.length}</button>`).join("")}
           ${now >= A && now <= B ? `<div class="td-tl-now" style="left:${X(now)}%"></div>` : ""}<div class="td-tl-axis">${hours.map(h => `<span style="left:${X(h * 60)}%">${fmtT(h * 60)}</span>`).join("")}</div></div>` : ""}
         ${sl ? `<div class="td-slot-h"><b>${fmtT(sl.m)}</b><span>${plural(sl.kids.length, "child", "children")}${slots.length > 1 ? " · tap another time above to switch" : ""}</span></div>${sl.kids.map(k => kidRow(k.studentId, { tick: true, kid: k, items: k.items })).join("")}` : `<div class="td-empty">Nobody is scheduled today. Center visits come from the Calendar.</div>`}
@@ -1325,7 +1355,11 @@ window.kumonPtcNav = function(client, role){
     if(!tdUi.who){ $("#pageHead").innerHTML = ""; $("#view").innerHTML = `<div class="banner">Your account has no teacher name yet, so the Hub can't tell which students are yours. Ask a superadmin to add it in <a href="admin.html">Admin</a>.</div>`; return; }
     renderHead();
     const warn = loadIssues.size ? `<div class="banner">Some of the data couldn't load (${esc([...loadIssues].join(", "))}), so parts of this page may be missing. Refresh the page to try again.</div>` : "";
-    $("#view").innerHTML = warn + renderDay() + renderStories() + renderScore() + renderKis();
+    const tIn = $("#todoText"), dIn = $("#todoDue"), fIn = $("#todoFor");
+    const draft = tIn ? { t: tIn.value, d: dIn ? dIn.value : "", f: fIn ? fIn.value : "", focus: document.activeElement === tIn } : keepTodoDraft;
+    $("#view").innerHTML = warn + renderDay() + renderTodos() + renderStories() + renderScore() + renderKis();
+    if(draft){ keepTodoDraft = draft; const a = $("#todoText"), b = $("#todoDue"), c = $("#todoFor");
+      if(a){ a.value = draft.t || ""; if(draft.focus){ a.focus(); a.setSelectionRange(a.value.length, a.value.length); } } if(b) b.value = draft.d || ""; if(c && draft.f) c.value = draft.f; }
     if(drawerStack.length) paintDrawer();
   }
 
@@ -1340,8 +1374,23 @@ window.kumonPtcNav = function(client, role){
   function paintDrawer(){
     const v = drawerStack[drawerStack.length - 1]; if(!v) return;
     $("#tdBack").hidden = drawerStack.length < 2;
-    $("#tdBody").innerHTML = v.type === "kid" ? kidView(v.id) : v.type === "metric" ? metricView(v.k) : storyView(v.k);
+    $("#tdBody").innerHTML = v.type === "kid" ? kidView(v.id) : v.type === "metric" ? metricView(v.k) : v.type === "ring" ? ringView(v.k) : storyView(v.k);
     $("#tdBody").scrollTop = 0;
+  }
+  // Arrived / Picked up / Not yet (Nov 16): every child on today's schedule in that group, with their time.
+  // The ticks work here too.
+  function ringView(k){
+    const slots = slotsToday(), all = slots.flatMap(s => s.kids.filter(x => !x.movedTo).map(x => ({ ...x, m: s.m })));
+    const arrivedIds = new Set(all.filter(x => x.arrived).map(x => x.studentId));
+    const pickedIds = new Set(all.filter(x => x.picked && !arrivedIds.has(x.studentId)).map(x => x.studentId));
+    const seen = new Set();
+    const list = all.filter(x => k === "arrived" ? arrivedIds.has(x.studentId) : k === "picked" ? pickedIds.has(x.studentId) : (!arrivedIds.has(x.studentId) && !pickedIds.has(x.studentId)))
+      .filter(x => !seen.has(x.studentId + "|" + x.m) && seen.add(x.studentId + "|" + x.m));
+    const title = k === "arrived" ? "Arrived today" : k === "picked" ? "Picked up worksheets" : "Not here yet";
+    const dek = k === "arrived" ? "Tap a tick to undo it." : k === "picked" ? "A parent took the worksheets home instead of the child coming in." : "Tap the circle when a child arrives. It shows on the Calendar too.";
+    return `<div class="td-kicker">Your day</div><h2>${esc(title)} (${new Set(list.map(x => x.studentId)).size})</h2><p class="dek">${esc(dek)}</p>
+      <div class="card td-list">${list.length ? list.map(x => kidRow(x.studentId, { tick: true, kid: x, items: x.items, extra: `<span class="td-chip td-mute">${esc(fmtT(x.m))}</span>` })).join("") : `<div class="td-empty">Nobody here.</div>`}</div>
+      <div class="td-links"><a href="calendar.html">Open the Calendar</a></div>`;
   }
   function storyView(k){
     const today = todayISO();
@@ -1547,9 +1596,136 @@ window.kumonPtcNav = function(client, role){
     await loadToday(); render();
   }
 
+  /* ---------- arrived ticks (Nov 16): the same rows the Calendar ticks, so each shows on the other ---------- */
+  const tickBusy = new Set();
+  async function toggleArrived(keys, on, btn){
+    const k = keys.join(","); if(tickBusy.has(k)) return; tickBusy.add(k);
+    const wk = weekStart(), at = new Date().toISOString();
+    const before = D.att.slice();
+    // show it straight away; put it back if the save fails
+    keys.forEach(key => { const [sid, day] = key.split("|"); const i = D.att.findIndex(a => a.schedule_id === sid && a.day === day);
+      const row = Object.assign({}, i >= 0 ? D.att[i] : { schedule_id: sid, day, week_start: wk }, { week_start: wk, arrived: on, arrived_at: on ? at : null });
+      if(i >= 0) D.att[i] = row; else D.att.push(row); });
+    render();
+    const payload = keys.map(key => { const [sid, day] = key.split("|"); return { schedule_id: sid, day, week_start: wk, arrived: on, arrived_at: on ? at : null }; });
+    let error = null;
+    for(let attempt = 0; attempt < 3; attempt++){
+      ({ error } = await sbClient.from("schedule_attendance").upsert(payload, { onConflict: "schedule_id,day,week_start" }));
+      if(!error) break;
+      if(/jwt|token|expired|401/i.test(String(error.message || ""))){ try{ await sbClient.auth.refreshSession(); }catch(_){ } }
+      await new Promise(r => setTimeout(r, 600 * (attempt + 1)));
+    }
+    tickBusy.delete(k);
+    if(error){
+      console.warn(error); D.att = before; render();
+      toast(/row-level security|permission/i.test(String(error.message || "")) ? "Couldn't save that tick — this student isn't in your group's list. Ask an admin." : "Couldn't save that tick — check the connection and tap it again.");
+      return;
+    }
+    const sc = D.sched.find(x => x.id === keys[0].split("|")[0]);
+    const nm = sc ? nameOf(sc.student_id || ((D.enr.find(e => e.id === sc.subject_enrollment_id) || {}).student_id)) : "a student";
+    logHistory("toggle_arrived", `Marked ${nm} ${on ? "arrived" : "not arrived"} for ${keys[0].split("|")[1]} (from Today)`, keys[0].split("|")[0]);
+  }
+  // Ticks made on the Calendar (or another device) show here within a couple of seconds.
+  let attLiveTimer = null;
+  function watchAttendance(){
+    if(!sbClient || watchAttendance.on) return; watchAttendance.on = true;
+    sbClient.channel("realtime:today-attendance")
+      .on("postgres_changes", { event: "*", schema: "public", table: "schedule_attendance" }, () => {
+        clearTimeout(attLiveTimer);
+        attLiveTimer = setTimeout(async () => { if(tickBusy.size) return; await tdLoad("arrivals", reloadArrivals); render(); }, 1500);
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "teacher_todos" }, () => {
+        clearTimeout(watchAttendance.todoT);
+        watchAttendance.todoT = setTimeout(async () => { await loadTodos(); render(); }, 1500);
+      })
+      .subscribe();
+  }
+  async function reloadArrivals(){
+    const wk = weekStart();
+    const rows = await selectAll("schedule_attendance", "*", q => q.in("week_start", [wk, addDays(wk, -1)]).order("schedule_id"));
+    const byKey = new Map(); rows.sort((a, b) => (a.week_start === wk) - (b.week_start === wk)).forEach(r => byKey.set(r.schedule_id + "|" + r.day, r)); D.att = [...byKey.values()];
+  }
+
+  /* ---------- to-do list (Nov 16, phase144) ---------- */
+  // Everyone has their own list. Admins can also give a to-do to a teacher (shows who gave it).
+  let todos = [], todoProfiles = [], todosReady = false, todosMissing = false, showDoneTodos = false;
+  async function loadTodos(){
+    try{
+      const { data, error } = await sbClient.from("teacher_todos").select("*").order("done").order("due_date", { ascending: true, nullsFirst: false }).order("created_at");
+      if(error) throw error;
+      todos = data || []; todosReady = true; todosMissing = false;
+    }catch(e){ todosMissing = /teacher_todos|schema cache|does not exist/i.test(String(e.message || "")); todos = []; todosReady = true; if(!todosMissing) console.warn("todos", e); }
+    if(isAdmin() && !todoProfiles.length){
+      const { data } = await sbClient.from("profiles").select("id,email,role,teacher_name").order("teacher_name");
+      todoProfiles = (data || []).filter(p => p.teacher_name && !p.access_removed_at);
+    }
+  }
+  // Whose list is on screen: a teacher's own; for an admin, the teacher picked in "Showing", otherwise their own.
+  function todoOwner(){
+    if(!isAdmin()) return currentUser ? currentUser.id : null;
+    const p = todoProfiles.find(x => x.teacher_name === tdUi.who);
+    return p ? p.id : (currentUser ? currentUser.id : null);
+  }
+  function todoWhoName(id){ if(currentUser && id === currentUser.id) return "you"; const p = todoProfiles.find(x => x.id === id); return p ? (p.teacher_name || p.email) : "admin"; }
+  // Today shows only the URGENT to-dos (Nov 16): overdue, due today, or flagged. The full list is on the To-dos page.
+  function renderTodos(){
+    if(!todosReady) return "";
+    if(todosMissing) return isAdmin() ? `<section class="td-sec"><div class="td-kicker">To-dos</div><div class="banner">To-dos need phase144-teacher-todos.sql to be run in Supabase first.</div></section>` : "";
+    const owner = todoOwner(), today = todayISO();
+    const urgent = todos.filter(t => t.owner_id === owner && (!t.done || todoFading.has(t.id)) && ((t.due_date && t.due_date <= today) || t.flagged))
+      .sort((a, b) => ((a.due_date || "9999") < (b.due_date || "9999") ? -1 : 1));
+    const viewingOther = isAdmin() && currentUser && owner !== currentUser.id;
+    const item = t => {
+      const fin = t.done || todoFading.has(t.id);
+      const from = t.created_by && t.created_by !== t.owner_id ? `<span class="td-chip td-mute">from ${esc(todoWhoName(t.created_by))}</span>` : "";
+      const due = t.due_date ? `<span class="td-chip ${t.due_date < today ? "td-bad" : "td-warn"}">${t.due_date < today ? "overdue · " + esc(fmtDate(t.due_date, { year: undefined })) : t.due_date === today ? "today" : esc(fmtDate(t.due_date, { year: undefined }))}</span>` : "";
+      const flag = t.flagged ? `<svg viewBox="0 0 24 24" width="16" height="16" fill="#E8890C" role="img" aria-label="Flagged"><path d="M6 21V4h11l-1.5 4L17 12H6"/></svg>` : "";
+      return `<div class="td-todo-item${fin ? " done" : ""}"><button type="button" class="td-tick-btn" data-todo="toggle" data-id="${esc(t.id)}" aria-pressed="${fin ? "true" : "false"}" aria-label="${fin ? "Done — tap to undo" : "Mark done"}"><span class="td-tick${fin ? " yes" : ""}"></span></button>
+        <span class="tx">${esc(t.text)}</span>${from}${due}${flag}</div>`;
+    };
+    const n = urgent.filter(t => !t.done).length;
+    return `<section class="td-sec"><div class="td-sec-head"><div><div class="td-kicker">To-dos</div><h2 class="td-title">${n ? `${n} urgent ${n === 1 ? "to-do" : "to-dos"}${viewingOther ? ` for ${esc(tdUi.who)}` : ""}` : "Nothing urgent"}</h2></div><a class="td-sub" href="todos.html">Open To-dos</a></div>
+      <div class="card td-todo">${urgent.length ? urgent.map(item).join("") : `<div class="td-empty" style="padding:10px 4px">Nothing overdue, due today or flagged. <a href="todos.html">See all to-dos</a></div>`}</div></section>`;
+  }
+  async function addTodo(){
+    const tx = ($("#todoText") || {}).value || "", text = tx.trim(); if(!text) return;
+    const due = ($("#todoDue") || {}).value || null, sel = $("#todoFor");
+    const owner = sel ? sel.value : todoOwner();
+    const row = { owner_id: owner, text, due_date: due, created_by: currentUser.id, created_by_email: currentUser.email || null };
+    const { data, error } = await sbClient.from("teacher_todos").insert(row).select().single();
+    if(error){ toast("Couldn't add that: " + error.message); return; }
+    todos.push(data);
+    ["#todoText", "#todoDue"].forEach(sel => { const el = $(sel); if(el) el.value = ""; });
+    keepTodoDraft = null; render();
+    const f = $("#todoText"); if(f) f.focus();
+    if(owner !== currentUser.id) logHistory("todo_assign", `Gave ${todoWhoName(owner)} a to-do: ${text}`);
+  }
+  async function todoAction(kind, id, btn){
+    if(kind === "showdone"){ showDoneTodos = !showDoneTodos; render(); return; }
+    const t = todos.find(x => x.id === id); if(!t) return;
+    if(kind === "toggle"){
+      const done = !t.done, prev = { done: t.done, done_at: t.done_at };
+      if(done){ todoFading.add(id); setTimeout(() => { if(todoFading.delete(id)) render(); }, 1400); } else todoFading.delete(id);
+      Object.assign(t, { done, done_at: done ? new Date().toISOString() : null }); render();
+      const { error } = await sbClient.from("teacher_todos").update({ done, done_at: t.done_at }).eq("id", id);
+      if(error){ Object.assign(t, prev); render(); toast("Couldn't save that — try again."); }
+      return;
+    }
+    if(kind === "delete"){
+      const i = todos.indexOf(t); todos.splice(i, 1); render();
+      const { error } = await sbClient.from("teacher_todos").delete().eq("id", id);
+      if(error){ todos.splice(i, 0, t); render(); toast("Couldn't delete that — try again."); }
+    }
+  }
+  let keepTodoDraft = null;
+  const todoFading = new Set();
+
   /* ---------- actions ---------- */
   document.addEventListener("click", (e) => {
     const mk = e.target.closest("[data-mark]"); if(mk){ e.stopPropagation(); if(!mk.disabled) markVisit(mk.dataset.sid, mk.dataset.mark); return; }
+    const ar = e.target.closest("[data-arrive]"); if(ar){ e.stopPropagation(); if(!ar.disabled) toggleArrived(ar.dataset.arrive.split(","), ar.dataset.on === "1", ar); return; }
+    const rg = e.target.closest("[data-ring]"); if(rg){ openDrawer({ type: "ring", k: rg.dataset.ring }); return; }
+    const td = e.target.closest("[data-todo]"); if(td){ e.stopPropagation(); todoAction(td.dataset.todo, td.dataset.id, td); return; }
     const sl = e.target.closest("[data-slot]"); if(sl){ tdUi.slot = Number(sl.dataset.slot); render(); return; }
     const ks = e.target.closest("[data-kissub]"); if(ks){ tdUi.kisSub = ks.dataset.kissub; render(); return; }
     const st = e.target.closest("[data-story]"); if(st){ openDrawer({ type: "story", k: st.dataset.story }); return; }
@@ -1576,14 +1752,16 @@ window.kumonPtcNav = function(client, role){
     if(isAdmin()){ let saved = null; try{ saved = sessionStorage.getItem("kumonTodayWho"); }catch(_){ } tdUi.who = saved || "all"; }
     else tdUi.who = currentTeacherName || null;
     $("#view").innerHTML = `<div class="empty">Loading your day…</div>`;
-    await loadAll();
+    await Promise.all([loadAll(), loadTodos()]);
     render();
+    watchAttendance();
     // classes, arrivals and moves change during the day: refresh them every 2 minutes and when the tab comes back
     const tick = async () => { if(document.hidden || drawerStack.length) return; await loadToday(); render(); };
     refreshTimer = setInterval(tick, 2 * 60 * 1000);
     document.addEventListener("visibilitychange", () => { if(!document.hidden) tick(); });
   }
   document.addEventListener("submit", async (e)=>{
+    if(e.target.id === "todoForm"){ e.preventDefault(); await addTodo(); return; }
     if(e.target.id === "loginForm"){ e.preventDefault(); const fd = new FormData(e.target);
       const { error } = await sbClient.auth.signInWithPassword({ email: fd.get("email"), password: fd.get("password") }); if(error) showLogin(error.message); }
   });
