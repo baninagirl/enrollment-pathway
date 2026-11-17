@@ -624,9 +624,22 @@
   .rk-board{ display:grid; grid-template-columns:repeat(4, minmax(0,1fr)); gap:16px; align-items:start; }
   .rk-col{ background:var(--surface-2); border-radius:18px; padding:10px; display:flex; flex-direction:column; gap:10px; min-height:200px; transition:background .2s, box-shadow .2s; }
   .rk-col.over{ background:var(--accent-soft); box-shadow:inset 0 0 0 2px var(--accent); }
-  .rk-col h3{ margin:2px 6px; font-size:13px; font-weight:700; color:var(--ink-muted); display:flex; align-items:center; gap:8px; }
+  .rk-col h3{ margin:2px 6px; font-size:13px; font-weight:700; color:var(--ink-muted); display:flex; align-items:center; gap:8px; min-height:26px; }
   .rk-col h3 i{ width:8px; height:8px; border-radius:50%; }
   .rk-col h3 span{ margin-left:auto; font-size:12px; background:var(--surface); border-radius:99px; padding:1px 8px; }
+  .rk-qa-btn{ flex:none; display:inline-grid; place-items:center; width:26px; height:26px; margin:0 -2px 0 0; padding:0; border-radius:8px; border:1px solid transparent; background:var(--surface); color:var(--accent); cursor:pointer; transition:background .15s, border-color .15s, transform .12s; }
+  .rk-qa-btn:hover{ background:var(--accent-soft); border-color:var(--accent); }
+  .rk-qa-btn:active{ transform:scale(.92); }
+  .rk-qa-btn.on{ background:var(--accent-soft); border-color:var(--accent); }
+  .rk-qa-btn.on svg{ transform:rotate(45deg); }
+  .rk-qa-btn svg{ transition:transform .2s; }
+  .rk-qa{ background:var(--surface); border-radius:14px; box-shadow:0 0 0 2px var(--accent), var(--shadow); padding:10px 12px; display:flex; flex-direction:column; gap:8px; animation:rkQaIn .18s ease-out; }
+  .rk-qa-in{ border:none !important; outline:none; background:transparent !important; padding:2px 0 !important; font:inherit; font-size:14px; color:var(--ink); width:100%; box-shadow:none !important; }
+  .rk-qa-row{ display:flex; align-items:center; justify-content:space-between; gap:8px; }
+  .rk-qa-hint{ font-size:11.5px; color:var(--ink-faint); }
+  .rk-qa-add{ font:inherit; font-size:12.5px; font-weight:600; border:none; border-radius:99px; padding:5px 14px; background:var(--accent); color:#fff; cursor:pointer; }
+  @keyframes rkQaIn{ from{ opacity:0; transform:translateY(-4px); } to{ opacity:1; transform:none; } }
+  @media (hover:none){ .rk-qa-hint{ visibility:hidden; } }
   .rk-empty{ font-size:13px; color:var(--ink-faint); text-align:center; padding:18px 8px; border:1.5px dashed var(--border); border-radius:12px; }
   .rk-card{ background:var(--surface); border-radius:14px; box-shadow:var(--shadow); padding:12px 12px 10px; display:flex; gap:10px; align-items:flex-start; min-width:0; transition:transform .4s cubic-bezier(.2,.8,.2,1), opacity .35s; }
   .rk-card[draggable=true]{ cursor:grab; } .rk-card.dragging{ opacity:.35; }
@@ -1032,7 +1045,7 @@ window.kumonPtcNav = function(client, role){
 
   /* ---------- state ---------- */
   let todos = [], profiles = [], loaded = false, missing = false, flagCols = true;
-  const ui = { multi: false, view: "board", smart: "today", whose: null, month: todayISO().slice(0,7), day: todayISO(), adding: false, editing: null };
+  const ui = { multi: false, view: "board", smart: "today", whose: null, month: todayISO().slice(0,7), day: todayISO(), adding: false, editing: null, qa: null };
   try{ const v = localStorage.getItem("kumonTodosView2"); if(v === "list" || v === "calendar" || v === "board") ui.view = v; }catch(_){ }
   const fading = new Set();   // just ticked: shown crossed out for a moment, like Reminders
 
@@ -1211,8 +1224,11 @@ window.kumonPtcNav = function(client, role){
     const cols = [["overdue", "Overdue", "var(--bad)"], ["today", "Today", "var(--warn)"], ["later", "Later", "var(--accent)"], ["done", "Done today", "var(--good)"]];
     const colHtml = ([k, label, dot]) => {
       const list = k === "done" ? doneToday : open.filter(t => colOf(t) === k).sort(sortT);
-      return `<div class="rk-col" data-col="${k}"><h3><i style="background:${dot}"></i>${label}<span>${list.length}</span></h3>
-        ${list.length ? list.map(t => card(t, k)).join("") : `<div class="rk-empty">${k === "done" ? "Tick something off" : k === "overdue" ? "Nothing overdue" : "Nothing here"}</div>`}</div>`;
+      const canAdd = k === "today" || k === "later", qaOpen = canAdd && ui.qa === k;
+      const plus = canAdd ? `<button type="button" class="rk-qa-btn${qaOpen ? " on" : ""}" data-act="qa" data-col="${k}" aria-label="Add a to-do to ${label}" title="Add to ${label}"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>` : "";
+      const composer = qaOpen ? `<form class="rk-qa" data-qa-form="${k}"><input type="text" class="rk-qa-in" maxlength="300" placeholder="${k === "today" ? "New to-do for today" : "New to-do, no date"}" autocomplete="off" aria-label="New to-do for ${label}"><div class="rk-qa-row"><span class="rk-qa-hint">Press Enter to add</span><button type="submit" class="rk-qa-add">Add</button></div></form>` : "";
+      return `<div class="rk-col" data-col="${k}"><h3><i style="background:${dot}"></i>${label}<span>${list.length}</span>${plus}</h3>
+        ${composer}${list.length ? list.map(t => card(t, k)).join("") : (qaOpen ? "" : `<div class="rk-empty">${k === "done" ? "Tick something off" : k === "overdue" ? "Nothing overdue" : "Nothing here"}</div>`)}</div>`;
     };
     return `<section class="card rm-main rk-addcard">${addRow(today)}</section><div class="rk-board">${cols.map(colHtml).join("")}</div>`;
   }
@@ -1387,6 +1403,26 @@ window.kumonPtcNav = function(client, role){
     else if(lines.length > 1) toast(`Added ${lines.length} to-dos.`);
     else if(owner !== currentUser.id){ toast(`Added to ${nameOfUser(owner)}'s list.`); logHistory("todo_assign", `Gave ${nameOfUser(owner)} a to-do: ${text}`, data && data[0] && data[0].id); }
   }
+  // Quick add from the + on the Today / Later columns: Today gets today's date, Later gets no date.
+  function focusQa(){ const i = document.querySelector(".rk-qa-in"); if(i) i.focus(); }
+  async function quickAdd(col, text){
+    text = String(text || "").trim().slice(0, 300); if(!text){ focusQa(); return; }
+    const owner = isAllView() ? currentUser.id : ownerId();   // the list you are looking at (yours when viewing everyone)
+    const r = { owner_id: owner, text, due_date: col === "today" ? todayISO() : null, created_by: currentUser.id, created_by_email: currentUser.email || null };
+    if(flagCols){ r.note = null; r.flagged = false; }
+    const { data, error } = await sbClient.from("teacher_todos").insert([r]).select();
+    if(error){ toast("Couldn't add that: " + error.message); return; }
+    todos.push(...(data || []));
+    render(); focusQa();
+    if(owner !== currentUser.id) toast(`Added to ${nameOfUser(owner)}'s list.`);
+  }
+  document.addEventListener("submit", e => {
+    const f = e.target.closest && e.target.closest("[data-qa-form]"); if(!f) return;
+    e.preventDefault(); const i = f.querySelector(".rk-qa-in"); quickAdd(f.dataset.qaForm, i ? i.value : "");
+  });
+  document.addEventListener("keydown", e => {
+    if(e.key === "Escape" && e.target.classList && e.target.classList.contains("rk-qa-in")){ e.stopPropagation(); ui.qa = null; render(); }
+  });
   async function save(t, patch, undoPatch){
     Object.assign(t, patch); render();
     const { error } = await sbClient.from("teacher_todos").update(patch).eq("id", t.id);
@@ -1440,6 +1476,7 @@ window.kumonPtcNav = function(client, role){
     if(e.target.id === "modalBackdrop"){ closeModal(); return; }
     const b = e.target.closest("[data-act]"); if(!b) return;
     const a = b.dataset.act;
+    if(a === "qa"){ ui.qa = ui.qa === b.dataset.col ? null : b.dataset.col; render(); focusQa(); return; }
     if(a === "smart"){ ui.smart = b.dataset.k; render(); }
     else if(a === "view"){ ui.view = b.dataset.v; try{ localStorage.setItem("kumonTodosView2", ui.view); }catch(_){ } render(); }
     else if(a === "toggle"){ e.stopPropagation(); await toggle(b.dataset.id); }
