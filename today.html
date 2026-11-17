@@ -517,6 +517,42 @@
   .td-nm{ font-weight:600; font-size:14px; }
   .td-sub{ font-size:12.5px; color:var(--ink-muted); font-variant-numeric:tabular-nums; }
   .td-kid.out .td-nm{ color:var(--ink-faint); text-decoration:line-through; }
+  /* To-do cards (Nov 17) */
+  .td-tcs{ display:grid; grid-template-columns:repeat(auto-fill, minmax(240px, 1fr)); gap:16px; margin-top:16px; align-items:stretch; }
+  .td-tc{ padding:18px 18px 16px; display:flex; gap:12px; align-items:flex-start; min-width:0; transition:transform .45s cubic-bezier(.2,.8,.2,1), opacity .4s ease, box-shadow .25s; }
+  .td-tc.fresh{ animation:tdTcIn .45s cubic-bezier(.2,.8,.2,1); }
+  .td-tc.leaving{ transform:scale(.94); opacity:0; }
+  @keyframes tdTcIn{ from{ transform:translateY(8px) scale(.97); opacity:0; } }
+  .td-tc-tick{ appearance:none; flex:none; width:28px; height:28px; margin:-2px 0 0 -2px; border-radius:50%; border:2px solid var(--border); background:transparent; cursor:pointer; display:grid; place-items:center; transition:background .25s, border-color .25s, transform .2s; touch-action:manipulation; }
+  .td-tc-tick:hover{ border-color:var(--good); }
+  .td-tc-tick:active{ transform:scale(.88); }
+  .td-tc-tick:focus-visible{ outline:none; box-shadow:0 0 0 4px rgba(36,147,90,.25); }
+  .td-tc-tick svg{ width:16px; height:16px; fill:none; stroke:#fff; stroke-width:3; stroke-linecap:round; stroke-linejoin:round; stroke-dasharray:24; stroke-dashoffset:24; }
+  .td-tc.done .td-tc-tick{ background:var(--good); border-color:var(--good); animation:tdTickPop .45s cubic-bezier(.2,.8,.2,1); }
+  .td-tc.done .td-tc-tick svg{ animation:tdTickDraw .35s .1s cubic-bezier(.2,.8,.2,1) forwards; }
+  @keyframes tdTickPop{ 0%{ transform:scale(.7); } 60%{ transform:scale(1.15); } 100%{ transform:scale(1); } }
+  @keyframes tdTickDraw{ to{ stroke-dashoffset:0; } }
+  .td-tc-body{ flex:1; min-width:0; display:flex; flex-direction:column; gap:6px; }
+  .td-tc-text{ font-size:15px; font-weight:600; line-height:1.35; overflow-wrap:anywhere; transition:color .3s; }
+  .td-tc.done .td-tc-text{ color:var(--ink-faint); text-decoration:line-through; }
+  .td-tc-note{ font-size:13px; color:var(--ink-muted); line-height:1.4; }
+  .td-tc-chips{ display:flex; flex-wrap:wrap; gap:6px; align-items:center; }
+  .td-tc-chips:empty{ display:none; }
+  .td-tc-flag{ display:inline-grid; place-items:center; }
+  .td-tc-add{ padding:14px; display:flex; flex-direction:column; gap:10px; border:1.5px dashed var(--border); box-shadow:none; background:transparent; }
+  .td-tc-add:focus-within{ border-style:solid; border-color:var(--accent); background:var(--surface); }
+  .td-tc-add input[type=text]{ border:0; background:transparent; font:inherit; font-size:15px; font-weight:600; color:var(--ink); padding:4px 2px; outline:none; width:100%; }
+  .td-tc-add input[type=text]::placeholder{ color:var(--ink-faint); font-weight:500; }
+  .td-tc-addrow{ display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap; }
+  .td-tc-when{ display:flex; gap:4px; flex-wrap:wrap; }
+  .td-tc-when button{ appearance:none; border:0; background:var(--surface-2, #F1F2F6); color:var(--ink-muted); font:inherit; font-size:12.5px; font-weight:600; padding:5px 10px; border-radius:99px; cursor:pointer; }
+  .td-tc-when button[aria-pressed="true"]{ background:var(--ink); color:var(--surface); }
+  .td-tc-addbtn{ appearance:none; border:0; background:var(--accent); color:#fff; font:inherit; font-size:13px; font-weight:700; padding:7px 14px; border-radius:10px; cursor:pointer; }
+  .td-tc-addbtn:active{ transform:scale(.96); }
+  .td-tc-title{ display:flex; align-items:center; gap:12px; }
+  .td-tc-ring{ position:relative; display:inline-grid; place-items:center; flex:none; }
+  .td-tc-ring b{ position:absolute; font-family:Inter, system-ui, sans-serif; font-size:9.5px; font-weight:800; letter-spacing:0; }
+  @media (prefers-reduced-motion:reduce){ .td-tc, .td-tc-tick, .td-tc-tick svg{ animation:none !important; transition:none !important; } .td-tc.done .td-tc-tick svg{ stroke-dashoffset:0; } }
   .td-chip{ display:inline-flex; align-items:center; gap:4px; padding:3px 9px; border-radius:99px; font-size:11.5px; font-weight:600; white-space:nowrap; }
   .td-math{ background:var(--accent-soft); color:var(--accent-soft-ink); } .td-read{ background:var(--bad-soft); color:var(--bad); }
   .td-mute{ background:var(--surface-2); color:var(--ink-muted); border:1px solid var(--border); }
@@ -1614,6 +1650,7 @@ window.kumonPtcNav = function(client, role){
     const warn = loadIssues.size ? `<div class="banner">Some of the data couldn't load (${esc([...loadIssues].join(", "))}), so parts of this page may be missing. Refresh the page to try again.</div>` : "";
     const tIn = $("#todoText"), dIn = $("#todoDue"), fIn = $("#todoFor");
     const draft = tIn ? { t: tIn.value, d: dIn ? dIn.value : "", f: fIn ? fIn.value : "", focus: document.activeElement === tIn } : keepTodoDraft;
+    if(draft) keepTodoDraft = draft;   // so the to-do card is rebuilt with what's being typed and the chosen day
     $("#view").innerHTML = warn + renderDay() + renderBookings() + renderTodos() + renderStories() + renderScore() + renderKis();
     if(draft){ keepTodoDraft = draft; const a = $("#todoText"), b = $("#todoDue"), c = $("#todoFor");
       if(a){ a.value = draft.t || ""; if(draft.focus){ a.focus(); a.setSelectionRange(a.value.length, a.value.length); } } if(b) b.value = draft.d || ""; if(c && draft.f) c.value = draft.f; }
@@ -1930,29 +1967,44 @@ window.kumonPtcNav = function(client, role){
     return p ? p.id : (currentUser ? currentUser.id : null);
   }
   function todoWhoName(id){ if(currentUser && id === currentUser.id) return "you"; const p = todoProfiles.find(x => x.id === id); return p ? (p.teacher_name || p.email) : "admin"; }
-  // Today shows only the URGENT to-dos (Nov 16): overdue, due today, or flagged. The full list is on the To-dos page.
+  // Today's to-dos (Nov 17): cards for what's on your plate now — overdue, due today, flagged, and anything with no
+  // date (what you just added). Future-dated ones wait on the To-dos page. Add one for yourself right here; tick to finish.
   function renderTodos(){
     if(!todosReady) return "";
     if(todosMissing) return isAdmin() ? `<section class="td-sec"><div class="td-kicker">To-dos</div><div class="banner">To-dos need phase144-teacher-todos.sql to be run in Supabase first.</div></section>` : "";
-    const owner = todoOwner(), today = todayISO();
-    const urgent = todos.filter(t => t.owner_id === owner && (!t.done || todoFading.has(t.id)) && ((t.due_date && t.due_date <= today) || t.flagged))
-      .sort((a, b) => ((a.due_date || "9999") < (b.due_date || "9999") ? -1 : 1));
+    const owner = todoOwner(), today = todayISO(), tmrw = addDays(today, 1);
+    const mine = todos.filter(t => t.owner_id === owner);
+    const shown = mine.filter(t => (!t.done || todoFading.has(t.id)) && (!t.due_date || t.due_date <= today || t.flagged))
+      .sort((a, b) => (b.flagged ? 1 : 0) - (a.flagged ? 1 : 0) || ((a.due_date || "9999") < (b.due_date || "9999") ? -1 : (a.due_date || "9999") > (b.due_date || "9999") ? 1 : 0) || (a.created_at < b.created_at ? -1 : 1));
+    const later = mine.filter(t => !t.done && t.due_date && t.due_date > today && !t.flagged).length;
+    const doneToday = mine.filter(t => t.done && t.done_at && new Date(new Date(t.done_at).getTime() + 8 * 3600e3).toISOString().slice(0, 10) === today).length;
+    const left = shown.filter(t => !t.done && !todoFading.has(t.id)).length;
     const viewingOther = isAdmin() && currentUser && owner !== currentUser.id;
-    const item = t => {
+    const forWho = viewingOther ? ` for ${esc(tdUi.who)}` : "";
+    const dueChip = t => !t.due_date ? "" : t.due_date < today ? `<span class="td-chip td-bad">Overdue · ${esc(fmtDate(t.due_date, { year: undefined }))}</span>` : t.due_date === today ? `<span class="td-chip td-warn">Today</span>` : `<span class="td-chip td-mute">${esc(fmtDate(t.due_date, { year: undefined }))}</span>`;
+    const card = t => {
       const fin = t.done || todoFading.has(t.id);
-      const from = t.created_by && t.created_by !== t.owner_id ? `<span class="td-chip td-mute">from ${esc(todoWhoName(t.created_by))}</span>` : "";
-      const due = t.due_date ? `<span class="td-chip ${t.due_date < today ? "td-bad" : "td-warn"}">${t.due_date < today ? "overdue · " + esc(fmtDate(t.due_date, { year: undefined })) : t.due_date === today ? "today" : esc(fmtDate(t.due_date, { year: undefined }))}</span>` : "";
-      const flag = t.flagged ? `<svg viewBox="0 0 24 24" width="16" height="16" fill="#E8890C" role="img" aria-label="Flagged"><path d="M6 21V4h11l-1.5 4L17 12H6"/></svg>` : "";
-      return `<div class="td-todo-item${fin ? " done" : ""}"><button type="button" class="td-tick-btn" data-todo="toggle" data-id="${esc(t.id)}" aria-pressed="${fin ? "true" : "false"}" aria-label="${fin ? "Done — tap to undo" : "Mark done"}"><span class="td-tick${fin ? " yes" : ""}"></span></button>
-        <span class="tx">${esc(t.text)}</span>${from}${due}${flag}</div>`;
+      const from = t.created_by && t.created_by !== t.owner_id ? `<span class="td-chip td-mute">From ${esc(todoWhoName(t.created_by))}</span>` : "";
+      const flag = t.flagged ? `<span class="td-tc-flag" title="Flagged"><svg viewBox="0 0 24 24" width="14" height="14" fill="#E8890C" aria-hidden="true"><path d="M6 21V4h11l-1.5 4L17 12H6"/></svg></span>` : "";
+      return `<div class="card td-tc${fin ? " done" : ""}${t.id === justAddedTodo ? " fresh" : ""}" data-tc="${esc(t.id)}">
+        <button type="button" class="td-tc-tick" data-todo="toggle" data-id="${esc(t.id)}" aria-pressed="${fin}" aria-label="${fin ? "Done — tap to undo" : "Mark done"}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5 12.5l3.6 3.6 7.4-8"/></svg></button>
+        <div class="td-tc-body"><div class="td-tc-text">${esc(t.text)}</div>${t.note ? `<div class="td-tc-note">${esc(t.note)}</div>` : ""}<div class="td-tc-chips">${dueChip(t)}${from}${flag}</div></div>
+      </div>`;
     };
-    const n = urgent.filter(t => !t.done).length;
-    const openBtn = `<a class="td-todo-open" href="todos.html">Open To-dos<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></a>`;
-    if(!urgent.length) return `<section class="td-sec"><div class="card td-todo-calm">
-        <span class="td-todo-ok" aria-hidden="true"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5 9-10"/></svg></span>
-        <div class="td-todo-calm-tx"><b>No urgent to-dos${viewingOther ? ` for ${esc(tdUi.who)}` : ""}</b><span>Nothing overdue, due today or flagged.</span></div>${openBtn}</div></section>`;
-    return `<section class="td-sec"><div class="td-sec-head"><div><div class="td-kicker">To-dos</div><h2 class="td-title">${n} urgent ${n === 1 ? "to-do" : "to-dos"}${viewingOther ? ` for ${esc(tdUi.who)}` : ""}</h2></div>${openBtn}</div>
-      <div class="card td-todo">${urgent.map(item).join("")}</div></section>`;
+    const d = keepTodoDraft || {};
+    const addCard = `<form class="card td-tc-add" id="todoForm" autocomplete="off">
+        <input id="todoText" type="text" maxlength="200" placeholder="${viewingOther ? `Add a to-do for ${esc(tdUi.who)}…` : "Add a to-do for yourself…"}" aria-label="New to-do" value="${esc(d.t || "")}">
+        <input id="todoDue" type="hidden" value="${esc(d.d != null ? d.d : today)}">
+        <div class="td-tc-addrow"><div class="td-tc-when" role="group" aria-label="When">
+          ${[["Today", today], ["Tomorrow", tmrw], ["No date", ""]].map(([l, v]) => `<button type="button" data-todo="due" data-v="${v}" aria-pressed="${(d.d != null ? d.d : today) === v}">${l}</button>`).join("")}
+        </div><button type="submit" class="td-tc-addbtn" aria-label="Add">Add</button></div>
+      </form>`;
+    const total = left + doneToday;
+    const ring = total ? `<span class="td-tc-ring" title="${doneToday} done today"><svg viewBox="0 0 36 36" width="36" height="36" aria-hidden="true"><circle cx="18" cy="18" r="15" fill="none" stroke="var(--border)" stroke-width="3.5"/><circle cx="18" cy="18" r="15" fill="none" stroke="var(--good)" stroke-width="3.5" stroke-linecap="round" stroke-dasharray="${(doneToday / total * 94.25).toFixed(1)} 94.25" transform="rotate(-90 18 18)" style="transition:stroke-dasharray .6s cubic-bezier(.2,.8,.2,1)"/></svg><b>${doneToday}/${total}</b></span>` : "";
+    const title = left ? `${left} ${left === 1 ? "to-do" : "to-dos"} left${forWho}` : doneToday ? `All done for today${forWho}.` : `Nothing on the list${forWho}.`;
+    const openBtn = `<a class="td-todo-open" href="todos.html">${later ? `${later} scheduled later · ` : ""}Open To-dos<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></a>`;
+    return `<section class="td-sec"><div class="td-sec-head"><div><div class="td-kicker">To-dos</div><h2 class="td-title td-tc-title">${ring}<span>${title}</span></h2></div>${openBtn}</div>
+      <div class="td-tcs">${addCard}${shown.map(card).join("")}</div></section>`;
   }
   async function addTodo(){
     const tx = ($("#todoText") || {}).value || "", text = tx.trim(); if(!text) return;
@@ -1962,17 +2014,22 @@ window.kumonPtcNav = function(client, role){
     const { data, error } = await sbClient.from("teacher_todos").insert(row).select().single();
     if(error){ toast("Couldn't add that: " + error.message); return; }
     todos.push(data);
-    ["#todoText", "#todoDue"].forEach(sel => { const el = $(sel); if(el) el.value = ""; });
-    keepTodoDraft = null; render();
+    ["#todoText"].forEach(sel => { const el = $(sel); if(el) el.value = ""; });
+    keepTodoDraft = null; justAddedTodo = data.id; render(); justAddedTodo = null;
     const f = $("#todoText"); if(f) f.focus();
     if(owner !== currentUser.id) logHistory("todo_assign", `Gave ${todoWhoName(owner)} a to-do: ${text}`);
   }
   async function todoAction(kind, id, btn){
     if(kind === "showdone"){ showDoneTodos = !showDoneTodos; render(); return; }
+    if(kind === "due"){ const h = $("#todoDue"); if(h) h.value = btn.dataset.v; btn.parentElement.querySelectorAll("button").forEach(b => b.setAttribute("aria-pressed", String(b === btn))); const f = $("#todoText"); if(f) f.focus(); return; }
     const t = todos.find(x => x.id === id); if(!t) return;
     if(kind === "toggle"){
       const done = !t.done, prev = { done: t.done, done_at: t.done_at };
-      if(done){ todoFading.add(id); setTimeout(() => { if(todoFading.delete(id)) render(); }, 1400); } else todoFading.delete(id);
+      if(done){
+        todoFading.add(id);
+        setTimeout(() => { const c = document.querySelector(`[data-tc="${CSS.escape(id)}"]`); if(c && todoFading.has(id)) c.classList.add("leaving"); }, 1100);
+        setTimeout(() => { if(todoFading.delete(id)) render(); }, 1550);
+      } else todoFading.delete(id);
       Object.assign(t, { done, done_at: done ? new Date().toISOString() : null }); render();
       const { error } = await sbClient.from("teacher_todos").update({ done, done_at: t.done_at }).eq("id", id);
       if(error){ Object.assign(t, prev); render(); toast("Couldn't save that — try again."); }
@@ -1984,7 +2041,7 @@ window.kumonPtcNav = function(client, role){
       if(error){ todos.splice(i, 0, t); render(); toast("Couldn't delete that — try again."); }
     }
   }
-  let keepTodoDraft = null;
+  let keepTodoDraft = null, justAddedTodo = null;
   const todoFading = new Set();
 
   /* ---------- actions ---------- */
