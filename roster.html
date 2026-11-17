@@ -2424,8 +2424,8 @@ window.kumonPtcNav = function(client, role){
             <label class="field">No. of months (current level)<input type="text" name="no_of_months_current_level" value="${v("no_of_months_current_level")}"></label>
           </div>
           <div class="field-row">
-            <label class="field">Test date<input type="text" name="test_date" value="${v("test_date")}" placeholder="e.g. 8/14/26"></label>
-            <label class="field">Test level<input type="text" name="test_level" value="${v("test_level")}"></label>
+            <label class="field">Test date<input type="date" name="test_date_pick" value="${esc(testDateIso(e.test_date))}"></label>
+            <label class="field">Test level${testLevelSelect(e.subject, e.test_level)}</label>
           </div>
           <div class="field-row">
             <label class="field">Test time<input type="text" name="test_time" value="${v("test_time")}" placeholder="e.g. 5 MINUTES"></label>
@@ -2663,6 +2663,21 @@ window.kumonPtcNav = function(client, role){
   document.addEventListener("change", e => {
     if(e.target && e.target.name === "zun_on"){ const w = e.target.closest(".zun-wrap"), pk = w && w.querySelector(".zun-pick"); if(pk) pk.hidden = !e.target.checked; }
   });
+  // Test date (report form): picked on the calendar, saved in the report's usual "8/14/26" style.
+  // Reads "8/14/26", "8/14/2026" or "2026-08-14"; anything else (an old typo) opens blank but is kept unless a date is picked.
+  function testDateIso(t){
+    const x = String(t || "").trim(); if(!x) return "";
+    let m = x.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/); if(m) return `${m[1]}-${m[2].padStart(2,"0")}-${m[3].padStart(2,"0")}`;
+    m = x.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2}|\d{4})$/);
+    if(m){ const y = m[3].length === 2 ? "20" + m[3] : m[3]; return `${y}-${m[1].padStart(2,"0")}-${m[2].padStart(2,"0")}`; }
+    return "";
+  }
+  function testDateText(iso){ const m = String(iso || "").match(/^(\d{4})-(\d{2})-(\d{2})$/); return m ? `${Number(m[2])}/${Number(m[3])}/${m[1].slice(2)}` : ""; }
+  function testLevelSelect(subject, value){
+    const lv = levelsFor(subject), v = String(value || "").trim(), up = v.toUpperCase();
+    const hit = lv.find(l => l === up);
+    return `<select name="test_level"><option value="">—</option>${v && !hit ? `<option value="${esc(v)}" selected>${esc(v)}</option>` : ""}${lv.map(l => `<option value="${l}" ${l === hit ? "selected" : ""}>${l}</option>`).join("")}</select>`;
+  }
   function pageSelectHtml(name, value){
     const pages = []; for(let n = 10; n <= 200; n += 10) pages.push(String(n));
     const v = value == null ? "" : String(value).trim(), norm = v && /^\d+$/.test(v) ? String(Number(v)) : v;
@@ -3148,7 +3163,7 @@ window.kumonPtcNav = function(client, role){
         nwu: fd.get("nwu") || null,
         no_of_days: fd.get("no_of_days") || null,
         no_of_months_current_level: fd.get("no_of_months_current_level") || null,
-        test_date: fd.get("test_date") || null,
+        test_date: fd.get("test_date_pick") ? testDateText(fd.get("test_date_pick")) : (testDateIso((enrollments.find(en => en.id === editingReportId) || {}).test_date) ? null : ((enrollments.find(en => en.id === editingReportId) || {}).test_date || null)),
         test_level: fd.get("test_level") || null,
         test_time: fd.get("test_time") || null,
         test_score: fd.get("test_score") || null,
