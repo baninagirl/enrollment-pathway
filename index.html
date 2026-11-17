@@ -2448,8 +2448,10 @@ window.kumonPtcNav = function(client, role){
     ).join("");
   }
 
+  // DTs whose outcome someone tapped "Change" on — they show the outcome buttons again until a new one is picked.
+  const reopenedOutcomes = new Set();
   function diagnosticRow(d, compact){
-    const resolved = d.outcome !== "pending";
+    const resolved = d.outcome !== "pending" && !reopenedOutcomes.has(d.id);
     const s = studentById(d.studentId);
     return `<div class="rowi">
       <div class="who">
@@ -2460,9 +2462,11 @@ window.kumonPtcNav = function(client, role){
       <div class="when tnum">${fmtDateShort(d.date)} · ${fmtTime(d.time)}${d.examiner?" · "+esc(d.examiner):""}</div>
       <div class="acts">
         ${resolved
-          ? `<span class="pill ${d.outcome==='enrolled'?'good':'bad'}">${d.outcome==='enrolled' ? `Enrolled${s&&s.subject?" in "+esc(s.subject):""}` : 'Not enrolled'}</span>`
+          ? `<span class="pill ${d.outcome==='enrolled'?'good':'bad'}">${d.outcome==='enrolled' ? `Enrolled${s&&s.subject?" in "+esc(s.subject):""}` : 'Not enrolled'}</span>
+             <button class="btn sm ghost" data-action="reopen-outcome" data-id="${d.id}" title="Picked the wrong one? Choose again">Change</button>`
           : `${enrollButtons(d)}
-             <button class="btn sm danger" data-action="mark-outcome" data-id="${d.id}" data-outcome="not_enrolled">Not enrolled</button>`}
+             <button class="btn sm danger" data-action="mark-outcome" data-id="${d.id}" data-outcome="not_enrolled">Not enrolled</button>
+             ${reopenedOutcomes.has(d.id) ? `<button class="btn sm ghost" data-action="keep-outcome" data-id="${d.id}">Keep ${d.outcome === "enrolled" ? "Enrolled" : "Not enrolled"}</button>` : ""}`}
         ${!compact && !resolved ? `<button class="btn sm ghost" data-action="cancel-diagnostic" data-id="${d.id}">Cancel</button>` : ""}
         <button class="btn sm ghost" data-action="edit-diagnostic" data-id="${d.id}">Edit</button>
         <button class="btn sm danger" title="Delete this student everywhere" data-action="delete-diagnostic" data-id="${d.id}">${iconTrash()}</button>
@@ -5110,6 +5114,7 @@ window.kumonPtcNav = function(client, role){
       let ok = false;
       await guardWrite(async ()=>{
         await db.collection("diagnostics").doc(id).update({ outcome });
+        reopenedOutcomes.delete(id);
         logHistory("mark_outcome", `Marked ${d.studentName || "a student"}'s diagnostic outcome: ${outcome}${subject ? " — " + subject : ""}`, "diagnostic", id);
         ok = true;
       });
@@ -5144,6 +5149,7 @@ window.kumonPtcNav = function(client, role){
         patch.enrollmentTypeSetAt = new Date().toISOString();
       }
       await db.collection("students").doc(d.studentId).update(patch);
+      reopenedOutcomes.delete(id);
       logHistory("mark_outcome", `Marked ${d.studentName || "a student"}'s diagnostic outcome: ${outcome}${subject ? " — " + subject : ""}`, "diagnostic", id);
       toast(outcome === "enrolled" ? `Marked enrolled${subject ? " — "+subject : ""}.` : "Marked not enrolled.");
     });
@@ -5433,6 +5439,10 @@ window.kumonPtcNav = function(client, role){
     }
     else if(a === "cal-view"){ STATE.calView = el.dataset.view; renderCalendar(); }
     else if(a === "cal-filter"){ STATE.calFilter = el.dataset.filter; renderCalendar(); }
+    else if(a === "reopen-outcome" || a === "keep-outcome"){
+      if(a === "reopen-outcome") reopenedOutcomes.add(el.dataset.id); else reopenedOutcomes.delete(el.dataset.id);
+      if(dayModalIso && !$("#modalBackdrop").hidden) refreshDayModal(); else renderAll();
+    }
     else if(a === "cal-show"){ const k = el.dataset.show; STATE.calShow[k] = !STATE.calShow[k]; if(!STATE.calShow.dt && !STATE.calShow.st) STATE.calShow[k === "dt" ? "st" : "dt"] = true; renderCalendar(); }
     else if(a === "cal-pick-day"){ STATE.calSelDay = el.dataset.date; if(window.matchMedia("(max-width: 900px)").matches){ renderCalendar(); const p = document.querySelector(".mc-panel"); if(p) p.scrollIntoView({ behavior:"smooth", block:"start" }); } else renderCalendar(); }
     else if(a === "open-free-tool"){ openFreeTool(); }
