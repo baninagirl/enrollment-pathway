@@ -365,7 +365,7 @@
   .name-subj-pill{ margin-left:6px; vertical-align:middle; padding:2px 7px; }
   .row-actions{ display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end; }
 
-  select, input[type=text], input[type=search], textarea{
+  select, input[type=text], input[type=search], input[type=date], textarea{
     font-family:inherit; font-size:13.5px; padding:8px 10px; border-radius:8px; border:1px solid var(--border);
     background:var(--surface); color:var(--ink); width:100%;
   }
@@ -704,7 +704,8 @@
   .rm-add-row #rmNote{ flex:1 1 160px; min-width:0; }
   .rm-sr{ position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; }
   .rm-empty{ padding:18px 2px; color:var(--ink-muted); font-size:14px; }
-  .rm-check-line{ display:flex; gap:8px; align-items:center; font-size:14px; }
+  .rm-check-line{ display:flex; gap:10px; align-items:center; font-size:14px; font-weight:500; color:var(--ink); cursor:pointer; padding:2px 0; }
+  .rm-check-line input[type=checkbox]{ width:18px; height:18px; margin:0; accent-color:var(--warn); box-shadow:none; cursor:pointer; }
   /* calendar */
   .rm-cal{ flex:1 1 640px; min-width:0; padding:20px 22px; display:flex; flex-direction:column; gap:10px; }
   .rm-cal-head{ display:flex; align-items:center; gap:8px; }
@@ -1209,7 +1210,6 @@ window.kumonPtcNav = function(client, role){
     const t = todos.find(x => x.id === id); if(!t || (t.due_date || "") === (due || "")) return;
     await save(t, { due_date: due || null }, { due_date: t.due_date });
   }
-  document.addEventListener("click", e => { const i = e.target.closest && e.target.closest("input[type=date][data-rk-date]"); if(i && i.showPicker){ try{ i.showPicker(); }catch(_){} } }, true);
   document.addEventListener("change", async e => { const id = e.target.dataset && e.target.dataset.rkDate; if(id) await moveTo(id, e.target.value || null); });
   let rkDrag = null;
   document.addEventListener("dragstart", e => { const c = e.target.closest && e.target.closest(".rk-card[draggable=true]"); if(!c) return; rkDrag = c.dataset.rk; c.classList.add("dragging"); try{ e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", rkDrag); }catch(_){} });

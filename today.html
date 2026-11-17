@@ -365,7 +365,7 @@
   .name-subj-pill{ margin-left:6px; vertical-align:middle; padding:2px 7px; }
   .row-actions{ display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end; }
 
-  select, input[type=text], input[type=search], textarea{
+  select, input[type=text], input[type=search], input[type=date], textarea{
     font-family:inherit; font-size:13.5px; padding:8px 10px; border-radius:8px; border:1px solid var(--border);
     background:var(--surface); color:var(--ink); width:100%;
   }
@@ -2102,8 +2102,6 @@ window.kumonPtcNav = function(client, role){
     if(error){ t.due_date = prev; render(); toast("Couldn't move that — try again."); }
   }
   // Drag a card between columns: Today → due today, Later → tomorrow (unless it's already later), Done → ticked.
-  // Open the calendar straight away when a date box is tapped (the box itself is small / see-through).
-  document.addEventListener("click", e => { const i = e.target.closest && e.target.closest("input[type=date][data-todo-date], #todoPick"); if(i && i.showPicker){ try{ i.showPicker(); }catch(_){} } }, true);
   // Picking a date: in the add bar it becomes the new to-do's date; on a card it moves that to-do.
   document.addEventListener("change", async e => {
     if(e.target.id === "todoPick"){ const v = e.target.value, h = $("#todoDue"); if(h) h.value = v || todayISO();
