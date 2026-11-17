@@ -2787,6 +2787,18 @@ window.kumonPtcNav = function(client, role){
     const [y,m,d] = iso.split("-").map(Number);
     return monthKeyOf(cycleMonthFor(new Date(y, m-1, d)));
   }
+  // Why a row is on New Students, in plain words (shown under the name).
+  function newStudentSource(s, enr, monthKey){
+    const fmtD = iso => { const [y,m,d] = String(iso).slice(0,10).split("-").map(Number); return new Date(y, m-1, d).toLocaleDateString(undefined,{ month:"short", day:"numeric", year:"numeric" }); };
+    const mon = k => { const [y,m] = String(k).split("-").map(Number); return new Date(y, m-1, 1).toLocaleDateString(undefined,{ month:"long", year:"numeric" }); };
+    if(enr && enr.resumedMonth === monthKey && !(enrolledOnMonthKey(enr) === monthKey || enr.addedMonth === monthKey)) return "Back from Retention (" + mon(enr.resumedMonth) + ")";
+    if(enr && enrolledOnMonthKey(enr)) return "Date enrolled on Student Roster: " + fmtD(enr.enrolledOn);
+    if(enr && enr.addedMonth) return "Subject added in " + mon(enr.addedMonth) + (enr.enrollmentType === "eo" ? " (EO)" : "");
+    if(s && s.origin === "roster") return "Student Roster";
+    const fd = s ? firstDayFor(s) : null; if(fd) return "First day " + fmtD(fd);
+    const d = s ? activeDiagnosticFor(s.id) : null; if(d && d.date) return "DT on " + fmtD(d.date);
+    return "Added to Pipeline";
+  }
   function studentCohortMonthKey(s){
     const d = activeDiagnosticFor(s.id);
     const iso = firstDayFor(s) || (d && d.date) || (s.createdAt ? s.createdAt.slice(0,10) : null);
@@ -2847,8 +2859,8 @@ window.kumonPtcNav = function(client, role){
         // Date enrolled (set on Student Roster) wins; then the month a subject was added; then the child's own month.
         const rowMonth = enrolledOnMonthKey(enr) || (enr && enr.addedMonth) || studentCohortMonthKey(s);
         // A child who came back from Retention also shows in the month they resumed (tagged RESUME / RETURNEE).
-        const resumedHere = enr && enr.resumedMonth === monthKey;
-        if(STATE.studentMonthMode === "all" || rowMonth === monthKey || resumedHere) rows.push({ s, subj: sub, isBoth });
+        const resumedHere = enr && enr.resumedMonth === monthKey && enr.status !== "inactive";
+        if(STATE.studentMonthMode === "all" || rowMonth === monthKey || resumedHere) rows.push({ s, subj: sub, isBoth, src: newStudentSource(s, enr, monthKey) });
       });
     });
 
@@ -2861,11 +2873,13 @@ window.kumonPtcNav = function(client, role){
     STATE.enrollments.forEach(enr => {
       const startM = enrolledOnMonthKey(enr) || enr.addedMonth;
       if((!enr.resumedMonth && !startM) || enr.archived) return;
+      // Resumed, then marked absent again (status inactive): they're back on Retention, not a new student.
+      if(enr.status === "inactive") return;
       if(STATE.studentMonthMode !== "all" && enr.resumedMonth !== monthKey && startM !== monthKey) return;
       if(rows.some(r => r.s.id === enr.studentId && r.subj === enr.subject)) return;
       const st = studentById(enr.studentId); if(!st) return;
       if(qTokens.length){ const hay = normSearch(st.name + " " + (st.firstName||"") + " " + (st.lastName||"") + " " + (st.parentName||"")); if(!qTokens.every(t => hay.includes(t))) return; }
-      rows.push({ s: st, subj: enr.subject, isBoth: false });
+      rows.push({ s: st, subj: enr.subject, isBoth: false, src: newStudentSource(st, enr, monthKey) });
     });
 
     const isReport = STATE.studentsView === "report";
@@ -2879,7 +2893,7 @@ window.kumonPtcNav = function(client, role){
               const st = STATUS_LABEL[s.status] || ["—","muted"];
               return `<tr class="clickrow" data-action="open-student" data-id="${s.id}">
                 <td class="tnum">${i+1}</td>
-                <td>${esc(displayName(s))}</td>
+                <td>${esc(displayName(s))}${row.src ? `<div class="hint" style="font-size:11.5px;margin-top:1px;">${esc(row.src)}</div>` : ""}</td>
                 <td>${esc(s.ageGrade||"—")}</td>
                 <td>${row.subj ? fmtSubjectPill(row.subj) : "—"}</td>
                 <td>${fmtEnrollmentTagPill(s.id, row.subj)}</td>
@@ -2902,7 +2916,7 @@ window.kumonPtcNav = function(client, role){
               const r = diagResultFor(d, row.subj, row.isBoth);
               return `<tr class="clickrow" data-action="open-student" data-id="${s.id}">
                 <td class="tnum">${i+1}</td>
-                <td>${esc(displayName(s))}</td>
+                <td>${esc(displayName(s))}${row.src ? `<div class="hint" style="font-size:11.5px;margin-top:1px;">${esc(row.src)}</div>` : ""}</td>
                 <td>${esc(s.ageGrade||"—")}</td>
                 <td>${row.subj ? fmtSubjectPill(row.subj) : "—"}</td>
                 <td>${fmtEnrollmentTagPill(s.id, row.subj)}</td>
