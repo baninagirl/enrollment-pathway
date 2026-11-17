@@ -406,6 +406,10 @@
   .iconbtn{ border:none; background:transparent; cursor:pointer; color:var(--ink-muted); padding:4px; border-radius:6px; transition: background-color .15s ease, color .15s ease, transform .08s ease; }
   .iconbtn:hover{ background:var(--surface-2); color:var(--ink); }
   .iconbtn:active{ transform:scale(.9); }
+  /* Apple-style line icons (download, edit): small round button, icon in Hub blue on hover. */
+  .iconbtn:has(.ib-svg){ display:inline-grid; place-items:center; width:26px; height:26px; padding:0; margin-left:6px; border-radius:99px; vertical-align:middle; color:var(--ink-faint); }
+  .iconbtn:has(.ib-svg):hover{ background:var(--accent-soft); color:var(--accent); }
+  .ib-svg{ width:16px; height:16px; display:block; }
 
   .banner{ background:var(--warn-soft); color:var(--warn); border-radius:11px; padding:11px 14px; font-size:13px; font-weight:600; margin-bottom:16px; }
   .banner.info{ background:var(--accent-soft); color:var(--accent-soft-ink); }
@@ -2428,7 +2432,7 @@ window.kumonPtcNav = function(client, role){
       const allSel = memberIds.every(id => soaSelected.has(id));
       html += `<tr class="group-row">
         <td class="sel-col"><input type="checkbox" data-action="soa-select-group" data-ids="${esc(memberIds.join(","))}" ${allSel ? "checked" : ""} title="Select this group"></td>
-        <td class="gname">${esc(name)}<span class="faint" style="font-weight:500;">(${members.length})</span>${gid !== "__none__" ? `<button class="iconbtn" data-action="download-tuition" data-group="${esc(gid)}" title="Download tuition image">⬇</button>` : ""}</td>
+        <td class="gname">${esc(name)}<span class="faint" style="font-weight:500;">(${members.length})</span>${gid !== "__none__" ? `<button class="iconbtn" data-action="download-tuition" data-group="${esc(gid)}" title="Download tuition image" aria-label="Download tuition image"><svg class="ib-svg" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 3.5v8.5M6.5 8.8 10 12.3l3.5-3.5"/><path d="M4 12.5v2.2A1.8 1.8 0 0 0 5.8 16.5h8.4a1.8 1.8 0 0 0 1.8-1.8v-2.2"/></svg></button>` : ""}</td>
         <td></td>
         <td></td>
         <td class="money">${peso(due)}</td>
@@ -2447,10 +2451,10 @@ window.kumonPtcNav = function(client, role){
     const s = r.student;
     return `<tr class="clickrow" data-action="open-payment-history" data-student="${esc(s.id)}" title="Click for payment history">
       <td class="sel-col"><input type="checkbox" data-action="soa-select" data-student="${esc(s.id)}" ${soaSelected.has(s.id) ? "checked" : ""}></td>
-      <td>${esc(displayName(s))}${subjectBadgesFor(s.id)}<button class="iconbtn" data-action="download-tuition" data-student="${esc(s.id)}" title="Download tuition image">⬇</button></td>
+      <td>${esc(displayName(s))}${subjectBadgesFor(s.id)}<button class="iconbtn" data-action="download-tuition" data-student="${esc(s.id)}" title="Download tuition image" aria-label="Download tuition image"><svg class="ib-svg" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 3.5v8.5M6.5 8.8 10 12.3l3.5-3.5"/><path d="M4 12.5v2.2A1.8 1.8 0 0 0 5.8 16.5h8.4a1.8 1.8 0 0 0 1.8-1.8v-2.2"/></svg></button></td>
       <td class="muted">${esc(s.age_grade || "—")}</td>
       <td class="muted">${esc(groupNameFor(s.billing_group_id) || "—")}</td>
-      <td class="money">${peso(r.due)}${currentRole === "teacher" ? "" : ` <button class="iconbtn" data-action="edit-tuition" data-id="${esc(s.id)}" title="Edit tuition">✎</button>`}</td>
+      <td class="money">${peso(r.due)}${currentRole === "teacher" ? "" : ` <button class="iconbtn" data-action="edit-tuition" data-id="${esc(s.id)}" title="Edit tuition" aria-label="Edit tuition"><svg class="ib-svg" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12.9 4.1a1.8 1.8 0 0 1 2.6 2.6l-8.3 8.3-3.4.8.8-3.4z"/><path d="M11.6 5.4l2.9 2.9"/></svg></button>`}</td>
       <td class="money">${peso(r.paid)}</td>
       <td class="money">${peso(r.balance)}</td>
       <td>${statusPill(r.status)}</td>
