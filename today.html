@@ -475,20 +475,21 @@
   .td-title{ font-family:"Sora", system-ui, sans-serif; font-size:24px; font-weight:700; letter-spacing:-.03em; line-height:1.2; margin:0; }
   .td-dek{ color:var(--ink-muted); font-size:14.5px; margin:6px 0 0; line-height:1.5; max-width:64ch; }
   .td-sec{ margin-bottom:44px; }
-  .td-bk{ padding:8px 8px 12px; display:flex; flex-direction:column; }
-  .td-bk-row{ display:grid; grid-template-columns:72px 4px minmax(0,1fr) auto auto; gap:12px; align-items:center; padding:10px 10px; border-radius:12px; }
-  .td-bk-row + .td-bk-row{ border-top:1px solid var(--border); border-radius:0; }
-  .td-bk-row.past{ opacity:.55; }
-  .td-bk-time{ font-weight:700; font-size:14px; font-variant-numeric:tabular-nums; }
-  .td-bk-bar{ width:4px; height:30px; border-radius:4px; background:var(--accent); }
-  .td-bk-row.training .td-bk-bar{ background:#C26A1A; }
-  .td-bk-main{ display:flex; flex-direction:column; min-width:0; }
-  .td-bk-main b{ font-size:14.5px; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .td-bk-main span{ font-size:12.5px; color:var(--ink-muted); }
-  .td-bk-who{ font-size:13px; font-weight:600; color:var(--ink-muted); background:var(--surface-2, #F1F2F6); border-radius:99px; padding:3px 10px; white-space:nowrap; }
-  .td-bk-done{ font-size:12px; font-weight:700; color:var(--good); }
-  .td-bk-link{ align-self:flex-start; margin:8px 10px 0; font-size:13px; font-weight:600; color:var(--accent); text-decoration:none; }
-  @media (max-width:600px){ .td-bk-row{ grid-template-columns:58px 4px minmax(0,1fr); } .td-bk-who{ grid-column:3; justify-self:start; } .td-bk-done{ grid-column:3; } }
+  .td-bks{ display:grid; grid-template-columns:repeat(auto-fill, minmax(220px, 1fr)); gap:16px; margin-top:16px; }
+  .td-bkc{ padding:18px 20px; display:flex; flex-direction:column; gap:6px; min-width:0; }
+  .td-bkc.past{ opacity:.55; }
+  .td-bkc-top{ display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:4px; }
+  .td-bkc-kind{ display:inline-flex; align-items:center; gap:6px; font-size:12.5px; font-weight:600; color:var(--ink-muted); }
+  .td-bkc-kind i{ width:8px; height:8px; border-radius:50%; background:var(--accent); }
+  .td-bkc.training .td-bkc-kind i{ background:#C26A1A; }
+  .td-bkc-time{ font-family:"Sora", system-ui, sans-serif; font-size:15px; font-weight:700; font-variant-numeric:tabular-nums; }
+  .td-bkc-name{ font-size:16px; font-weight:600; line-height:1.3; letter-spacing:-.01em; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+  .td-bkc-what{ font-size:13px; color:var(--ink-muted); }
+  .td-bkc-foot{ display:flex; align-items:center; justify-content:space-between; gap:8px; margin-top:auto; padding-top:10px; }
+  .td-bkc-who{ font-size:12.5px; font-weight:600; color:var(--ink-muted); background:var(--surface-2, #F1F2F6); border-radius:99px; padding:3px 10px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .td-bkc-done{ font-size:12px; font-weight:700; color:var(--good); }
+  .td-bk-link{ display:inline-block; margin-top:14px; font-size:13.5px; font-weight:600; color:var(--accent); text-decoration:none; }
+  .td-bk-link:hover{ text-decoration:underline; }
   .td-sec-head{ display:flex; justify-content:space-between; align-items:flex-end; gap:12px; flex-wrap:wrap; }
 
   .td-day{ display:grid; grid-template-columns:210px minmax(0,1fr); gap:28px; padding:24px; margin-top:16px; }
@@ -1525,12 +1526,13 @@ window.kumonPtcNav = function(client, role){
     const now = nowMin();
     const title = !items.length ? "No trainings or DTs today." : [nT ? plural(nT, "student training") : "", nD ? plural(nD, "DT") : ""].filter(Boolean).join(" and ") + (all ? " today." : " assigned to you today.");
     return `<section class="td-sec"><div class="td-kicker">Trainings &amp; DTs</div><h2 class="td-title">${esc(title)}</h2>
-      ${items.length ? `<div class="card td-bk">${items.map(i => `<div class="td-bk-row ${i.k}${i.m + 60 <= now ? " past" : ""}">
-        <span class="td-bk-time">${fmtT(i.m)}</span><span class="td-bk-bar"></span>
-        <span class="td-bk-main"><b>${esc(i.name || "")}</b><span>${esc(i.what)}</span></span>
-        <span class="td-bk-who">${esc(i.by || "Not assigned")}</span>
-        ${i.done ? `<span class="td-bk-done">Done</span>` : ""}
-      </div>`).join("")}${isAdmin() || currentRole === "trainer_teacher" ? `<a class="td-bk-link" href="index.html#calendar">Open the DT &amp; Training calendar</a>` : ""}</div>` : ""}
+      ${items.length ? `<div class="td-bks">${items.map(i => `<div class="card td-bkc ${i.k}${i.m + 60 <= now ? " past" : ""}">
+          <div class="td-bkc-top"><span class="td-bkc-kind"><i></i>${i.k === "training" ? "Training" : "DT"}</span><span class="td-bkc-time">${fmtT(i.m)}</span></div>
+          <div class="td-bkc-name">${esc(i.name || "")}</div>
+          <div class="td-bkc-what">${esc(i.what.replace(/^Student training · |^Diagnostic test · ?/, "") || (i.k === "training" ? "Student training" : "Diagnostic test"))}</div>
+          <div class="td-bkc-foot"><span class="td-bkc-who">${esc(i.by || "Not assigned")}</span>${i.done ? `<span class="td-bkc-done">Done</span>` : ""}</div>
+        </div>`).join("")}</div>
+        ${isAdmin() || currentRole === "trainer_teacher" ? `<a class="td-bk-link" href="index.html#calendar">Open the DT &amp; Training calendar ›</a>` : ""}` : ""}
     </section>`;
   }
   function renderStories(){
