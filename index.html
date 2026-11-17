@@ -431,6 +431,77 @@
   .week-day .cal-chip{ white-space:normal; padding:5px 7px; }
   .week-day .cal-chip .lbl{ overflow:visible; white-space:normal; overflow-wrap:anywhere; }
   .cal-legend{ display:flex; gap:16px; flex-wrap:wrap; margin:2px 0 14px; }
+  /* Month view (Nov 17): counts + who on each day, the chosen day's list on the side */
+  .cal-toggle{ display:inline-flex; align-items:center; gap:6px; border:1.5px solid var(--border); background:var(--surface); color:var(--ink-muted); border-radius:99px; padding:6px 12px; font-weight:600; font-size:13px; font-family:inherit; cursor:pointer; }
+  .cal-toggle.on{ background:var(--ink); border-color:var(--ink); color:var(--surface); }
+  .mc-sum{ display:flex; gap:8px; flex-wrap:wrap; margin:0 0 12px; }
+  .mc-sum span{ background:var(--surface); border-radius:10px; padding:6px 12px; font-size:13px; color:var(--ink-muted); box-shadow:var(--shadow); }
+  .mc-sum b{ color:var(--ink); font-size:15px; margin-right:5px; } .mc-sum b.warn{ color:var(--warn); } .mc-sum b.good{ color:var(--good); }
+  .mc-wrap{ display:grid; grid-template-columns:minmax(0,1fr) 330px; gap:16px; align-items:start; }
+  .mc-grid{ display:grid; grid-template-columns:repeat(7,minmax(0,1fr)); gap:6px; }
+  .mc-dow{ font-size:11px; font-weight:700; color:var(--ink-muted); text-align:center; letter-spacing:.04em; padding-bottom:2px; }
+  .mc-day{ all:unset; box-sizing:border-box; cursor:pointer; background:var(--surface); border-radius:12px; min-height:112px; padding:7px; display:flex; flex-direction:column; gap:4px; min-width:0; box-shadow:var(--shadow); }
+  .mc-day:hover{ background:var(--accent-soft); }
+  .mc-day:focus-visible{ box-shadow:var(--ring); }
+  .mc-day.out{ opacity:.4; }
+  .mc-day.past .mc-num{ color:var(--ink-faint); }
+  .mc-day.sel{ box-shadow:inset 0 0 0 2px var(--ink); }
+  .mc-top{ display:flex; align-items:center; justify-content:space-between; gap:4px; }
+  .mc-num{ font-weight:700; font-size:13.5px; width:24px; height:24px; border-radius:50%; display:grid; place-items:center; flex:none; }
+  .mc-day.today .mc-num{ background:var(--bad); color:#fff; }
+  .mc-cnt{ display:flex; gap:3px; flex-wrap:wrap; justify-content:flex-end; }
+  .mc-cnt span{ border-radius:6px; padding:1px 6px; font-size:11px; font-weight:800; }
+  .mc-cnt .d{ background:var(--diag-soft); color:var(--diag); } .mc-cnt .s{ background:var(--train-soft); color:var(--train); }
+  .mc-tag{ font-size:10.5px; font-weight:700; color:var(--warn); background:var(--warn-soft); border-radius:6px; padding:1px 6px; width:max-content; margin-right:6px; }
+  .mc-lines{ display:flex; flex-direction:column; gap:2px; min-width:0; }
+  .mc-ln{ font-size:11px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; padding-left:5px; border-left:3px solid var(--diag); }
+  .mc-ln.s{ border-left-color:var(--train); }
+  .mc-ln b{ color:var(--ink-muted); }
+  .mc-more{ font-size:10.5px; color:var(--ink-muted); font-weight:700; padding-left:8px; }
+  .mc-panel{ background:var(--surface); border-radius:16px; padding:14px; box-shadow:var(--shadow); display:flex; flex-direction:column; gap:8px; position:sticky; top:12px; }
+  .mc-ph span{ display:block; font-size:12px; font-weight:700; color:var(--ink-muted); }
+  .mc-ph b{ font-size:19px; } .mc-ph b.today{ color:var(--bad); }
+  .mc-item{ all:unset; box-sizing:border-box; cursor:pointer; display:flex; gap:9px; align-items:flex-start; padding:9px; border-radius:12px; background:var(--surface-2); }
+  .mc-item:hover{ background:var(--accent-soft); } .mc-item:focus-visible{ box-shadow:var(--ring); }
+  .mc-item .bar{ width:4px; align-self:stretch; border-radius:4px; flex:none; background:var(--diag); } .mc-item .bar.training{ background:var(--train); }
+  .mc-item .tm{ font-weight:700; font-size:12.5px; width:62px; flex:none; font-variant-numeric:tabular-nums; }
+  .mc-item .txt{ display:flex; flex-direction:column; gap:2px; min-width:0; }
+  .mc-item .txt b{ font-size:13.5px; } .mc-item .txt span{ font-size:12px; color:var(--ink-muted); }
+  .mc-item .txt .pill, .mc-tagbtn{ align-self:flex-start; margin-top:2px; }
+  .mc-tagbtn{ font-size:11.5px; font-weight:700; color:var(--warn); background:var(--warn-soft); border-radius:99px; padding:2px 9px; }
+  .mc-acts{ display:flex; gap:8px; flex-wrap:wrap; padding-top:4px; }
+  @media (max-width:900px){
+    .mc-wrap{ grid-template-columns:minmax(0,1fr); }
+    .mc-panel{ position:static; }
+    .mc-day{ min-height:58px; padding:5px; } .mc-lines, .mc-tag{ display:none; }
+    .mc-top{ flex-direction:column; align-items:flex-start; } .mc-cnt{ justify-content:flex-start; } .mc-cnt span{ font-size:9.5px; padding:0 4px; }
+  }
+  /* Find a training slot */
+  .ft-bar{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:10px; }
+  .ft-chips{ display:flex; gap:6px; flex-wrap:wrap; margin-bottom:8px; }
+  .ft-chip{ border:1.5px solid var(--border); background:var(--surface); color:var(--ink-muted); border-radius:99px; padding:6px 12px; font-weight:600; font-size:13px; font-family:inherit; cursor:pointer; }
+  .ft-chip.on{ background:var(--ink); border-color:var(--ink); color:var(--surface); }
+  .ft-legend{ display:flex; gap:12px; flex-wrap:wrap; font-size:12px; color:var(--ink-muted); margin-bottom:8px; }
+  .ft-legend i{ display:inline-block; width:10px; height:10px; border-radius:3px; margin-right:5px; vertical-align:-1px; }
+  .ft-wrap{ display:grid; grid-template-columns:minmax(0,1fr) 260px; gap:14px; align-items:start; }
+  .ft-grid{ overflow:auto; max-height:62vh; }
+  .ft-grid table{ border-collapse:separate; border-spacing:3px; width:100%; min-width:520px; }
+  .ft-grid th{ font-size:11.5px; color:var(--ink-muted); font-weight:700; position:sticky; top:0; background:var(--surface); z-index:1; }
+  .ft-grid th.ft-tm{ text-align:right; white-space:nowrap; padding-right:4px; position:static; }
+  .ft-cell{ display:flex; align-items:center; justify-content:center; width:100%; height:28px; border-radius:7px; border:0; font-weight:600; font-size:12px; font-family:inherit; cursor:pointer; }
+  .ft-cell.free, .ft-legend i.free{ background:var(--good-soft); color:var(--good); }
+  .ft-cell.some, .ft-legend i.some{ background:var(--surface-2); color:var(--ink-muted); }
+  .ft-cell.busy, .ft-legend i.busy{ background:var(--warn-soft); color:var(--ink); }
+  .ft-cell.full, .ft-legend i.full{ background:var(--bad-soft); color:var(--ink); }
+  .ft-cell.off{ background:transparent; color:var(--ink-faint); cursor:default; font-weight:500; }
+  .ft-cell.sel{ box-shadow:0 0 0 2px var(--accent); }
+  .ft-panel{ background:var(--surface-2); border-radius:14px; padding:12px; display:flex; flex-direction:column; gap:7px; max-height:62vh; overflow:auto; }
+  .ft-ph{ font-weight:700; font-size:15px; }
+  .ft-who{ background:var(--surface); border-radius:10px; padding:8px 10px; display:flex; flex-direction:column; gap:6px; }
+  .ft-who > div{ display:flex; justify-content:space-between; gap:8px; font-size:13px; }
+  .ft-who > div span{ color:var(--ink-muted); } .ft-who.free > div span{ color:var(--good); font-weight:700; }
+  .ft-who details{ font-size:12px; color:var(--ink-muted); } .ft-who summary{ cursor:pointer; }
+  @media (max-width:760px){ .ft-wrap{ grid-template-columns:minmax(0,1fr); } }
   .cal-legend .item{ display:flex; align-items:center; gap:6px; font-size:12px; font-weight:600; color:var(--ink-muted); }
 
   /* Table-ish rows */
@@ -1162,6 +1233,9 @@ window.kumonPtcNav = function(client, role){
     calDay: (()=>{ const d=new Date(); d.setHours(0,0,0,0); return d; })(),
     calView: "month",
     calFilter: "all",
+    // Nov 17: the calendar shows DTs and trainings only (regular / monitor classes moved to "Find a training slot").
+    calShow: { dt:true, st:true },
+    calSelDay: null,
     calStaff: "all",
     studentSearch: "",
     studentMonth: (()=>{ return cycleMonthFor(new Date()); })(),
@@ -1391,7 +1465,7 @@ window.kumonPtcNav = function(client, role){
     slotHashHandled = true;
     STATE.activeTab = "calendar";
     renderAll();
-    openSlotTool(h === "slots-st" ? "st" : "dt");
+    if(h === "slots-st") openFreeTool(); else openSlotTool("dt");   // training slots → the new "Find a training slot"
   }
 
   // Self-healing check: a student can end up stuck showing "2 of 2 completed" but still stuck
@@ -1732,28 +1806,21 @@ window.kumonPtcNav = function(client, role){
   }
 
   function gatherEvents(rangeStartISO, rangeEndISO){
-    // Each diagnostic and training already carries its own examiner/trainer, so filtering by a
-    // specific person just matches that field. The regular weekly schedule isn't assigned to any
-    // one trainer (any of them might run it), so those slots only show under "All staff".
+    // Only diagnostic tests and student trainings. Each carries its own examiner / trainer, so the staff
+    // filter just matches that field. (Regular and monitor classes live in "Find a training slot" now.)
     let events = [];
-    if(STATE.calFilter === "all" || STATE.calFilter === "diagnostic"){
+    if(STATE.calShow.dt){
       events = events.concat(STATE.diagnostics.filter(d => d.status !== "cancelled" && d.date >= rangeStartISO && d.date <= rangeEndISO).map(d => ({
-        type:"diagnostic", date:d.date, time:d.time, label:displayName(studentById(d.studentId)) || d.studentName, staff:d.examiner, id:d.id
+        type:"diagnostic", date:d.date, time:d.time, label:displayName(studentById(d.studentId)) || d.studentName, staff:d.examiner, id:d.id, outcome:d.outcome, subject:d.subject
       })));
     }
-    if(STATE.calFilter === "all" || STATE.calFilter === "training"){
+    if(STATE.calShow.st){
       events = events.concat(STATE.trainings.filter(t => t.status !== "cancelled" && t.date >= rangeStartISO && t.date <= rangeEndISO).map(t => ({
-        type:"training", date:t.date, time:t.time, label:`${displayName(studentById(t.studentId)) || t.studentName} · S${t.sessionNumber}`, staff:t.trainer, id:t.id
+        type:"training", date:t.date, time:t.time, label:`${displayName(studentById(t.studentId)) || t.studentName} · S${t.sessionNumber}`, staff:t.trainer, id:t.id, status:t.status, session:t.sessionNumber
       })));
-    }
-    if(STATE.calFilter === "all" || STATE.calFilter === "schedule"){
-      events = events.concat(scheduleInstances(rangeStartISO, rangeEndISO).map(e => ({ ...e, staff: null })));
-    }
-    if(STATE.calFilter === "all" || STATE.calFilter === "monitor"){
-      events = events.concat(monitorScheduleInstances(rangeStartISO, rangeEndISO));
     }
     if(STATE.calStaff !== "all") events = events.filter(e => sameStaff(e.staff, STATE.calStaff));
-    events.sort((a,b)=> (a.date+a.time).localeCompare(b.date+b.time));
+    events.sort((a,b)=> (a.date+(a.time||"")).localeCompare(b.date+(b.time||"")));
     return events;
   }
 
@@ -1772,9 +1839,9 @@ window.kumonPtcNav = function(client, role){
     return `
       <div class="cal-toolbar">
         <div class="cal-nav">
-          <button class="btn ghost sm" data-action="cal-prev">‹</button>
+          <button class="btn ghost sm" data-action="cal-prev" aria-label="Previous">‹</button>
           <h2>${navLabel}</h2>
-          <button class="btn ghost sm" data-action="cal-next">›</button>
+          <button class="btn ghost sm" data-action="cal-next" aria-label="Next">›</button>
           <button class="btn sm" data-action="cal-today">Today</button>
         </div>
         <div class="cal-filters">
@@ -1783,28 +1850,17 @@ window.kumonPtcNav = function(client, role){
             <button class="${STATE.calView==='week'?'active':''}" data-action="cal-view" data-view="week">Week</button>
             <button class="${STATE.calView==='day'?'active':''}" data-action="cal-view" data-view="day">Day</button>
           </div>
-          <div class="seg">
-            <button class="${STATE.calFilter==='all'?'active':''}" data-action="cal-filter" data-filter="all">All</button>
-            <button class="${STATE.calFilter==='diagnostic'?'active':''}" data-action="cal-filter" data-filter="diagnostic">Diagnostics</button>
-            <button class="${STATE.calFilter==='training'?'active':''}" data-action="cal-filter" data-filter="training">Trainings</button>
-            <button class="${STATE.calFilter==='schedule'?'active':''}" data-action="cal-filter" data-filter="schedule">Regular</button>
-            <button class="${STATE.calFilter==='monitor'?'active':''}" data-action="cal-filter" data-filter="monitor">Monitor</button>
-          </div>
-          <div class="slot-btns">
-            <button class="btn sm" data-action="open-slot-tool" data-kind="dt" title="See open diagnostic-test slots for a week">Generate DT slots</button>
-            <button class="btn sm" data-action="open-slot-tool" data-kind="st" title="See which trainer is free for student training, by time slot">Available training slots</button>
-          </div>
-          <select data-action="cal-staff">
+          <button class="cal-toggle ${STATE.calShow.dt?'on':''}" data-action="cal-show" data-show="dt" aria-pressed="${STATE.calShow.dt}"><span class="dot diagnostic"></span>DTs</button>
+          <button class="cal-toggle ${STATE.calShow.st?'on':''}" data-action="cal-show" data-show="st" aria-pressed="${STATE.calShow.st}"><span class="dot training"></span>Trainings</button>
+          <select data-action="cal-staff" aria-label="Staff">
             <option value="all">All staff</option>
             ${calStaffList().map(x=>`<option value="${esc(x)}" ${sameStaff(STATE.calStaff,x)?"selected":""}>${esc(x)}</option>`).join("")}
           </select>
+          <div class="slot-btns">
+            <button class="btn sm" data-action="open-slot-tool" data-kind="dt" title="Open DT times for parents, with Save as image">Generate DT slots</button>
+            <button class="btn sm" data-action="open-free-tool" title="Which trainer has no students at each time">Find a training slot</button>
+          </div>
         </div>
-      </div>
-      <div class="cal-legend">
-        <span class="item"><span class="dot diagnostic"></span>Diagnostic test</span>
-        <span class="item"><span class="dot training"></span>Student training</span>
-        <span class="item"><span class="dot schedule"></span>Regular schedule</span>
-        <span class="item"><span class="dot monitor"></span>Monitor schedule</span>
       </div>
     `;
   }
@@ -1854,36 +1910,67 @@ window.kumonPtcNav = function(client, role){
     const el = $("#view-calendar");
     const month = STATE.calMonth;
     const monthLabel = month.toLocaleDateString(undefined,{ month:"long", year:"numeric" });
-
     const first = new Date(month.getFullYear(), month.getMonth(), 1);
-    const startOffset = first.getDay();
-    const gridStart = addDays(first, -startOffset);
-    const gridEnd = addDays(gridStart, 41);
+    const gridStart = addDays(first, -first.getDay());
+    const weeks = Math.ceil((first.getDay() + new Date(month.getFullYear(), month.getMonth() + 1, 0).getDate()) / 7);
+    const gridEnd = addDays(gridStart, weeks * 7 - 1);
     const today = todayISO();
-
     const events = gatherEvents(isoDate(gridStart), isoDate(gridEnd));
     const byDate = {};
     events.forEach(e => { (byDate[e.date] = byDate[e.date] || []).push(e); });
-
-    el.innerHTML = calToolbarHTML(monthLabel) + `<div class="cal-grid" id="calGrid"></div>`;
-    const grid = $("#calGrid", el);
-    DOW.forEach(d => grid.insertAdjacentHTML("beforeend", `<div class="cal-dow">${d}</div>`));
-
-    for(let i=0;i<42;i++){
-      const d = addDays(gridStart, i);
-      const iso = isoDate(d);
-      const inMonth = d.getMonth() === month.getMonth();
-      const dayEvents = byDate[iso] || [];
-      const shown = dayEvents.slice(0,3);
-      const more = dayEvents.length - shown.length;
-      grid.insertAdjacentHTML("beforeend", `
-        <div class="cal-cell ${inMonth?"":"out"} ${iso===today?"today":""}" data-action="open-day" data-date="${iso}">
-          <div class="cal-date">${d.getDate()}</div>
-          ${shown.map(e => `<div class="cal-chip ${e.type}"><span class="dot ${e.type}"></span><span class="tm">${fmtTimeCompact(e.time)}</span><span class="lbl" title="${esc(e.label)}">${esc(e.label)}</span></div>`).join("")}
-          ${more>0 ? `<div class="cal-more">+${more} more</div>` : ""}
-        </div>
-      `);
+    // Selected day for the side list: kept if it's in this month, else today (if shown), else the 1st.
+    const mKey = monthKeyOf(month);
+    if(!STATE.calSelDay || STATE.calSelDay.slice(0,7) !== mKey) STATE.calSelDay = today.slice(0,7) === mKey ? today : isoDate(first);
+    const inMonth = events.filter(e => e.date.slice(0,7) === mKey);
+    const dts = inMonth.filter(e => e.type === "diagnostic"), sts = inMonth.filter(e => e.type === "training");
+    const toTag = dts.filter(e => e.outcome === "pending" && e.date < today).length;
+    const enrolled = dts.filter(e => e.outcome === "enrolled").length;
+    const shortT = t => { const m = /^(\d{1,2}):(\d{2})/.exec(t || ""); if(!m) return ""; let h = +m[1]; const ap = h >= 12 ? "p" : "a"; h = h % 12 || 12; return h + (+m[2] ? ":" + m[2] : "") + ap; };
+    const lastName = e => { const s = studentById((STATE.diagnostics.find(x => x.id === e.id) || STATE.trainings.find(x => x.id === e.id) || {}).studentId); return (s && s.lastName) || String(e.label || "").split(" · ")[0].trim().split(/\s+/).pop(); };
+    let cells = DOW.map(d => `<div class="mc-dow">${d.toUpperCase()}</div>`).join("");
+    for(let i = 0; i < weeks * 7; i++){
+      const d = addDays(gridStart, i), iso = isoDate(d), inM = d.getMonth() === month.getMonth();
+      const ev = byDate[iso] || [];
+      const nd = ev.filter(e => e.type === "diagnostic").length, ns = ev.filter(e => e.type === "training").length;
+      const tag = iso < today ? ev.filter(e => e.type === "diagnostic" && e.outcome === "pending").length : 0;
+      cells += `<button type="button" class="mc-day ${inM ? "" : "out"} ${iso < today ? "past" : ""} ${iso === today ? "today" : ""} ${iso === STATE.calSelDay ? "sel" : ""}" data-action="cal-pick-day" data-date="${iso}" aria-label="${fmtDateLong(iso)}: ${nd} DTs, ${ns} trainings">
+        <span class="mc-top"><span class="mc-num">${d.getDate()}</span><span class="mc-cnt">${nd ? `<span class="d">${nd} DT</span>` : ""}${ns ? `<span class="s">${ns} ST</span>` : ""}</span></span>
+        ${tag ? `<span class="mc-tag">${tag} to tag</span>` : ""}
+        <span class="mc-lines">${ev.slice(0,3).map(e => `<span class="mc-ln ${e.type === "training" ? "s" : ""}"><b>${shortT(e.time)}</b> ${esc(lastName(e))}</span>`).join("")}${ev.length > 3 ? `<span class="mc-more">+${ev.length - 3} more</span>` : ""}</span>
+      </button>`;
     }
+    el.innerHTML = calToolbarHTML(monthLabel) + `
+      <div class="mc-sum">
+        ${STATE.calShow.dt ? `<span><b>${dts.length}</b>DTs this month</span>` : ""}
+        ${STATE.calShow.st ? `<span><b>${sts.length}</b>STs this month</span>` : ""}
+        ${STATE.calShow.dt ? `<span><b class="warn">${toTag}</b>DTs to tag</span><span><b class="good">${enrolled}</b>enrolled from a DT</span>` : ""}
+      </div>
+      <div class="mc-wrap">
+        <div><div class="mc-grid">${cells}</div>
+          <div class="cal-legend" style="margin-top:10px"><span class="item"><span class="dot diagnostic"></span>DT = diagnostic test</span><span class="item"><span class="dot training"></span>ST = student training</span><span class="item"><span class="mc-tag" style="margin:0">to tag</span>DTs that still need an outcome</span></div>
+        </div>
+        <aside class="mc-panel">${calDayPanelHTML(STATE.calSelDay)}</aside>
+      </div>`;
+  }
+  // The selected day's bookings, in full. Tapping one (or "Tag outcome") opens the day's full card with all the buttons.
+  function calDayPanelHTML(iso){
+    const ev = gatherEvents(iso, iso), today = todayISO();
+    const d = parseISODate(iso);
+    const status = e => e.type === "training"
+      ? (e.status === "completed" ? `<span class="pill good">Completed</span>` : `<span class="pill muted">Session ${esc(String(e.session || ""))}</span>`)
+      : e.outcome === "enrolled" ? `<span class="pill good">Enrolled</span>`
+      : e.outcome === "not_enrolled" ? `<span class="pill bad">Not enrolled</span>`
+      : iso < today ? `<span class="mc-tagbtn">Tag outcome ›</span>` : `<span class="pill muted">Upcoming</span>`;
+    const subj = e => e.subject === "Both" ? "Math + Reading" : (e.subject || "");
+    return `<div class="mc-ph"><span>${d.toLocaleDateString(undefined,{ weekday:"long" })}</span><b class="${iso === today ? "today" : ""}">${d.toLocaleDateString(undefined,{ month:"long", day:"numeric" })}</b></div>
+      ${ev.length ? ev.map(e => `<button type="button" class="mc-item" data-action="open-day" data-date="${iso}">
+          <span class="bar ${e.type}"></span><span class="tm">${fmtTime(e.time)}</span>
+          <span class="txt"><b>${esc(String(e.label || "").split(" · ")[0])}</b><span>${e.type === "diagnostic" ? "DT" + (subj(e) ? " · " + esc(subj(e)) : "") : "Training"}${e.staff ? " · " + esc(e.staff) : ""}</span>${status(e)}</span>
+        </button>`).join("") : `<div class="empty" style="padding:14px 4px">Nothing booked.</div>`}
+      <div class="mc-acts">
+        <button class="btn sm primary" data-action="open-new-diagnostic" data-date="${iso}">${iconPlus()} DT on ${d.toLocaleDateString(undefined,{ month:"short", day:"numeric" })}</button>
+        <button class="btn sm" data-action="open-new-training" data-date="${iso}">${iconPlus()} Training</button>
+      </div>`;
   }
 
   function renderCalendarWeek(){
@@ -1940,18 +2027,11 @@ window.kumonPtcNav = function(client, role){
     // person's view only shows their own diagnostics / trainings / regular schedule.
     const staffOk = staff => STATE.calStaff === "all" || sameStaff(staff, STATE.calStaff);
     const dayEvents = [];
-    if(STATE.calFilter === "all" || STATE.calFilter === "diagnostic"){
+    if(STATE.calShow.dt){
       STATE.diagnostics.filter(d=>d.date===iso && d.status!=="cancelled" && staffOk(d.examiner)).forEach(d => dayEvents.push({type:"diagnostic", time:d.time, ref:d}));
     }
-    if(STATE.calFilter === "all" || STATE.calFilter === "training"){
+    if(STATE.calShow.st){
       STATE.trainings.filter(t=>t.date===iso && t.status!=="cancelled" && staffOk(t.trainer)).forEach(t => dayEvents.push({type:"training", time:t.time, ref:t}));
-    }
-    if(STATE.calFilter === "all" || STATE.calFilter === "schedule"){
-      // Regular schedule slots aren't tied to one trainer, so they only show under "All staff".
-      if(STATE.calStaff === "all") scheduleInstances(iso, iso).forEach(s => dayEvents.push({type:"schedule", time:s.time, ref:s}));
-    }
-    if(STATE.calFilter === "all" || STATE.calFilter === "monitor"){
-      monitorScheduleInstances(iso, iso).filter(m => staffOk(m.staff)).forEach(m => dayEvents.push({type:"monitor", time:m.time, ref:m}));
     }
     dayEvents.sort((a,b)=> (a.time||"").localeCompare(b.time||""));
 
@@ -2162,6 +2242,87 @@ window.kumonPtcNav = function(client, role){
       </div>
     `;
   }
+  /* ---------------- Find a training slot (Nov 17) ----------------
+     For every trainer (Settings → trainers), how many students they already have at each half hour of a week:
+     their regular + monitor classes from Student Roster (each enrollment's teacher + its class days) and the
+     trainings booked that week. A class or training counts for the slot length in the training-slot settings
+     (1 hour), so a 4:00 class also fills 4:30. Free = 0 students. */
+  const freeTool = { weekStart:null, who:"all", sel:null };
+  function freeWeekStart(d){ const x = new Date(d); x.setHours(0,0,0,0); x.setDate(x.getDate() - ((x.getDay() + 6) % 7)); return x; }   // Monday
+  function freeLoad(trainer, iso, m, len){
+    const k = slotKey(trainer), dow = DOW[parseISODate(iso).getDay()];
+    const hit = start => start != null && start < m + 30 && start + len > m;
+    const names = [];
+    STATE.trainings.filter(t => t.date === iso && t.status !== "cancelled" && slotKey(t.trainer) === k && hit(toMin(t.time)))
+      .forEach(t => names.push((displayName(studentById(t.studentId)) || t.studentName) + " (training)"));
+    STATE.enrollments.filter(e => e.status !== "inactive" && !e.archived && slotKey(e.teacher) === k).forEach(enr => {
+      STATE.schedules.filter(s => s.status === "active" && s.subjectEnrollmentId === enr.id && Array.isArray(s.slots) && iso >= (s.startDate || iso))
+        .forEach(s => s.slots.forEach(sl => { if(sl && sl.day === dow && hit(toMin(sl.time))) names.push((displayName(studentById(enr.studentId)) || enr.studentName) + " · " + (enr.subject || "")); }));
+    });
+    return names;
+  }
+  function openFreeTool(){
+    if(!freeTool.weekStart) freeTool.weekStart = freeWeekStart(new Date());
+    renderFreeTool();
+    $("#modalBackdrop").hidden = false;
+  }
+  function renderFreeTool(){
+    const p = loadSlotPrefs("st"), len = Number(p.len) || 60;
+    const trainers = STATE.settings.trainers.slice();
+    const startM = toMin(p.start) ?? 540, endM = toMin(p.end) ?? 1080;
+    const bf = toMin(p.breakFrom), bt = toMin(p.breakTo);
+    const times = []; for(let m = startM; m + 30 <= endM; m += 30){ if(bf != null && bt != null && m >= bf && m < bt) continue; times.push(m); }
+    const days = [0,1,2,3,4,5].map(i => addDays(freeTool.weekStart, i)).filter(d => (p.days || [1,2,3,4,5,6]).includes(d.getDay()));
+    const todayIso = todayISO(), nowM = new Date().getHours()*60 + new Date().getMinutes();
+    const who = freeTool.who === "all" || trainers.some(t => t === freeTool.who) ? freeTool.who : "all";
+    const head = `<tr><th></th>${days.map(d => `<th>${DOW[d.getDay()]} ${d.getDate()}</th>`).join("")}</tr>`;
+    const rows = times.map(m => `<tr><th class="ft-tm">${fmtTime(fromMin(m))}</th>${days.map(d => {
+      const iso = isoDate(d), past = iso < todayIso || (iso === todayIso && m + 30 <= nowM);
+      const sel = freeTool.sel && freeTool.sel.iso === iso && freeTool.sel.m === m ? " sel" : "";
+      if(past) return `<td><span class="ft-cell off">past</span></td>`;
+      if(who === "all"){
+        const free = trainers.filter(t => !freeLoad(t, iso, m, len).length).length;
+        return `<td><button type="button" class="ft-cell ${free ? "free" : "busy"}${sel}" data-action="free-cell" data-date="${iso}" data-m="${m}">${free ? free + " free" : "—"}</button></td>`;
+      }
+      const n = freeLoad(who, iso, m, len).length;
+      return `<td><button type="button" class="ft-cell ${n === 0 ? "free" : n <= 2 ? "some" : n <= 4 ? "busy" : "full"}${sel}" data-action="free-cell" data-date="${iso}" data-m="${m}" aria-label="${n} students">${n === 0 ? "Free" : n}</button></td>`;
+    }).join("")}</tr>`).join("");
+    let panel;
+    if(!freeTool.sel){
+      panel = `<h3 style="margin:0">Pick a time</h3><p class="hint">Tap any box to see each trainer's students at that time, then book the training.</p><p class="hint">Green means the trainer has no students then. Times come from each child's class days on Student Roster plus booked trainings.</p>`;
+    } else {
+      const { iso, m } = freeTool.sel, d = parseISODate(iso);
+      const list = trainers.map(t => ({ t, names: freeLoad(t, iso, m, len) }));
+      panel = `<div class="ft-ph">${d.toLocaleDateString(undefined,{ weekday:"long", month:"short", day:"numeric" })} · ${fmtTime(fromMin(m))}</div>
+        ${list.map(x => `<div class="ft-who ${x.names.length ? "" : "free"}"><div><b>${esc(x.t)}</b><span>${x.names.length ? x.names.length + " student" + (x.names.length > 1 ? "s" : "") : "Free"}</span></div>
+          ${x.names.length ? `<details><summary>Who</summary>${x.names.map(n => `<div>${esc(n)}</div>`).join("")}</details>` : `<button class="btn sm primary" data-action="free-book" data-date="${iso}" data-time="${fromMin(m)}" data-trainer="${esc(x.t)}">Book here</button>`}</div>`).join("")}`;
+    }
+    const wkEnd = addDays(freeTool.weekStart, 5);
+    openModal(`
+      <div class="modal-head"><h3>Who's free for a training?</h3><button class="iconbtn" data-action="close-modal">✕</button></div>
+      <div class="modal-body">
+        <div class="ft-bar">
+          <button class="btn ghost sm" data-action="free-week" data-dir="prev" aria-label="Previous week">‹</button>
+          <b>${freeTool.weekStart.toLocaleDateString(undefined,{ month:"short", day:"numeric" })} – ${wkEnd.toLocaleDateString(undefined,{ month:"short", day:"numeric" })}</b>
+          <button class="btn ghost sm" data-action="free-week" data-dir="next" aria-label="Next week">›</button>
+          <button class="btn sm" data-action="free-week" data-dir="today">This week</button>
+          <span style="flex:1"></span>
+          <button class="btn sm" data-action="free-image">Save as image</button>
+        </div>
+        <div class="ft-chips">${trainers.map(t => `<button type="button" class="ft-chip ${who === t ? "on" : ""}" data-action="free-who" data-who="${esc(t)}">${esc(t)}</button>`).join("")}<button type="button" class="ft-chip ${who === "all" ? "on" : ""}" data-action="free-who" data-who="all">Anyone free</button></div>
+        <div class="ft-legend"><span><i class="free"></i>Free</span><span><i class="some"></i>1–2 students</span><span><i class="busy"></i>3–4</span><span><i class="full"></i>5 or more</span></div>
+        <div class="ft-wrap"><div class="ft-grid"><table>${head}${rows}</table></div><aside class="ft-panel">${panel}</aside></div>
+      </div>`);
+    $("#modal").classList.add("modal-wide");
+  }
+  // The parents/staff picture: same image as before, now offering every trainer with 0 students.
+  function freeSaveImage(){
+    slotTool.kind = "st";
+    slotTool.prefs = { ...loadSlotPrefs("st"), trainers: STATE.settings.trainers.map(slotKey) };
+    slotTool.weekStart = addDays(freeTool.weekStart, -1);   // the image's week starts on Sunday
+    saveSlotImage();
+  }
+
   function openSlotTool(kind){
     slotTool.kind = kind === "st" ? "st" : "dt";
     slotTool.prefs = loadSlotPrefs(slotTool.kind);
@@ -5272,6 +5433,14 @@ window.kumonPtcNav = function(client, role){
     }
     else if(a === "cal-view"){ STATE.calView = el.dataset.view; renderCalendar(); }
     else if(a === "cal-filter"){ STATE.calFilter = el.dataset.filter; renderCalendar(); }
+    else if(a === "cal-show"){ const k = el.dataset.show; STATE.calShow[k] = !STATE.calShow[k]; if(!STATE.calShow.dt && !STATE.calShow.st) STATE.calShow[k === "dt" ? "st" : "dt"] = true; renderCalendar(); }
+    else if(a === "cal-pick-day"){ STATE.calSelDay = el.dataset.date; if(window.matchMedia("(max-width: 900px)").matches){ renderCalendar(); const p = document.querySelector(".mc-panel"); if(p) p.scrollIntoView({ behavior:"smooth", block:"start" }); } else renderCalendar(); }
+    else if(a === "open-free-tool"){ openFreeTool(); }
+    else if(a === "free-who"){ freeTool.who = el.dataset.who; freeTool.sel = null; renderFreeTool(); }
+    else if(a === "free-cell"){ freeTool.sel = { iso: el.dataset.date, m: +el.dataset.m }; renderFreeTool(); }
+    else if(a === "free-week"){ const k = el.dataset.dir; freeTool.weekStart = k === "today" ? freeWeekStart(new Date()) : addDays(freeTool.weekStart, k === "next" ? 7 : -7); freeTool.sel = null; renderFreeTool(); }
+    else if(a === "free-book"){ closeModal(); openNewTraining(undefined, el.dataset.date, el.dataset.time, el.dataset.trainer); }
+    else if(a === "free-image"){ freeSaveImage(); }
     else if(a === "remove-staff"){ removeStaff(el.dataset.name); }
     else if(a === "open-new-student"){ openNewStudentModal(); }
     else if(a === "open-new-eo"){ openNewEoModal(); }
