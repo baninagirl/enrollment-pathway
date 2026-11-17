@@ -382,6 +382,12 @@
   .cal-chip:last-child{ margin-bottom:0; }
   .cal-chip.subj-math{ background:var(--accent-soft); color:var(--accent-soft-ink); }
   .cal-chip.subj-reading{ background:var(--bad-soft); color:var(--bad); }
+  /* Student trainings and DTs booked this week (Nov 17) */
+  .cal-chip.bk-chip{ display:flex; flex-direction:column; gap:1px; border-left:3px solid; }
+  .cal-chip.bk-chip.training{ background:#FBEEDF; color:#9A5512; border-color:#C26A1A; }
+  .cal-chip.bk-chip.dt{ background:#E6EEFF; color:#2F4BB8; border-color:#3454D1; }
+  .cal-chip.bk-chip.done{ opacity:.6; }
+  .cal-chip .bk-kind{ font-size:10.5px; font-weight:800; letter-spacing:.02em; text-transform:uppercase; }
   .cal-chip.arrived{ border-left-color:currentColor; }
   .cal-chip .teacher-sub{ font-weight:500; opacity:.82; font-size:10.5px; margin-left:22px; }
   .cal-chip.cont{ background:transparent !important; border:1.5px dashed currentColor; opacity:.78; font-weight:600; }
@@ -1072,13 +1078,13 @@ window.kumonPtcNav = function(client, role){
   // A new week (or a tab left open overnight): reload this week's ticks.
   let calWeekShown = null;
   // Moves switch over on Sunday (to the coming week), ticks on Monday — both are part of what's shown.
-  setInterval(async () => { if(!started) return; const wk = currentWeekStart() + "|" + moveWeekStart(); if(calWeekShown && wk !== calWeekShown){ calWeekShown = wk; await Promise.all([loadAttendance(), loadMoves()]); renderCalendar(); } else calWeekShown = wk; }, 60 * 1000);
+  setInterval(async () => { if(!started) return; const wk = currentWeekStart() + "|" + moveWeekStart(); if(calWeekShown && wk !== calWeekShown){ calWeekShown = wk; await Promise.all([loadBookings(), loadAttendance(), loadMoves()]); renderCalendar(); } else calWeekShown = wk; }, 60 * 1000);
 
   let started = false;
   async function startApp(){
     if(started) return;
     started = true;
-    await Promise.all([loadSchedules(), loadEnrollments(), loadSettings(), loadAttendance(), loadMoves(), ccLoad()]);
+    await Promise.all([loadSchedules(), loadEnrollments(), loadSettings(), loadAttendance(), loadMoves(), ccLoad(), loadBookings()]);
     calWeekShown = currentWeekStart() + "|" + moveWeekStart();   // so the first switch-over (Sunday / Monday) is noticed
     populateFilters();
     renderCalendar();
@@ -1152,6 +1158,27 @@ window.kumonPtcNav = function(client, role){
      "Can I come tomorrow instead?" — drag the child to the new day/time. It only applies to this week:
      from Sunday the Calendar shows the coming week, which has no moves, so the regular days come back.
      The arrived tick of a moved class is saved under its ORIGINAL day, so attendance counts it. */
+  // This week's student trainings and DTs (Nov 17): shown in the grid for whoever is assigned (trainer / examiner).
+  let bookings = [];
+  async function loadBookings(){
+    const wk = moveWeekStart(), [y, m, d] = wk.split("-").map(Number);
+    const end = new Date(y, m - 1, d + 6), endIso = end.getFullYear() + "-" + String(end.getMonth() + 1).padStart(2, "0") + "-" + String(end.getDate()).padStart(2, "0");
+    const out = [];
+    try{
+      const { data, error } = await sbClient.from("trainings").select("id,date,time,trainer,student_name,status,session_number").gte("date", wk).lte("date", endIso);
+      if(!error) (data || []).filter(t => t.status !== "cancelled" && t.time).forEach(t => out.push({ kind:"training", date:t.date, time:String(t.time).slice(0,5), who:t.trainer || "", name:t.student_name || "", label:"Training" + (t.session_number ? " · S" + t.session_number : ""), done: t.status === "completed" }));
+    }catch(e){ console.warn("trainings", e); }
+    try{
+      const { data, error } = await sbClient.from("diagnostics").select("id,date,time,examiner,student_name,status,subject").gte("date", wk).lte("date", endIso);
+      if(!error) (data || []).filter(x => x.status !== "cancelled" && x.time).forEach(x => out.push({ kind:"dt", date:x.date, time:String(x.time).slice(0,5), who:x.examiner || "", name:x.student_name || "", label:"DT" + (x.subject ? " · " + (x.subject === "Both" ? "Math + Reading" : x.subject) : ""), done:false }));
+    }catch(e){ console.warn("diagnostics", e); }
+    bookings = out;
+  }
+  function bookingEntries(){
+    const scope = isTeacherScoped() ? new Set(myGroupTeachers()) : null;
+    return bookings.filter(b => (!scope || scope.has(b.who)) && (!filters.teachers.size || filters.teachers.has(b.who)))
+      .map(b => { const [y, m, d] = b.date.split("-").map(Number); return Object.assign({}, b, { day: DAY_ORDER[(new Date(y, m - 1, d).getDay() + 6) % 7] }); });
+  }
   function moveWeekStart(){
     const now = new Date();
     if(now.getDay() !== 0) return currentWeekStart();
@@ -1632,11 +1659,13 @@ window.kumonPtcNav = function(client, role){
 
   function renderCalendar(){
     const entries = filteredEntries();
+    const bk = bookingEntries(), bkByCell = {};
+    bk.forEach(b => { (bkByCell[b.day + "|" + b.time] = bkByCell[b.day + "|" + b.time] || []).push(b); });
     $("#calCount").textContent = entries.length + (entries.length===1 ? " weekly slot" : " weekly slots");
     const grid = $("#calGrid");
     const emptyEl = $("#calEmpty");
 
-    if(!entries.length){
+    if(!entries.length && !bk.length){
       grid.innerHTML = "";
       grid.style.gridTemplateColumns = "";
       emptyEl.hidden = false;
@@ -1645,7 +1674,7 @@ window.kumonPtcNav = function(client, role){
     }
     emptyEl.hidden = true;
 
-    const days = DAY_ORDER.filter(d => d !== "Sun" || entries.some(e => e.day === "Sun"));
+    const days = DAY_ORDER.filter(d => d !== "Sun" || entries.some(e => e.day === "Sun") || bk.some(b => b.day === "Sun"));
     // A child doing BOTH subjects in one slot is there for an hour: they also show (as "continuing") in the next
     // half-hour row, and count there, so each row's number is who's really in the room. One subject = 30 minutes.
     const plus30 = t => { const [h, m] = String(t).split(":").map(Number); const x = h * 60 + m + 30; return String(Math.floor(x / 60)).padStart(2, "0") + ":" + String(x % 60).padStart(2, "0"); };
@@ -1677,7 +1706,7 @@ window.kumonPtcNav = function(client, role){
         const k = e.origDay + "|" + e.origTime, ng = Object.assign({}, e, { subjects: [e.subject] });
         gIdx.set(kidK, ng); (ghostByCell[k] = ghostByCell[k] || []).push(ng);
       } }
-    const times = [...new Set(entries.map(e => e.time).concat(contEntries.map(e => e.time), Object.keys(ghostByCell).map(k => k.split("|")[1])))].sort();
+    const times = [...new Set(entries.map(e => e.time).concat(contEntries.map(e => e.time), Object.keys(ghostByCell).map(k => k.split("|")[1]), bk.map(b => b.time)))].sort();
     const showTeacherLabel = filters.teachers.size !== 1;
     // One outcome per child per day (Math + Reading together): came if either subject is ticked, picked up if marked
     const kidDayKey = it => (it.studentId || it.studentName) + "|" + it.day;
@@ -1762,7 +1791,7 @@ window.kumonPtcNav = function(client, role){
             <div class="chip-top"><label class="chip-row">${numTag}${checkbox}<span class="chip-name">${esc(chipDisplayName(it.studentName))}${lvlTag} ${modeTag}${ccCells.chips.has(ccChipKey(it.scheduleId, it.day, it.time, it.subject)) ? `<span class="cc-chip-dot" title="Has an open comment"></span>` : ""}</span></label>${(pickBtn || moveBtn) ? `<span class="chip-acts">${pickBtn}${moveBtn}</span>` : ""}</div>
             ${teacherLine}${movedLine}${statusLine}
           </div>`;
-        }).join("")}${(ghostByCell[ck] || []).map(g => `<div class="cal-ghost" title="Moved for this week only">${esc(chipDisplayName(g.studentName))} → ${esc(g.day)} ${esc(fmtTime(g.time))}${g.subjects.length > 1 ? `<span class="ghost-sub">${esc(g.subjects.join(" + "))}</span>` : ""}</div>`).join("")}</div>`;
+        }).join("")}${(ghostByCell[ck] || []).map(g => `<div class="cal-ghost" title="Moved for this week only">${esc(chipDisplayName(g.studentName))} → ${esc(g.day)} ${esc(fmtTime(g.time))}${g.subjects.length > 1 ? `<span class="ghost-sub">${esc(g.subjects.join(" + "))}</span>` : ""}</div>`).join("")}${(bkByCell[ck] || []).map(b => `<div class="cal-chip bk-chip ${b.kind}${b.done ? " done" : ""}" title="${esc(b.label + " — " + b.name + (b.who ? " — " + b.who : ""))}"><span class="bk-kind">${esc(b.label)}</span><span class="chip-name">${esc(chipDisplayName(b.name))}</span>${showTeacherLabel && b.who ? `<span class="teacher-sub">${esc(b.who)}</span>` : ""}</div>`).join("")}</div>`;
       }
     }
     grid.style.gridTemplateColumns = (matchMedia("(max-width:860px)").matches ? "62px" : "84px") + ` repeat(${days.length}, minmax(150px, 1fr))`;
