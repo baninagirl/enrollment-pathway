@@ -2886,7 +2886,7 @@ window.kumonPtcNav = function(client, role){
     const emptyMsg = qTokens.length ? "No students match that search." : STATE.studentMonthMode==="month" ? `No enrolled students on the ${esc(monthLabel)} roster yet. Try <b>All time</b> — a student shows up here once their diagnostic is marked <b>Enrolled</b>.` : "No enrolled students yet. A student shows up here once their diagnostic is marked <b>Enrolled</b>.";
 
     const listTable = `<table class="stable">
-          <thead><tr><th>#</th><th>Student</th><th>Grade</th><th>Subject</th><th>Tag</th><th>First day</th><th>Schedule</th><th>Mode</th><th>Status</th></tr></thead>
+          <thead><tr><th>#</th><th>Student</th><th>Grade</th><th>Subject</th><th>Tag</th><th title="Also their Date enrolled on Student Roster">First day</th><th>Schedule</th><th>Mode</th><th>Status</th></tr></thead>
           <tbody>
             ${rows.map((row, i) => {
               const s = row.s;
@@ -2908,7 +2908,7 @@ window.kumonPtcNav = function(client, role){
         </table>`;
 
     const reportTable = `<table class="stable">
-          <thead><tr><th>#</th><th>Student</th><th>Grade</th><th>Subject</th><th>Tag</th><th>First day</th><th>Start point</th><th>DT test</th><th>DT date</th><th>Score</th><th>Time</th></tr></thead>
+          <thead><tr><th>#</th><th>Student</th><th>Grade</th><th>Subject</th><th>Tag</th><th title="Also their Date enrolled on Student Roster">First day</th><th>Start point</th><th>DT test</th><th>DT date</th><th>Score</th><th>Time</th></tr></thead>
           <tbody>
             ${rows.map((row, i) => {
               const s = row.s;
@@ -2959,6 +2959,7 @@ window.kumonPtcNav = function(client, role){
         <button type="button" class="btn sm" data-action="open-new-eo" title="An existing student enrolling for another subject">${iconPlus()} Add EO</button>
       </div>
       <div class="card">
+        ${rows.length ? `<p class="hint" style="margin:0 0 8px; font-size:12.5px;">Each child is listed in the month of their <b>First day</b>, the same as <b>Date enrolled</b> on Student Roster. Changing First day on their card updates Date enrolled too. The grey line under a name says why they're in this month.</p>` : ""}
         ${rows.length ? `<div class="table-scroll">${isReport ? reportTable : listTable}</div>` : `<div class="empty">${emptyMsg}</div>`}
       </div>
     `;
@@ -3304,12 +3305,23 @@ window.kumonPtcNav = function(client, role){
     });
     renderAll();
   }
+  // First day also sets Date enrolled on Student Roster (Nov 17), so there's one date to change. Only the child's
+  // own starting subjects follow it — a subject added later (EO / Add subject) or resumed keeps its own date.
+  async function syncEnrolledOnFromFirstDay(studentId, iso){
+    if(!iso) return 0;
+    const subs = STATE.enrollments.filter(e => e.studentId === studentId && !e.archived && (e.status || "active") === "active"
+      && !e.addedMonth && e.enrollmentType !== "eo" && !e.resumedMonth && String(e.enrolledOn || "").slice(0,10) !== iso);
+    for(const e of subs){ await db.collection("subject_enrollments").doc(e.id).update({ enrolledOn: iso }); e.enrolledOn = iso; }
+    if(subs.length) logHistory("set_date_enrolled", `Date enrolled set to ${iso} from First day (${subs.map(e => e.subject).join(", ")})`, "student", studentId);
+    return subs.length;
+  }
   async function setCardFirstDay(id, value){
     const s = studentById(id); if(!s || !canEditFirstDay()) return;
     const v = value || null;
     await guardWrite(async ()=>{
       await db.collection("students").doc(id).update({ firstDay: v });
       s.firstDay = v;
+      await syncEnrolledOnFromFirstDay(id, v);
       logHistory("set_first_day", v ? `Set ${s.name}'s first day to ${v}` : `${s.name}'s first day now follows their first training`, "student", id);
       toast(v ? "First day saved." : "First day now follows their first training.");
     });
@@ -3758,7 +3770,9 @@ window.kumonPtcNav = function(client, role){
         }
         if(flipOff.length) logHistory("monitor_off", `Took ${name} off monitor (${flipOff.map(e => e.subject).filter(Boolean).join(", ")})`, "student", id);
       }
+      const prevFirstDay = s ? (s.firstDay || null) : null;
       await db.collection("students").doc(id).update(studentPatch);
+      if(studentPatch.firstDay && studentPatch.firstDay !== prevFirstDay) await syncEnrolledOnFromFirstDay(id, studentPatch.firstDay);
       let renameFailed = false;
       // Name changed (phase35): copy it onto every subject, schedule, training and past month too.
       if(prevName !== [firstName, lastName, name].join("|") || pendingRenames.has(id)){
