@@ -533,6 +533,17 @@
   .td-kcol h3{ margin:2px 6px; font-size:13px; font-weight:700; color:var(--ink-muted); display:flex; align-items:center; gap:8px; }
   .td-kcol h3 i{ width:8px; height:8px; border-radius:50%; }
   .td-kcol h3 span{ margin-left:auto; font-size:12px; background:var(--surface); border-radius:99px; padding:1px 8px; }
+  .td-kcol h3{ min-height:26px; }
+  .td-qa-btn{ flex:none; display:inline-grid; place-items:center; width:26px; height:26px; margin:0 -2px 0 0; padding:0; border-radius:8px; border:1px solid transparent; background:var(--surface); color:var(--accent); cursor:pointer; transition:background .15s, border-color .15s, transform .12s; }
+  .td-qa-btn:hover, .td-qa-btn.on{ background:var(--accent-soft); border-color:var(--accent); }
+  .td-qa-btn:active{ transform:scale(.92); }
+  .td-qa-btn svg{ transition:transform .2s; } .td-qa-btn.on svg{ transform:rotate(45deg); }
+  .td-qa{ background:var(--surface); border-radius:14px; box-shadow:0 0 0 2px var(--accent), var(--shadow); padding:10px 12px; display:flex; flex-direction:column; gap:8px; }
+  .td-qa-in{ border:none !important; outline:none; background:transparent !important; padding:2px 0 !important; font:inherit; font-size:14px; color:var(--ink); width:100%; box-shadow:none !important; }
+  .td-qa-row{ display:flex; align-items:center; justify-content:space-between; gap:8px; }
+  .td-qa-hint{ font-size:11.5px; color:var(--ink-faint); }
+  .td-qa-add{ font:inherit; font-size:12.5px; font-weight:600; border:none; border-radius:99px; padding:5px 14px; background:var(--accent); color:#fff; cursor:pointer; }
+  @media (hover:none){ .td-qa-hint{ visibility:hidden; } }
   .td-kempty{ font-size:13px; color:var(--ink-faint); text-align:center; padding:18px 8px; border:1.5px dashed var(--border); border-radius:12px; }
   .td-kmore{ font-size:12.5px; font-weight:600; color:var(--accent); text-decoration:none; text-align:center; padding:4px; }
   .td-kc{ background:var(--surface); border-radius:14px; box-shadow:var(--shadow); padding:12px 12px 10px; display:flex; gap:10px; align-items:flex-start; min-width:0; transition:transform .4s cubic-bezier(.2,.8,.2,1), opacity .35s; }
@@ -2127,8 +2138,11 @@ window.kumonPtcNav = function(client, role){
       let list = k === "done" ? doneTodayList : open.filter(t => colOf(t) === k).sort(sortT);
       const extra = k === "later" && list.length > LATER_MAX ? list.length - LATER_MAX : 0;
       if(extra) list = list.slice(0, LATER_MAX);
-      return `<div class="td-kcol" data-col="${k}"><h3><i style="background:${dot}"></i>${label}<span>${list.length + extra}</span></h3>
-        ${list.length ? list.map(t => card(t, k)).join("") : `<div class="td-kempty">${k === "done" ? "Tick something off" : k === "overdue" ? "Nothing overdue" : "Nothing here"}</div>`}
+      const canAdd = k === "today" || k === "later", qaOpen = canAdd && todoQa === k;
+      const plus = canAdd ? `<button type="button" class="td-qa-btn${qaOpen ? " on" : ""}" data-todo="qa" data-id="${k}" aria-label="Add a to-do to ${label}" title="Add to ${label}"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>` : "";
+      const composer = qaOpen ? `<form class="td-qa" data-tqa-form="${k}"><input type="text" class="td-qa-in" maxlength="200" placeholder="${k === "today" ? "New to-do for today" : "New to-do, no date"}" autocomplete="off" aria-label="New to-do for ${label}"><div class="td-qa-row"><span class="td-qa-hint">Press Enter to add</span><button type="submit" class="td-qa-add">Add</button></div></form>` : "";
+      return `<div class="td-kcol" data-col="${k}"><h3><i style="background:${dot}"></i>${label}<span>${list.length + extra}</span>${plus}</h3>
+        ${composer}${list.length ? list.map(t => card(t, k)).join("") : (qaOpen ? "" : `<div class="td-kempty">${k === "done" ? "Tick something off" : k === "overdue" ? "Nothing overdue" : "Nothing here"}</div>`)}
         ${extra ? `<a class="td-kmore" href="todos.html">+${extra} more on To-dos</a>` : ""}</div>`;
     };
     const d = keepTodoDraft || {};
@@ -2147,6 +2161,26 @@ window.kumonPtcNav = function(client, role){
     return `<section class="td-sec"><div class="td-sec-head"><div><div class="td-kicker">To-dos</div><h2 class="td-title td-tc-title">${ring}<span>${title}</span></h2></div>${openBtn}</div>
       ${addBar}<div class="td-kboard">${cols.map(colHtml).join("")}</div></section>`;
   }
+  // The + on the Today / Later columns: Today gets today's date, Later gets no date. Goes on the list on screen.
+  let todoQa = null;
+  async function quickAddTodo(col, text){
+    text = String(text || "").trim().slice(0, 200);
+    const focusQa = () => { const i = document.querySelector(".td-qa-in"); if(i) i.focus(); };
+    if(!text){ focusQa(); return; }
+    const owner = todoOwner();
+    const row = { owner_id: owner, text, due_date: col === "today" ? todayISO() : null, created_by: currentUser.id, created_by_email: currentUser.email || null };
+    const { data, error } = await sbClient.from("teacher_todos").insert(row).select().single();
+    if(error){ toast("Couldn't add that: " + error.message); return; }
+    todos.push(data); justAddedTodo = data.id; render(); justAddedTodo = null; focusQa();
+    if(owner !== currentUser.id) logHistory("todo_assign", `Gave ${todoWhoName(owner)} a to-do: ${text}`);
+  }
+  document.addEventListener("submit", e => {
+    const f = e.target.closest && e.target.closest("[data-tqa-form]"); if(!f) return;
+    e.preventDefault(); const i = f.querySelector(".td-qa-in"); quickAddTodo(f.dataset.tqaForm, i ? i.value : "");
+  });
+  document.addEventListener("keydown", e => {
+    if(e.key === "Escape" && e.target.classList && e.target.classList.contains("td-qa-in")){ e.stopPropagation(); todoQa = null; render(); }
+  }, true);
   async function addTodo(){
     const tx = ($("#todoText") || {}).value || "", text = tx.trim(); if(!text) return;
     const due = ($("#todoDue") || {}).value || null, sel = $("#todoFor");
@@ -2162,6 +2196,7 @@ window.kumonPtcNav = function(client, role){
   }
   async function todoAction(kind, id, btn){
     if(kind === "showdone"){ showDoneTodos = !showDoneTodos; render(); return; }
+    if(kind === "qa"){ todoQa = todoQa === id ? null : id; render(); const i = document.querySelector(".td-qa-in"); if(i) i.focus(); return; }
     if(kind === "move"){ await moveTodo(id, btn.dataset.to); return; }
     if(kind === "due"){ const h = $("#todoDue"); if(h) h.value = btn.dataset.v; const pk = $("#todoPick"); if(pk){ pk.value = ""; pk.parentElement.classList.remove("on"); const tx = $("#todoPickTx"); if(tx) tx.textContent = "Pick date"; } btn.parentElement.querySelectorAll("button").forEach(b => b.setAttribute("aria-pressed", String(b === btn))); const f = $("#todoText"); if(f) f.focus(); return; }
     const t = todos.find(x => x.id === id); if(!t) return;
