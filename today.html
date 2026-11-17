@@ -540,7 +540,13 @@
   .td-kc.done .td-tc-tick{ background:var(--good); border-color:var(--good); }
   .td-kc.done .td-tc-tick svg{ animation:tdTickDraw .35s .1s cubic-bezier(.2,.8,.2,1) forwards; }
   .td-kc.done .td-tc-text{ color:var(--ink-faint); text-decoration:line-through; }
-  .td-kc-move{ display:flex; gap:2px; flex-wrap:wrap; margin-left:-4px; }
+  .td-kc-move{ display:flex; gap:2px; flex-wrap:wrap; margin-left:-4px; align-items:center; }
+  .td-kc-date{ position:relative; display:inline-flex; align-items:center; color:var(--accent); font-size:12px; font-weight:600; padding:2px 4px; border-radius:6px; cursor:pointer; }
+  .td-kc-date:hover{ background:var(--accent-soft, #E9EDFB); }
+  .td-kc-date input{ position:absolute; inset:0; opacity:0; cursor:pointer; width:100%; }
+  .td-datepill{ position:relative; display:inline-flex; align-items:center; gap:5px; background:var(--surface-2, #F1F2F6); color:var(--ink-muted); border-radius:99px; padding:5px 11px 5px 10px; font-size:12.5px; font-weight:600; cursor:pointer; }
+  .td-datepill input{ position:absolute; inset:0; opacity:0; width:100%; cursor:pointer; }
+  .td-datepill.on{ background:var(--accent-soft, #E9EDFB); color:var(--accent); box-shadow:inset 0 0 0 1.5px var(--accent); }
   .td-kc-move button{ appearance:none; border:0; background:transparent; color:var(--accent); font:inherit; font-size:12px; font-weight:600; padding:2px 4px; border-radius:6px; cursor:pointer; }
   .td-kc-move button:hover{ background:var(--accent-soft, #E9EDFB); }
   @media (max-width:980px){ .td-kboard{ grid-template-columns:repeat(2, minmax(0,1fr)); } }
@@ -2019,7 +2025,7 @@ window.kumonPtcNav = function(client, role){
       const fin = t.done || todoFading.has(t.id);
       const from = t.created_by && t.created_by !== t.owner_id ? `<span class="td-chip td-mute">From ${esc(todoWhoName(t.created_by))}</span>` : "";
       const flag = t.flagged ? `<span class="td-tc-flag" title="Flagged"><svg viewBox="0 0 24 24" width="14" height="14" fill="#E8890C" aria-hidden="true"><path d="M6 21V4h11l-1.5 4L17 12H6"/></svg></span>` : "";
-      const moves = col === "done" || fin ? "" : `<div class="td-kc-move">${col !== "today" ? `<button type="button" data-todo="move" data-id="${esc(t.id)}" data-to="${today}">→ Today</button>` : ""}${t.due_date !== tmrw ? `<button type="button" data-todo="move" data-id="${esc(t.id)}" data-to="${tmrw}">→ Tomorrow</button>` : ""}</div>`;
+      const moves = col === "done" || fin ? "" : `<div class="td-kc-move">${col !== "today" ? `<button type="button" data-todo="move" data-id="${esc(t.id)}" data-to="${today}">→ Today</button>` : ""}${t.due_date !== tmrw ? `<button type="button" data-todo="move" data-id="${esc(t.id)}" data-to="${tmrw}">→ Tomorrow</button>` : ""}<label class="td-kc-date" title="Pick a date">Date<input type="date" data-todo-date="${esc(t.id)}" value="${esc(t.due_date || "")}" aria-label="Pick a date"></label></div>`;
       return `<div class="td-kc${fin ? " done" : ""}${t.id === justAddedTodo ? " fresh" : ""}" data-tc="${esc(t.id)}" ${col !== "done" && !fin ? `draggable="true"` : ""}>
         <button type="button" class="td-tc-tick" data-todo="toggle" data-id="${esc(t.id)}" aria-pressed="${fin}" aria-label="${fin ? "Done — tap to undo" : "Mark done"}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5 12.5l3.6 3.6 7.4-8"/></svg></button>
         <div class="td-tc-body"><div class="td-tc-text">${esc(t.text)}</div>${t.note ? `<div class="td-tc-note">${esc(t.note)}</div>` : ""}<div class="td-tc-chips">${col === "done" ? "" : dueChip(t)}${from}${flag}</div>${moves}</div>
@@ -2040,7 +2046,8 @@ window.kumonPtcNav = function(client, role){
     const addBar = `<form class="td-kadd" id="todoForm" autocomplete="off">
         <input id="todoText" type="text" maxlength="200" placeholder="${viewingOther ? `Add a to-do for ${esc(tdUi.who)}…` : "Add a to-do for yourself…"}" aria-label="New to-do" value="${esc(d.t || "")}">
         <input id="todoDue" type="hidden" value="${esc(due0)}">
-        <div class="td-tc-when" role="group" aria-label="When">${[["Today", today], ["Tomorrow", tmrw], ["No date", ""]].map(([l, v]) => `<button type="button" data-todo="due" data-v="${v}" aria-pressed="${due0 === v}">${l}</button>`).join("")}</div>
+        <div class="td-tc-when" role="group" aria-label="When">${[["Today", today], ["Tomorrow", tmrw], ["No date", ""]].map(([l, v]) => `<button type="button" data-todo="due" data-v="${v}" aria-pressed="${due0 === v}">${l}</button>`).join("")}
+          <label class="td-datepill${due0 && due0 !== today && due0 !== tmrw ? " on" : ""}" title="Pick a date"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M8 3v4M16 3v4M4 10h16M5 5h14v15H5z"/></svg><span id="todoPickTx">${due0 && due0 !== today && due0 !== tmrw ? esc(fmtDate(due0, { year: undefined })) : "Pick date"}</span><input type="date" id="todoPick" min="${today}" value="${due0 && due0 !== today && due0 !== tmrw ? esc(due0) : ""}" aria-label="Pick a date"></label></div>
         <button type="submit" class="td-tc-addbtn">Add</button>
       </form>`;
     const total = left + doneToday;
@@ -2066,7 +2073,7 @@ window.kumonPtcNav = function(client, role){
   async function todoAction(kind, id, btn){
     if(kind === "showdone"){ showDoneTodos = !showDoneTodos; render(); return; }
     if(kind === "move"){ await moveTodo(id, btn.dataset.to); return; }
-    if(kind === "due"){ const h = $("#todoDue"); if(h) h.value = btn.dataset.v; btn.parentElement.querySelectorAll("button").forEach(b => b.setAttribute("aria-pressed", String(b === btn))); const f = $("#todoText"); if(f) f.focus(); return; }
+    if(kind === "due"){ const h = $("#todoDue"); if(h) h.value = btn.dataset.v; const pk = $("#todoPick"); if(pk){ pk.value = ""; pk.parentElement.classList.remove("on"); const tx = $("#todoPickTx"); if(tx) tx.textContent = "Pick date"; } btn.parentElement.querySelectorAll("button").forEach(b => b.setAttribute("aria-pressed", String(b === btn))); const f = $("#todoText"); if(f) f.focus(); return; }
     const t = todos.find(x => x.id === id); if(!t) return;
     if(kind === "toggle"){
       const done = !t.done, prev = { done: t.done, done_at: t.done_at };
@@ -2095,6 +2102,15 @@ window.kumonPtcNav = function(client, role){
     if(error){ t.due_date = prev; render(); toast("Couldn't move that — try again."); }
   }
   // Drag a card between columns: Today → due today, Later → tomorrow (unless it's already later), Done → ticked.
+  // Open the calendar straight away when a date box is tapped (the box itself is small / see-through).
+  document.addEventListener("click", e => { const i = e.target.closest && e.target.closest("input[type=date][data-todo-date], #todoPick"); if(i && i.showPicker){ try{ i.showPicker(); }catch(_){} } }, true);
+  // Picking a date: in the add bar it becomes the new to-do's date; on a card it moves that to-do.
+  document.addEventListener("change", async e => {
+    if(e.target.id === "todoPick"){ const v = e.target.value, h = $("#todoDue"); if(h) h.value = v || todayISO();
+      e.target.parentElement.classList.toggle("on", !!v); const tx = $("#todoPickTx"); if(tx) tx.textContent = v ? fmtDate(v, { year: undefined }) : "Pick date";
+      e.target.closest(".td-tc-when").querySelectorAll("[data-todo=due]").forEach(b => b.setAttribute("aria-pressed", String(!v && b.dataset.v === todayISO()))); const f = $("#todoText"); if(f) f.focus(); return; }
+    const id = e.target.dataset && e.target.dataset.todoDate; if(id) await moveTodo(id, e.target.value || null);
+  });
   let dragTodo = null;
   document.addEventListener("dragstart", e => { const c = e.target.closest && e.target.closest(".td-kc[draggable=true]"); if(!c) return; dragTodo = c.dataset.tc; c.classList.add("dragging"); try{ e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", dragTodo); }catch(_){} });
   document.addEventListener("dragend", () => { dragTodo = null; document.querySelectorAll(".td-kc.dragging").forEach(c => c.classList.remove("dragging")); document.querySelectorAll(".td-kcol.over").forEach(c => c.classList.remove("over")); });

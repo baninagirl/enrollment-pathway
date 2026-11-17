@@ -651,6 +651,10 @@
   .rk-move{ display:flex; gap:2px; flex-wrap:wrap; margin-left:-4px; }
   .rk-move button{ appearance:none; border:0; background:transparent; color:var(--accent); font:inherit; font-size:12px; font-weight:600; padding:2px 4px; border-radius:6px; cursor:pointer; }
   .rk-move button:hover{ background:var(--accent-soft); }
+  .rk-move{ align-items:center; }
+  .rk-date{ position:relative; display:inline-flex; align-items:center; color:var(--accent); font-size:12px; font-weight:600; padding:2px 4px; border-radius:6px; cursor:pointer; }
+  .rk-date:hover{ background:var(--accent-soft); }
+  .rk-date input{ position:absolute; inset:0; opacity:0; cursor:pointer; width:100%; }
   @media (max-width:980px){ .rk-board{ grid-template-columns:repeat(2, minmax(0,1fr)); } }
   @media (max-width:560px){ .rk-board{ grid-template-columns:minmax(0,1fr); } .rm-main.rk-addcard{ padding:2px 14px; } }
   @media (prefers-reduced-motion:reduce){ .rk-card, .rk-tick, .rk-tick svg{ animation:none !important; transition:none !important; } .rk-card.done .rk-tick svg{ stroke-dashoffset:0; } }
@@ -1018,7 +1022,7 @@ window.kumonPtcNav = function(client, role){
   /* ---------- state ---------- */
   let todos = [], profiles = [], loaded = false, missing = false, flagCols = true;
   const ui = { multi: false, view: "board", smart: "today", whose: null, month: todayISO().slice(0,7), day: todayISO(), adding: false, editing: null };
-  try{ const v = localStorage.getItem("kumonTodosView"); if(v === "list" || v === "calendar" || v === "board") ui.view = v; }catch(_){ }
+  try{ const v = localStorage.getItem("kumonTodosView2"); if(v === "list" || v === "calendar" || v === "board") ui.view = v; }catch(_){ }
   const fading = new Set();   // just ticked: shown crossed out for a moment, like Reminders
 
   function ownerId(){ return ui.whose || (currentUser && currentUser.id); }
@@ -1187,7 +1191,7 @@ window.kumonPtcNav = function(client, role){
         fromAdmin(t) ? chip("", "From " + nameOfUser(t.created_by)) : "",
         t.flagged ? `<span class="rk-flag" title="Flagged"><svg viewBox="0 0 24 24" width="14" height="14" fill="var(--warn)" aria-hidden="true"><path d="M6 21V4h11l-1.5 4L17 12H6"/></svg></span>` : ""
       ].join("");
-      const moves = fin || col === "done" ? "" : `<div class="rk-move">${col !== "today" ? `<button type="button" data-act="move" data-id="${esc(t.id)}" data-to="${today}">→ Today</button>` : ""}${t.due_date !== tmrw ? `<button type="button" data-act="move" data-id="${esc(t.id)}" data-to="${tmrw}">→ Tomorrow</button>` : ""}</div>`;
+      const moves = fin || col === "done" ? "" : `<div class="rk-move">${col !== "today" ? `<button type="button" data-act="move" data-id="${esc(t.id)}" data-to="${today}">→ Today</button>` : ""}${t.due_date !== tmrw ? `<button type="button" data-act="move" data-id="${esc(t.id)}" data-to="${tmrw}">→ Tomorrow</button>` : ""}<label class="rk-date" title="Pick a date">Date<input type="date" data-rk-date="${esc(t.id)}" value="${esc(t.due_date || "")}" aria-label="Pick a date"></label></div>`;
       return `<div class="rk-card${fin ? " done" : ""}" data-rk="${esc(t.id)}" ${!fin && col !== "done" ? `draggable="true"` : ""}>
         <button type="button" class="rk-tick" data-act="toggle" data-id="${esc(t.id)}" aria-pressed="${fin}" aria-label="${fin ? "Done — tap to undo" : "Mark done"}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5 12.5l3.6 3.6 7.4-8"/></svg></button>
         <div class="rk-body"><button type="button" class="rk-tx" data-act="edit" data-id="${esc(t.id)}">${esc(t.text)}</button>${t.note ? `<div class="rk-note">${esc(t.note)}</div>` : ""}${chips ? `<div class="rk-chips">${chips}</div>` : ""}${moves}</div>
@@ -1205,6 +1209,8 @@ window.kumonPtcNav = function(client, role){
     const t = todos.find(x => x.id === id); if(!t || (t.due_date || "") === (due || "")) return;
     await save(t, { due_date: due || null }, { due_date: t.due_date });
   }
+  document.addEventListener("click", e => { const i = e.target.closest && e.target.closest("input[type=date][data-rk-date]"); if(i && i.showPicker){ try{ i.showPicker(); }catch(_){} } }, true);
+  document.addEventListener("change", async e => { const id = e.target.dataset && e.target.dataset.rkDate; if(id) await moveTo(id, e.target.value || null); });
   let rkDrag = null;
   document.addEventListener("dragstart", e => { const c = e.target.closest && e.target.closest(".rk-card[draggable=true]"); if(!c) return; rkDrag = c.dataset.rk; c.classList.add("dragging"); try{ e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", rkDrag); }catch(_){} });
   document.addEventListener("dragend", () => { rkDrag = null; document.querySelectorAll(".rk-card.dragging").forEach(c => c.classList.remove("dragging")); document.querySelectorAll(".rk-col.over").forEach(c => c.classList.remove("over")); });
@@ -1339,7 +1345,7 @@ window.kumonPtcNav = function(client, role){
     const b = e.target.closest("[data-act]"); if(!b) return;
     const a = b.dataset.act;
     if(a === "smart"){ ui.smart = b.dataset.k; render(); }
-    else if(a === "view"){ ui.view = b.dataset.v; try{ localStorage.setItem("kumonTodosView", ui.view); }catch(_){ } render(); }
+    else if(a === "view"){ ui.view = b.dataset.v; try{ localStorage.setItem("kumonTodosView2", ui.view); }catch(_){ } render(); }
     else if(a === "toggle"){ e.stopPropagation(); await toggle(b.dataset.id); }
     else if(a === "move"){ await moveTo(b.dataset.id, b.dataset.to); }
     else if(a === "flag"){ const t = todos.find(x => x.id === b.dataset.id); if(t) await save(t, { flagged: !t.flagged }, { flagged: t.flagged }); }
