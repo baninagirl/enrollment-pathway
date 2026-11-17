@@ -923,7 +923,7 @@ window.kumonPtcNav = function(client, role){
   }
   // LWC is free text ("3A 80", "3A80", "BII-200") → { level, page } or null.
   function parseLwc(subject, txt){
-    const m = String(txt || "").trim().match(/^(.*?[A-Za-z])\s*[-–]?\s*(\d{1,3})$/);
+    const m = String(txt || "").split(",")[0].trim().match(/^(.*?[A-Za-z])\s*[-–]?\s*(\d{1,3})$/);   // "AI 70, ZII 100": the Zunzun part after the comma is not the Reading level
     if(!m || levelIndex(subject, m[1]) < 0) return null;
     return { level: normLevel(subject, m[1]), page: m[2] };
   }

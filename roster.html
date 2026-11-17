@@ -510,6 +510,10 @@
   .name-link.name-sm{ font-size:12px; font-weight:500; }
   .lwc-pick{ display:grid; grid-template-columns:minmax(0,1.2fr) minmax(0,1fr); gap:8px; }
   .lwc-pick select{ width:100%; }
+  .zun-wrap{ display:flex; flex-direction:column; gap:10px; }
+  .zun-pick[hidden]{ display:none; }
+  .zun-tick{ display:flex; align-items:center; gap:8px; font-size:13px; font-weight:500; color:var(--ink); cursor:pointer; }
+  .zun-tick input{ width:auto; margin:0; accent-color:var(--accent); }
   .btn.monitor-move{ background:var(--accent-soft); color:var(--accent); border:1px solid transparent; font-size:12px; padding:5px 10px; white-space:nowrap; }
   .btn.monitor-move:hover{ border-color:var(--accent); }
   .name-link:hover{ color:var(--accent); text-decoration:underline; }
@@ -2414,6 +2418,7 @@ window.kumonPtcNav = function(client, role){
             <label class="field">LWC${lwcPickerHtml(e)}</label>
             <label class="field">NWU (worksheets used)<input type="text" name="nwu" value="${v("nwu")}" placeholder="e.g. 31"></label>
           </div>
+          ${zunzunHtml(e)}
           <div class="field-row">
             <label class="field">No. of days<input type="text" name="no_of_days" value="${v("no_of_days")}"></label>
             <label class="field">No. of months (current level)<input type="text" name="no_of_months_current_level" value="${v("no_of_months_current_level")}"></label>
@@ -2624,15 +2629,40 @@ window.kumonPtcNav = function(client, role){
     const m = t.match(/^(.*?)\s*(\d+)$/);
     return m ? { level: m[1].trim(), page: m[2] } : { level: t, page: "" };
   }
-  function lwcPickerHtml(e){
-    const { level, page } = splitLwc(e.subject, e.lwc);
-    const lvls = levelsFor(e.subject);
-    const lvlOpts = `<option value="">Level</option>` + (level && !lvls.includes(level) ? `<option value="${esc(level)}" selected>${esc(level)}</option>` : "") + lvls.map(l => `<option value="${l}" ${l === level ? "selected" : ""}>${l}</option>`).join("");
+  // Zunzun (ZI / ZII) is a writing level done ALONGSIDE Reading, so a Reading LWC can carry a second part:
+  // "AI 70, ZII 100". The first part is the Reading level (it drives the roster level, Projection, KIS);
+  // the Zunzun part is only reported.
+  function lwcParts(lwc){
+    const segs = String(lwc || "").split(",").map(x => x.trim()).filter(Boolean);
+    const zun = segs.find(x => /^Z\s*I{1,2}\b/i.test(x)) || "";
+    const main = segs.filter(x => x !== zun).join(", ");
+    return { main, zun };
+  }
+  function lwcSelects(prefix, levels, level, page, label){
+    const lvlOpts = `<option value="">Level</option>` + (level && !levels.includes(level) ? `<option value="${esc(level)}" selected>${esc(level)}</option>` : "") + levels.map(l => `<option value="${l}" ${l === level ? "selected" : ""}>${l}</option>`).join("");
     const pages = []; for(let n = 10; n <= 200; n += 10) pages.push(String(n));
-    const pgOpts = `<option value="">No.</option>` + (page && !pages.includes(String(Number(page))) ? `<option value="${esc(page)}" selected>${esc(page)}</option>` : "") + pages.map(n => `<option value="${n}" ${String(Number(page)) === n ? "selected" : ""}>${n}</option>`).join("");
-    return `<span class="lwc-pick"><select name="lwc_level" aria-label="LWC level">${lvlOpts}</select><select name="lwc_page" aria-label="LWC worksheet number">${pgOpts}</select></span>`;
+    const pn = page ? String(Number(page)) : "";
+    const pgOpts = `<option value="">No.</option>` + (page && !pages.includes(pn) ? `<option value="${esc(page)}" selected>${esc(page)}</option>` : "") + pages.map(n => `<option value="${n}" ${pn === n ? "selected" : ""}>${n}</option>`).join("");
+    return `<span class="lwc-pick"><select name="${prefix}_level" aria-label="${label} level">${lvlOpts}</select><select name="${prefix}_page" aria-label="${label} worksheet number">${pgOpts}</select></span>`;
+  }
+  function lwcPickerHtml(e){
+    const parts = lwcParts(e.lwc);
+    const { level, page } = splitLwc(e.subject, parts.main);
+    return lwcSelects("lwc", levelsFor(e.subject), level, page, "LWC");
+  }
+  function zunzunHtml(e){
+    if(e.subject !== "Reading") return "";
+    const parts = lwcParts(e.lwc);
+    const zt = parts.zun.toUpperCase().replace(/^Z\s*/, "Z"), zm = zt.match(/^(ZII|ZI)\s*-?\s*(\d+)?/);
+    const on = !!parts.zun;
+    return `<div class="zun-wrap"><label class="zun-tick"><input type="checkbox" name="zun_on" value="1" ${on ? "checked" : ""}> Also doing Zunzun (ZI / ZII, writing)</label>
+      <label class="field zun-pick" ${on ? "" : "hidden"}>Zunzun LWC${lwcSelects("zun", ["ZI","ZII"], zm ? zm[1] : (parts.zun ? zt : ""), zm ? (zm[2] || "") : "", "Zunzun")}</label></div>`;
   }
 
+
+  document.addEventListener("change", e => {
+    if(e.target && e.target.name === "zun_on"){ const w = e.target.closest(".zun-wrap"), pk = w && w.querySelector(".zun-pick"); if(pk) pk.hidden = !e.target.checked; }
+  });
   function pageSelectHtml(name, value){
     const pages = []; for(let n = 10; n <= 200; n += 10) pages.push(String(n));
     const v = value == null ? "" : String(value).trim(), norm = v && /^\d+$/.test(v) ? String(Number(v)) : v;
@@ -3112,7 +3142,9 @@ window.kumonPtcNav = function(client, role){
       const fd = new FormData(e.target);
       const id = editingReportId;
       const patch = {
-        lwc: fd.get("lwc_level") !== null ? ([fd.get("lwc_level"), fd.get("lwc_page")].filter(Boolean).join(" ") || null) : (fd.get("lwc") || null),
+        lwc: fd.get("lwc_level") !== null
+          ? ([[fd.get("lwc_level"), fd.get("lwc_page")].filter(Boolean).join(" "), fd.get("zun_on") && fd.get("zun_level") ? [fd.get("zun_level"), fd.get("zun_page")].filter(Boolean).join(" ") : ""].filter(Boolean).join(", ") || null)
+          : (fd.get("lwc") || null),
         nwu: fd.get("nwu") || null,
         no_of_days: fd.get("no_of_days") || null,
         no_of_months_current_level: fd.get("no_of_months_current_level") || null,
