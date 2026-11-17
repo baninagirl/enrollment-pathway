@@ -617,6 +617,43 @@
   .rm-seg button{ border:0; background:transparent; border-radius:8px; padding:7px 18px; font:600 13px Inter, system-ui, sans-serif; color:var(--ink-muted); cursor:pointer; }
   .rm-seg button[aria-pressed="true"]{ background:var(--surface); color:var(--ink); box-shadow:0 1px 3px rgba(16,20,30,.12); }
   .rm-wrap{ display:flex; gap:20px; align-items:flex-start; flex-wrap:wrap; }
+  /* Board (Nov 17) */
+  .rm-main.rk-addcard{ padding:2px 20px; margin-bottom:16px; }
+  .rk-addcard .rm-add{ padding:12px 0; }
+  .rk-addcard .rm-add{ border-bottom:0; }
+  .rk-board{ display:grid; grid-template-columns:repeat(4, minmax(0,1fr)); gap:16px; align-items:start; }
+  .rk-col{ background:var(--surface-2); border-radius:18px; padding:10px; display:flex; flex-direction:column; gap:10px; min-height:200px; transition:background .2s, box-shadow .2s; }
+  .rk-col.over{ background:var(--accent-soft); box-shadow:inset 0 0 0 2px var(--accent); }
+  .rk-col h3{ margin:2px 6px; font-size:13px; font-weight:700; color:var(--ink-muted); display:flex; align-items:center; gap:8px; }
+  .rk-col h3 i{ width:8px; height:8px; border-radius:50%; }
+  .rk-col h3 span{ margin-left:auto; font-size:12px; background:var(--surface); border-radius:99px; padding:1px 8px; }
+  .rk-empty{ font-size:13px; color:var(--ink-faint); text-align:center; padding:18px 8px; border:1.5px dashed var(--border); border-radius:12px; }
+  .rk-card{ background:var(--surface); border-radius:14px; box-shadow:var(--shadow); padding:12px 12px 10px; display:flex; gap:10px; align-items:flex-start; min-width:0; transition:transform .4s cubic-bezier(.2,.8,.2,1), opacity .35s; }
+  .rk-card[draggable=true]{ cursor:grab; } .rk-card.dragging{ opacity:.35; }
+  .rk-card.leaving{ transform:scale(.94); opacity:0; }
+  .rk-tick{ appearance:none; flex:none; width:24px; height:24px; border-radius:50%; border:2px solid var(--border); background:transparent; cursor:pointer; display:grid; place-items:center; transition:background .25s, border-color .25s, transform .2s; }
+  .rk-tick:hover{ border-color:var(--good); } .rk-tick:active{ transform:scale(.88); }
+  .rk-tick:focus-visible{ outline:none; box-shadow:0 0 0 4px rgba(36,147,90,.25); }
+  .rk-tick svg{ width:14px; height:14px; fill:none; stroke:#fff; stroke-width:3; stroke-linecap:round; stroke-linejoin:round; stroke-dasharray:24; stroke-dashoffset:24; }
+  .rk-card.done .rk-tick{ background:var(--good); border-color:var(--good); animation:rkPop .45s cubic-bezier(.2,.8,.2,1); }
+  .rk-card.done .rk-tick svg{ animation:rkDraw .35s .1s cubic-bezier(.2,.8,.2,1) forwards; }
+  @keyframes rkPop{ 0%{ transform:scale(.7); } 60%{ transform:scale(1.15); } 100%{ transform:scale(1); } }
+  @keyframes rkDraw{ to{ stroke-dashoffset:0; } }
+  .rk-body{ flex:1; min-width:0; display:flex; flex-direction:column; gap:6px; }
+  .rk-tx{ all:unset; cursor:pointer; font-size:14px; font-weight:600; line-height:1.35; overflow-wrap:anywhere; }
+  .rk-tx:focus-visible{ box-shadow:0 0 0 3px rgba(52,84,209,.25); border-radius:4px; }
+  .rk-card.done .rk-tx{ color:var(--ink-faint); text-decoration:line-through; }
+  .rk-note{ font-size:12.5px; color:var(--ink-muted); line-height:1.4; }
+  .rk-chips{ display:flex; flex-wrap:wrap; gap:5px; align-items:center; }
+  .rk-chip{ font-size:11px; font-weight:600; border-radius:99px; padding:2px 8px; background:var(--surface-2); color:var(--ink-muted); }
+  .rk-chip.bad{ background:var(--bad-soft); color:var(--bad); } .rk-chip.warn{ background:var(--warn-soft); color:var(--warn); }
+  .rk-flag{ display:inline-grid; place-items:center; }
+  .rk-move{ display:flex; gap:2px; flex-wrap:wrap; margin-left:-4px; }
+  .rk-move button{ appearance:none; border:0; background:transparent; color:var(--accent); font:inherit; font-size:12px; font-weight:600; padding:2px 4px; border-radius:6px; cursor:pointer; }
+  .rk-move button:hover{ background:var(--accent-soft); }
+  @media (max-width:980px){ .rk-board{ grid-template-columns:repeat(2, minmax(0,1fr)); } }
+  @media (max-width:560px){ .rk-board{ grid-template-columns:minmax(0,1fr); } .rm-main.rk-addcard{ padding:2px 14px; } }
+  @media (prefers-reduced-motion:reduce){ .rk-card, .rk-tick, .rk-tick svg{ animation:none !important; transition:none !important; } .rk-card.done .rk-tick svg{ stroke-dashoffset:0; } }
   .rm-side{ flex:0 0 300px; }
   .rm-tiles{ display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:10px; }
   .rm-tile{ border:1px solid var(--border); text-align:left; background:var(--surface); border-radius:14px; padding:11px 13px; display:flex; flex-direction:column; gap:9px; cursor:pointer; box-shadow:0 1px 2px rgba(16,20,30,.06); color:var(--ink); font:inherit; }
@@ -980,8 +1017,8 @@ window.kumonPtcNav = function(client, role){
 
   /* ---------- state ---------- */
   let todos = [], profiles = [], loaded = false, missing = false, flagCols = true;
-  const ui = { multi: false, view: "list", smart: "today", whose: null, month: todayISO().slice(0,7), day: todayISO(), adding: false, editing: null };
-  try{ const v = localStorage.getItem("kumonTodosView"); if(v === "list" || v === "calendar") ui.view = v; }catch(_){ }
+  const ui = { multi: false, view: "board", smart: "today", whose: null, month: todayISO().slice(0,7), day: todayISO(), adding: false, editing: null };
+  try{ const v = localStorage.getItem("kumonTodosView"); if(v === "list" || v === "calendar" || v === "board") ui.view = v; }catch(_){ }
   const fading = new Set();   // just ticked: shown crossed out for a moment, like Reminders
 
   function ownerId(){ return ui.whose || (currentUser && currentUser.id); }
@@ -1133,6 +1170,53 @@ window.kumonPtcNav = function(client, role){
         <div class="rm-list">${body}</div>
       </section></div>`;
   }
+  // Board (Nov 17), same as Today: Overdue · Today · Later (future or no date) · Done today.
+  // Drag a card to another column, or tap → Today / → Tomorrow. Tap the text to edit.
+  function renderBoard(){
+    const today = todayISO(), tmrw = addDays(today, 1), m = mine(), all = isAllView();
+    const open = m.filter(t => !t.done || fading.has(t.id));
+    const doneToday = m.filter(t => t.done && !fading.has(t.id) && t.done_at && new Date(new Date(t.done_at).getTime() + 8 * 3600e3).toISOString().slice(0, 10) === today);
+    const colOf = t => !t.due_date ? "later" : t.due_date < today ? "overdue" : t.due_date === today ? "today" : "later";
+    const sortT = (a, b) => (b.flagged ? 1 : 0) - (a.flagged ? 1 : 0) || ((a.due_date || "9999") < (b.due_date || "9999") ? -1 : (a.due_date || "9999") > (b.due_date || "9999") ? 1 : 0) || (a.created_at < b.created_at ? -1 : 1);
+    const chip = (cls, tx) => `<span class="rk-chip ${cls}">${esc(tx)}</span>`;
+    const card = (t, col) => {
+      const fin = (t.done && col === "done") || fading.has(t.id);
+      const chips = [
+        col !== "done" && t.due_date ? (t.due_date < today ? chip("bad", "Overdue · " + whenLabel(t.due_date)) : t.due_date === today ? chip("warn", "Today") : chip("", whenLabel(t.due_date))) : "",
+        all ? chip("", nameOfUser(t.owner_id)) : "",
+        fromAdmin(t) ? chip("", "From " + nameOfUser(t.created_by)) : "",
+        t.flagged ? `<span class="rk-flag" title="Flagged"><svg viewBox="0 0 24 24" width="14" height="14" fill="var(--warn)" aria-hidden="true"><path d="M6 21V4h11l-1.5 4L17 12H6"/></svg></span>` : ""
+      ].join("");
+      const moves = fin || col === "done" ? "" : `<div class="rk-move">${col !== "today" ? `<button type="button" data-act="move" data-id="${esc(t.id)}" data-to="${today}">→ Today</button>` : ""}${t.due_date !== tmrw ? `<button type="button" data-act="move" data-id="${esc(t.id)}" data-to="${tmrw}">→ Tomorrow</button>` : ""}</div>`;
+      return `<div class="rk-card${fin ? " done" : ""}" data-rk="${esc(t.id)}" ${!fin && col !== "done" ? `draggable="true"` : ""}>
+        <button type="button" class="rk-tick" data-act="toggle" data-id="${esc(t.id)}" aria-pressed="${fin}" aria-label="${fin ? "Done — tap to undo" : "Mark done"}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5 12.5l3.6 3.6 7.4-8"/></svg></button>
+        <div class="rk-body"><button type="button" class="rk-tx" data-act="edit" data-id="${esc(t.id)}">${esc(t.text)}</button>${t.note ? `<div class="rk-note">${esc(t.note)}</div>` : ""}${chips ? `<div class="rk-chips">${chips}</div>` : ""}${moves}</div>
+      </div>`;
+    };
+    const cols = [["overdue", "Overdue", "var(--bad)"], ["today", "Today", "var(--warn)"], ["later", "Later", "var(--accent)"], ["done", "Done today", "var(--good)"]];
+    const colHtml = ([k, label, dot]) => {
+      const list = k === "done" ? doneToday : open.filter(t => colOf(t) === k).sort(sortT);
+      return `<div class="rk-col" data-col="${k}"><h3><i style="background:${dot}"></i>${label}<span>${list.length}</span></h3>
+        ${list.length ? list.map(t => card(t, k)).join("") : `<div class="rk-empty">${k === "done" ? "Tick something off" : k === "overdue" ? "Nothing overdue" : "Nothing here"}</div>`}</div>`;
+    };
+    return `<section class="card rm-main rk-addcard">${addRow(today)}</section><div class="rk-board">${cols.map(colHtml).join("")}</div>`;
+  }
+  async function moveTo(id, due){
+    const t = todos.find(x => x.id === id); if(!t || (t.due_date || "") === (due || "")) return;
+    await save(t, { due_date: due || null }, { due_date: t.due_date });
+  }
+  let rkDrag = null;
+  document.addEventListener("dragstart", e => { const c = e.target.closest && e.target.closest(".rk-card[draggable=true]"); if(!c) return; rkDrag = c.dataset.rk; c.classList.add("dragging"); try{ e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", rkDrag); }catch(_){} });
+  document.addEventListener("dragend", () => { rkDrag = null; document.querySelectorAll(".rk-card.dragging").forEach(c => c.classList.remove("dragging")); document.querySelectorAll(".rk-col.over").forEach(c => c.classList.remove("over")); });
+  document.addEventListener("dragover", e => { if(!rkDrag) return; const col = e.target.closest && e.target.closest(".rk-col"); if(!col || col.dataset.col === "overdue") return; e.preventDefault(); document.querySelectorAll(".rk-col.over").forEach(c => c !== col && c.classList.remove("over")); col.classList.add("over"); });
+  document.addEventListener("drop", async e => {
+    if(!rkDrag) return; const col = e.target.closest && e.target.closest(".rk-col"); if(!col || col.dataset.col === "overdue") return; e.preventDefault();
+    const id = rkDrag, t = todos.find(x => x.id === id); rkDrag = null; col.classList.remove("over"); if(!t) return;
+    const today = todayISO(), k = col.dataset.col;
+    if(k === "done") await toggle(id);
+    else if(k === "today") await moveTo(id, today);
+    else if(k === "later" && !(t.due_date === null || t.due_date > today)) await moveTo(id, addDays(today, 1));
+  });
   function renderCalendar(){
     const [y, m] = ui.month.split("-").map(Number), first = ui.month + "-01";
     const startDow = new Date(T(first)).getUTCDay(), dim = new Date(Date.UTC(y, m, 0)).getUTCDate();
@@ -1172,8 +1256,8 @@ window.kumonPtcNav = function(client, role){
     if(missing){ view.innerHTML = `<div class="banner">The to-do list needs phase144-teacher-todos.sql (and phase145) to be run in Supabase first.</div>`; return; }
     const who = isAdmin() ? `<label class="rm-who">Showing <select id="rmWhose">${ownerOptions(ownerId(), true).replace(">My list<", ">My to-dos<").replace(/>For /g, ">").replace(/>Everyone \(all (\d+) teachers\)</, ">All teachers<").replace(/>Everyone in ([^<(]+?) \(\d+\)</g, ">All of $1<")}</select></label>` : "";
     $("#pageHead").innerHTML = `<div class="rm-top"><div><div class="td-kicker">To-dos</div><h1 class="rm-h1">${ui.whose === ALL ? "All teachers' to-dos" : isGroupKey(ui.whose) ? esc(groupShort(teacherGroups.find(g => "group:" + g.key === ui.whose) || { name: "Group" })) + " to-dos" : ownerId() === currentUser.id ? "Your to-dos" : esc(nameOfUser(ownerId())) + "'s to-dos"}</h1></div>
-      <div class="rm-top-r">${who}<div class="rm-seg" role="group" aria-label="View"><button type="button" data-act="view" data-v="list" aria-pressed="${ui.view === "list"}">List</button><button type="button" data-act="view" data-v="calendar" aria-pressed="${ui.view === "calendar"}">Calendar</button></div></div></div>`;
-    view.innerHTML = ui.view === "calendar" ? renderCalendar() : renderList();
+      <div class="rm-top-r">${who}<div class="rm-seg" role="group" aria-label="View"><button type="button" data-act="view" data-v="board" aria-pressed="${ui.view === "board"}">Board</button><button type="button" data-act="view" data-v="list" aria-pressed="${ui.view === "list"}">List</button><button type="button" data-act="view" data-v="calendar" aria-pressed="${ui.view === "calendar"}">Calendar</button></div></div></div>`;
+    view.innerHTML = ui.view === "calendar" ? renderCalendar() : ui.view === "board" ? renderBoard() : renderList();
     if(keep){ const a = $("#rmText"); if(a){ a.value = keep.t; if(keep.focus) a.focus(); } const n = $("#rmNote"); if(n) n.value = keep.n; const d = $("#rmDue"); if(d && keep.d) d.value = keep.d; const f = $("#rmFlag"); if(f && keep.f){ f.classList.add("on"); f.setAttribute("aria-pressed","true"); f.innerHTML = flagSvg(true); } }
   }
 
@@ -1211,7 +1295,9 @@ window.kumonPtcNav = function(client, role){
     const t = todos.find(x => x.id === id); if(!t) return;
     if(fading.has(id)){ fading.delete(id); await save(t, { done: false, done_at: null }, { done: true, done_at: t.done_at }); return; }
     const done = !t.done, prev = { done: t.done, done_at: t.done_at };
-    if(done){ fading.add(id); setTimeout(() => { if(fading.delete(id)) render(); }, 1400); }
+    if(done){ fading.add(id);
+      setTimeout(() => { const c = document.querySelector(`[data-rk="${CSS.escape(id)}"]`); if(c && fading.has(id)) c.classList.add("leaving"); }, 1050);
+      setTimeout(() => { if(fading.delete(id)) render(); }, 1450); }
     await save(t, { done, done_at: done ? new Date().toISOString() : null }, prev);
   }
   function openEdit(id){
@@ -1255,6 +1341,7 @@ window.kumonPtcNav = function(client, role){
     if(a === "smart"){ ui.smart = b.dataset.k; render(); }
     else if(a === "view"){ ui.view = b.dataset.v; try{ localStorage.setItem("kumonTodosView", ui.view); }catch(_){ } render(); }
     else if(a === "toggle"){ e.stopPropagation(); await toggle(b.dataset.id); }
+    else if(a === "move"){ await moveTo(b.dataset.id, b.dataset.to); }
     else if(a === "flag"){ const t = todos.find(x => x.id === b.dataset.id); if(t) await save(t, { flagged: !t.flagged }, { flagged: t.flagged }); }
     else if(a === "multi"){ const cur = ($("#rmText") || {}).value || ""; ui.multi = !ui.multi; render(); const el = $("#rmText"); if(el){ el.value = ui.multi ? cur : cur.split("\n")[0]; el.focus(); } }
     else if(a === "addflag"){ const on = !b.classList.contains("on"); b.classList.toggle("on", on); b.setAttribute("aria-pressed", String(on)); b.innerHTML = flagSvg(on); }
