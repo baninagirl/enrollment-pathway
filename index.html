@@ -751,6 +751,7 @@
 <script>
 /* PTC menu link + "due" number (phase97). Each page calls kumonPtcNav(sbClient, role) once the role is known. */
 window.kumonPtcNav = function(client, role){
+  window.__kumonRole = role;   // Activity and Settings: superadmins only (Nina and Grace)
   var link = document.getElementById("navPtcLink"); if(!link) return;
   var ok = ["admin","superadmin","teacher","trainer_teacher"].indexOf(role) >= 0;
   link.hidden = !ok;
@@ -812,7 +813,7 @@ window.kumonPtcNav = function(client, role){
         if(!st.id) st.id = "navSettingsLink";
         if(!st.__home){ st.__home = st.parentNode; st.__next = st.nextSibling; }
         var pl = document.getElementById("navPipelineLink");
-        if(st.tagName === "A") st.hidden = pl ? pl.hidden : false;
+        st.hidden = (pl ? pl.hidden : false) || window.__kumonRole !== "superadmin";   // Settings: superadmins only
         if(wide){ if(st.parentNode !== grp || grp.lastElementChild !== st) grp.appendChild(st); }
         else if(st.parentNode !== st.__home){ st.__home.insertBefore(st, st.__next && st.__next.parentNode === st.__home ? st.__next : null); }
       }
@@ -1440,7 +1441,7 @@ window.kumonPtcNav = function(client, role){
     const absentLink = $("#navAbsentLink");
     if(absentLink) absentLink.hidden = !(currentRole === "admin" || currentRole === "superadmin" || currentRole === "teacher" || currentRole === "trainer_teacher");
     const activityLink = $("#navActivityLink");
-    if(activityLink) activityLink.hidden = !(currentRole === "admin" || currentRole === "superadmin");
+    if(activityLink) activityLink.hidden = currentRole !== "superadmin";
     const reportsLink = $("#navReportsLink");
     if(reportsLink) reportsLink.hidden = currentRole !== "superadmin";
     return false;
@@ -1733,6 +1734,7 @@ window.kumonPtcNav = function(client, role){
 
   /* ---------------- Render dispatch ---------------- */
   function renderAll(){
+    if(STATE.activeTab === "settings" && currentRole && currentRole !== "superadmin") STATE.activeTab = "calendar";   // Settings: superadmins only (Nina and Grace)
     renderNav();
     renderStats();
     renderView();
@@ -1757,6 +1759,7 @@ window.kumonPtcNav = function(client, role){
   };
 
   function renderView(){
+    if(STATE.activeTab === "settings" && currentRole && currentRole !== "superadmin") STATE.activeTab = "calendar";
     const [title, sub] = TITLES[STATE.activeTab];
     $("#pageTitle").textContent = title;
     $("#pageSub").textContent = sub;

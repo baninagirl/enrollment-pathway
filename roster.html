@@ -516,6 +516,7 @@
 <script>
 /* PTC menu link + "due" number (phase97). Each page calls kumonPtcNav(sbClient, role) once the role is known. */
 window.kumonPtcNav = function(client, role){
+  window.__kumonRole = role;   // Activity and Settings: superadmins only (Nina and Grace)
   var link = document.getElementById("navPtcLink"); if(!link) return;
   var ok = ["admin","superadmin","teacher","trainer_teacher"].indexOf(role) >= 0;
   link.hidden = !ok;
@@ -577,7 +578,7 @@ window.kumonPtcNav = function(client, role){
         if(!st.id) st.id = "navSettingsLink";
         if(!st.__home){ st.__home = st.parentNode; st.__next = st.nextSibling; }
         var pl = document.getElementById("navPipelineLink");
-        if(st.tagName === "A") st.hidden = pl ? pl.hidden : false;
+        st.hidden = (pl ? pl.hidden : false) || window.__kumonRole !== "superadmin";   // Settings: superadmins only
         if(wide){ if(st.parentNode !== grp || grp.lastElementChild !== st) grp.appendChild(st); }
         else if(st.parentNode !== st.__home){ st.__home.insertBefore(st, st.__next && st.__next.parentNode === st.__home ? st.__next : null); }
       }
@@ -1272,7 +1273,7 @@ window.kumonPtcNav = function(client, role){
     const absentLink = $("#navAbsentLink");
     if(absentLink) absentLink.hidden = !(currentRole === "admin" || currentRole === "superadmin" || currentRole === "teacher" || currentRole === "trainer_teacher");
     const activityLink = $("#navActivityLink");
-    if(activityLink) activityLink.hidden = !(currentRole === "admin" || currentRole === "superadmin");
+    if(activityLink) activityLink.hidden = currentRole !== "superadmin";
     const reportsLink = $("#navReportsLink");
     if(reportsLink) reportsLink.hidden = currentRole !== "superadmin";
     // The "+ Add to roster" button (roster view) and the close-out button (report view) are
@@ -1481,7 +1482,7 @@ window.kumonPtcNav = function(client, role){
     // status/monthly_tuition/billing_group_id are for the Payment tag (paymentStatusFor,
     // below) — Roster otherwise never touched billing fields before.
     const mine = nextLoad("students");
-    const { data, error } = await fetchAll("students", "id,name,age_grade,first_name,last_name,status,monthly_tuition,billing_group_id,origin,created_at", q => q.order("name").order("id"));
+    const { data, error } = await fetchAll("students", "id,name,age_grade,first_name,last_name,status,monthly_tuition,tuition_custom,billing_group_id,origin,created_at", q => q.order("name").order("id"));
     if(!isLatestLoad("students", mine)) return;   // a newer reload started meanwhile — its result wins
     if(error){ console.warn(error); return; }   // keep what's on screen
     students = data || [];
@@ -1555,6 +1556,7 @@ window.kumonPtcNav = function(client, role){
   }
   function tuitionRateFor(s){
     if(!s) return 0;
+    if(s.tuition_custom) return Number(s.monthly_tuition||0);   // a rate set by hand in Edit tuition wins over the Grade 7+ rate
     return isGrade7Up(s.age_grade) ? HIGH_GRADE_RATE : Number(s.monthly_tuition||0);
   }
   function tuitionDueFor(s){

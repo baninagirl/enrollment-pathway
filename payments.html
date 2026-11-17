@@ -506,6 +506,7 @@
 <script>
 /* PTC menu link + "due" number (phase97). Each page calls kumonPtcNav(sbClient, role) once the role is known. */
 window.kumonPtcNav = function(client, role){
+  window.__kumonRole = role;   // Activity and Settings: superadmins only (Nina and Grace)
   var link = document.getElementById("navPtcLink"); if(!link) return;
   var ok = ["admin","superadmin","teacher","trainer_teacher"].indexOf(role) >= 0;
   link.hidden = !ok;
@@ -567,7 +568,7 @@ window.kumonPtcNav = function(client, role){
         if(!st.id) st.id = "navSettingsLink";
         if(!st.__home){ st.__home = st.parentNode; st.__next = st.nextSibling; }
         var pl = document.getElementById("navPipelineLink");
-        if(st.tagName === "A") st.hidden = pl ? pl.hidden : false;
+        st.hidden = (pl ? pl.hidden : false) || window.__kumonRole !== "superadmin";   // Settings: superadmins only
         if(wide){ if(st.parentNode !== grp || grp.lastElementChild !== st) grp.appendChild(st); }
         else if(st.parentNode !== st.__home){ st.__home.insertBefore(st, st.__next && st.__next.parentNode === st.__home ? st.__next : null); }
       }
@@ -1129,7 +1130,7 @@ window.kumonPtcNav = function(client, role){
     const absentLink = $("#navAbsentLink");
     if(absentLink) absentLink.hidden = !(currentRole === "admin" || currentRole === "superadmin" || currentRole === "teacher" || currentRole === "trainer_teacher");
     const activityLink = $("#navActivityLink");
-    if(activityLink) activityLink.hidden = !(currentRole === "admin" || currentRole === "superadmin");
+    if(activityLink) activityLink.hidden = currentRole !== "superadmin";
     const reportsLink = $("#navReportsLink");
     if(reportsLink) reportsLink.hidden = currentRole !== "superadmin";
     applyRoleGate();
@@ -1253,7 +1254,7 @@ window.kumonPtcNav = function(client, role){
     return keyOf(a).localeCompare(keyOf(b));
   }
   async function loadStudents(){
-    const { data, error } = await fetchAll("students", "id,name,first_name,last_name,age_grade,status,monthly_tuition,billing_group_id", q => q.order("id"));
+    const { data, error } = await fetchAll("students", "id,name,first_name,last_name,age_grade,status,monthly_tuition,tuition_custom,billing_group_id", q => q.order("id"));
     if(error){ console.warn(error); return; }   // keep what's on screen
     students = (data || []).sort(byLastName);
   }
@@ -1610,6 +1611,7 @@ window.kumonPtcNav = function(client, role){
   }
   function tuitionRateFor(s){
     if(!s) return 0;
+    if(s.tuition_custom) return Number(s.monthly_tuition||0);   // a rate set by hand in Edit tuition wins over the Grade 7+ rate
     return isGrade7Up(s.age_grade) ? HIGH_GRADE_RATE : Number(s.monthly_tuition||0);
   }
   // monthly_tuition on the student record is the per-subject rate (₱2,200 by default) —
@@ -2820,8 +2822,8 @@ window.kumonPtcNav = function(client, role){
       <form id="tuitionForm" data-id="${esc(s.id)}">
         <div class="modal-body">
           <div class="muted" style="font-size:13.5px;">${esc(displayName(s))} — ${activeSubjectsFor(s.id).length} subject${activeSubjectsFor(s.id).length===1?"":"s"}</div>
-          <label class="field">Tuition per subject (₱)<input type="number" name="tuition" min="0" step="0.01" value="${esc(tuitionRateFor(s))}" ${isGrade7Up(s.age_grade) ? "readonly" : ""} required></label>
-          <div class="hint">${isGrade7Up(s.age_grade) ? "Grade 7 and above is a fixed ₱2,350 per subject. " : ""}Charged per subject each month. This student's total: ₱${(tuitionRateFor(s) * (activeSubjectsFor(s.id).length||1)).toLocaleString("en-PH", {minimumFractionDigits:2, maximumFractionDigits:2})}</div>
+          <label class="field">Tuition per subject (₱)<input type="number" name="tuition" min="0" step="0.01" value="${esc(tuitionRateFor(s))}" required></label>
+          <div class="hint">${isGrade7Up(s.age_grade) ? (s.tuition_custom ? "Grade 7 and above is usually ₱2,350 per subject — this child has their own rate. Type 2350 to put them back on the usual rate. " : "Grade 7 and above is usually ₱2,350 per subject. Change it here to give this child their own rate. ") : ""}Charged per subject each month. This student's total: ₱${(tuitionRateFor(s) * (activeSubjectsFor(s.id).length||1)).toLocaleString("en-PH", {minimumFractionDigits:2, maximumFractionDigits:2})}</div>
         </div>
         <div class="modal-foot">
           <button type="button" class="btn ghost" data-action="close-modal">Cancel</button>
@@ -3164,7 +3166,13 @@ window.kumonPtcNav = function(client, role){
       const id = e.target.dataset.id;
       const fd = new FormData(e.target);
       const tuition = Number(fd.get("tuition"));
-      const { data: tRows, error } = await sbClient.from("students").update({ monthly_tuition: tuition }).eq("id", id).select("id");
+      const st0 = students.find(x => x.id === id);
+      const patch = { monthly_tuition: tuition };
+      // Grade 7+: any rate other than the usual ₱2,350 is saved as this child's own rate.
+      if(st0 && isGrade7Up(st0.age_grade)) patch.tuition_custom = tuition !== HIGH_GRADE_RATE;
+      else if(st0 && st0.tuition_custom) patch.tuition_custom = false;
+      const { data: tRows, error } = await sbClient.from("students").update(patch).eq("id", id).select("id");
+      if(error && /tuition_custom/.test(error.message || "")){ toast("Run phase148 in Supabase first, then try again."); return; }
       if(error){ toast("Couldn't save: " + error.message); return; }
       if(!tRows || !tRows.length){ toast("Couldn't save — only an admin can change tuition."); return; }
       const tuitionStudent = students.find(x => x.id === id);

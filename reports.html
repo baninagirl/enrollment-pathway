@@ -497,6 +497,7 @@
 <script>
 /* PTC menu link + "due" number (phase97). Each page calls kumonPtcNav(sbClient, role) once the role is known. */
 window.kumonPtcNav = function(client, role){
+  window.__kumonRole = role;   // Activity and Settings: superadmins only (Nina and Grace)
   var link = document.getElementById("navPtcLink"); if(!link) return;
   var ok = ["admin","superadmin","teacher","trainer_teacher"].indexOf(role) >= 0;
   link.hidden = !ok;
@@ -558,7 +559,7 @@ window.kumonPtcNav = function(client, role){
         if(!st.id) st.id = "navSettingsLink";
         if(!st.__home){ st.__home = st.parentNode; st.__next = st.nextSibling; }
         var pl = document.getElementById("navPipelineLink");
-        if(st.tagName === "A") st.hidden = pl ? pl.hidden : false;
+        st.hidden = (pl ? pl.hidden : false) || window.__kumonRole !== "superadmin";   // Settings: superadmins only
         if(wide){ if(st.parentNode !== grp || grp.lastElementChild !== st) grp.appendChild(st); }
         else if(st.parentNode !== st.__home){ st.__home.insertBefore(st, st.__next && st.__next.parentNode === st.__home ? st.__next : null); }
       }
@@ -889,7 +890,7 @@ window.kumonPtcNav = function(client, role){
     show("navPaymentsLink", ["admin","superadmin","teacher","trainer_teacher"].includes(r));
     show("navAbsentLink", ["admin","superadmin","teacher","trainer_teacher"].includes(r));
     show("navAdminLink", r === "superadmin");
-    show("navActivityLink", r === "admin" || r === "superadmin");
+    show("navActivityLink", r === "superadmin");
     show("navReportsLink", r === "superadmin");
   }
   async function loadRole(){
