@@ -2125,11 +2125,14 @@ window.kumonPtcNav = function(client, role){
     const card = (t, col) => {
       const fin = t.done || todoFading.has(t.id);
       const from = t.created_by && t.created_by !== t.owner_id ? `<span class="td-chip td-mute">From ${esc(todoWhoName(t.created_by))}</span>` : "";
+      // Shared job (phase149): the same to-do given to several people; ticking any copy ticks them all.
+      const sharers = t.share_key ? todos.filter(x => x.share_key === t.share_key && x.owner_id !== t.owner_id).map(x => todoWhoName(x.owner_id)) : [];
+      const shared = t.share_key ? `<span class="td-chip td-mute" title="${esc(sharers.length ? "Also on " + sharers.join(", ") + "'s list. Done for one is done for all." : "Shared to-do: done for one is done for all.")}">Shared${sharers.length ? " with " + sharers.length : ""}</span>` : "";
       const flag = t.flagged ? `<span class="td-tc-flag" title="Flagged"><svg viewBox="0 0 24 24" width="14" height="14" fill="#E8890C" aria-hidden="true"><path d="M6 21V4h11l-1.5 4L17 12H6"/></svg></span>` : "";
       const moves = col === "done" || fin ? "" : `<div class="td-kc-move">${col !== "today" ? `<button type="button" data-todo="move" data-id="${esc(t.id)}" data-to="${today}">→ Today</button>` : ""}${t.due_date !== tmrw ? `<button type="button" data-todo="move" data-id="${esc(t.id)}" data-to="${tmrw}">→ Tomorrow</button>` : ""}<label class="td-kc-date" title="Pick a date">Date<input type="date" data-todo-date="${esc(t.id)}" value="${esc(t.due_date || "")}" aria-label="Pick a date"></label></div>`;
       return `<div class="td-kc${fin ? " done" : ""}${t.id === justAddedTodo ? " fresh" : ""}" data-tc="${esc(t.id)}" ${col !== "done" && !fin ? `draggable="true"` : ""}>
         <button type="button" class="td-tc-tick" data-todo="toggle" data-id="${esc(t.id)}" aria-pressed="${fin}" aria-label="${fin ? "Done — tap to undo" : "Mark done"}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5 12.5l3.6 3.6 7.4-8"/></svg></button>
-        <div class="td-tc-body"><div class="td-tc-text">${esc(t.text)}</div>${t.note ? `<div class="td-tc-note">${esc(t.note)}</div>` : ""}<div class="td-tc-chips">${col === "done" ? "" : dueChip(t)}${from}${flag}</div>${moves}</div>
+        <div class="td-tc-body"><div class="td-tc-text">${esc(t.text)}</div>${t.note ? `<div class="td-tc-note">${esc(t.note)}</div>` : ""}<div class="td-tc-chips">${col === "done" ? "" : dueChip(t)}${from}${shared}${flag}</div>${moves}</div>
       </div>`;
     };
     const cols = [["overdue", "Overdue", "var(--bad)"], ["today", "Today", "var(--warn)"], ["later", "Later", "var(--accent)"], ["done", "Done today", "var(--good)"]];

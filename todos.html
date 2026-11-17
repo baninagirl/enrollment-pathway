@@ -1226,6 +1226,7 @@ window.kumonPtcNav = function(client, role){
         col !== "done" && t.due_date ? (t.due_date < today ? chip("bad", "Overdue · " + whenLabel(t.due_date)) : t.due_date === today ? chip("warn", "Today") : chip("", whenLabel(t.due_date))) : "",
         all ? chip("", nameOfUser(t.owner_id)) : "",
         fromAdmin(t) ? chip("", "From " + nameOfUser(t.created_by)) : "",
+        t.share_key ? chip("", "Shared" + (() => { const n = todos.filter(x => x.share_key === t.share_key && x.owner_id !== t.owner_id).length; return n ? " with " + n : ""; })()) : "",
         t.flagged ? `<span class="rk-flag" title="Flagged"><svg viewBox="0 0 24 24" width="14" height="14" fill="var(--warn)" aria-hidden="true"><path d="M6 21V4h11l-1.5 4L17 12H6"/></svg></span>` : ""
       ].join("");
       const moves = fin || col === "done" ? "" : `<div class="rk-move">${col !== "today" ? `<button type="button" data-act="move" data-id="${esc(t.id)}" data-to="${today}">→ Today</button>` : ""}${t.due_date !== tmrw ? `<button type="button" data-act="move" data-id="${esc(t.id)}" data-to="${tmrw}">→ Tomorrow</button>` : ""}<label class="rk-date" title="Pick a date">Date<input type="date" data-rk-date="${esc(t.id)}" value="${esc(t.due_date || "")}" aria-label="Pick a date"></label></div>`;
