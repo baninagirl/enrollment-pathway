@@ -1649,7 +1649,10 @@ window.kumonPtcNav = function(client, role){
   function displayName(studentId, fallback){
     const s = students.find(x => x.id === studentId);
     if(s && s.last_name && s.first_name) return `${s.last_name}, ${s.first_name}`;
-    return fallback || (s ? s.name : "") || "";
+    // No split name yet: guess the last word as the last name, the same way New Students does ("Aba, Ioseff Zayrie").
+    const full = (s ? s.name : "") || fallback || "";
+    const g = splitNameGuess(full);
+    return g.last ? `${g.last}, ${g.first}` : full;
   }
   // Sort key for alphabetizing by last name. With a real split it's exact; without one,
   // this guesses the last word of whatever name we have as a stand-in last name — good
