@@ -677,6 +677,18 @@
     .rm-main.rk-addcard{ padding:2px 14px; }
   }
   .rk-board.tdrag-on{ scroll-snap-type:none; }
+  .rk-tabs{ display:none; }
+  @media (max-width:560px){
+    .rk-tabs{ display:flex; gap:6px; overflow-x:auto; scrollbar-width:none; margin:0 -14px 10px; padding:0 14px; }
+    .rk-tabs::-webkit-scrollbar{ display:none; }
+    .rk-tabs button{ flex:none; display:inline-flex; align-items:center; gap:6px; font:inherit; font-size:12.5px; font-weight:600; color:var(--ink-muted); background:var(--surface); border:1px solid var(--border); border-radius:99px; padding:6px 11px; cursor:pointer; }
+    .rk-tabs button i{ width:7px; height:7px; border-radius:50%; }
+    .rk-tabs button span{ font-size:11.5px; color:var(--ink-faint); }
+    .rk-tabs button.on{ background:var(--accent-soft); color:var(--accent); border-color:var(--accent); }
+    .rk-tabs button.on span{ color:var(--accent); }
+    .rk-addcard .rm-add:not(.open) .rm-add-row{ display:none; }
+    .rk-addcard .rm-add:not(.open){ padding:8px 0; align-items:center; }
+  }
   .rk-card[draggable=true]{ -webkit-touch-callout:none; -webkit-user-select:none; user-select:none; }
   .rk-card.tdrag-ghost{ box-shadow:0 18px 40px rgba(20,22,30,.22), 0 2px 6px rgba(20,22,30,.12); transform:rotate(-2deg) scale(1.03); opacity:.97; }
   html.tdrag-lock, html.tdrag-lock body{ overscroll-behavior:none; }
@@ -1046,7 +1058,7 @@ window.kumonPtcNav = function(client, role){
   /* ---------- state ---------- */
   let todos = [], profiles = [], loaded = false, missing = false, flagCols = true;
   const ui = { multi: false, view: "board", smart: "today", whose: null, month: todayISO().slice(0,7), day: todayISO(), adding: false, editing: null, qa: null };
-  try{ const v = localStorage.getItem("kumonTodosView2"); if(v === "list" || v === "calendar" || v === "board") ui.view = v; }catch(_){ }
+  // The page always opens on Board (List and Calendar are a tap away but are not remembered).
   const fading = new Set();   // just ticked: shown crossed out for a moment, like Reminders
 
   function ownerId(){ return ui.whose || (currentUser && currentUser.id); }
@@ -1161,7 +1173,7 @@ window.kumonPtcNav = function(client, role){
   }
   function addRow(dayIso){
     const ownerSel = isAdmin() ? `<select id="rmOwner" aria-label="Whose list">${ownerOptions(ownerId(), true)}</select>` : "";
-    return `<form class="rm-add" id="rmAdd">
+    return `<form class="rm-add${ui.multi ? " open" : ""}" id="rmAdd">
       <span class="rm-plus" aria-hidden="true"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></span>
       <div class="rm-add-fields">
         <label class="rm-sr" for="rmText">New to-do</label>${ui.multi
@@ -1230,7 +1242,9 @@ window.kumonPtcNav = function(client, role){
       return `<div class="rk-col" data-col="${k}"><h3><i style="background:${dot}"></i>${label}<span>${list.length}</span>${plus}</h3>
         ${composer}${list.length ? list.map(t => card(t, k)).join("") : (qaOpen ? "" : `<div class="rk-empty">${k === "done" ? "Tick something off" : k === "overdue" ? "Nothing overdue" : "Nothing here"}</div>`)}</div>`;
     };
-    return `<section class="card rm-main rk-addcard">${addRow(today)}</section><div class="rk-board">${cols.map(colHtml).join("")}</div>`;
+    const countOf = k => k === "done" ? doneToday.length : open.filter(t => colOf(t) === k).length;
+    const tabs = `<div class="rk-tabs" role="tablist" aria-label="Board columns">${cols.map(([k, label, dot]) => `<button type="button" role="tab" data-act="rk-jump" data-col="${k}" class="${k === (ui.rkTab || "today") ? "on" : ""}"><i style="background:${dot}"></i>${label}<span>${countOf(k)}</span></button>`).join("")}</div>`;
+    return `<section class="card rm-main rk-addcard">${addRow(today)}</section>${tabs}<div class="rk-board">${cols.map(colHtml).join("")}</div>`;
   }
   async function moveTo(id, due){
     const t = todos.find(x => x.id === id); if(!t || (t.due_date || "") === (due || "")) return;
@@ -1369,6 +1383,8 @@ window.kumonPtcNav = function(client, role){
   }
   function render(){
     if(!loaded) return;
+    // Admins open on "All teachers" so everyone's to-dos show; after that the page remembers their last pick.
+    if(!ui.whoseInit && currentUser){ ui.whoseInit = true; if(isAdmin()){ let v = null; try{ v = localStorage.getItem("kumonTodosWhose"); }catch(_){ } ui.whose = v === "me" ? null : (v || ALL); } }
     const view = $("#view");
     const tIn = $("#rmText"), keep = tIn ? { t: tIn.value, n: ($("#rmNote") || {}).value || "", d: ($("#rmDue") || {}).value || "", f: !!($("#rmFlag") && $("#rmFlag").classList.contains("on")), focus: document.activeElement === tIn } : null;
     if(missing){ view.innerHTML = `<div class="banner">The to-do list needs phase144-teacher-todos.sql (and phase145) to be run in Supabase first.</div>`; return; }
@@ -1376,7 +1392,9 @@ window.kumonPtcNav = function(client, role){
     $("#pageHead").innerHTML = `<div class="rm-top"><div><div class="td-kicker">To-dos</div><h1 class="rm-h1">${ui.whose === ALL ? "All teachers' to-dos" : isGroupKey(ui.whose) ? esc(groupShort(teacherGroups.find(g => "group:" + g.key === ui.whose) || { name: "Group" })) + " to-dos" : ownerId() === currentUser.id ? "Your to-dos" : esc(nameOfUser(ownerId())) + "'s to-dos"}</h1></div>
       <div class="rm-top-r">${who}<div class="rm-seg" role="group" aria-label="View"><button type="button" data-act="view" data-v="board" aria-pressed="${ui.view === "board"}">Board</button><button type="button" data-act="view" data-v="list" aria-pressed="${ui.view === "list"}">List</button><button type="button" data-act="view" data-v="calendar" aria-pressed="${ui.view === "calendar"}">Calendar</button></div></div></div>`;
     view.innerHTML = ui.view === "calendar" ? renderCalendar() : ui.view === "board" ? renderBoard() : renderList();
+    if(ui.view === "board") rkScrollTo(ui.rkTab || "today", false);
     if(keep){ const a = $("#rmText"); if(a){ a.value = keep.t; if(keep.focus) a.focus(); } const n = $("#rmNote"); if(n) n.value = keep.n; const d = $("#rmDue"); if(d && keep.d) d.value = keep.d; const f = $("#rmFlag"); if(f && keep.f){ f.classList.add("on"); f.setAttribute("aria-pressed","true"); f.innerHTML = flagSvg(true); } }
+    if(keep && (keep.t || keep.n)){ const fm = $("#rmAdd"); if(fm) fm.classList.add("open"); }
   }
 
   /* ---------- actions ---------- */
@@ -1403,6 +1421,23 @@ window.kumonPtcNav = function(client, role){
     else if(lines.length > 1) toast(`Added ${lines.length} to-dos.`);
     else if(owner !== currentUser.id){ toast(`Added to ${nameOfUser(owner)}'s list.`); logHistory("todo_assign", `Gave ${nameOfUser(owner)} a to-do: ${text}`, data && data[0] && data[0].id); }
   }
+  // Phones: the tabs above the board jump to a column, and follow along when you swipe.
+  function rkScrollTo(k, smooth){
+    const b = document.querySelector(".rk-board"), c = b && b.querySelector(`.rk-col[data-col="${k}"]`); if(!b || !c) return;
+    if(b.scrollWidth <= b.clientWidth + 2) return;
+    b.scrollTo({ left: c.offsetLeft - b.offsetLeft - parseFloat(getComputedStyle(b).paddingLeft || 0), behavior: smooth ? "smooth" : "auto" });
+    document.querySelectorAll(".rk-tabs button").forEach(x => x.classList.toggle("on", x.dataset.col === k));
+  }
+  document.addEventListener("scroll", e => {
+    const b = e.target; if(!b.classList || !b.classList.contains("rk-board")) return;
+    clearTimeout(b._t); b._t = setTimeout(() => {
+      const cols = [...b.querySelectorAll(".rk-col")]; let best = null, bd = 1e9;
+      cols.forEach(c => { const d = Math.abs(c.getBoundingClientRect().left - b.getBoundingClientRect().left); if(d < bd){ bd = d; best = c; } });
+      if(best){ ui.rkTab = best.dataset.col; document.querySelectorAll(".rk-tabs button").forEach(x => x.classList.toggle("on", x.dataset.col === ui.rkTab)); }
+    }, 80);
+  }, true);
+  // Phones: the add box is one line until you tap it, so the board shows without scrolling.
+  document.addEventListener("focusin", e => { const f = e.target.closest && e.target.closest("#rmAdd"); if(f) f.classList.add("open"); });
   // Quick add from the + on the Today / Later columns: Today gets today's date, Later gets no date.
   function focusQa(){ const i = document.querySelector(".rk-qa-in"); if(i) i.focus(); }
   async function quickAdd(col, text){
@@ -1476,9 +1511,10 @@ window.kumonPtcNav = function(client, role){
     if(e.target.id === "modalBackdrop"){ closeModal(); return; }
     const b = e.target.closest("[data-act]"); if(!b) return;
     const a = b.dataset.act;
+    if(a === "rk-jump"){ ui.rkTab = b.dataset.col; rkScrollTo(b.dataset.col, true); return; }
     if(a === "qa"){ ui.qa = ui.qa === b.dataset.col ? null : b.dataset.col; render(); focusQa(); return; }
     if(a === "smart"){ ui.smart = b.dataset.k; render(); }
-    else if(a === "view"){ ui.view = b.dataset.v; try{ localStorage.setItem("kumonTodosView2", ui.view); }catch(_){ } render(); }
+    else if(a === "view"){ ui.view = b.dataset.v; render(); }
     else if(a === "toggle"){ e.stopPropagation(); await toggle(b.dataset.id); }
     else if(a === "move"){ await moveTo(b.dataset.id, b.dataset.to); }
     else if(a === "flag"){ const t = todos.find(x => x.id === b.dataset.id); if(t) await save(t, { flagged: !t.flagged }, { flagged: t.flagged }); }
@@ -1501,7 +1537,7 @@ window.kumonPtcNav = function(client, role){
     if(e.target.id === "loginForm"){ e.preventDefault(); const fd = new FormData(e.target);
       const { error } = await sbClient.auth.signInWithPassword({ email: fd.get("email"), password: fd.get("password") }); if(error) showLogin(error.message); }
   });
-  document.addEventListener("change", (e) => { if(e.target.id === "rmWhose"){ ui.whose = e.target.value === currentUser.id ? null : e.target.value; render(); } });
+  document.addEventListener("change", (e) => { if(e.target.id === "rmWhose"){ ui.whose = e.target.value === currentUser.id ? null : e.target.value; try{ localStorage.setItem("kumonTodosWhose", ui.whose || "me"); }catch(_){ } render(); } });
   document.addEventListener("keydown", (e) => { if(e.key === "Escape" && !$("#modalBackdrop").hidden) closeModal(); });
 
   /* ---------- login / boot — same as the other pages ---------- */

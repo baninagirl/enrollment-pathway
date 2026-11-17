@@ -4,6 +4,13 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Kumon Hub — Pipeline</title>
+<!-- HUB-LANDING v1: opening the Hub (its address, a bookmark or a home-screen icon) starts on Today, on phones and computers.
+     Clicking Pipeline from inside the Hub, a link with a #section, or reloading Pipeline keeps you here. -->
+<script>(function(){try{
+  var fromHub=false; try{ fromHub = !!document.referrer && new URL(document.referrer).origin === location.origin; }catch(_){}
+  var landed=false; try{ landed = sessionStorage.getItem("kumonLanded") === "1"; sessionStorage.setItem("kumonLanded","1"); }catch(_){ landed = true; }
+  if(!location.hash && !fromHub && !landed){ location.replace("today.html" + location.search); }
+}catch(_){}})();</script>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700&family=Inter:wght@400;500;600;700;800&display=swap">
 <!-- HUB-SAVE-STATUS v1: one Saving / Saved / Couldn't save card on every page. Same block in every page; edit all together. -->
 <style id="hubSaveStatusCss">
