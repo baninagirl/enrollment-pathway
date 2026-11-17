@@ -735,6 +735,17 @@
   .rm-add-fields textarea#rmText{ border:1px solid var(--border); border-radius:10px; padding:8px 10px; font:500 14px Inter, system-ui, sans-serif; color:var(--ink); background:var(--surface); resize:vertical; }
   .rm-add-fields input[type=text]#rmText{ border:0; outline:0; background:transparent; font:500 15px Inter, system-ui, sans-serif; color:var(--ink); padding:4px 0; }
   .rm-add-row{ display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+  .as-wrap{ display:flex; flex-wrap:wrap; align-items:center; gap:6px; flex-basis:100%; }
+  .as-k{ font-size:12px; font-weight:600; color:var(--ink-muted); margin-right:2px; }
+  .as-chip{ display:inline-flex; align-items:center; gap:4px; height:28px; padding:0 4px 0 11px; border-radius:99px; background:var(--accent-soft); color:var(--accent); font-size:12.5px; font-weight:600; }
+  .as-chip:not(:has(button)){ padding-right:11px; }
+  .as-chip button{ border:none; background:transparent; color:inherit; font-size:15px; line-height:1; width:20px; height:20px; border-radius:50%; cursor:pointer; }
+  .as-chip button:hover{ background:var(--surface); }
+  .rm-add-row #rmAssignAdd{ height:28px; border-radius:99px; padding:0 10px; font-size:12.5px; font-weight:600; color:var(--accent); border:1px dashed var(--accent); background:var(--surface); max-width:150px; }
+  .as-mode{ display:flex; flex-wrap:wrap; align-items:center; gap:6px; flex-basis:100%; }
+  .as-mode button{ height:28px; padding:0 12px; border-radius:99px; border:1px solid var(--border); background:var(--surface); color:var(--ink-muted); font:inherit; font-size:12.5px; font-weight:600; cursor:pointer; }
+  .as-mode button.on{ background:var(--accent-soft); border-color:var(--accent); color:var(--accent); }
+  .as-hint{ font-size:12px; color:var(--ink-faint); }
   .rm-add-row input, .rm-add-row select{ height:34px; border:1px solid var(--border); border-radius:9px; padding:0 9px; font:inherit; font-size:13px; background:var(--surface); color:var(--ink); }
   .rm-add-row #rmNote{ flex:1 1 160px; min-width:0; }
   .rm-sr{ position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; }
@@ -1093,12 +1104,14 @@ window.kumonPtcNav = function(client, role){
   function ownerOptions(selected, withEveryone){
     const sel = v => v === selected ? " selected" : "";
     const others = profiles.filter(p => p.id !== currentUser.id).sort((a, b) => String(a.teacher_name || a.email).localeCompare(String(b.teacher_name || b.email)));
-    const opt = p => `<option value="${esc(p.id)}"${sel(p.id)}>For ${esc(p.teacher_name || p.email)}</option>`;
+    const opt = p => `<option value="${esc(p.id)}"${sel(p.id)}>For ${esc(personName(p))}</option>`;
     let html = `<option value="${esc(currentUser.id)}"${sel(currentUser.id)}>My list</option>`
       + (withEveryone ? `<option value="${ALL}"${sel(ALL)}>Everyone (all ${teacherProfiles().length} teachers)</option>` : "");
     const used = new Set();
+    const admins = others.filter(p => p.role === "admin" || p.role === "superadmin");
+    if(admins.length){ admins.forEach(p => used.add(p.id)); html += `<optgroup label="Admin team">` + admins.map(opt).join("") + `</optgroup>`; }
     teacherGroups.forEach(g => {
-      const ps = others.filter(p => g.teachers.includes(p.teacher_name)); if(!ps.length) return;
+      const ps = others.filter(p => g.teachers.includes(p.teacher_name) && !used.has(p.id)); if(!ps.length) return;
       ps.forEach(p => used.add(p.id));
       html += `<optgroup label="${esc(g.name)}">` + (withEveryone ? `<option value="group:${esc(g.key)}"${sel("group:" + g.key)}>Everyone in ${esc(groupShort(g))} (${ps.filter(p => p.role === "teacher" || p.role === "trainer_teacher").length})</option>` : "") + ps.map(opt).join("") + `</optgroup>`;
     });
@@ -1106,7 +1119,9 @@ window.kumonPtcNav = function(client, role){
     if(rest.length) html += `<optgroup label="Not in a group">` + rest.map(opt).join("") + `</optgroup>`;
     return html;
   }
-  function nameOfUser(id){ if(currentUser && id === currentUser.id) return "you"; const p = profiles.find(x => x.id === id); return p ? (p.teacher_name || p.email) : "admin"; }
+  function nameOfUser(id){ if(currentUser && id === currentUser.id) return "you"; const p = profiles.find(x => x.id === id); return p ? personName(p) : "admin"; }
+  // A name for anyone: their teacher name, or a first name from the email (e.g. Joan).
+  function personName(p){ if(!p) return ""; if(p.teacher_name) return p.teacher_name; const n = String(p.email || "").split("@")[0].replace(/[^a-z]+/gi, " ").trim().split(" ")[0] || "Admin"; return n.charAt(0).toUpperCase() + n.slice(1).toLowerCase(); }
   function mine(){ if(isAllView()){ const ids = new Set(ownersFor(ui.whose)); return todos.filter(t => ids.has(t.owner_id)); } return todos.filter(t => t.owner_id === ownerId()); }
   const fromAdmin = t => t.created_by && t.created_by !== t.owner_id;
   function lists(){
@@ -1140,7 +1155,7 @@ window.kumonPtcNav = function(client, role){
     if(isAdmin() && !profiles.length){
       await loadTeacherGroups();
       const { data } = await sbClient.from("profiles").select("id,email,role,teacher_name,access_removed_at").order("teacher_name");
-      profiles = (data || []).filter(p => !p.access_removed_at && (p.teacher_name || p.id === currentUser.id));
+      profiles = (data || []).filter(p => !p.access_removed_at && (p.teacher_name || p.id === currentUser.id || p.role === "admin" || p.role === "superadmin"));
     }
     loaded = true;
   }
@@ -1172,8 +1187,36 @@ window.kumonPtcNav = function(client, role){
     if(k !== "scheduled"){ const nd = items.filter(t => !t.due_date); if(nd.length) out.push({ title: "No date", items: nd }); }
     return out;
   }
+  /* ---------- Assign to (admins): pick one or more people, groups or everyone ----------
+     Picked several people? Choose "Each does their own" (separate copies, like before) or
+     "One shared job" (phase149: whoever ticks it first ticks it for everyone). */
+  // Starts on the list being viewed; when viewing all teachers or a group it starts on "Me", so a quick to-do never goes to everyone by accident.
+  function assignKeys(){ if(!ui.assign || !ui.assign.length) ui.assign = [isAllView() ? currentUser.id : ownerId()]; return ui.assign; }
+  function assignOwners(){ const out = []; assignKeys().forEach(k => ownersFor(k).forEach(id => { if(!out.includes(id)) out.push(id); })); return out; }
+  function assignLabel(k){
+    if(k === ALL) return `Everyone (${teacherProfiles().length} teachers)`;
+    if(isGroupKey(k)){ const g = teacherGroups.find(x => "group:" + x.key === k); return g ? "All of " + groupShort(g) : "Group"; }
+    if(currentUser && k === currentUser.id) return "Me";
+    return personName(profiles.find(p => p.id === k)) || "Someone";
+  }
+  function assignHtml(){
+    const keys = assignKeys(), n = assignOwners().length;
+    const chips = keys.map(k => `<span class="as-chip">${esc(assignLabel(k))}${keys.length > 1 ? `<button type="button" data-act="unassign" data-k="${esc(k)}" aria-label="Remove ${esc(assignLabel(k))}">×</button>` : ""}</span>`).join("");
+    const opts = ownerOptions(null, true).replace(/>My list</, ">Me<").replace(/>For /g, ">");
+    const mode = n > 1 ? `<div class="as-mode" role="radiogroup" aria-label="How the to-do is given">
+        <button type="button" role="radio" aria-checked="${ui.shareMode !== "shared"}" class="${ui.shareMode !== "shared" ? "on" : ""}" data-act="sharemode" data-v="each">Each does their own</button>
+        <button type="button" role="radio" aria-checked="${ui.shareMode === "shared"}" class="${ui.shareMode === "shared" ? "on" : ""}" data-act="sharemode" data-v="shared">One shared job</button>
+        <span class="as-hint">${ui.shareMode === "shared" ? `Done by one = done for all ${n}.` : `${n} separate to-dos, each ticked on its own.`}</span></div>` : "";
+    return `<div class="as-wrap"><span class="as-k">Assign to</span>${chips}<select id="rmAssignAdd" aria-label="Add a person"><option value="">+ Add</option>${opts}</select></div>${mode}`;
+  }
+  document.addEventListener("change", e => {
+    if(e.target.id !== "rmAssignAdd" || !e.target.value) return;
+    const v = e.target.value, keys = assignKeys().slice();
+    if(!keys.includes(v)) keys.push(v);
+    ui.assign = keys; render();
+  });
   function addRow(dayIso){
-    const ownerSel = isAdmin() ? `<select id="rmOwner" aria-label="Whose list">${ownerOptions(ownerId(), true)}</select>` : "";
+    const ownerSel = isAdmin() ? assignHtml() : "";
     return `<form class="rm-add${ui.multi ? " open" : ""}" id="rmAdd">
       <span class="rm-plus" aria-hidden="true"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></span>
       <div class="rm-add-fields">
@@ -1405,21 +1448,26 @@ window.kumonPtcNav = function(client, role){
     const text = lines[0] || ""; if(!text) { const a = $("#rmText"); if(a) a.focus(); return; }
     const note = (($("#rmNote") || {}).value || "").trim(), due = ($("#rmDue") || {}).value || null;
     const flagged = !!($("#rmFlag") && $("#rmFlag").classList.contains("on"));
-    const owner = ($("#rmOwner") || {}).value || (isAllView() ? ALL : ownerId());
-    const owners = ownersFor(owner);
+    const keys = isAdmin() ? assignKeys() : [currentUser.id];
+    const owner = keys.length === 1 ? keys[0] : "multi";
+    const owners = isAdmin() ? assignOwners() : [currentUser.id];
     if(!owners.length){ toast("No teacher accounts found."); return; }
+    const shared = isAdmin() && owners.length > 1 && ui.shareMode === "shared";
+    const keyFor = lines.map(() => shared ? (crypto.randomUUID ? crypto.randomUUID() : ([1e7]+-1e3+-4e3+-8e3+-1e11).replace(/[018]/g, c => (c ^ Math.random() * 16 >> c / 4).toString(16))) : null);
     const rows = [];
-    owners.forEach(o => lines.forEach(line => { const r = { owner_id: o, text: line, due_date: due, created_by: currentUser.id, created_by_email: currentUser.email || null };
+    owners.forEach(o => lines.forEach((line, li) => { const r = { owner_id: o, text: line, due_date: due, created_by: currentUser.id, created_by_email: currentUser.email || null };
+      if(shared) r.share_key = keyFor[li];
       if(flagCols){ r.note = note || null; r.flagged = flagged; } else if(note) r.text = line + " — " + note; rows.push(r); }));
     if(rows.length > 2000){ toast("That's too many at once — split it up."); return; }
     const { data, error } = await sbClient.from("teacher_todos").insert(rows).select();
-    if(error){ toast(/note|flagged/.test(error.message || "") ? "Run phase145 in Supabase for notes and flags." : "Couldn't add that: " + error.message); return; }
+    if(error){ toast(/share_key/.test(error.message || "") ? "Run phase149 in Supabase for shared to-dos." : /note|flagged/.test(error.message || "") ? "Run phase145 in Supabase for notes and flags." : "Couldn't add that: " + error.message); return; }
     todos.push(...(data || []));
     ["#rmText","#rmNote"].forEach(s => { const el = $(s); if(el) el.value = ""; });
     const f = $("#rmFlag"); if(f){ f.classList.remove("on"); f.innerHTML = flagSvg(false); f.setAttribute("aria-pressed","false"); }
     render(); const a = $("#rmText"); if(a) a.focus();
     const what = lines.length > 1 ? `${lines.length} to-dos` : "a to-do";
-    if(owner === ALL || isGroupKey(owner)){ const who = owner === ALL ? "every teacher" : groupShort(teacherGroups.find(g => "group:" + g.key === owner) || {}); toast(`Added ${what} to ${owners.length} ${owners.length === 1 ? "teacher's list" : "teachers' lists"}.`); logHistory("todo_assign", `Gave ${who} (${owners.length}) ${what}: ${lines.join("; ").slice(0, 300)}`); }
+    if(owner === "multi"){ const names = owners.map(nameOfUser); toast(shared ? `Added 1 shared to-do for ${owners.length} people. Done by one = done for all.` : `Added ${what} to ${owners.length} lists.`); logHistory("todo_assign", `Gave ${names.join(", ")} ${shared ? "a shared" : "a"} to-do: ${text}`, data && data[0] && data[0].id); }
+    else if(owner === ALL || isGroupKey(owner)){ const who = owner === ALL ? "every teacher" : groupShort(teacherGroups.find(g => "group:" + g.key === owner) || {}); toast(`Added ${what} to ${owners.length} ${owners.length === 1 ? "teacher's list" : "teachers' lists"}.`); logHistory("todo_assign", `Gave ${who} (${owners.length}) ${what}: ${lines.join("; ").slice(0, 300)}`); }
     else if(lines.length > 1) toast(`Added ${lines.length} to-dos.`);
     else if(owner !== currentUser.id){ toast(`Added to ${nameOfUser(owner)}'s list.`); logHistory("todo_assign", `Gave ${nameOfUser(owner)} a to-do: ${text}`, data && data[0] && data[0].id); }
   }
@@ -1513,6 +1561,8 @@ window.kumonPtcNav = function(client, role){
     if(e.target.id === "modalBackdrop"){ closeModal(); return; }
     const b = e.target.closest("[data-act]"); if(!b) return;
     const a = b.dataset.act;
+    if(a === "unassign"){ ui.assign = assignKeys().filter(k => k !== b.dataset.k); render(); return; }
+    if(a === "sharemode"){ ui.shareMode = b.dataset.v; render(); return; }
     if(a === "rk-jump"){ ui.rkTab = b.dataset.col; rkScrollTo(b.dataset.col, true); return; }
     if(a === "qa"){ ui.qa = ui.qa === b.dataset.col ? null : b.dataset.col; render(); focusQa(); return; }
     if(a === "smart"){ ui.smart = b.dataset.k; render(); }
@@ -1539,7 +1589,7 @@ window.kumonPtcNav = function(client, role){
     if(e.target.id === "loginForm"){ e.preventDefault(); const fd = new FormData(e.target);
       const { error } = await sbClient.auth.signInWithPassword({ email: fd.get("email"), password: fd.get("password") }); if(error) showLogin(error.message); }
   });
-  document.addEventListener("change", (e) => { if(e.target.id === "rmWhose"){ ui.whose = e.target.value === currentUser.id ? null : e.target.value; try{ localStorage.setItem("kumonTodosWhose", ui.whose || "me"); }catch(_){ } render(); } });
+  document.addEventListener("change", (e) => { if(e.target.id === "rmWhose"){ ui.assign = null; ui.whose = e.target.value === currentUser.id ? null : e.target.value; try{ localStorage.setItem("kumonTodosWhose", ui.whose || "me"); }catch(_){ } render(); } });
   document.addEventListener("keydown", (e) => { if(e.key === "Escape" && !$("#modalBackdrop").hidden) closeModal(); });
 
   /* ---------- login / boot — same as the other pages ---------- */
