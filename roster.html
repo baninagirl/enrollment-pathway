@@ -507,6 +507,9 @@
   @media (max-width:860px){ .rail-pipeline{ display:none !important; } }
   /* Clicking a child's name opens their profile; clicking elsewhere on the row still opens Edit. */
   .name-link{ color:inherit; text-decoration:none; font-weight:600; }
+  .name-link.name-sm{ font-size:12px; font-weight:500; }
+  .btn.monitor-move{ background:var(--accent-soft); color:var(--accent); border:1px solid transparent; font-size:12px; padding:5px 10px; white-space:nowrap; }
+  .btn.monitor-move:hover{ border-color:var(--accent); }
   .name-link:hover{ color:var(--accent); text-decoration:underline; }
 </style>
 <script>try{if(localStorage.getItem("kumonRailCollapsed")==="1")document.documentElement.classList.add("rail-collapsed")}catch(e){}</script>
@@ -678,6 +681,75 @@ window.kumonPtcNav = function(client, role){
 })();
 </script>
 <link rel="stylesheet" href="hub-theme.css?v=1">   <!-- the shared Apple-style look; remove this line to undo -->
+<!-- HUB-COPY-LAST v1 -->
+<style id="hubCopyLastCss">
+  .ln-row{ display:inline-flex; align-items:flex-start; gap:6px; max-width:100%; }
+  .ln-row .ln-copy{ margin-top:-3px; }
+  .ln-row > a, .ln-row > .ln-text{ min-width:0; }
+  .ln-last{ border-radius:4px; transition:background .15s ease, color .15s ease, box-shadow .15s ease; }
+  .ln-row:has(.ln-copy:hover) .ln-last, .ln-row:has(.ln-copy:focus-visible) .ln-last{ background:var(--accent-soft); color:var(--accent); box-shadow:0 0 0 2px var(--accent-soft); }
+  .ln-copy{ position:relative; flex:none; display:inline-grid; place-items:center; width:24px; height:24px; padding:0; border-radius:7px; border:1px solid var(--border); background:var(--surface); color:var(--ink-muted); cursor:pointer; opacity:.6; transition:opacity .15s ease, background .15s ease, color .15s ease, border-color .15s ease, transform .12s ease; }
+  tr:hover .ln-copy, .ln-copy:focus-visible{ opacity:1; }
+  .ln-copy:hover{ opacity:1; background:var(--accent-soft); color:var(--accent); border-color:var(--accent); }
+  .ln-copy:active{ transform:scale(.92); }
+  .ln-copy svg{ width:13px; height:13px; }
+  .ln-copy .ln-ok{ display:none; }
+  .ln-copy.done{ opacity:1; background:var(--good-soft); color:var(--good); border-color:var(--good); }
+  .ln-copy.done .ln-ic{ display:none; }
+  .ln-copy.done .ln-ok{ display:block; animation:lnPop .28s cubic-bezier(.2,.9,.3,1.4); }
+  .ln-copy::after{ content:attr(data-tip); position:absolute; left:50%; bottom:calc(100% + 6px); transform:translate(-50%,4px); white-space:nowrap; font:600 11.5px/1 Inter, system-ui, sans-serif; letter-spacing:0; text-transform:none; padding:6px 8px; border-radius:7px; background:var(--ink, #1d1d1f); color:var(--surface); opacity:0; pointer-events:none; transition:opacity .15s ease, transform .15s ease; z-index:20; }
+  .ln-copy.done::after{ opacity:1; transform:translate(-50%,0); }
+  @keyframes lnPop{ from{ transform:scale(.4); } to{ transform:scale(1); } }
+  @media (hover:none){ .ln-copy{ opacity:1; } }
+  @media (prefers-reduced-motion:reduce){ .ln-copy, .ln-last{ transition:none; } .ln-copy.done .ln-ok{ animation:none; } }
+</style>
+<script>
+(function(){
+  if(window.__hubCopyLast) return; window.__hubCopyLast = true;
+  // Builds the copy button that sits right after a student's name. last = the last name to copy.
+  window.lnCopyBtn = function(last){
+    if(!last) return "";
+    const v = String(last).replace(/&/g,"&amp;").replace(/"/g,"&quot;").replace(/</g,"&lt;");
+    return `<button type="button" class="ln-copy" data-last="${v}" title="Copy last name: ${v}" aria-label="Copy last name ${v}"><svg class="ln-ic" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="5.5" y="5.5" width="8" height="8" rx="2"/><path d="M10.5 5.5V4a1.5 1.5 0 0 0-1.5-1.5H4A1.5 1.5 0 0 0 2.5 4v5A1.5 1.5 0 0 0 4 10.5h1.5"/></svg><svg class="ln-ok" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 8.5l3 3 6-7"/></svg></button>`;
+  };
+  // "Last, First" → Last. Anything without a comma → its last word.
+  window.lnLastOf = function(display){
+    const t = String(display||"").trim();
+    if(!t) return "";
+    if(t.includes(",")) return t.split(",")[0].trim();
+    const p = t.split(/\s+/); return p[p.length-1];
+  };
+  // Wraps the last-name part of a "Last, First" string (already escaped) so it can light up on hover.
+  window.lnMark = function(escDisplay){
+    const i = escDisplay.indexOf(",");
+    return i > 0 ? `<span class="ln-last">${escDisplay.slice(0,i)}</span>${escDisplay.slice(i)}` : escDisplay;
+  };
+  function fallbackCopy(text){
+    const ta = document.createElement("textarea");
+    ta.value = text; ta.setAttribute("readonly",""); ta.style.position = "fixed"; ta.style.opacity = "0";
+    document.body.appendChild(ta); ta.select();
+    let ok = false; try{ ok = document.execCommand("copy"); }catch(_){}
+    ta.remove(); return ok;
+  }
+  window.addEventListener("click", function(e){
+    const b = e.target.closest && e.target.closest(".ln-copy");
+    if(!b) return;
+    e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation();
+    const text = b.dataset.last || "";
+    const done = ok => {
+      b.dataset.tip = ok ? `Copied “${text}”` : "Couldn't copy";
+      b.classList.add("done");
+      clearTimeout(b._t); b._t = setTimeout(() => b.classList.remove("done"), 1400);
+    };
+    try{
+      if(navigator.clipboard && navigator.clipboard.writeText){
+        navigator.clipboard.writeText(text).then(() => done(true), () => done(fallbackCopy(text)));
+      } else done(fallbackCopy(text));
+    }catch(_){ done(fallbackCopy(text)); }
+  }, true);
+})();
+</script>
+<!-- /HUB-COPY-LAST v1 -->
 </head>
 <body>
 
@@ -794,8 +866,8 @@ window.kumonPtcNav = function(client, role){
           <table class="stable">
             <thead><tr>
               <th class="selectcol" id="selectHeaderCell">#</th>
-              <th id="monitorActionHead" hidden></th>
-              <th class="namecol" id="rosterNameHead">Student</th><th>Grade</th><th>Subject</th><th>Teacher</th><th>LWC</th><th>Schedule</th><th>Mode</th><th>Status</th><th>Payment</th><th>Date enrolled</th>
+              <th class="namecol" id="rosterNameHead">Student</th>
+              <th id="monitorActionHead" hidden></th><th>Grade</th><th>Subject</th><th>Teacher</th><th>LWC</th><th>Schedule</th><th>Mode</th><th>Status</th><th>Payment</th><th>Date enrolled</th>
             </tr></thead>
             <tbody id="rosterBody"></tbody>
           </table>
@@ -1934,6 +2006,14 @@ window.kumonPtcNav = function(client, role){
   // The NEW tag is just a cycle marker (monitor_cycle = "YYYY-MM"): it shows on a row for the rest of
   // that cycle and disappears when the next one starts. Monitor students get it automatically;
   // for everyone else it's set by hand here, from the Add / Edit forms or in bulk.
+  // "New enrollment" (added_month): lists the subject on Pipeline's New Students for that month.
+  function newEnrollSelectHtml(current){
+    const nowKey = cycleKeyOf(new Date());
+    const keys = [...new Set([openKey(), nowKey])].sort();
+    const opts = [`<option value="">Not a new enrollment</option>`, ...keys.map(k => `<option value="${k}" ${current===k?"selected":""}>New enrollment · ${esc(monitorCycleLabel(k))}</option>`)];
+    if(current && !keys.includes(current)) opts.push(`<option value="${esc(current)}" selected>New enrollment · ${esc(monitorCycleLabel(current))} (past)</option>`);
+    return `<select name="new_enroll">${opts.join("")}</select>`;
+  }
   function newTagSelectHtml(current, name){
     const nowKey = cycleKeyOf(new Date());
     const keys = [...new Set([openKey(), nowKey])].sort();
@@ -2293,7 +2373,7 @@ window.kumonPtcNav = function(client, role){
     return `
       <tr class="${editable?"clickrow":""}" ${editable?`data-action="edit-report" data-id="${r.id}"`:""}>
         <td class="rownum">${idx+1}</td>
-        <td class="namecol"><a class="name-link" href="student.html#s=${esc(r.student_id)}" data-action="open-profile" title="Open ${esc(displayName(r.student_id, r.student_name))}'s profile">${esc(displayName(r.student_id, r.student_name))}</a>${r.is_monitor ? monitorTagHtml(r) : ""}${newTagHtml(r)}</td>
+        <td class="namecol"><span class="ln-row"><a class="name-link" href="student.html#s=${esc(r.student_id)}" data-action="open-profile" title="Open ${esc(displayName(r.student_id, r.student_name))}'s profile">${lnMark(esc(displayName(r.student_id, r.student_name)))}</a>${lnCopyBtn(lnLastOf(displayName(r.student_id, r.student_name)))}</span>${r.is_monitor ? monitorTagHtml(r) : ""}${newTagHtml(r)}</td>
         <td><span class="pill ${r.subject==='Math'?'subj-math':'subj-reading'}">${esc(r.subject||"")}</span></td>
         <td>${r.archived ? `<span class="lvl empty-lvl" title="Archived snapshots don't keep the reporting tag.">—</span>` : reportTagPill(r.enrollment_type, r)}</td>
         <td>${fmtPlain(r.lwc)}</td>
@@ -2441,7 +2521,7 @@ window.kumonPtcNav = function(client, role){
     }
     const actionHead = $("#monitorActionHead");
     if(actionHead) actionHead.hidden = !(inMonitor && editable);
-    const nameHead = $("#rosterNameHead"); if(nameHead) nameHead.classList.toggle("namecol", !(inMonitor && editable));   // the extra button column sits between # and the name there, so the name isn't pinned
+    // Monitor Students: the "Move to regular roster" button column sits right after the pinned name.
     updateMonitorCount();
 
     // Editing, selecting and bulk actions only make sense against the live, current-cycle
@@ -2471,8 +2551,8 @@ window.kumonPtcNav = function(client, role){
           <td class="selectcol">${(editable && selectMode)
             ? `<input type="checkbox" class="row-check" data-action="toggle-select" data-id="${e.id}" ${selectedIds.has(e.id)?"checked":""}>`
             : `<span class="rownum">${idx+1}</span>`}</td>
-          ${inMonitor && editable ? `<td><button type="button" class="btn sm primary" data-action="monitor-promote" data-id="${e.id}">Move to regular roster</button></td>` : ""}
-          <td${inMonitor && editable ? "" : ` class="namecol"`}><a class="name-link" href="student.html#s=${esc(e.student_id)}" data-action="open-profile" title="Open ${esc(displayName(e.student_id, e.student_name))}'s profile">${esc(displayName(e.student_id, e.student_name))}</a>${monitorTagHtml(e)}${newTagHtml(e)}</td>
+          <td class="namecol"><a class="name-link${inMonitor ? " name-sm" : ""}" href="student.html#s=${esc(e.student_id)}" data-action="open-profile" title="Open ${esc(displayName(e.student_id, e.student_name))}'s profile">${esc(displayName(e.student_id, e.student_name))}</a>${monitorTagHtml(e)}${newTagHtml(e)}</td>
+          ${inMonitor && editable ? `<td><button type="button" class="btn sm monitor-move" data-action="monitor-promote" data-id="${e.id}">Move to regular roster</button></td>` : ""}
           <td>${esc(gradeFor(e.student_id) || "—")}</td>
           <td><span class="pill ${e.subject==='Math'?'subj-math':'subj-reading'}">${esc(e.subject)}</span></td>
           <td>${esc(e.teacher||"—")}</td>
@@ -2614,7 +2694,8 @@ window.kumonPtcNav = function(client, role){
           <span class="hint" style="font-size:11.5px; margin:0 0 12px; display:block;">${enrollment.is_monitor
             ? `On monitor since ${esc(monitorCycleLabel(monitorSinceKey(enrollment)) || "—")}. Untick to move them to the regular roster.`
             : `Tick to put this subject on the Monitor Students list, starting ${esc(monitorCycleLabel(cycleKeyOf(new Date())))}. It stays there until someone moves them off.`}</span>
-          <label class="field">NEW label (this month)${newTagSelectHtml(enrollment.monitor_cycle || "")}<span class="hint" style="font-size:11.5px; margin-top:4px; display:block;">Shows a NEW label next to their name for the rest of the month. It clears itself when the next month starts. Separate from Monitor.</span></label>
+          <label class="field">New to roster${newTagSelectHtml(enrollment.monitor_cycle || "")}<span class="hint" style="font-size:11.5px; margin-top:4px; display:block;">New on this teacher's list this month — a new enrollment or moved from another teacher. Shows a NEW label by their name until the month ends. Doesn't put them on New Students.</span></label>
+          <label class="field">New enrollment${newEnrollSelectHtml(enrollment.added_month || "")}<span class="hint" style="font-size:11.5px; margin-top:4px; display:block;">A real new enrollment at the center (or their other subject). Lists this subject on Pipeline's New Students as NEW, or EO if they have the other subject. If Date enrolled is set, New Students goes by that date.</span></label>
           <div class="field-row">
             <label class="field">LWC<select name="current_level" id="curLevelSelect">${levelOptions(subject, enrollment.current_level)}</select></label>
             <label class="field">LWC page<input type="text" name="current_page" value="${esc(enrollment.current_page||"")}" placeholder="e.g. 130"></label>
@@ -2705,7 +2786,7 @@ window.kumonPtcNav = function(client, role){
             <option value="active">Active</option>
             <option value="inactive">Inactive</option>
           </select></label>
-          <label class="field">NEW label (this month)<select name="new_cycle">
+          <label class="field">New to roster<select name="new_cycle">
             <option value="__nochange__" selected>No change</option>
             <option value="${cycleKeyOf(new Date())}">Mark NEW · ${esc(monitorCycleLabel(cycleKeyOf(new Date())))}</option>
             <option value="__clear__">Remove NEW</option>
@@ -2822,6 +2903,9 @@ window.kumonPtcNav = function(client, role){
               ? { enrolled_on: fd.get("enrolled_on") || null } : {}),
           // NEW label month (separate from Monitor).
           ...(fd.get("new_cycle") !== null ? { monitor_cycle: (fd.get("new_cycle") || null) } : {}),
+          // New enrollment month (added_month) — only written when it changed.
+          ...(fd.get("new_enroll") !== null && (fd.get("new_enroll") || "") !== ((editingEnrollment && editingEnrollment.added_month) || "")
+              ? { added_month: fd.get("new_enroll") || null } : {}),
           // Monitor on/off — only written when it actually changed, so the start month only moves for real changes.
           ...(fd.get("monitor_field") !== null && !!fd.get("is_monitor") !== !!(editingEnrollment && editingEnrollment.is_monitor)
               ? (fd.get("is_monitor") ? { is_monitor: true, monitor_since: cycleKeyOf(new Date()) } : { is_monitor: false, monitor_since: null }) : {}),

@@ -926,6 +926,64 @@ window.kumonPtcNav = function(client, role){
 })();
 </script>
 <link rel="stylesheet" href="hub-theme.css?v=1">   <!-- the shared Apple-style look; remove this line to undo -->
+<!-- HUB-MOBILE-CARDS v1 -->
+<style id="hubMobileCardsCss">
+  /* On a phone, wide tables turn into one card per row: the first cell is the card's title, every other
+     cell is a "label — value" line. Labels come from the table's own column names. */
+  @media (max-width:640px){
+    .mc-on{ min-width:0 !important; width:100% !important; border-collapse:separate !important; }
+    .mc-on thead{ display:none; }
+    .mc-on, .mc-on tbody, .mc-on tr, .mc-on td{ display:block; }
+    .table-scroll:has(> .mc-on), .tbl:has(> .mc-on){ overflow:visible; }
+    .card:has(.mc-on){ padding-left:12px; padding-right:12px; }
+    .mc-on tbody tr{ position:relative; margin:0 0 10px; padding:12px 14px; border:1px solid var(--border); border-radius:14px; background:var(--surface); }
+    .mc-on tbody tr:last-child{ margin-bottom:0; }
+    .mc-on tbody td{ display:flex; align-items:baseline; justify-content:space-between; gap:14px; padding:4px 0 !important; border:none !important; white-space:normal !important; text-align:right; font-size:13px; min-width:0; }
+    .mc-on tbody td::before{ content:attr(data-label); flex:none; max-width:46%; text-align:left; font-size:11px; font-weight:600; letter-spacing:.04em; text-transform:uppercase; color:var(--ink-muted); margin-right:auto; }
+    .mc-on tbody td > *{ min-width:0; }
+    .mc-on tbody td .mc-v{ display:inline; text-align:right; }
+    .mc-on tbody td.mc-title{ display:block; text-align:left; font-size:14.5px; padding:0 0 6px !important; margin-bottom:4px; border-bottom:1px solid var(--border) !important; }
+    .mc-on tbody td.mc-title::before, .mc-on tbody td[data-label=""]::before{ display:none; }
+    .mc-on tbody td[data-label=""]{ justify-content:flex-end; }
+    .mc-on tbody td.mc-empty{ display:none; }
+    .mc-on tbody td[colspan]{ display:block; text-align:left; }
+    .mc-on tbody td[colspan]::before{ display:none; }
+    .mc-on tbody tr:has(> td[colspan]:only-child){ border:none; background:transparent; padding:8px 2px 2px; margin-bottom:4px; }
+  }
+</style>
+<script>
+(function(){
+  if(window.__hubMobileCards) return; window.__hubMobileCards = true;
+  const SKIP = ".plan, .xt, .cap-table, .no-mc";
+  function label(t){
+    const heads = t.tHead ? [...t.tHead.rows[0].cells].map(th => th.textContent.trim()) : [];
+    if(!heads.length) return;
+    t.classList.add("mc-on");
+    [...(t.tBodies[0] ? t.tBodies[0].rows : [])].forEach(tr => {
+      let col = 0;
+      [...tr.cells].forEach((td, i) => {
+        if(!td.hasAttribute("colspan")) td.setAttribute("data-label", heads[col] || "");
+        if(i === 0 && !td.hasAttribute("colspan")) td.classList.add("mc-title");
+        // Keep a cell's value together on one side of the card line, even when it's made of several pieces.
+        if(!td.hasAttribute("colspan") && i > 0 && td.childNodes.length > 1 && !(td.childNodes.length === 1 && td.firstElementChild && td.firstElementChild.classList.contains("mc-v"))){
+          const v = document.createElement("span"); v.className = "mc-v";
+          while(td.firstChild) v.appendChild(td.firstChild);
+          td.appendChild(v);
+        }
+        const txt = td.textContent.trim();
+        td.classList.toggle("mc-empty", !td.querySelector("button, input, select, a, svg, img, canvas") && (txt === "" || txt === "—"));
+        col += td.colSpan || 1;
+      });
+    });
+  }
+  function scan(){ document.querySelectorAll("table.stable").forEach(t => { if(!t.matches(SKIP) && !t.closest(".modal, #modal, dialog")) label(t); }); }
+  let q = 0;
+  const mo = new MutationObserver(() => { if(q) return; q = requestAnimationFrame(() => { q = 0; scan(); }); });
+  function start(){ scan(); mo.observe(document.body, { childList:true, subtree:true }); }
+  if(document.readyState === "loading") document.addEventListener("DOMContentLoaded", start); else start();
+})();
+</script>
+<!-- /HUB-MOBILE-CARDS v1 -->
 </head>
 <body>
 

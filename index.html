@@ -533,6 +533,18 @@
   .stable tr:last-child td{ border-bottom:none; }
   .stable tr.clickrow{ cursor:pointer; }
   .stable tr.clickrow:hover{ background:var(--surface-2); }
+  /* New Students tables: column names stay on top, # and Student stay on the left while the rest scrolls (same as Student Roster). */
+  .table-scroll.freeze{ overflow:auto; max-height:calc(100dvh / var(--z, 1) - 24px); }
+  @media (max-width:860px){ .table-scroll.freeze{ max-height:calc(100dvh - 120px - env(safe-area-inset-bottom, 0px)); } }
+  .freeze .stable{ width:auto; min-width:100%; border-collapse:separate; border-spacing:0; }
+  .freeze .stable th, .freeze .stable td{ white-space:nowrap; }
+  .freeze .stable thead th{ position:sticky; top:0; z-index:3; background:var(--surface); }
+  .freeze .stable td{ background:var(--surface); }
+  .freeze .stable tr.clickrow:hover td{ background:var(--surface-2); }
+  .freeze .stable th:first-child, .freeze .stable td:first-child:not([colspan]){ position:sticky; left:0; z-index:2; width:44px; min-width:44px; max-width:44px; }
+  .freeze .stable .namecol{ position:sticky; left:44px; z-index:2; box-shadow:inset -1px 0 0 var(--border); white-space:normal; width:220px; min-width:220px; max-width:220px; line-height:1.3; }
+  .freeze .stable thead th:first-child, .freeze .stable thead th.namecol{ z-index:4; }
+  @media (max-width:860px){ .freeze .stable .namecol{ width:150px; min-width:150px; max-width:150px; left:36px; } .freeze .stable th:first-child, .freeze .stable td:first-child:not([colspan]){ width:36px; min-width:36px; max-width:36px; padding-left:10px; padding-right:4px; } }
 
   /* Modal */
   .modal-backdrop{ position:fixed; inset:0; background:rgba(10,12,18,.5); display:flex; align-items:flex-start; justify-content:center; padding:5vh 16px; overflow-y:auto; z-index:50; }
@@ -897,6 +909,75 @@ window.kumonPtcNav = function(client, role){
 })();
 </script>
 <link rel="stylesheet" href="hub-theme.css?v=1">   <!-- the shared Apple-style look; remove this line to undo -->
+<!-- HUB-COPY-LAST v1 -->
+<style id="hubCopyLastCss">
+  .ln-row{ display:inline-flex; align-items:flex-start; gap:6px; max-width:100%; }
+  .ln-row .ln-copy{ margin-top:-3px; }
+  .ln-row > a, .ln-row > .ln-text{ min-width:0; }
+  .ln-last{ border-radius:4px; transition:background .15s ease, color .15s ease, box-shadow .15s ease; }
+  .ln-row:has(.ln-copy:hover) .ln-last, .ln-row:has(.ln-copy:focus-visible) .ln-last{ background:var(--accent-soft); color:var(--accent); box-shadow:0 0 0 2px var(--accent-soft); }
+  .ln-copy{ position:relative; flex:none; display:inline-grid; place-items:center; width:24px; height:24px; padding:0; border-radius:7px; border:1px solid var(--border); background:var(--surface); color:var(--ink-muted); cursor:pointer; opacity:.6; transition:opacity .15s ease, background .15s ease, color .15s ease, border-color .15s ease, transform .12s ease; }
+  tr:hover .ln-copy, .ln-copy:focus-visible{ opacity:1; }
+  .ln-copy:hover{ opacity:1; background:var(--accent-soft); color:var(--accent); border-color:var(--accent); }
+  .ln-copy:active{ transform:scale(.92); }
+  .ln-copy svg{ width:13px; height:13px; }
+  .ln-copy .ln-ok{ display:none; }
+  .ln-copy.done{ opacity:1; background:var(--good-soft); color:var(--good); border-color:var(--good); }
+  .ln-copy.done .ln-ic{ display:none; }
+  .ln-copy.done .ln-ok{ display:block; animation:lnPop .28s cubic-bezier(.2,.9,.3,1.4); }
+  .ln-copy::after{ content:attr(data-tip); position:absolute; left:50%; bottom:calc(100% + 6px); transform:translate(-50%,4px); white-space:nowrap; font:600 11.5px/1 Inter, system-ui, sans-serif; letter-spacing:0; text-transform:none; padding:6px 8px; border-radius:7px; background:var(--ink, #1d1d1f); color:var(--surface); opacity:0; pointer-events:none; transition:opacity .15s ease, transform .15s ease; z-index:20; }
+  .ln-copy.done::after{ opacity:1; transform:translate(-50%,0); }
+  @keyframes lnPop{ from{ transform:scale(.4); } to{ transform:scale(1); } }
+  @media (hover:none){ .ln-copy{ opacity:1; } }
+  @media (prefers-reduced-motion:reduce){ .ln-copy, .ln-last{ transition:none; } .ln-copy.done .ln-ok{ animation:none; } }
+</style>
+<script>
+(function(){
+  if(window.__hubCopyLast) return; window.__hubCopyLast = true;
+  // Builds the copy button that sits right after a student's name. last = the last name to copy.
+  window.lnCopyBtn = function(last){
+    if(!last) return "";
+    const v = String(last).replace(/&/g,"&amp;").replace(/"/g,"&quot;").replace(/</g,"&lt;");
+    return `<button type="button" class="ln-copy" data-last="${v}" title="Copy last name: ${v}" aria-label="Copy last name ${v}"><svg class="ln-ic" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="5.5" y="5.5" width="8" height="8" rx="2"/><path d="M10.5 5.5V4a1.5 1.5 0 0 0-1.5-1.5H4A1.5 1.5 0 0 0 2.5 4v5A1.5 1.5 0 0 0 4 10.5h1.5"/></svg><svg class="ln-ok" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 8.5l3 3 6-7"/></svg></button>`;
+  };
+  // "Last, First" → Last. Anything without a comma → its last word.
+  window.lnLastOf = function(display){
+    const t = String(display||"").trim();
+    if(!t) return "";
+    if(t.includes(",")) return t.split(",")[0].trim();
+    const p = t.split(/\s+/); return p[p.length-1];
+  };
+  // Wraps the last-name part of a "Last, First" string (already escaped) so it can light up on hover.
+  window.lnMark = function(escDisplay){
+    const i = escDisplay.indexOf(",");
+    return i > 0 ? `<span class="ln-last">${escDisplay.slice(0,i)}</span>${escDisplay.slice(i)}` : escDisplay;
+  };
+  function fallbackCopy(text){
+    const ta = document.createElement("textarea");
+    ta.value = text; ta.setAttribute("readonly",""); ta.style.position = "fixed"; ta.style.opacity = "0";
+    document.body.appendChild(ta); ta.select();
+    let ok = false; try{ ok = document.execCommand("copy"); }catch(_){}
+    ta.remove(); return ok;
+  }
+  window.addEventListener("click", function(e){
+    const b = e.target.closest && e.target.closest(".ln-copy");
+    if(!b) return;
+    e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation();
+    const text = b.dataset.last || "";
+    const done = ok => {
+      b.dataset.tip = ok ? `Copied “${text}”` : "Couldn't copy";
+      b.classList.add("done");
+      clearTimeout(b._t); b._t = setTimeout(() => b.classList.remove("done"), 1400);
+    };
+    try{
+      if(navigator.clipboard && navigator.clipboard.writeText){
+        navigator.clipboard.writeText(text).then(() => done(true), () => done(fallbackCopy(text)));
+      } else done(fallbackCopy(text));
+    }catch(_){ done(fallbackCopy(text)); }
+  }, true);
+})();
+</script>
+<!-- /HUB-COPY-LAST v1 -->
 </head>
 <body>
 
@@ -2886,14 +2967,14 @@ window.kumonPtcNav = function(client, role){
     const emptyMsg = qTokens.length ? "No students match that search." : STATE.studentMonthMode==="month" ? `No enrolled students on the ${esc(monthLabel)} roster yet. Try <b>All time</b> — a student shows up here once their diagnostic is marked <b>Enrolled</b>.` : "No enrolled students yet. A student shows up here once their diagnostic is marked <b>Enrolled</b>.";
 
     const listTable = `<table class="stable">
-          <thead><tr><th>#</th><th>Student</th><th>Grade</th><th>Subject</th><th>Tag</th><th title="Also their Date enrolled on Student Roster">First day</th><th>Schedule</th><th>Mode</th><th>Status</th></tr></thead>
+          <thead><tr><th>#</th><th class="namecol">Student</th><th>Grade</th><th>Subject</th><th>Tag</th><th title="Also their Date enrolled on Student Roster">First day</th><th>Schedule</th><th>Mode</th><th>Status</th></tr></thead>
           <tbody>
             ${rows.map((row, i) => {
               const s = row.s;
               const st = STATUS_LABEL[s.status] || ["—","muted"];
               return `<tr class="clickrow" data-action="open-student" data-id="${s.id}">
                 <td class="tnum">${i+1}</td>
-                <td>${esc(displayName(s))}${row.src ? `<div class="hint" style="font-size:11.5px;margin-top:1px;">${esc(row.src)}</div>` : ""}</td>
+                <td class="namecol"><span class="ln-row"><span class="ln-text">${lnMark(esc(displayName(s)))}</span>${lnCopyBtn(lnLastOf(displayName(s)))}</span>${row.src ? `<div class="hint" style="font-size:11.5px;margin-top:2px;">${esc(row.src)}</div>` : ""}</td>
                 <td>${esc(s.ageGrade||"—")}</td>
                 <td>${row.subj ? fmtSubjectPill(row.subj) : "—"}</td>
                 <td>${fmtEnrollmentTagPill(s.id, row.subj)}</td>
@@ -2908,7 +2989,7 @@ window.kumonPtcNav = function(client, role){
         </table>`;
 
     const reportTable = `<table class="stable">
-          <thead><tr><th>#</th><th>Student</th><th>Grade</th><th>Subject</th><th>Tag</th><th title="Also their Date enrolled on Student Roster">First day</th><th>Start point</th><th>DT test</th><th>DT date</th><th>Score</th><th>Time</th></tr></thead>
+          <thead><tr><th>#</th><th class="namecol">Student</th><th>Grade</th><th>Subject</th><th>Tag</th><th title="Also their Date enrolled on Student Roster">First day</th><th>Start point</th><th>DT test</th><th>DT date</th><th>Score</th><th>Time</th></tr></thead>
           <tbody>
             ${rows.map((row, i) => {
               const s = row.s;
@@ -2916,7 +2997,7 @@ window.kumonPtcNav = function(client, role){
               const r = diagResultFor(d, row.subj, row.isBoth);
               return `<tr class="clickrow" data-action="open-student" data-id="${s.id}">
                 <td class="tnum">${i+1}</td>
-                <td>${esc(displayName(s))}${row.src ? `<div class="hint" style="font-size:11.5px;margin-top:1px;">${esc(row.src)}</div>` : ""}</td>
+                <td class="namecol"><span class="ln-row"><span class="ln-text">${lnMark(esc(displayName(s)))}</span>${lnCopyBtn(lnLastOf(displayName(s)))}</span>${row.src ? `<div class="hint" style="font-size:11.5px;margin-top:2px;">${esc(row.src)}</div>` : ""}</td>
                 <td>${esc(s.ageGrade||"—")}</td>
                 <td>${row.subj ? fmtSubjectPill(row.subj) : "—"}</td>
                 <td>${fmtEnrollmentTagPill(s.id, row.subj)}</td>
@@ -2959,7 +3040,7 @@ window.kumonPtcNav = function(client, role){
         <button type="button" class="btn sm" data-action="open-new-eo" title="An existing student enrolling for another subject">${iconPlus()} Add EO</button>
       </div>
       <div class="card">
-        ${rows.length ? `<div class="table-scroll">${isReport ? reportTable : listTable}</div>` : `<div class="empty">${emptyMsg}</div>`}
+        ${rows.length ? `<div class="table-scroll freeze">${isReport ? reportTable : listTable}</div>` : `<div class="empty">${emptyMsg}</div>`}
       </div>
     `;
     const input = $("#studentSearchInput", el);
@@ -3045,7 +3126,7 @@ window.kumonPtcNav = function(client, role){
       <div class="modal-head"><h3>Set regular schedule — ${esc(displayName(s))}</h3><button class="iconbtn" data-action="close-modal">✕</button></div>
       <form data-form="set-days" data-student="${studentId}">
         <div class="modal-body">
-          <div class="hint">Two days a week — each can have its own time. Their teacher, tags and status stay as they are.</div>
+          <div class="hint">2 days a week — each can have its own time. Their teacher, tags and status stay as they are.</div>
           <div class="field-row">
             <label class="field">Day 1<select name="day1" required>${daySelectOptions(d1.day)}</select></label>
             <label class="field">Time<input type="time" name="time1" required value="${esc(d1.time || "16:00")}"></label>
@@ -4587,7 +4668,7 @@ window.kumonPtcNav = function(client, role){
               ${pool.map(s => `<option value="${s.id}" ${presetStudentId===s.id?"selected":""}>${esc(displayName(s))}</option>`).join("")}
             </select>
           </label>
-          <div class="hint">Two days a week — each can have its own time.${earlyMode ? " They stay under Awaiting training until their trainings are done." : ""}</div>
+          <div class="hint">2 days a week — each can have its own time.${earlyMode ? " They stay under Awaiting training until their trainings are done." : ""}</div>
           <div class="field-row">
             <label class="field">Day 1
               <select name="day1" required>${daySelectOptions("Tue")}</select>

@@ -555,7 +555,17 @@
   .td-kc-move button{ appearance:none; border:0; background:transparent; color:var(--accent); font:inherit; font-size:12px; font-weight:600; padding:2px 4px; border-radius:6px; cursor:pointer; }
   .td-kc-move button:hover{ background:var(--accent-soft, #E9EDFB); }
   @media (max-width:980px){ .td-kboard{ grid-template-columns:repeat(2, minmax(0,1fr)); } }
-  @media (max-width:560px){ .td-kboard{ grid-template-columns:minmax(0,1fr); } }
+  /* Phones: the 4 columns sit side by side and swipe sideways, so the board is one row tall instead of four stacked lists. */
+  @media (max-width:560px){
+    .td-kboard{ display:flex; gap:10px; overflow-x:auto; scroll-snap-type:x mandatory; overscroll-behavior-x:contain; margin:12px -14px 0; padding:0 14px 4px; scroll-padding:0 14px; scrollbar-width:none; }
+    .td-kboard::-webkit-scrollbar{ display:none; }
+    .td-kcol{ flex:0 0 78%; scroll-snap-align:start; min-height:120px; max-height:58vh; overflow-y:auto; }
+    .td-kc{ padding:10px 10px 8px; }
+  }
+  .td-kboard.tdrag-on{ scroll-snap-type:none; }
+  .td-kc[draggable=true]{ -webkit-touch-callout:none; -webkit-user-select:none; user-select:none; }
+  .td-kc.tdrag-ghost{ box-shadow:0 18px 40px rgba(20,22,30,.22), 0 2px 6px rgba(20,22,30,.12); transform:rotate(-2deg) scale(1.03); opacity:.97; }
+  html.tdrag-lock, html.tdrag-lock body{ overscroll-behavior:none; }
   /* To-do cards (Nov 17) */
   .td-tcs{ display:grid; grid-template-columns:repeat(auto-fill, minmax(240px, 1fr)); gap:16px; margin-top:16px; align-items:stretch; }
   .td-tc{ padding:18px 18px 16px; display:flex; gap:12px; align-items:flex-start; min-width:0; transition:transform .45s cubic-bezier(.2,.8,.2,1), opacity .4s ease, box-shadow .25s; }
@@ -646,6 +656,7 @@
   .td-metrics{ display:grid; grid-template-columns:repeat(auto-fill, minmax(210px, 1fr)); gap:14px; margin:16px 0 10px; }
   .td-metric{ padding:18px; display:flex; flex-direction:column; gap:10px; border:none; text-align:left; cursor:pointer; font:inherit; color:inherit; transition:transform .25s var(--spring, ease), box-shadow .25s var(--spring, ease); }
   .td-metric .r1{ display:flex; align-items:center; gap:14px; }
+  .td-metrics > .td-metric, .td-stories > .td-story{ margin:0; }   /* the grid gap alone sets the spacing, so rows and columns are spaced the same */
   .td-big{ font-family:"Sora", system-ui, sans-serif; font-size:26px; font-weight:700; letter-spacing:-.035em; line-height:1; }
   .td-goal{ font-size:12px; color:var(--ink-faint); margin-top:4px; }
   .td-mname{ font-size:13.5px; font-weight:600; line-height:1.35; }
@@ -704,6 +715,27 @@
     .td-who select{ min-width:0; }
   }
   @media (prefers-reduced-motion: reduce){ .td-drawer, .td-scrim, .td-story, .td-metric, .td-tl-block{ transition:none; } }
+  /* Phones: the story cards become one sideways-swipe row, and the number tiles get smaller, so Today is far less scrolling. */
+  @media (max-width:600px){
+    .td-stories{ display:flex; gap:10px; overflow-x:auto; scroll-snap-type:x mandatory; overscroll-behavior-x:contain; margin:12px -14px 0; padding:0 14px 6px; scroll-padding:0 14px; scrollbar-width:none; }
+    .td-stories::-webkit-scrollbar{ display:none; }
+    .td-story{ flex:0 0 76%; scroll-snap-align:start; padding:16px; gap:10px; }
+    .td-story h3{ font-size:16px; }
+    .td-lab{ font-size:11.5px; }
+    .td-viz{ min-height:60px; }
+    .td-week .col{ height:40px; }
+    .td-go{ font-size:12.5px; }
+    .td-metrics{ grid-template-columns:repeat(2, minmax(0,1fr)); gap:10px; margin:12px 0 8px; }
+    .td-metric{ padding:12px; gap:6px; }
+    .td-metric .r1{ gap:10px; }
+    .td-metric .r1 > svg{ width:44px; height:44px; }
+    .td-sec{ margin-bottom:30px; }
+    .td-big{ font-size:21px; }
+    .td-goal{ font-size:11px; margin-top:2px; }
+    .td-mname{ font-size:12.5px; line-height:1.3; }
+    .td-note{ font-size:11.5px; line-height:1.45; }
+    .td-bar{ margin:4px 0 2px; }
+  }
 
 </style>
 <script>try{if(localStorage.getItem("kumonRailCollapsed")==="1")document.documentElement.classList.add("rail-collapsed")}catch(e){}</script>
@@ -2152,12 +2184,98 @@ window.kumonPtcNav = function(client, role){
   document.addEventListener("dragover", e => { if(!dragTodo) return; const col = e.target.closest && e.target.closest(".td-kcol"); if(!col || col.dataset.col === "overdue") return; e.preventDefault(); document.querySelectorAll(".td-kcol.over").forEach(c => c !== col && c.classList.remove("over")); col.classList.add("over"); });
   document.addEventListener("drop", async e => {
     if(!dragTodo) return; const col = e.target.closest && e.target.closest(".td-kcol"); if(!col || col.dataset.col === "overdue") return; e.preventDefault();
-    const id = dragTodo, t = todos.find(x => x.id === id); dragTodo = null; col.classList.remove("over"); if(!t) return;
-    const today = todayISO(), k = col.dataset.col;
+    const id = dragTodo; dragTodo = null; col.classList.remove("over");
+    await dropTodoOn(id, col.dataset.col);
+  });
+  async function dropTodoOn(id, k){
+    const t = todos.find(x => x.id === id); if(!t) return;
+    const today = todayISO();
     if(k === "done"){ await todoAction("toggle", id); return; }
     if(k === "today") await moveTodo(id, today);
     else if(k === "later" && !(t.due_date === null || t.due_date > today)) await moveTodo(id, addDays(today, 1));
-  });
+  }
+  /* ---------- Touch drag for the to-do board (phones and tablets) ----------
+     Press and hold a card for a moment, then drag it to another column. A quick swipe still scrolls.
+     cfg: { card, col, board, idOf(card), onDrop(id, colKey) } */
+  function hubTouchDrag(cfg){
+    let timer = null, start = null, card = null, ghost = null, over = null, active = false, swallowClick = false, raf = 0, lastX = 0, lastY = 0;
+    const HOLD = 260, SLOP = 8;
+    const reset = () => {
+      clearTimeout(timer); timer = null; cancelAnimationFrame(raf); raf = 0;
+      if(ghost){ ghost.remove(); ghost = null; }
+      if(card) card.classList.remove("dragging");
+      if(over) over.classList.remove("over");
+      document.querySelectorAll(cfg.board).forEach(b => b.classList.remove("tdrag-on"));
+      document.documentElement.classList.remove("tdrag-lock");
+      card = null; over = null; active = false; start = null;
+    };
+    const colAt = (x, y) => {
+      const el = document.elementFromPoint(x, y);
+      const c = el && el.closest && el.closest(cfg.col);
+      return c && c.dataset.col !== "overdue" ? c : null;
+    };
+    const tick = () => {
+      // Near a screen edge while dragging: scroll the board sideways, or the page up and down.
+      const b = card && card.closest(cfg.board);
+      const w = window.innerWidth, h = window.innerHeight, edge = 44;
+      if(b){ if(lastX > w - edge) b.scrollLeft += 10; else if(lastX < edge) b.scrollLeft -= 10; }
+      if(lastY > h - edge - 70) window.scrollBy(0, 9); else if(lastY < edge + 20) window.scrollBy(0, -9);
+      const c = colAt(lastX, lastY);
+      if(c !== over){ if(over) over.classList.remove("over"); over = c; if(over) over.classList.add("over"); }
+      raf = requestAnimationFrame(tick);
+    };
+    const begin = () => {
+      active = true;
+      try{ navigator.vibrate && navigator.vibrate(12); }catch(_){}
+      const r = card.getBoundingClientRect();
+      ghost = card.cloneNode(true);
+      ghost.classList.add("tdrag-ghost"); ghost.removeAttribute("data-tc"); ghost.removeAttribute("data-rk");
+      Object.assign(ghost.style, { position:"fixed", left:r.left + "px", top:r.top + "px", width:r.width + "px", margin:"0", zIndex:"9999", pointerEvents:"none" });
+      ghost._dx = start.x - r.left; ghost._dy = start.y - r.top;
+      document.body.appendChild(ghost);
+      card.classList.add("dragging");
+      document.querySelectorAll(cfg.board).forEach(b => b.classList.add("tdrag-on"));
+      document.documentElement.classList.add("tdrag-lock");
+      lastX = start.x; lastY = start.y;
+      raf = requestAnimationFrame(tick);
+    };
+    document.addEventListener("touchstart", e => {
+      if(e.touches.length !== 1) return reset();
+      const t = e.target;
+      const c = t.closest && t.closest(cfg.card);
+      if(!c || c.getAttribute("draggable") !== "true") return;
+      if(t.closest("input, select, textarea, [contenteditable]")) return;   // a quick tap on a button still clicks it; only a long hold starts a drag
+      reset();
+      card = c; start = { x:e.touches[0].clientX, y:e.touches[0].clientY };
+      timer = setTimeout(begin, HOLD);
+    }, { passive:true });
+    document.addEventListener("touchmove", e => {
+      if(!card) return;
+      const p = e.touches[0];
+      if(!active){
+        if(Math.hypot(p.clientX - start.x, p.clientY - start.y) > SLOP) reset();   // it's a scroll, not a drag
+        return;
+      }
+      e.preventDefault();
+      lastX = p.clientX; lastY = p.clientY;
+      ghost.style.left = (p.clientX - ghost._dx) + "px";
+      ghost.style.top = (p.clientY - ghost._dy) + "px";
+    }, { passive:false });
+    const finish = e => {
+      if(!card) return;
+      if(!active){ reset(); return; }
+      if(e && e.cancelable) e.preventDefault();
+      const id = cfg.idOf(card), target = over ? over.dataset.col : null, from = card.closest(cfg.col);
+      swallowClick = true; setTimeout(() => { swallowClick = false; }, 400);
+      reset();
+      if(id && target && (!from || from.dataset.col !== target)) cfg.onDrop(id, target);
+    };
+    document.addEventListener("touchend", finish, { passive:false });
+    document.addEventListener("touchcancel", () => reset());
+    document.addEventListener("contextmenu", e => { if(card) e.preventDefault(); });
+    document.addEventListener("click", e => { if(swallowClick){ e.preventDefault(); e.stopPropagation(); swallowClick = false; } }, true);
+  }
+  hubTouchDrag({ card:".td-kc", col:".td-kcol", board:".td-kboard", idOf:c => c.dataset.tc, onDrop:(id, k) => dropTodoOn(id, k) });
   const todoFading = new Set();
 
   /* ---------- actions ---------- */

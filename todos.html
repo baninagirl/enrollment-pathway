@@ -656,7 +656,17 @@
   .rk-date:hover{ background:var(--accent-soft); }
   .rk-date input{ position:absolute; inset:0; opacity:0; cursor:pointer; width:100%; }
   @media (max-width:980px){ .rk-board{ grid-template-columns:repeat(2, minmax(0,1fr)); } }
-  @media (max-width:560px){ .rk-board{ grid-template-columns:minmax(0,1fr); } .rm-main.rk-addcard{ padding:2px 14px; } }
+  /* Phones: the 4 columns sit side by side and swipe sideways, so the board is one row tall instead of four stacked lists. */
+  @media (max-width:560px){
+    .rk-board{ display:flex; gap:10px; overflow-x:auto; scroll-snap-type:x mandatory; overscroll-behavior-x:contain; margin:0 -14px; padding:0 14px 4px; scroll-padding:0 14px; scrollbar-width:none; }
+    .rk-board::-webkit-scrollbar{ display:none; }
+    .rk-col{ flex:0 0 80%; scroll-snap-align:start; min-height:140px; }
+    .rm-main.rk-addcard{ padding:2px 14px; }
+  }
+  .rk-board.tdrag-on{ scroll-snap-type:none; }
+  .rk-card[draggable=true]{ -webkit-touch-callout:none; -webkit-user-select:none; user-select:none; }
+  .rk-card.tdrag-ghost{ box-shadow:0 18px 40px rgba(20,22,30,.22), 0 2px 6px rgba(20,22,30,.12); transform:rotate(-2deg) scale(1.03); opacity:.97; }
+  html.tdrag-lock, html.tdrag-lock body{ overscroll-behavior:none; }
   @media (prefers-reduced-motion:reduce){ .rk-card, .rk-tick, .rk-tick svg{ animation:none !important; transition:none !important; } .rk-card.done .rk-tick svg{ stroke-dashoffset:0; } }
   .rm-side{ flex:0 0 300px; }
   .rm-tiles{ display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:10px; }
@@ -1217,12 +1227,98 @@ window.kumonPtcNav = function(client, role){
   document.addEventListener("dragover", e => { if(!rkDrag) return; const col = e.target.closest && e.target.closest(".rk-col"); if(!col || col.dataset.col === "overdue") return; e.preventDefault(); document.querySelectorAll(".rk-col.over").forEach(c => c !== col && c.classList.remove("over")); col.classList.add("over"); });
   document.addEventListener("drop", async e => {
     if(!rkDrag) return; const col = e.target.closest && e.target.closest(".rk-col"); if(!col || col.dataset.col === "overdue") return; e.preventDefault();
-    const id = rkDrag, t = todos.find(x => x.id === id); rkDrag = null; col.classList.remove("over"); if(!t) return;
-    const today = todayISO(), k = col.dataset.col;
+    const id = rkDrag; rkDrag = null; col.classList.remove("over");
+    await dropRkOn(id, col.dataset.col);
+  });
+  async function dropRkOn(id, k){
+    const t = todos.find(x => x.id === id); if(!t) return;
+    const today = todayISO();
     if(k === "done") await toggle(id);
     else if(k === "today") await moveTo(id, today);
     else if(k === "later" && !(t.due_date === null || t.due_date > today)) await moveTo(id, addDays(today, 1));
-  });
+  }
+  /* ---------- Touch drag for the to-do board (phones and tablets) ----------
+     Press and hold a card for a moment, then drag it to another column. A quick swipe still scrolls.
+     cfg: { card, col, board, idOf(card), onDrop(id, colKey) } */
+  function hubTouchDrag(cfg){
+    let timer = null, start = null, card = null, ghost = null, over = null, active = false, swallowClick = false, raf = 0, lastX = 0, lastY = 0;
+    const HOLD = 260, SLOP = 8;
+    const reset = () => {
+      clearTimeout(timer); timer = null; cancelAnimationFrame(raf); raf = 0;
+      if(ghost){ ghost.remove(); ghost = null; }
+      if(card) card.classList.remove("dragging");
+      if(over) over.classList.remove("over");
+      document.querySelectorAll(cfg.board).forEach(b => b.classList.remove("tdrag-on"));
+      document.documentElement.classList.remove("tdrag-lock");
+      card = null; over = null; active = false; start = null;
+    };
+    const colAt = (x, y) => {
+      const el = document.elementFromPoint(x, y);
+      const c = el && el.closest && el.closest(cfg.col);
+      return c && c.dataset.col !== "overdue" ? c : null;
+    };
+    const tick = () => {
+      // Near a screen edge while dragging: scroll the board sideways, or the page up and down.
+      const b = card && card.closest(cfg.board);
+      const w = window.innerWidth, h = window.innerHeight, edge = 44;
+      if(b){ if(lastX > w - edge) b.scrollLeft += 10; else if(lastX < edge) b.scrollLeft -= 10; }
+      if(lastY > h - edge - 70) window.scrollBy(0, 9); else if(lastY < edge + 20) window.scrollBy(0, -9);
+      const c = colAt(lastX, lastY);
+      if(c !== over){ if(over) over.classList.remove("over"); over = c; if(over) over.classList.add("over"); }
+      raf = requestAnimationFrame(tick);
+    };
+    const begin = () => {
+      active = true;
+      try{ navigator.vibrate && navigator.vibrate(12); }catch(_){}
+      const r = card.getBoundingClientRect();
+      ghost = card.cloneNode(true);
+      ghost.classList.add("tdrag-ghost"); ghost.removeAttribute("data-tc"); ghost.removeAttribute("data-rk");
+      Object.assign(ghost.style, { position:"fixed", left:r.left + "px", top:r.top + "px", width:r.width + "px", margin:"0", zIndex:"9999", pointerEvents:"none" });
+      ghost._dx = start.x - r.left; ghost._dy = start.y - r.top;
+      document.body.appendChild(ghost);
+      card.classList.add("dragging");
+      document.querySelectorAll(cfg.board).forEach(b => b.classList.add("tdrag-on"));
+      document.documentElement.classList.add("tdrag-lock");
+      lastX = start.x; lastY = start.y;
+      raf = requestAnimationFrame(tick);
+    };
+    document.addEventListener("touchstart", e => {
+      if(e.touches.length !== 1) return reset();
+      const t = e.target;
+      const c = t.closest && t.closest(cfg.card);
+      if(!c || c.getAttribute("draggable") !== "true") return;
+      if(t.closest("input, select, textarea, [contenteditable]")) return;   // a quick tap on a button still clicks it; only a long hold starts a drag
+      reset();
+      card = c; start = { x:e.touches[0].clientX, y:e.touches[0].clientY };
+      timer = setTimeout(begin, HOLD);
+    }, { passive:true });
+    document.addEventListener("touchmove", e => {
+      if(!card) return;
+      const p = e.touches[0];
+      if(!active){
+        if(Math.hypot(p.clientX - start.x, p.clientY - start.y) > SLOP) reset();   // it's a scroll, not a drag
+        return;
+      }
+      e.preventDefault();
+      lastX = p.clientX; lastY = p.clientY;
+      ghost.style.left = (p.clientX - ghost._dx) + "px";
+      ghost.style.top = (p.clientY - ghost._dy) + "px";
+    }, { passive:false });
+    const finish = e => {
+      if(!card) return;
+      if(!active){ reset(); return; }
+      if(e && e.cancelable) e.preventDefault();
+      const id = cfg.idOf(card), target = over ? over.dataset.col : null, from = card.closest(cfg.col);
+      swallowClick = true; setTimeout(() => { swallowClick = false; }, 400);
+      reset();
+      if(id && target && (!from || from.dataset.col !== target)) cfg.onDrop(id, target);
+    };
+    document.addEventListener("touchend", finish, { passive:false });
+    document.addEventListener("touchcancel", () => reset());
+    document.addEventListener("contextmenu", e => { if(card) e.preventDefault(); });
+    document.addEventListener("click", e => { if(swallowClick){ e.preventDefault(); e.stopPropagation(); swallowClick = false; } }, true);
+  }
+  hubTouchDrag({ card:".rk-card", col:".rk-col", board:".rk-board", idOf:c => c.dataset.rk, onDrop:(id, k) => dropRkOn(id, k) });
   function renderCalendar(){
     const [y, m] = ui.month.split("-").map(Number), first = ui.month + "-01";
     const startDow = new Date(T(first)).getUTCDay(), dim = new Date(Date.UTC(y, m, 0)).getUTCDate();
