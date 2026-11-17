@@ -1470,7 +1470,7 @@ window.kumonPtcNav = function(client, role){
       ${owesEarlier ? `<span class="bar-note warn">${owesEarlier} still owe${owesEarlier === 1 ? "s" : ""} an earlier month</span>` : ""}`;
   }
   // Bulk Mark unpaid: removes the "Marked paid (no receipt)" entries for the chosen month. Payments with a
-  // receipt / reference are never touched here (use the row's 🕘 history for those). Teachers can only remove
+  // receipt / reference are never touched here (open the row's payment history for those). Teachers can only remove
   // ones still waiting for review — same rule as the 🗑 button; a superadmin can remove verified ones too.
   function bulkUnpaidPlan(ym){
     const sel = soaSelected, monthDate = monthToDate(ym);
@@ -2445,7 +2445,7 @@ window.kumonPtcNav = function(client, role){
 
   function rowHtml(r){
     const s = r.student;
-    return `<tr>
+    return `<tr class="clickrow" data-action="open-payment-history" data-student="${esc(s.id)}" title="Click for payment history">
       <td class="sel-col"><input type="checkbox" data-action="soa-select" data-student="${esc(s.id)}" ${soaSelected.has(s.id) ? "checked" : ""}></td>
       <td>${esc(displayName(s))}${subjectBadgesFor(s.id)}<button class="iconbtn" data-action="download-tuition" data-student="${esc(s.id)}" title="Download tuition image">⬇</button></td>
       <td class="muted">${esc(s.age_grade || "—")}</td>
@@ -2455,7 +2455,7 @@ window.kumonPtcNav = function(client, role){
       <td class="money">${peso(r.balance)}</td>
       <td>${statusPill(r.status)}</td>
       ${[1,2,3,4].map(n => `<td class="soa-col"><input type="checkbox" data-action="soa-toggle" data-student="${esc(s.id)}" data-n="${n}" ${soaHas(s.id, n) ? "checked" : ""} ${soaReady() ? "" : "disabled"} title="SOA ${n} sent"></td>`).join("")}
-      <td><div class="row-actions"><button class="iconbtn" data-action="open-payment-history" data-student="${esc(s.id)}" title="Payment history — undo a payment">🕘</button><button class="btn sm" data-action="open-log-payment" data-student="${esc(s.id)}">Log payment</button>${markPaidLeft(s.id) > 0 ? `<button class="btn sm paid-btn" data-action="mark-paid" data-student="${esc(s.id)}" title="Record this month's remaining tuition as paid, no receipt needed">Mark paid</button>` : waitingChip(s.id)}${canMarkAbsent() ? `<button class="btn sm danger" data-action="mark-absent" data-student="${esc(s.id)}">Mark absent</button>` : ""}</div></td>
+      <td><div class="row-actions"><button class="btn sm" data-action="open-log-payment" data-student="${esc(s.id)}">Log payment</button>${markPaidLeft(s.id) > 0 ? `<button class="btn sm paid-btn" data-action="mark-paid" data-student="${esc(s.id)}" title="Record this month's remaining tuition as paid, no receipt needed">Mark paid</button>` : waitingChip(s.id)}${canMarkAbsent() ? `<button class="btn sm danger" data-action="mark-absent" data-student="${esc(s.id)}">Mark absent</button>` : ""}</div></td>
     </tr>`;
   }
 
@@ -2490,7 +2490,7 @@ window.kumonPtcNav = function(client, role){
         <td class="muted">${esc(x.dueSince)}</td>
         <td class="muted">${esc(fmtBillLabel(x.lastPaidMonth))}</td>
         <td class="money">${peso(x.due)}</td>
-        <td><div class="row-actions"><button class="iconbtn" data-action="open-payment-history" data-student="${esc(s.id)}" title="Payment history">🕘</button><button class="btn sm" data-action="open-log-payment" data-student="${esc(s.id)}">Log payment</button>${markPaidLeft(s.id) > 0 ? `<button class="btn sm paid-btn" data-action="mark-paid" data-student="${esc(s.id)}" title="Record this month's remaining tuition as paid, no receipt needed">Mark paid</button>` : waitingChip(s.id)}${canMarkAbsent() ? `<button class="btn sm danger" data-action="mark-absent" data-student="${esc(s.id)}">Mark absent</button>` : ""}</div></td>
+        <td><div class="row-actions"><button class="btn sm" data-action="open-log-payment" data-student="${esc(s.id)}">Log payment</button>${markPaidLeft(s.id) > 0 ? `<button class="btn sm paid-btn" data-action="mark-paid" data-student="${esc(s.id)}" title="Record this month's remaining tuition as paid, no receipt needed">Mark paid</button>` : waitingChip(s.id)}${canMarkAbsent() ? `<button class="btn sm danger" data-action="mark-absent" data-student="${esc(s.id)}">Mark absent</button>` : ""}</div></td>
       </tr>`;
     }).join("");
   }
@@ -2536,7 +2536,7 @@ window.kumonPtcNav = function(client, role){
         <td class="muted">${esc(fmtBillLabel(a.last_paid_month))}</td>
         <td class="muted">${new Date(a.marked_absent_at).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"})}</td>
         <td class="muted">${monthsGone == null ? "—" : `${monthsGone} month${monthsGone===1?"":"s"}`}</td>
-        <td><div class="row-actions"><button class="iconbtn" data-action="open-payment-history" data-student="${esc(a.student_id)}" title="Payment history">🕘</button><button class="btn sm" data-action="resume-absence" data-id="${esc(a.id)}">Resume</button></div></td>
+        <td><div class="row-actions"><button class="btn sm" data-action="resume-absence" data-id="${esc(a.id)}">Resume</button></div></td>
       </tr>`;
     }).join("");
   }
@@ -3236,6 +3236,8 @@ window.kumonPtcNav = function(client, role){
     const btn = e.target.closest("[data-action]");
     if(!btn) return;
     const action = btn.dataset.action;
+    // A whole row opens payment history, except taps on its checkbox cells (picking for SOA / ticking SOA sent).
+    if(btn.tagName === "TR" && e.target.closest(".sel-col, .soa-col, input, label, select")) return;
     if(action === "logout"){ await sbClient.auth.signOut(); }
     else if(action === "close-modal"){ closeModal(); }
     else if(action === "run-undo"){ runUndo(); }
