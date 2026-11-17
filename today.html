@@ -1552,6 +1552,24 @@ window.kumonPtcNav = function(client, role){
   }
 
   /* ---------- rendering ---------- */
+  // Today's trainings / DTs in scope: a teacher's own (as trainer / examiner); "Whole centre" sees all.
+  function bookingsInScope(){
+    const who = tdUi.who, all = who === "all";
+    return {
+      trn: (D.trn || []).filter(x => all || teacherInFilter(x.trainer, who)),
+      dts: (D.dts || []).filter(x => all || teacherInFilter(x.examiner, who))
+    };
+  }
+  // "You have 9 children, 1 student training and 1 DT today, 2 overdue PTCs, and …"
+  function ledeHtml(kids, over, long){
+    const bk = bookingsInScope(), nT = bk.trn.length, nD = bk.dts.length;
+    const today = [kids ? `<b>${plural(kids, "child", "children")}</b>` : "", nT ? `<b>${plural(nT, "student training")}</b>` : "", nD ? `<b>${plural(nD, "DT")}</b>` : ""].filter(Boolean);
+    const join = a => a.length < 2 ? a.join("") : a.slice(0, -1).join(", ") + " and " + a[a.length - 1];
+    let txt = today.length ? `You have ${join(today)} today` : "Nothing on your schedule today";
+    if(over) txt += `, <b>${plural(over, "overdue PTC", "overdue PTCs")}</b>`;
+    if(long) txt += `, and <b>${long}</b> ${long === 1 ? "subject has" : "subjects have"} been behind KIS for 6 months or more`;
+    return txt + ".";
+  }
   function renderHead(){
     const q = QUOTES[Number(todayISO().slice(8, 10)) % QUOTES.length];
     const nowD = manilaNow(), hour = nowD.getUTCHours();
@@ -1564,7 +1582,7 @@ window.kumonPtcNav = function(client, role){
     const long = behindKis().filter(o => o.k.months >= 6).length;
     $("#pageHead").innerHTML = `<div class="td-top"><span class="td-date">${esc(dateTxt)}</span>${picker}</div>
       <header class="td-mast"><div><h1 class="td-hello">${greet},${who ? ` <span>${esc(who)}.</span>` : ""}</h1>
-        <p class="td-lede">${today ? `You have <b>${plural(today, "child", "children")}</b> today` : "No center visits on your schedule today"}${over ? `, <b>${plural(over, "overdue PTC", "overdue PTCs")}</b>` : ""}${long ? `, and <b>${long}</b> ${long === 1 ? "subject has" : "subjects have"} been behind KIS for six months or more` : ""}.</p></div>
+        <p class="td-lede">${ledeHtml(today, over, long)}</p></div>
         <blockquote class="td-quote"><p>“${esc(q[0])}”</p><cite>— ${esc(q[1])}</cite></blockquote></header>`;
   }
   function renderDay(){
@@ -1579,7 +1597,7 @@ window.kumonPtcNav = function(client, role){
     const max = Math.max(1, ...slots.map(s => s.kids.length));
     const hours = []; for(let h = Math.ceil(A / 60); h <= Math.floor(B / 60); h++) hours.push(h);
     const sl = slots.find(s => s.m === tdUi.slot);
-    return `<section class="td-sec"><div class="td-kicker">Your day</div><h2 class="td-title">${esc(title)}</h2>
+    return `<section class="td-sec"><div class="td-kicker">Your day</div><h2 class="td-title">${esc(String(title).replace(/\.$/, ""))}</h2>
       <div class="card td-day"><div class="td-ring">${ring([[arr, "var(--good)"], [pick, "var(--warn)"], [uniq.length - arr - pick, "var(--accent)"]], uniq.length, `${arr}<tspan font-size="${180 * 0.11}" fill="var(--ink-faint)">/${uniq.length}</tspan>`, "arrived so far")}
         <div class="td-legend"><button type="button" data-ring="arrived"><i style="background:var(--good)"></i>Arrived <b>${arr}</b></button><button type="button" data-ring="picked"><i style="background:var(--warn)"></i>Picked up <b>${pick}</b></button><button type="button" data-ring="notyet"><i style="background:var(--accent)"></i>Not yet <b>${uniq.length - arr - pick}</b></button></div></div>
       <div style="min-width:0">${slots.length ? `<div class="td-tl"><div class="td-tl-track"></div>${slots.map((s, i) => `<button class="td-tl-block${now >= s.m + 60 ? " past" : ""}${s.m === tdUi.slot ? " on" : ""}" data-slot="${s.m}" style="left:${X(s.m)}%;width:calc(${Math.min(60, (slots[i + 1] ? slots[i + 1].m : s.m + 60) - s.m) / (B - A) * 100}% - 4px)" title="${fmtT(s.m)}: ${plural(s.kids.length, "child", "children")}">${s.kids.length}</button>`).join("")}
@@ -1592,8 +1610,8 @@ window.kumonPtcNav = function(client, role){
     const who = tdUi.who, all = who === "all";
     const tm = x => toMin(String(x.time || "").slice(0,5));
     const items = [].concat(
-      (D.trn || []).filter(x => all || teacherInFilter(x.trainer, who)).map(x => ({ k:"training", m:tm(x), name:x.student_name, by:x.trainer, what:"Student training" + (x.session_number ? " · Session " + x.session_number : ""), done:x.status === "completed" })),
-      (D.dts || []).filter(x => all || teacherInFilter(x.examiner, who)).map(x => ({ k:"dt", m:tm(x), name:x.student_name, by:x.examiner, what:"Diagnostic test" + (x.subject ? " · " + (x.subject === "Both" ? "Math + Reading" : x.subject) : ""), done:x.outcome && x.outcome !== "pending" }))
+      bookingsInScope().trn.map(x => ({ k:"training", m:tm(x), name:x.student_name, by:x.trainer, what:"Student training" + (x.session_number ? " · Session " + x.session_number : ""), done:x.status === "completed" })),
+      bookingsInScope().dts.map(x => ({ k:"dt", m:tm(x), name:x.student_name, by:x.examiner, what:"Diagnostic test" + (x.subject ? " · " + (x.subject === "Both" ? "Math + Reading" : x.subject) : ""), done:x.outcome && x.outcome !== "pending" }))
     ).sort((a, b) => a.m - b.m);
     const nT = items.filter(i => i.k === "training").length, nD = items.length - nT;
     if(!items.length && !all) return "";   // nothing assigned to this teacher today: no empty section
@@ -1605,7 +1623,7 @@ window.kumonPtcNav = function(client, role){
     const initial = n => String(n || "?").replace(/^(Miss|Sir|Ms\.?|Mr\.?|Teacher|Coach)\s+/i, "").trim().slice(0, 1).toUpperCase() || "?";
     const hue = n => { let h = 0; for(const c of String(n || "")) h = (h * 31 + c.charCodeAt(0)) % 360; return h; };
     const label = i => i.k === "training" ? i.what.replace(/^Student training/, "Training") : i.what.replace(/^Diagnostic test/, "DT");
-    return `<section class="td-sec"><div class="td-kicker">Trainings &amp; DTs</div><h2 class="td-title">${esc(title)}</h2>
+    return `<section class="td-sec"><div class="td-kicker">Trainings &amp; DTs</div><h2 class="td-title">${esc(String(title).replace(/\.$/, ""))}</h2>
       ${items.length ? `<div class="card td-ag">${items.map((i, n) => `<div class="td-ag-row ${i.k}${i.done || i.m + 60 <= now ? " past" : ""}${n === nextI ? " next" : ""}">
           <span class="td-ag-t">${fmtT(i.m)}${n === nextI ? `<small>Next</small>` : ""}</span><span class="td-ag-bar"></span>
           <span class="td-ag-m"><b>${esc(i.name || "")}</b><span>${esc(label(i))}</span></span>
@@ -1629,19 +1647,19 @@ window.kumonPtcNav = function(client, role){
     const noWs = withoutWorksheets(), worst = noWs[0];
     const maxD = Math.max(1, ...noWs.slice(0, 6).map(o => o.days));
     const wsViz = noWs.length ? `<div style="display:flex;flex-direction:column;gap:6px;width:100%">${noWs.slice(0, 5).map(o => `<div style="display:grid;grid-template-columns:minmax(0,90px) 1fr auto;gap:8px;align-items:center;font-size:12px"><span class="td-sub" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(firstName(o.sid))}</span><span style="height:8px;border-radius:99px;background:var(--surface-2);overflow:hidden"><i style="display:block;height:100%;width:${Math.max(6, o.days / maxD * 100)}%;background:${o.days >= 7 ? "var(--bad)" : "var(--warn)"};border-radius:99px"></i></span><b style="font-variant-numeric:tabular-nums">${o.days}d</b></div>`).join("")}</div>` : `<div class="td-empty">Everyone has worksheets at home.</div>`;
-    return `<section class="td-sec"><div class="td-kicker">Needs you this week</div><h2 class="td-title">4 things to look at</h2>
+    return (`<section class="td-sec"><div class="td-kicker">Needs you this week</div><h2 class="td-title">4 things to look at</h2>
       <div class="td-stories">
         <button class="card td-story" data-story="nows"><div class="td-lab"><span>Worksheets at home</span><span>${noWs.length ? plural(noWs.length, "child", "children") : "all set"}</span></div><h3>${noWs.length ? `You have ${plural(noWs.length, "student")} with no worksheets at home.` : "Every student has worksheets at home."}</h3><div class="td-viz">${wsViz}</div><span class="td-go">${noWs.length ? `See all ${noWs.length}` : "Open Calendar"}</span></button>
         <button class="card td-story" data-story="ptc"><div class="td-lab"><span>PTC</span><span>${plural(ptc.length, "this week", "this week")}</span></div><h3>${over.length ? `You have ${plural(over.length, "overdue PTC", "overdue PTCs")}.` : ptc.length ? `You have ${plural(ptc.length, "PTC", "PTCs")} due this week.` : "No PTC due this week."}</h3><div class="td-viz">${week}</div><span class="td-go">${ptc.length ? `See all ${ptc.length}` : "Open PTC"}</span></button>
         <button class="card td-story" data-story="proj"><div class="td-lab"><span>Projections</span><span>${set} of ${enrs.length} set</span></div><h3>${np.length ? `${plural(np.length, "subject still needs", "subjects still need")} a projection.` : "Every subject has a projection."}</h3>
           <div class="td-viz" style="gap:16px">${ring([[set, "var(--good)"]], enrs.length, enrs.length ? Math.round(set / enrs.length * 100) + "%" : "—", "set", 92)}<div class="td-sub" style="line-height:1.7">${np.slice(0, 3).map(o => `${esc(firstName(o.e.student_id))} · ${o.days != null ? plural(o.days, "day") + " in" : esc(o.e.subject)}`).join("<br>")}</div></div><span class="td-go">${np.length ? "Set them up" : "Open Projection"}</span></button>
         <button class="card td-story" data-story="kis"><div class="td-lab"><span>Behind KIS</span><span>${beh.length} of ${all.length}</span></div><h3>${long.length ? `${plural(long.length, "subject has", "subjects have")} been behind for six months or more.` : beh.length ? `${plural(beh.length, "subject is", "subjects are")} behind, all of them recently.` : "Everyone is at or past KIS."}</h3><div class="td-viz">${strip}</div><span class="td-go">Go deeper</span></button>
-      </div></section>`;
+      </div></section>`).replace(/\.<\/h3>/g, "</h3>");
   }
   function renderScore(){
     const ms = scorecard(), met = ms.filter(m => metricState(m).met).length;
     const monthName = new Date(T(todayISO())).toLocaleDateString("en-US", { timeZone: "UTC", month: "long" });
-    return `<section class="td-sec"><div class="td-sec-head"><div><div class="td-kicker">Scorecard · ${esc(monthName)}</div><h2 class="td-title">${met} of ${ms.length} goals met so far this month.</h2></div><span class="td-sub">Same goals as the monthly scorecard</span></div>
+    return `<section class="td-sec"><div class="td-sec-head"><div><div class="td-kicker">Scorecard · ${esc(monthName)}</div><h2 class="td-title">${met} of ${ms.length} goals met so far this month</h2></div><span class="td-sub">Same goals as the monthly scorecard</span></div>
       <div class="td-metrics">${ms.map(m => { const st = metricState(m);
         return `<button class="card td-metric" data-metric="${m.k}"><div class="r1">${metricRing(m, st)}<div><div class="td-big">${st.pct == null ? "—" : st.pct + "%"}</div><div class="td-goal">goal ${m.lower ? "under " : ""}${m.goal}%</div></div></div>
           <div><div class="td-mname">${esc(m.name)}</div><div class="td-sub">${m.n} of ${m.of} · <span style="color:${st.col};font-weight:600">${esc(st.text)}</span></div></div></button>`; }).join("")}</div>
@@ -2061,7 +2079,7 @@ window.kumonPtcNav = function(client, role){
       </form>`;
     const total = left + doneToday;
     const ring = total ? `<span class="td-tc-ring" title="${doneToday} done today"><svg viewBox="0 0 36 36" width="36" height="36" aria-hidden="true"><circle cx="18" cy="18" r="15" fill="none" stroke="var(--border)" stroke-width="3.5"/>${doneToday ? `<circle cx="18" cy="18" r="15" fill="none" stroke="var(--good)" stroke-width="3.5" stroke-linecap="round" stroke-dasharray="${(doneToday / total * 94.25).toFixed(1)} 94.25" transform="rotate(-90 18 18)" style="transition:stroke-dasharray .6s cubic-bezier(.2,.8,.2,1)"/>` : ""}</svg><b>${doneToday}/${total}</b></span>` : "";
-    const title = left ? `${left} ${left === 1 ? "to-do" : "to-dos"} left for today${forWho}` : doneToday ? `All done for today${forWho}.` : `Nothing due today${forWho}.`;
+    const title = left ? `${left} ${left === 1 ? "to-do" : "to-dos"} left for today` : doneToday ? "All done for today" : "Nothing due today";
     const openBtn = `<a class="td-todo-open" href="todos.html">Open To-dos<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></a>`;
     return `<section class="td-sec"><div class="td-sec-head"><div><div class="td-kicker">To-dos</div><h2 class="td-title td-tc-title">${ring}<span>${title}</span></h2></div>${openBtn}</div>
       ${addBar}<div class="td-kboard">${cols.map(colHtml).join("")}</div></section>`;
