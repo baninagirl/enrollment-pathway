@@ -3568,7 +3568,9 @@ window.kumonPtcNav = function(client, role){
     return STATE.students.filter(s => eoSubjectsTaken(s).size < 2)
       .sort((a,b)=> displayName(a).localeCompare(displayName(b)));
   }
-  function openNewEoModal(){
+  // prefill (optional): { studentId, subject, diagId, date, examiner, res } — used when a roster-only child is
+  // marked Enrolled off a DT, so the EO is one click instead of a step people forget.
+  function openNewEoModal(prefill){
     const cands = eoCandidates();
     const labelOf = new Map(); const seen = {};
     cands.forEach(s => {
@@ -3581,7 +3583,7 @@ window.kumonPtcNav = function(client, role){
     window.__eoLabels = labelOf; // read by the form handlers below
     openModal(`
       <div class="modal-head"><h3>Add EO</h3><button class="iconbtn" data-action="close-modal">✕</button></div>
-      <form data-form="new-eo">
+      <form data-form="new-eo"${prefill && prefill.diagId ? ` data-from-diag="${esc(prefill.diagId)}"` : ""}>
         <div class="modal-body">
           <p class="hint" style="margin:0 0 4px;">An existing student enrolling for a new subject. They're tagged <b>EO</b>, marked <b>NEW</b> on the teacher's roster for this month, and show up in this month's New students.</p>
           <label class="field">Student
@@ -3685,6 +3687,21 @@ window.kumonPtcNav = function(client, role){
     });
     box.addEventListener("mousedown", (ev) => { const b = ev.target.closest(".eo-opt"); if(b){ ev.preventDefault(); choose(Number(b.dataset.i)); } });
     input.addEventListener("blur", () => setTimeout(() => { box.hidden = true; input.setAttribute("aria-expanded","false"); }, 120));
+    if(prefill && prefill.studentId){
+      const label = [...labelOf.entries()].find(([, id]) => id === prefill.studentId);
+      if(label){
+        input.value = label[0]; refresh();
+        if(prefill.subject && [...sel.options].some(o => o.value === prefill.subject)) sel.value = prefill.subject;
+        noteFor();
+        const set = (n, v) => { const el = f.querySelector(`[name="${n}"]`); if(el && v) el.value = v; };
+        set("dxDate", prefill.date); set("examiner", prefill.examiner);
+        const r = prefill.res || {};
+        set("dtTest", r.dtTest); set("score", r.score); set("dtTime", r.dtTime); set("startPoint", r.startPoint);
+        f.querySelector(".modal-body").insertAdjacentHTML("afterbegin",
+          `<div class="hint" style="margin:0 0 8px; padding:8px 10px; border-radius:10px; background:var(--accent-soft, #E9EDFB); color:var(--ink); font-weight:600;">${esc(displayName(studentById(prefill.studentId)))} is already on Student Roster, so their new subject is added here as EO. Pick the teacher and press Add EO.</div>`);
+        const t = f.querySelector('select[name="teacher"]'); if(t) setTimeout(() => t.focus(), 50);
+      }
+    }
   }
 
   async function submitNewEo(form){
@@ -3731,7 +3748,8 @@ window.kumonPtcNav = function(client, role){
       const patch = { subject: resultSubject };
       // A student who was added from the roster page is hidden from Pipeline; an EO belongs in this
       // month's New students, so bring them in.
-      if(stu.origin === "roster") patch.origin = null;
+      // A roster-only child stays roster-only: the new subject reaches New students through its added month, and
+      // their older subject stays out (taking them out of roster-only made the old subject show as new too).
       if(stu.status === "not_enrolled" || stu.status === "diagnostic_scheduled") patch.status = "active";
       // The subject is already saved at this point (and shows on New students from its added month), so a
       // failure here must not look like the whole EO failed — that's what made people retry / give up.
@@ -3740,7 +3758,7 @@ window.kumonPtcNav = function(client, role){
       catch(e){ cardOk = false; console.warn("EO student update failed", e); toast(`${subject} was added, but the student card didn't update: ${String((e && (e.message || e.details)) || "").slice(0,100)}`); }
       // Always recorded (even with no results typed): its date is what files the student under this
       // month in New students.
-      await createRecordedDiagnostic(stu.id, {
+      if(!form.dataset.fromDiag) await createRecordedDiagnostic(stu.id, {
         name, parentName: stu.parentName || "", contact: stu.parentPhone || "", ageGrade: stu.ageGrade || "", subject: resultSubject
       }, { date: g("dxDate"), examiner: g("examiner"), fields });
       logHistory("add_eo", `Added ${name} as EO — ${subject}${teacher ? " with " + teacher : ""}`, "student", stu.id);
@@ -4712,6 +4730,26 @@ window.kumonPtcNav = function(client, role){
   async function markOutcome(id, outcome, subject){
     const d = STATE.diagnostics.find(x=>x.id===id);
     if(!d) return;
+    // A child already on Student Roster (roster-only) doesn't go through Pipeline's training funnel: record the
+    // outcome on the DT, leave their card alone, and open Add EO filled in so the new subject is actually created.
+    const rs = studentById(d.studentId);
+    if(rs && rs.origin === "roster"){
+      if(outcome === "enrolled" && !pipelineDataReady()){ notReadyToast(); return; }
+      let ok = false;
+      await guardWrite(async ()=>{
+        await db.collection("diagnostics").doc(id).update({ outcome });
+        logHistory("mark_outcome", `Marked ${d.studentName || "a student"}'s diagnostic outcome: ${outcome}${subject ? " — " + subject : ""}`, "diagnostic", id);
+        ok = true;
+      });
+      if(!ok) return;
+      if(outcome !== "enrolled"){ toast("Marked not enrolled."); return; }
+      const missing = ["Math","Reading"].filter(x => !eoSubjectsTaken(rs).has(x));
+      if(!missing.length){ toast(`${displayName(rs)} already has both subjects on the roster.`); return; }
+      const subj = missing.includes(subject) ? subject : missing[0];
+      openNewEoModal({ studentId: rs.id, subject: subj, diagId: id, date: d.date || "", examiner: d.examiner || "",
+        res: diagResultFor(d, subj, (d.subject || "") === "Both") });
+      return;
+    }
     if(outcome === "enrolled" && !pipelineDataReady()){ notReadyToast(); return; }   // NEW vs EO needs the subject list
     await guardWrite(async ()=>{
       await db.collection("diagnostics").doc(id).update({ outcome });
