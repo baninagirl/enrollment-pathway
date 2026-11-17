@@ -2334,9 +2334,30 @@ window.kumonPtcNav = function(client, role){
     const s = studentById(studentId);
     return s ? (s.enrollmentType || null) : null;
   }
+  // Both subjects tagged NEW (they started together), or a NEW child marked Enrolled for Both before their
+  // subject rows exist.
+  // Also a NEW subject + an EO subject added the same month (a new child entered one subject at a time).
+  function isNewInBoth(studentId, subject, tag){
+    const other = subject === "Math" ? "Reading" : subject === "Reading" ? "Math" : "";
+    const startOf = e => e ? (enrolledOnMonthKey(e) || e.addedMonth || null) : null;
+    if(other){
+      const me = STATE.enrollments.find(e => e.studentId === studentId && e.subject === subject && !e.archived);
+      const o = STATE.enrollments.find(e => e.studentId === studentId && e.subject === other && !e.archived);
+      if(o){
+        if(tag === "new" && o.enrollmentType === "new") return true;
+        const pair = [tag, o.enrollmentType].sort().join("+");
+        return pair === "eo+new" && !!startOf(me) && startOf(me) === startOf(o);
+      }
+    }
+    if(tag !== "new") return false;
+    const s = studentById(studentId);
+    return !!s && studentSubject(s) === "Both";
+  }
   function fmtEnrollmentTagPill(studentId, subject){
     // No subject yet (e.g. a RESUME student added without one): show the tag saved on the student.
     const tag = subject ? enrollmentTagFor(studentId, subject) : ((studentById(studentId) || {}).enrollmentType || null);
+    // A brand-new child who starts Math and Reading together counts as NEW and EO on both subjects.
+    if((tag === "new" || tag === "eo") && isNewInBoth(studentId, subject, tag)) return `<span class="pill good">NEW</span> <span class="pill subj">EO</span>`;
     if(tag === "new") return `<span class="pill good">NEW</span>`;
     if(tag === "eo") return `<span class="pill subj">EO</span>`;
     if(tag === "resume") return `<span class="pill warn">RESUME</span>`;
@@ -2383,6 +2404,13 @@ window.kumonPtcNav = function(client, role){
   // Which month's New Students list a student belongs to: their First day (first training, or the
   // date an admin set), else their DT date, else when they were added. 21st–20th months, so a
   // First day of Sep 23 counts as October.
+  // Report month (21st–20th) of a subject's Date enrolled, when one has been set on Student Roster.
+  function enrolledOnMonthKey(enr){
+    const iso = enr && enr.enrolledOn ? String(enr.enrolledOn).slice(0,10) : "";
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(iso)) return null;
+    const [y,m,d] = iso.split("-").map(Number);
+    return monthKeyOf(cycleMonthFor(new Date(y, m-1, d)));
+  }
   function studentCohortMonthKey(s){
     const d = activeDiagnosticFor(s.id);
     const iso = firstDayFor(s) || (d && d.date) || (s.createdAt ? s.createdAt.slice(0,10) : null);
@@ -2440,7 +2468,8 @@ window.kumonPtcNav = function(client, role){
         // A subject added later with "Add subject" (phase50) shows in the month it was added;
         // everything else follows the student's own month (First day, else DT date, else added).
         const enr = STATE.enrollments.find(e => e.studentId === s.id && e.subject === sub && !e.archived);
-        const rowMonth = (enr && enr.addedMonth) || studentCohortMonthKey(s);
+        // Date enrolled (set on Student Roster) wins; then the month a subject was added; then the child's own month.
+        const rowMonth = enrolledOnMonthKey(enr) || (enr && enr.addedMonth) || studentCohortMonthKey(s);
         // A child who came back from Retention also shows in the month they resumed (tagged RESUME / RETURNEE).
         const resumedHere = enr && enr.resumedMonth === monthKey;
         if(STATE.studentMonthMode === "all" || rowMonth === monthKey || resumedHere) rows.push({ s, subj: sub, isBoth });
@@ -2449,9 +2478,14 @@ window.kumonPtcNav = function(client, role){
 
     // Children who came back from Retention (resumed_month) show in the month they came back — also the ones
     // who were imported from the old roster and so aren't otherwise on this list.
+    // Same for a subject added as EO / Add subject (added_month): it shows in the month it was added even when
+    // the child is a roster-only student (origin 'roster') that the loop above skips.
+    // Roster-only children (origin 'roster') go by the subject's Date enrolled from Student Roster — only when
+    // someone has actually set it, so the old-sheet imports (no date set) don't all land in October.
     STATE.enrollments.forEach(enr => {
-      if(!enr.resumedMonth || enr.archived) return;
-      if(STATE.studentMonthMode !== "all" && enr.resumedMonth !== monthKey) return;
+      const startM = enrolledOnMonthKey(enr) || enr.addedMonth;
+      if((!enr.resumedMonth && !startM) || enr.archived) return;
+      if(STATE.studentMonthMode !== "all" && enr.resumedMonth !== monthKey && startM !== monthKey) return;
       if(rows.some(r => r.s.id === enr.studentId && r.subj === enr.subject)) return;
       const st = studentById(enr.studentId); if(!st) return;
       if(qTokens.length){ const hay = normSearch(st.name + " " + (st.firstName||"") + " " + (st.lastName||"") + " " + (st.parentName||"")); if(!qTokens.every(t => hay.includes(t))) return; }
@@ -3699,14 +3733,18 @@ window.kumonPtcNav = function(client, role){
       // month's New students, so bring them in.
       if(stu.origin === "roster") patch.origin = null;
       if(stu.status === "not_enrolled" || stu.status === "diagnostic_scheduled") patch.status = "active";
-      await db.collection("students").doc(stu.id).update(patch);
+      // The subject is already saved at this point (and shows on New students from its added month), so a
+      // failure here must not look like the whole EO failed — that's what made people retry / give up.
+      let cardOk = true;
+      try{ await db.collection("students").doc(stu.id).update(patch); }
+      catch(e){ cardOk = false; console.warn("EO student update failed", e); toast(`${subject} was added, but the student card didn't update: ${String((e && (e.message || e.details)) || "").slice(0,100)}`); }
       // Always recorded (even with no results typed): its date is what files the student under this
       // month in New students.
       await createRecordedDiagnostic(stu.id, {
         name, parentName: stu.parentName || "", contact: stu.parentPhone || "", ageGrade: stu.ageGrade || "", subject: resultSubject
       }, { date: g("dxDate"), examiner: g("examiner"), fields });
       logHistory("add_eo", `Added ${name} as EO — ${subject}${teacher ? " with " + teacher : ""}`, "student", stu.id);
-      toast(`${displayName(stu)} added as EO — ${subject}.`);
+      if(cardOk) toast(`${displayName(stu)} added as EO — ${subject}.`);
     });
   }
 
@@ -4645,6 +4683,32 @@ window.kumonPtcNav = function(client, role){
     });
   }
 
+  // NEW / EO / RESUME / RETURNEE for a child just marked Enrolled off a DT.
+  //  - still taking a subject now → EO (adding their other subject)
+  //  - only old, stopped subjects on file → came back: same 4-month rule as the Resume button
+  //    (months since their last paid month; > 4 = RETURNEE, else RESUME)
+  //  - nothing on file → NEW
+  async function outcomeTagFor(studentId){
+    const all = STATE.enrollments.filter(e => e.studentId === studentId && !e.archived);
+    if(!all.length) return "new";
+    if(all.some(e => (e.status || "active") === "active")) return "eo";
+    const ymOf = d => d.getFullYear() + "-" + String(d.getMonth()+1).padStart(2,"0");
+    const diff = (a, b) => { const [ay,am] = a.split("-").map(Number), [by,bm] = b.split("-").map(Number); return (by-ay)*12 + (bm-am); };
+    let lastPaid = null;
+    try{
+      const { data } = await sbClient.from("absence_records").select("last_paid_month,created_at")
+        .eq("student_id", studentId).order("created_at", { ascending:false }).limit(1);
+      if(data && data[0] && /^\d{4}-\d{2}$/.test(data[0].last_paid_month || "")) lastPaid = data[0].last_paid_month;
+    }catch(e){ console.warn("returnee check", e); }
+    // No Retention record: use when their last subject was last changed as the month they stopped.
+    if(!lastPaid){
+      const last = all.map(e => e.updatedAt || e.createdAt || "").sort().pop();
+      if(last) lastPaid = last.slice(0,7);
+    }
+    if(!lastPaid) return "eo";
+    return diff(lastPaid, ymOf(new Date())) > 4 ? "new_returnee" : "resume";
+  }
+
   async function markOutcome(id, outcome, subject){
     const d = STATE.diagnostics.find(x=>x.id===id);
     if(!d) return;
@@ -4655,13 +4719,18 @@ window.kumonPtcNav = function(client, role){
         status: outcome === "enrolled" ? "enrolled_pending_training" : "not_enrolled",
         followUpStatus: outcome === "not_enrolled" ? "needs_follow_up" : ""
       };
-      if(outcome === "enrolled" && subject) patch.subject = subject;
+      // A child who already has the other subject on file is now in Both — don't overwrite it with just the new one.
+      if(outcome === "enrolled" && subject){
+        const other = subject === "Math" ? "Reading" : subject === "Reading" ? "Math" : "";
+        const hasOther = other && STATE.enrollments.some(e => e.studentId === d.studentId && e.subject === other && !e.archived);
+        patch.subject = hasOther ? "Both" : subject;
+      }
       // NEW vs EO decided right here, the moment enrollment actually happens — not whether
       // the student record already existed, but whether they already have any subject
       // enrollment on file (an existing Pipeline lead getting their first-ever subject still
       // counts as NEW; someone coming back for a second subject counts as EO).
       if(outcome === "enrolled"){
-        patch.enrollmentType = STATE.enrollments.some(e => e.studentId === d.studentId) ? "eo" : "new";
+        patch.enrollmentType = await outcomeTagFor(d.studentId);
         patch.enrollmentTypeSetAt = new Date().toISOString();
       }
       await db.collection("students").doc(d.studentId).update(patch);

@@ -1540,7 +1540,7 @@ window.kumonPtcNav = function(client, role){
     const rows = [];
     for(let i = 0; i < ids.length; i += 100){
       const { data, error } = await sbClient.from("ptc_milestones").select("id,ptc_session_id,done_on")
-        .in("ptc_session_id", ids.slice(i, i + 100)).eq("status", "done").select("id");
+        .in("ptc_session_id", ids.slice(i, i + 100)).eq("status", "done");   // (a 2nd .select() here used to drop done_on / ptc_session_id)
       if(error) return { ok:false, message: error.message };
       rows.push(...(data || []).map(x => ({ id: x.id, ptc_session_id: x.ptc_session_id, done_on: x.done_on })));   // a copy, not the live row
     }

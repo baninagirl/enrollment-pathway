@@ -1735,7 +1735,18 @@ window.kumonPtcNav = function(client, role){
     { value:"new", label:"NEW" }, { value:"eo", label:"EO" }, { value:"resume", label:"RESUME" },
     { value:"new_returnee", label:"RETURNEE" }, { value:"resume_transfer_in", label:"RESUME TRANSFER-IN" }
   ];
-  function reportTagPill(v){
+  function reportTagPill(v, row){
+    // A brand-new child who starts Math and Reading together counts as NEW and EO on both subjects.
+    // Also a NEW subject + an EO subject that started the same month (a new child entered one subject at a time).
+    if((v === "new" || v === "eo") && row && row.student_id){
+      const other = row.subject === "Math" ? "Reading" : "Math";
+      const me = enrollments.find(e => e.student_id === row.student_id && e.subject === row.subject);
+      const o = enrollments.find(e => e.student_id === row.student_id && e.subject === other);
+      const startOf = e => e ? (e.enrolled_on ? cycleKeyOf(new Date(String(e.enrolled_on).slice(0,10) + "T00:00:00")) : (e.added_month || null)) : null;
+      const both = o && ((v === "new" && o.enrollment_type === "new")
+        || ([v, o.enrollment_type].sort().join("+") === "eo+new" && startOf(me) && startOf(me) === startOf(o)));
+      if(both) return `<span class="pill tag-new">NEW</span> <span class="pill tag-eo">EO</span>`;
+    }
     const t = REPORT_TAGS.find(x => x.value === v);
     return t ? `<span class="pill tag-${t.value}">${esc(t.label)}</span>` : `<span class="lvl empty-lvl">—</span>`;
   }
@@ -2073,7 +2084,7 @@ window.kumonPtcNav = function(client, role){
         <td class="rownum">${idx+1}</td>
         <td class="namecol"><a class="name-link" href="student.html#s=${esc(r.student_id)}" data-action="open-profile" title="Open ${esc(displayName(r.student_id, r.student_name))}'s profile">${esc(displayName(r.student_id, r.student_name))}</a>${r.is_monitor ? monitorTagHtml(r) : ""}${newTagHtml(r)}</td>
         <td><span class="pill ${r.subject==='Math'?'subj-math':'subj-reading'}">${esc(r.subject||"")}</span></td>
-        <td>${r.archived ? `<span class="lvl empty-lvl" title="Archived snapshots don't keep the reporting tag.">—</span>` : reportTagPill(r.enrollment_type)}</td>
+        <td>${r.archived ? `<span class="lvl empty-lvl" title="Archived snapshots don't keep the reporting tag.">—</span>` : reportTagPill(r.enrollment_type, r)}</td>
         <td>${fmtPlain(r.lwc)}</td>
         <td>${fmtPlain(r.nwu)}</td>
         <td>${fmtPlain(r.no_of_days)}</td>
@@ -2441,7 +2452,8 @@ window.kumonPtcNav = function(client, role){
             <label class="field">LWC page<input type="text" name="current_page" placeholder="e.g. 130"></label>
           </div>
           <label class="field" style="flex-direction:row; align-items:center; gap:8px;"><input type="checkbox" name="is_monitor" value="1" ${currentRole === "teacher" ? "" : "checked"} style="width:auto;"> Monitor student (starts ${esc(monitorCycleLabel(cycleKeyOf(new Date())))})</label>
-          <label class="field" style="flex-direction:row; align-items:center; gap:8px;"><input type="checkbox" name="mark_new" value="1" checked style="width:auto;"> Mark as NEW for ${esc(monitorCycleLabel(cycleKeyOf(new Date())))}</label>
+          <label class="field" style="flex-direction:row; align-items:center; gap:8px;"><input type="checkbox" name="mark_new" value="1" checked style="width:auto;"> New to roster <span class="hint" style="font-size:12px;">— new on this teacher's list for ${esc(monitorCycleLabel(cycleKeyOf(new Date())))}</span></label>
+          <label class="field" style="flex-direction:row; align-items:center; gap:8px;"><input type="checkbox" name="count_enrollment" value="1" checked style="width:auto;"> New enrollment <span class="hint" style="font-size:12px;">— lists on New Students for ${esc(monitorCycleLabel(cycleKeyOf(new Date())))} as NEW, or EO if they have the other subject</span></label>
           ${scheduleSectionHtml(null, null)}
           <p class="hint" style="font-size:12px; color:var(--ink-muted); margin:8px 0 0;">For a student who still needs a diagnostic test, add them from Pipeline instead — this is for a student already enrolled and taking classes.</p>
         </div>
@@ -2704,7 +2716,14 @@ window.kumonPtcNav = function(client, role){
       // not whether their student record already existed — a student can already be in the
       // students table (came through Pipeline) but still be getting their first-ever subject
       // enrollment right now, which should count as NEW, not EO.
-      const isNewStudent = !enrollments.some(en => en.student_id === studentId);
+      let isNewStudent = !enrollments.some(en => en.student_id === studentId);
+      // A teacher only loads her own rows, so a child whose other subject is with another teacher would look
+      // brand-new here. Ask the database (phase66 subject_taken_by) whether the other subject exists anywhere.
+      if(isNewStudent && !createdStudentNow){
+        const other = subject === "Math" ? "Reading" : "Math";
+        const { data: otherBy, error: oErr } = await sbClient.rpc("subject_taken_by", { p_student_id: studentId, p_subject: other });
+        if(!oErr && otherBy) isNewStudent = false;
+      }
 
       const enrollPayload = {
         student_id: studentId,
@@ -2724,6 +2743,9 @@ window.kumonPtcNav = function(client, role){
         enrollment_type_set_at: new Date().toISOString(),
         // The visible NEW label for this month (separate from the reporting tag above).
         monitor_cycle: fd.get("mark_new") ? cycleKeyOf(new Date()) : null,
+        // Files this subject on Pipeline's New Students for this month, with its NEW / EO tag (same as Add EO).
+        // Separate from "Mark as NEW" above, which only means new on this teacher's list.
+        ...(fd.get("count_enrollment") ? { added_month: cycleKeyOf(new Date()) } : {}),
         // Monitor list (phase33) — stays on until someone moves them off.
         is_monitor: !!fd.get("is_monitor"),
         monitor_since: fd.get("is_monitor") ? cycleKeyOf(new Date()) : null

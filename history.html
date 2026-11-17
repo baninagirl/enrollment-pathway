@@ -550,9 +550,11 @@ window.kumonPtcNav = function(client, role){
     }
     return { data: out, error: null };
   }
+  let historyLoadFailed = false;
   async function loadHistory(){
     const { data, error } = await fetchAll("enrollment_monthly_history", "*", q => q.order("cycle_key", { ascending:false }).order("id"));
-    if(error){ console.warn(error); return; }   // keep what's on screen
+    if(error){ console.warn(error); historyLoadFailed = true; return; }   // keep what's on screen, and say it couldn't load
+    historyLoadFailed = false;
     history = data || [];
   }
   function gradeFor(studentId){
@@ -656,6 +658,10 @@ window.kumonPtcNav = function(client, role){
     $("#histCount").textContent = rows.length + (rows.length===1 ? " record" : " records");
 
     const body = $("#histBody");
+    if(!rows.length && historyLoadFailed){
+      body.innerHTML = `<tr><td colspan="18"><div class="empty"><b>Couldn't load the closed months.</b> This doesn't mean nothing was closed out — check the connection and <a href="" onclick="location.reload();return false;">reload the page</a> before closing anything out again.</div></td></tr>`;
+      return;
+    }
     if(!rows.length){
       body.innerHTML = `<tr><td colspan="18"><div class="empty">Nothing closed out for ${esc(monthLabel(viewMonth))} yet. Close a month out from Student Roster once its numbers are final.</div></td></tr>`;
       return;

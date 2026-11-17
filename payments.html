@@ -2384,7 +2384,9 @@ window.kumonPtcNav = function(client, role){
     const s = students.find(x => x.id === a.student_id);
     const monthsGone = monthDiff(a.last_paid_month, monthKeyOfToday());
     const withinPolicy = monthsGone !== null && monthsGone <= 4;
-    const picked = (receipts.filter(x => x.student_id === a.student_id && x.return_teachers && (x.status === "pending" || x.status === "verified"))
+    const since = String(a.marked_absent_at || a.created_at || "");
+    const picked = (receipts.filter(x => x.student_id === a.student_id && x.return_teachers && (x.status === "pending" || x.status === "verified")
+        && (!since || String(x.created_at || "") >= since))   // a pick from an EARLIER absence doesn't count
       .sort((x, y) => String(y.created_at || "").localeCompare(String(x.created_at || "")))[0] || {}).return_teachers || {};
     const fields = (a.subject_enrollment_ids || []).map(id => {
       const e = enrollments.find(x => x.id === id) || {};
