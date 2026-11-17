@@ -2843,7 +2843,13 @@ window.kumonPtcNav = function(client, role){
         // Grade (Nov 16) — the student's own record, so it changes for both subjects, Payments' rate and Projection.
         { const g = (fd.get("editGrade") ?? "").toString().trim();
           if(fd.get("editGrade") !== null && g !== (gradeFor(editingEnrollment.student_id) || "")){
-            const { error: gErr } = await sbClient.from("students").update({ age_grade: g || null }).eq("id", editingEnrollment.student_id);
+            // phase146 set_student_grade lets teachers change it too (students is admin-only otherwise); falls back to a
+            // direct update before that SQL is run. Either way a change that didn't land is reported, not shown as saved.
+            let { data: gOk, error: gErr } = await sbClient.rpc("set_student_grade", { p_student_id: editingEnrollment.student_id, p_grade: g || null });
+            if(gErr && /set_student_grade|function/i.test(gErr.message || "")){
+              const r = await sbClient.from("students").update({ age_grade: g || null }).eq("id", editingEnrollment.student_id).select("id");
+              gErr = r.error || ((!r.data || !r.data.length) ? { message: "you don't have permission to change grades yet — ask an admin to run phase146" } : null);
+            } else if(!gErr && gOk === false){ gErr = { message: "you don't have permission to change grades" }; }
             if(gErr){ alert("Couldn't change the grade (" + gErr.message + "). Nothing else was changed — press Save again."); return; }
             const st = students.find(x => x.id === editingEnrollment.student_id); if(st) st.age_grade = g || null;
             logHistory("edit_grade", `Changed ${editingEnrollment.student_name || "a student"}'s grade to ${g || "—"}`, "student", editingEnrollment.student_id);

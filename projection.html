@@ -1239,6 +1239,8 @@ window.kumonPtcNav = function(client, role){
 
     sbClient.channel("realtime:projection-page")
       .on("postgres_changes", { event:"*", schema:"public", table:"study_projections" }, __rtLater("study_projections", async () => { await loadProjections(); if(!currentEnrollmentId()) renderList(); }))
+      // A grade changed on Student Roster shows here right away (grade lives on the student record).
+      .on("postgres_changes", { event:"*", schema:"public", table:"students" }, __rtLater("students", async () => { try{ students = await selectAll("students", "id,name,first_name,last_name,age_grade,first_day,status", q => q.order("id")); studentById = new Map(students.map(s => [s.id, s])); }catch(e){ return; } if(!currentEnrollmentId()) renderList(); }))
       .on("postgres_changes", { event:"*", schema:"public", table:"subject_enrollments" }, __rtLater("subject_enrollments", async () => { try{ enrollments = await loadEnrollmentRows(); }catch(e){ return; } if(!currentEnrollmentId()) renderList(); else if(!draftDirty) renderDetail(); }))
       .subscribe();
   }
