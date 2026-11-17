@@ -1491,7 +1491,8 @@ window.kumonPtcNav = function(client, role){
     // status/monthly_tuition/billing_group_id are for the Payment tag (paymentStatusFor,
     // below) — Roster otherwise never touched billing fields before.
     const mine = nextLoad("students");
-    const { data, error } = await fetchAll("students", "id,name,age_grade,first_name,last_name,status,monthly_tuition,tuition_custom,billing_group_id,origin,created_at", q => q.order("name").order("id"));
+    let { data, error } = await fetchAll("students", "id,name,age_grade,first_name,last_name,status,monthly_tuition,tuition_custom,billing_group_id,origin,created_at", q => q.order("name").order("id"));
+    if(error && /tuition_custom/.test(error.message || "")) ({ data, error } = await fetchAll("students", "id,name,age_grade,first_name,last_name,status,monthly_tuition,billing_group_id,origin,created_at", q => q.order("name").order("id")));   // phase148 not run yet: load without it
     if(!isLatestLoad("students", mine)) return;   // a newer reload started meanwhile — its result wins
     if(error){ console.warn(error); return; }   // keep what's on screen
     students = data || [];
@@ -2423,8 +2424,8 @@ window.kumonPtcNav = function(client, role){
           </div>
           ${zunzunHtml(e)}
           <div class="field-row">
-            <label class="field">No. of days<input type="text" name="no_of_days" value="${v("no_of_days")}"></label>
-            <label class="field">No. of months (current level)<input type="text" name="no_of_months_current_level" value="${v("no_of_months_current_level")}"></label>
+            <label class="field">No. of days${numberInput("no_of_days", e.no_of_days)}</label>
+            <label class="field">No. of months (current level)${numberInput("no_of_months_current_level", e.no_of_months_current_level)}</label>
           </div>
           <div class="field-row">
             <label class="field">Test date<input type="date" name="test_date_pick" value="${esc(testDateIso(e.test_date))}"></label>
@@ -2434,7 +2435,7 @@ window.kumonPtcNav = function(client, role){
             <label class="field">Test time<input type="text" name="test_time" value="${v("test_time")}" placeholder="e.g. 5 MINUTES"></label>
             <label class="field">Test score<input type="text" name="test_score" value="${v("test_score")}" placeholder="e.g. 100/100"></label>
           </div>
-          <label class="field">Test group<input type="text" name="test_group" value="${v("test_group")}"></label>
+          <label class="field">Test group${testGroupSelect(e.test_group)}</label>
         </div>
         <div class="modal-foot">
           <div></div>
@@ -2680,6 +2681,15 @@ window.kumonPtcNav = function(client, role){
     const lv = levelsFor(subject), v = String(value || "").trim(), up = v.toUpperCase();
     const hit = lv.find(l => l === up);
     return `<select name="test_level"><option value="">—</option>${v && !hit ? `<option value="${esc(v)}" selected>${esc(v)}</option>` : ""}${lv.map(l => `<option value="${l}" ${l === hit ? "selected" : ""}>${l}</option>`).join("")}</select>`;
+  }
+  function testGroupSelect(value){
+    const v = String(value || "").trim(), hit = ["1","2","3"].find(g => g === v.replace(/^group\s*/i, ""));
+    return `<select name="test_group"><option value="">—</option>${v && !hit ? `<option value="${esc(v)}" selected>${esc(v)}</option>` : ""}${["1","2","3"].map(g => `<option value="${g}" ${g === hit ? "selected" : ""}>${g}</option>`).join("")}</select>`;
+  }
+  // Whole numbers only (no typing letters by mistake). An old value that isn't a number stays as text so it isn't lost.
+  function numberInput(name, value){
+    const v = value == null ? "" : String(value).trim();
+    return v && !/^\d+$/.test(v) ? `<input type="text" name="${name}" value="${esc(v)}">` : `<input type="number" name="${name}" value="${esc(v)}" min="0" step="1" inputmode="numeric">`;
   }
   function pageSelectHtml(name, value){
     const pages = []; for(let n = 10; n <= 200; n += 10) pages.push(String(n));
