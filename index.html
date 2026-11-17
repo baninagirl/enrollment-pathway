@@ -958,7 +958,10 @@ window.kumonPtcNav = function(client, role){
   // Wraps the last-name part of a "Last, First" string (already escaped) so it can light up on hover.
   window.lnMark = function(escDisplay){
     const i = escDisplay.indexOf(",");
-    return i > 0 ? `<span class="ln-last">${escDisplay.slice(0,i)}</span>${escDisplay.slice(i)}` : escDisplay;
+    if(i > 0) return `<span class="ln-last">${escDisplay.slice(0,i)}</span>${escDisplay.slice(i)}`;
+    // "First Middle Last" (no comma): the last word is what gets copied, so that's what lights up.
+    const j = escDisplay.trimEnd().lastIndexOf(" ");
+    return j > 0 ? `${escDisplay.slice(0, j + 1)}<span class="ln-last">${escDisplay.slice(j + 1)}</span>` : `<span class="ln-last">${escDisplay}</span>`;
   };
   function fallbackCopy(text){
     const ta = document.createElement("textarea");

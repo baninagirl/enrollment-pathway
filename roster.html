@@ -508,6 +508,8 @@
   /* Clicking a child's name opens their profile; clicking elsewhere on the row still opens Edit. */
   .name-link{ color:inherit; text-decoration:none; font-weight:600; }
   .name-link.name-sm{ font-size:12px; font-weight:500; }
+  .lwc-pick{ display:grid; grid-template-columns:minmax(0,1.2fr) minmax(0,1fr); gap:8px; }
+  .lwc-pick select{ width:100%; }
   .btn.monitor-move{ background:var(--accent-soft); color:var(--accent); border:1px solid transparent; font-size:12px; padding:5px 10px; white-space:nowrap; }
   .btn.monitor-move:hover{ border-color:var(--accent); }
   .name-link:hover{ color:var(--accent); text-decoration:underline; }
@@ -723,7 +725,10 @@ window.kumonPtcNav = function(client, role){
   // Wraps the last-name part of a "Last, First" string (already escaped) so it can light up on hover.
   window.lnMark = function(escDisplay){
     const i = escDisplay.indexOf(",");
-    return i > 0 ? `<span class="ln-last">${escDisplay.slice(0,i)}</span>${escDisplay.slice(i)}` : escDisplay;
+    if(i > 0) return `<span class="ln-last">${escDisplay.slice(0,i)}</span>${escDisplay.slice(i)}`;
+    // "First Middle Last" (no comma): the last word is what gets copied, so that's what lights up.
+    const j = escDisplay.trimEnd().lastIndexOf(" ");
+    return j > 0 ? `${escDisplay.slice(0, j + 1)}<span class="ln-last">${escDisplay.slice(j + 1)}</span>` : `<span class="ln-last">${escDisplay}</span>`;
   };
   function fallbackCopy(text){
     const ta = document.createElement("textarea");
@@ -2406,7 +2411,7 @@ window.kumonPtcNav = function(client, role){
           <label class="field">Reporting tag${reportTagSelect(e.enrollment_type || "", "enrollment_type")}</label>
           <p class="hint" style="font-size:12px; color:var(--ink-muted); margin:0;">${esc(monthLabel(viewMonth))}'s numbers. The LWC is the same as the level and page on the Student Roster — saving it here updates both. Schedule and Mode are edited from the Student Roster view; Actual is filled in from the LWC when the month is closed out.</p>
           <div class="field-row">
-            <label class="field">LWC<input type="text" name="lwc" value="${v("lwc")}" placeholder="e.g. 3A 80"></label>
+            <label class="field">LWC${lwcPickerHtml(e)}</label>
             <label class="field">NWU (worksheets used)<input type="text" name="nwu" value="${v("nwu")}" placeholder="e.g. 31"></label>
           </div>
           <div class="field-row">
@@ -2608,6 +2613,31 @@ window.kumonPtcNav = function(client, role){
     `;
   }
 
+  // LWC picker (report edit form): a level dropdown + a worksheet-number dropdown, so "2A 90" can't be mistyped.
+  // Splits the saved LWC ("2A 90", "AII50", "I-I 120") into level + number; a saved value that isn't on
+  // the lists (an old typo) is still shown as an option so nothing is lost when the form opens.
+  function splitLwc(subject, lwc){
+    const t = String(lwc || "").trim().toUpperCase();
+    if(!t) return { level:"", page:"" };
+    const lv = levelsFor(subject).slice().sort((a,b) => b.length - a.length).find(l => t === l || t.startsWith(l + " ") || (t.startsWith(l) && /^\s*-?\s*\d/.test(t.slice(l.length))));
+    if(lv) return { level: lv, page: (t.slice(lv.length).match(/\d+/) || [""])[0] };
+    const m = t.match(/^(.*?)\s*(\d+)$/);
+    return m ? { level: m[1].trim(), page: m[2] } : { level: t, page: "" };
+  }
+  function lwcPickerHtml(e){
+    const { level, page } = splitLwc(e.subject, e.lwc);
+    const lvls = levelsFor(e.subject);
+    const lvlOpts = `<option value="">Level</option>` + (level && !lvls.includes(level) ? `<option value="${esc(level)}" selected>${esc(level)}</option>` : "") + lvls.map(l => `<option value="${l}" ${l === level ? "selected" : ""}>${l}</option>`).join("");
+    const pages = []; for(let n = 10; n <= 200; n += 10) pages.push(String(n));
+    const pgOpts = `<option value="">No.</option>` + (page && !pages.includes(String(Number(page))) ? `<option value="${esc(page)}" selected>${esc(page)}</option>` : "") + pages.map(n => `<option value="${n}" ${String(Number(page)) === n ? "selected" : ""}>${n}</option>`).join("");
+    return `<span class="lwc-pick"><select name="lwc_level" aria-label="LWC level">${lvlOpts}</select><select name="lwc_page" aria-label="LWC worksheet number">${pgOpts}</select></span>`;
+  }
+
+  function pageSelectHtml(name, value){
+    const pages = []; for(let n = 10; n <= 200; n += 10) pages.push(String(n));
+    const v = value == null ? "" : String(value).trim(), norm = v && /^\d+$/.test(v) ? String(Number(v)) : v;
+    return `<select name="${name}"><option value="">No.</option>${norm && !pages.includes(norm) ? `<option value="${esc(v)}" selected>${esc(v)}</option>` : ""}${pages.map(n => `<option value="${n}" ${norm === n ? "selected" : ""}>${n}</option>`).join("")}</select>`;
+  }
   function levelOptions(subject, selected){
     return `<option value="">—</option>` + levelsFor(subject).map(l=>`<option value="${l}" ${l===selected?"selected":""}>${l}</option>`).join("");
   }
@@ -2700,7 +2730,7 @@ window.kumonPtcNav = function(client, role){
           <label class="field">New enrollment${newEnrollSelectHtml(enrollment.added_month || "")}<span class="hint" style="font-size:11.5px; margin-top:4px; display:block;">A real new enrollment at the center (or their other subject). Lists this subject on Pipeline's New Students as NEW, or EO if they have the other subject. If Date enrolled is set, New Students goes by that date.</span></label>
           <div class="field-row">
             <label class="field">LWC<select name="current_level" id="curLevelSelect">${levelOptions(subject, enrollment.current_level)}</select></label>
-            <label class="field">LWC page<input type="text" name="current_page" value="${esc(enrollment.current_page||"")}" placeholder="e.g. 130"></label>
+            <label class="field">LWC number${pageSelectHtml("current_page", enrollment.current_page)}</label>
           </div>
           ${scheduleSectionHtml(scheduleRows, enrollment.mode)}
         </div>
@@ -2743,7 +2773,7 @@ window.kumonPtcNav = function(client, role){
           <label class="field">Teacher<select name="teacher" ${lockedTeacher!==null?"disabled":""}>${lockedTeacher!==null ? `<option value="${esc(lockedTeacher)}" selected>${esc(lockedTeacher||"You")}</option>` : teacherOptions(null)}</select></label>
           <div class="field-row">
             <label class="field">LWC<select name="current_level" id="curLevelSelect">${levelOptions(subject, null)}</select></label>
-            <label class="field">LWC page<input type="text" name="current_page" placeholder="e.g. 130"></label>
+            <label class="field">LWC number${pageSelectHtml("current_page", "")}</label>
           </div>
           <label class="field" style="flex-direction:row; align-items:center; gap:8px;"><input type="checkbox" name="is_monitor" value="1" ${currentRole === "teacher" ? "" : "checked"} style="width:auto;"> Monitor student (starts ${esc(monitorCycleLabel(cycleKeyOf(new Date())))})</label>
           <label class="field" style="flex-direction:row; align-items:center; gap:8px;"><input type="checkbox" name="mark_new" value="1" checked style="width:auto;"> New to roster <span class="hint" style="font-size:12px;">— new on this teacher's list for ${esc(monitorCycleLabel(cycleKeyOf(new Date())))}</span></label>
@@ -3082,7 +3112,7 @@ window.kumonPtcNav = function(client, role){
       const fd = new FormData(e.target);
       const id = editingReportId;
       const patch = {
-        lwc: fd.get("lwc") || null,
+        lwc: fd.get("lwc_level") !== null ? ([fd.get("lwc_level"), fd.get("lwc_page")].filter(Boolean).join(" ") || null) : (fd.get("lwc") || null),
         nwu: fd.get("nwu") || null,
         no_of_days: fd.get("no_of_days") || null,
         no_of_months_current_level: fd.get("no_of_months_current_level") || null,
@@ -3095,7 +3125,8 @@ window.kumonPtcNav = function(client, role){
       };
       const reportEnrollment = enrollments.find(en => en.id === id);
       // Level follows LWC (Nov 16): "C 11" / "C11" / "2A 120" / "AII 50" → level C / 2A / AII, page 11 / 120 / 50.
-      { const m = String(patch.lwc || "").trim().toUpperCase().match(/^([0-9]?[A-Z]+)\s*-?\s*(\d+)?$/);
+      if(fd.get("lwc_level")){ patch.current_level = fd.get("lwc_level"); if(fd.get("lwc_page")) patch.current_page = fd.get("lwc_page"); }
+      else { const m = String(patch.lwc || "").trim().toUpperCase().match(/^([0-9]?[A-Z]+)\s*-?\s*(\d+)?$/);
         if(m){ patch.current_level = m[1]; if(m[2]) patch.current_page = m[2]; } }
       // Reporting tag — only written when it actually changed, so its set-at date only moves for real corrections.
       const newTag = fd.get("enrollment_type") || null;
