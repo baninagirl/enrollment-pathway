@@ -3681,7 +3681,7 @@ window.kumonPtcNav = function(client, role){
             </label>
           </div>
           ${canEditFirstDay() ? `<label class="field">First day<input type="date" name="firstDay" value="${esc(s.firstDay || "")}">
-            <span class="hint" style="margin-top:4px;">${autoFirstDay(s.id) ? `Automatic: ${esc(fmtDateShort(autoFirstDay(s.id)))} (first training). ` : "No training booked yet. "}Leave blank to use the automatic date; set a date to override it.<br>This is also their <b>Date enrolled</b> on Student Roster and decides which month they show on New Students. A subject added later (EO) keeps its own date.</span></label>` : ""}
+            <span class="hint" style="margin-top:6px; font-size:12.5px; line-height:1.45;">Decides their New Students month and sets Date enrolled on Student Roster. Leave blank to use their first training${autoFirstDay(s.id) ? ` (${esc(fmtDateShort(autoFirstDay(s.id)))})` : ""}.</span></label>` : ""}
           <label class="field">Notes<textarea name="notes" rows="2">${esc(s.notes||"")}</textarea></label>
           ${studentEnrollments.length ? `
             <div class="hint" style="margin-top:4px;">Reporting tag</div>
