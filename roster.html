@@ -363,7 +363,7 @@
   .pill.tag-new{ background:var(--good-soft); color:var(--good); }
   .pill.tag-eo{ background:var(--accent-soft); color:var(--accent-soft-ink); }
   .pill.tag-resume, .pill.tag-new_returnee, .pill.tag-resume_transfer_in{ background:var(--warn-soft); color:var(--warn); }
-  #repBody tr.section-row td{ background:var(--surface-2, transparent); font-weight:700; font-size:12px; letter-spacing:.04em; text-transform:uppercase; color:var(--ink-muted); padding-top:18px; border-top:2px solid var(--border); }
+  #rosterBody tr.section-row td, #repBody tr.section-row td{ background:var(--surface-2, transparent); font-weight:700; font-size:12px; letter-spacing:.04em; text-transform:uppercase; color:var(--ink-muted); padding-top:18px; border-top:2px solid var(--border); }
   .pill.monitor-tag{ background:var(--warn-soft); color:var(--warn); margin-left:6px; font-size:10.5px; letter-spacing:.02em; }
   .pill.new-tag{ background:var(--accent-soft); color:var(--accent-soft-ink); margin-left:6px; font-size:10.5px; letter-spacing:.02em; }
   .monitor-count:not(:empty){ display:inline-block; min-width:18px; padding:0 6px; margin-left:4px; border-radius:99px; background:var(--accent-soft); color:var(--accent-soft-ink); font-size:11px; font-weight:700; text-align:center; }
@@ -1724,7 +1724,15 @@ window.kumonPtcNav = function(client, role){
   }
   // Marked NEW for a month after the open one (joined after the open month's 20th, while it's still
   // waiting to be closed out) — they belong to the next month's report, not this one.
-  function joinsLaterMonth(e){ return !!e.monitor_cycle && e.monitor_cycle > openKey(); }
+  // A subject belongs to a LATER report month when any of its "start" fields says so: New to roster (monitor_cycle),
+  // New enrollment (added_month), Resumed (resumed_month) or Date enrolled after this month's 20th. Those children
+  // aren't in this month's report or close-out, and on the roster they sit in a "Starts in …" group at the bottom.
+  function startMonthOf(e){
+    const ks = [e.monitor_cycle, e.added_month, e.resumed_month].filter(Boolean).map(k => String(k).slice(0, 7));
+    if(e.enrolled_on){ const d = new Date(String(e.enrolled_on).slice(0, 10) + "T12:00:00"); if(!isNaN(d)) ks.push(cycleKeyOf(d)); }
+    return ks.sort().pop() || null;
+  }
+  function joinsLaterMonth(e){ const k = startMonthOf(e); return !!k && k > openKey(); }
   async function loadEnrollments(){
     const mine = nextLoad("enrollments");
     const { data, error } = await fetchAll("subject_enrollments", "*", q => q.order("student_name").order("id"));
@@ -2318,11 +2326,14 @@ window.kumonPtcNav = function(client, role){
           const { error } = await sbClient.from("enrollment_monthly_history").delete().in("id", historyIds);
           if(error) throw error;
         }
-        for(const p of priorFieldValues){
-          const { id, ...fields } = p;
-          fields.updated_at = new Date().toISOString();
-          const { error } = await sbClient.from("subject_enrollments").update(fields).eq("id", id);
-          if(error) throw error;
+        // Put each enrollment's own numbers back, 20 at a time (1,200 one-by-one would take minutes).
+        for(let i = 0; i < priorFieldValues.length; i += 20){
+          const results = await Promise.all(priorFieldValues.slice(i, i + 20).map(p => {
+            const { id, ...fields } = p;
+            fields.updated_at = new Date().toISOString();
+            return sbClient.from("subject_enrollments").update(fields).eq("id", id);
+          }));
+          const bad = results.find(r => r.error); if(bad) throw bad.error;
         }
         if(advanced){ if(prevOpenKey){ await saveOpenMonth(prevOpenKey); } else { await saveOpenMonth(cycleKey); } viewMonth = monthFromKey(openKey()); }
         await Promise.all([loadEnrollments(), loadHistory()]);
@@ -2332,8 +2343,10 @@ window.kumonPtcNav = function(client, role){
         const { data: reinserted, error: reErr } = await sbClient.from("enrollment_monthly_history").insert(rows).select();
         if(reErr) throw reErr;
         historyIds = (reinserted || []).map(h => h.id);
-        const { error: clearErr } = await sbClient.from("subject_enrollments").update(clearedFields).in("id", candidateIds);
-        if(clearErr) throw clearErr;
+        for(let i = 0; i < candidateIds.length; i += 200){   // in chunks, like the close-out itself (a long id list is too big for one request)
+          const { error: clearErr } = await sbClient.from("subject_enrollments").update(clearedFields).in("id", candidateIds.slice(i, i + 200));
+          if(clearErr) throw clearErr;
+        }
         if(advanced){ await saveOpenMonth(nextKey(cycleKey)); viewMonth = monthFromKey(openKey()); }
         await Promise.all([loadEnrollments(), loadHistory()]);
         renderBoth();
@@ -2562,7 +2575,7 @@ window.kumonPtcNav = function(client, role){
         : "Nothing matches your filters.";
       body.innerHTML = `<tr><td colspan="13"><div class="empty">${emptyMsg}</div></td></tr>`;
     }else{
-      body.innerHTML = rows.map((e, idx) => `
+      const rowFn = (e, idx) => `
         <tr class="${editable?'clickrow':''}" ${editable?`data-action="edit" data-id="${e.id}"`:""}>
           <td class="selectcol">${(editable && selectMode)
             ? `<input type="checkbox" class="row-check" data-action="toggle-select" data-id="${e.id}" ${selectedIds.has(e.id)?"checked":""}>`
@@ -2579,7 +2592,14 @@ window.kumonPtcNav = function(client, role){
           <td>${e.archived ? livePaymentPillClosed(e.student_id, e.payment_month || shiftMonth(monthKeyOf(viewMonth), 1), monthKeyOf(viewMonth)) : (e.status||"active")==="inactive" ? `<span class="lvl empty-lvl">—</span>` : fmtPaymentPill(e.student_id)}</td>
           <td>${e.archived ? (e.enrolled_on ? fmtEnrolledDate(e.enrolled_on) : `<span class="lvl empty-lvl" title="This month was closed out before the enrollment date was saved with it.">not tracked</span>`) : fmtEnrolledDate(e.enrolled_on || e.created_at)}</td>
         </tr>
-      `).join("");
+      `;
+      // While this month is open, children who start in a later report month go to their own group at the bottom.
+      const later = editable ? rows.filter(joinsLaterMonth) : [];
+      const now = later.length ? rows.filter(e => !joinsLaterMonth(e)) : rows;
+      const laterKeys = [...new Set(later.map(startMonthOf))].sort();
+      const laterTitle = laterKeys.map(k => monthLabel(new Date(Number(k.slice(0,4)), Number(k.slice(5,7)) - 1, 1))).join(" / ");
+      body.innerHTML = now.map(rowFn).join("")
+        + (later.length ? `<tr class="section-row"><td colspan="16"><span class="section-label">Starts in ${esc(laterTitle)} (${later.length})</span> <span class="hint" style="margin-left:8px; text-transform:none; letter-spacing:0; font-weight:500;">Counted from that month's report, not this one.</span></td></tr>` + later.map(rowFn).join("") : "");
     }
 
     if(editable && selectMode){
@@ -2637,10 +2657,10 @@ window.kumonPtcNav = function(client, role){
   // "AI 70, ZII 100". The first part is the Reading level (it drives the roster level, Projection, KIS);
   // the Zunzun part is only reported.
   function lwcParts(lwc){
-    const segs = String(lwc || "").split(",").map(x => x.trim()).filter(Boolean);
-    const zun = segs.find(x => /^Z\s*I{1,2}\b/i.test(x)) || "";
-    const main = segs.filter(x => x !== zun).join(", ");
-    return { main, zun };
+    // Teachers write it as "AI 70, ZII 100", "7A 80; ZII 100" or "6A 100 ZI 90" — the Zunzun part starts at "ZI".
+    const t = String(lwc || "").trim(), m = t.match(/[\s,;]*\bZ\s*I{1,2}(?![A-Za-z]).*$/i);
+    if(!m) return { main: t, zun: "" };
+    return { main: t.slice(0, m.index).replace(/[\s,;]+$/, ""), zun: m[0].replace(/^[\s,;]+/, "").trim() };
   }
   function lwcSelects(prefix, levels, level, page, label){
     const lvlOpts = `<option value="">Level</option>` + (level && !levels.includes(level) ? `<option value="${esc(level)}" selected>${esc(level)}</option>` : "") + levels.map(l => `<option value="${l}" ${l === level ? "selected" : ""}>${l}</option>`).join("");
