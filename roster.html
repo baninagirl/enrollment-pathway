@@ -948,13 +948,13 @@ window.kumonPtcNav = function(client, role){
         <div class="card-head">
           <h3 id="repCardTitle">This cycle</h3>
           <span class="hint" id="repCount" style="font-size:12px; color:var(--ink-muted);"></span>
-          <button type="button" class="btn sm rep-toggle" id="repToggle" data-action="rep-toggle" hidden title="Show the Inputted tick column">Reporting time</button>
+          <button type="button" class="btn sm rep-toggle" id="repToggle" data-action="rep-toggle" hidden title="Show the KSIS reported tick column">Reporting time</button>
         </div>
         <div class="rep-bar" id="repBar" hidden></div>
         <div class="table-scroll freeze">
           <table class="stable">
             <thead><tr>
-              <th>#</th><th class="namecol">Student</th><th class="rep-ck" id="repInputHead" hidden>Inputted</th><th>Subject</th><th>Tag</th><th>LWC</th><th>NWU</th><th>No. of days</th><th>No. of months</th><th>Test date</th><th>Test level</th><th>Test time</th><th>Test score</th><th>Test group</th><th>Grade</th><th id="repPaymentHead">Payment</th><th>Mode</th>
+              <th>#</th><th class="namecol">Student</th><th class="rep-ck" id="repInputHead" hidden>KSIS reported</th><th>Subject</th><th>Tag</th><th>LWC</th><th>NWU</th><th>No. of days</th><th>No. of months</th><th>Test date</th><th>Test level</th><th>Test time</th><th>Test score</th><th>Test group</th><th>Grade</th><th id="repPaymentHead">Payment</th><th>Mode</th>
             </tr></thead>
             <tbody id="repBody"></tbody>
           </table>
@@ -2418,7 +2418,7 @@ window.kumonPtcNav = function(client, role){
     if(r.is_monitor) return 2;                                   // Monitor (started an earlier month)
     return 0;
   }
-  /* ---------- Reporting time (phase150): "Inputted" tick per subject, per report month ----------
+  /* ---------- Reporting time (phase150): "KSIS reported" tick per subject, per report month ----------
      For Miss Joan and every admin / superadmin. Saved in reporting_checks (kind 'input'). */
   function canReport(){ return currentRole === "admin" || currentRole === "superadmin"; }
   const REP = { on: false, month: null, checks: new Map(), loading: false, missing: false, todo: false };
@@ -2452,36 +2452,24 @@ window.kumonPtcNav = function(client, role){
       REP.checks.set(ref, data);
     }
   }
-  let repTotalSig = "";
-  async function saveRepTotal(month, total){
-    const sig = month + ":" + total; if(sig === repTotalSig) return; repTotalSig = sig;
-    try{
-      const { data } = await sbClient.from("settings").select("value").eq("id", "reporting_totals").maybeSingle();
-      const v = (data && data.value) || {}; v.rr = v.rr || {}; if(v.rr[month] === total) return;
-      v.rr[month] = total; await sbClient.from("settings").upsert({ id: "reporting_totals", value: v });
-    }catch(_){ }
-  }
   const REP_CHECK = `<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 8.5l3 3 6-7"/></svg>`;
   function repTickCell(r){
     const x = REP.checks.get(repRefOf(r));
     const when = x ? new Date(x.checked_at).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "Asia/Manila" }) : "";
-    return `<td class="rep-ck${x ? " done" : ""}"><button type="button" class="rep-tick${x ? " on" : ""}" data-action="rep-tick" data-ref="${esc(repRefOf(r))}" aria-pressed="${!!x}" title="${x ? `Inputted ${esc(when)}${x.checked_by_name ? " by " + esc(x.checked_by_name) : ""} · tap to undo` : "Tap when inputted"}">${REP_CHECK}</button>${x ? `<span class="rep-when">${esc(when)}</span>` : ""}</td>`;
+    return `<td class="rep-ck${x ? " done" : ""}"><button type="button" class="rep-tick${x ? " on" : ""}" data-action="rep-tick" data-ref="${esc(repRefOf(r))}" aria-pressed="${!!x}" title="${x ? `Reported ${esc(when)}${x.checked_by_name ? " by " + esc(x.checked_by_name) : ""} · tap to undo` : "Tap when reported"}">${REP_CHECK}</button>${x ? `<span class="rep-when">${esc(when)}</span>` : ""}</td>`;
   }
-  // Runs at the start of every report render: button, column header, counter and the "Not inputted yet" filter.
+  // Runs at the start of every report render: button, column header, counter and the "Not reported yet" filter.
   function repPrepare(rows){
     const month = monthKeyOf(viewMonth), on = repOnNow();
     const btn = $("#repToggle"); if(btn){ btn.hidden = !canReport(); btn.classList.toggle("on", REP.on); btn.setAttribute("aria-pressed", String(REP.on)); }
     const head = $("#repInputHead"); if(head) head.hidden = !on;
-    // the total for the Today counter: only when no filter is narrowing the list
-    const f = reportFilters, unfiltered = !f.search.trim() && f.subject === "all" && f.teacher === "all" && f.mode === "all" && f.grade === "all" && f.status === "active" && !f.levels.size;
-    if(canReport() && isCurrentCycle() && unfiltered) saveRepTotal(month, rows.length);
     const bar = $("#repBar");
     if(!on){ if(bar) bar.hidden = true; return rows; }
     if(REP.month !== month && !REP.loading) loadRepChecks(month);
     const done = rows.filter(r => REP.checks.has(repRefOf(r))).length, n = rows.length;
     if(bar){ bar.hidden = false; bar.innerHTML = REP.missing ? `<div class="banner">Reporting ticks need phase150-reporting-checks.sql to be run in Supabase first.</div>`
-      : `<div class="rep-prog"><b>${done} / ${n}</b><span class="rep-track"><i style="width:${n ? Math.round(done / n * 100) : 0}%"></i></span><span>Inputted</span></div>
-         <div class="seg"><button class="${!REP.todo ? "active" : ""}" data-action="rep-filter" data-v="all">All</button><button class="${REP.todo ? "active" : ""}" data-action="rep-filter" data-v="todo">Not inputted yet</button></div>`; }
+      : `<div class="rep-prog"><b>${done} / ${n}</b><span class="rep-track"><i style="width:${n ? Math.round(done / n * 100) : 0}%"></i></span><span>KSIS reported</span></div>
+         <div class="seg"><button class="${!REP.todo ? "active" : ""}" data-action="rep-filter" data-v="all">All</button><button class="${REP.todo ? "active" : ""}" data-action="rep-filter" data-v="todo">Not reported yet</button></div>`; }
     return REP.todo ? rows.filter(r => !REP.checks.has(repRefOf(r))) : rows;
   }
   function reportRowHtml(r, idx, editable){

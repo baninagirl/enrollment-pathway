@@ -1700,17 +1700,6 @@ window.kumonPtcNav = function(client, role){
       REP.checks.set(k, data);
     }
   }
-  // Remember how many rows each month has, so the Today page can show "done / total" without rebuilding this list.
-  let repTotalsSaved = "";
-  async function saveRepTotal(month, total){
-    const sig = month + ":" + total; if(sig === repTotalsSaved) return; repTotalsSaved = sig;
-    try{
-      const { data } = await sbClient.from("settings").select("value").eq("id", "reporting_totals").maybeSingle();
-      const v = (data && data.value) || {}; v.ns = v.ns || {}; if(v.ns[month] === total) return;
-      v.ns[month] = total;
-      await sbClient.from("settings").upsert({ id: "reporting_totals", value: v });
-    }catch(_){ }
-  }
   const REP_CHECK = `<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 8.5l3 3 6-7"/></svg>`;
   function repTickCell(kind, month, ref){
     const r = REP.checks.get(repKey(kind, month, ref));
@@ -3052,14 +3041,13 @@ window.kumonPtcNav = function(client, role){
     const repOn = canReport() && REP.on && STATE.studentMonthMode === "month";
     const repRef = row => row.s.id + "|" + (row.subj || "");
     if(repOn && REP.month !== monthKey && !REP.loading) loadRepChecks(monthKey);
-    if(canReport() && STATE.studentMonthMode === "month" && !qTokens.length) saveRepTotal(monthKey, rows.length);
     const repDone = kind => rows.filter(r => REP.checks.has(repKey(kind, monthKey, repRef(r)))).length;
     const repBar = repOn ? (REP.missing ? `<div class="banner" style="margin-bottom:10px;">Reporting ticks need phase150-reporting-checks.sql to be run in Supabase first.</div>`
-      : `<div class="rep-bar">${[["ksis","KSIS approved"],["dt","DT results reported"]].map(([k, l]) => { const d = repDone(k), n = rows.length; return `<div class="rep-prog"><b>${d} / ${n}</b><span class="rep-track"><i style="width:${n ? Math.round(d / n * 100) : 0}%"></i></span><span>${l}</span></div>`; }).join("")}
+      : `<div class="rep-bar">${[["ksis","KSIS approved"],["dt","DT results reported"],["input","KSIS reported"]].map(([k, l]) => { const d = repDone(k), n = rows.length; return `<div class="rep-prog"><b>${d} / ${n}</b><span class="rep-track"><i style="width:${n ? Math.round(d / n * 100) : 0}%"></i></span><span>${l}</span></div>`; }).join("")}
           <div class="seg"><button class="${!REP.todo ? "active" : ""}" data-action="rep-filter" data-v="all">All</button><button class="${REP.todo ? "active" : ""}" data-action="rep-filter" data-v="todo">Not done yet</button></div></div>`) : "";
-    if(repOn && REP.todo) for(let i = rows.length - 1; i >= 0; i--){ const rf = repRef(rows[i]); if(REP.checks.has(repKey("ksis", monthKey, rf)) && REP.checks.has(repKey("dt", monthKey, rf))) rows.splice(i, 1); }
-    const repHead = repOn ? `<th class="rep-ck">KSIS approved</th><th class="rep-ck">DT results reported</th>` : "";
-    const repCells = row => repOn ? repTickCell("ksis", monthKey, repRef(row)) + repTickCell("dt", monthKey, repRef(row)) : "";
+    if(repOn && REP.todo) for(let i = rows.length - 1; i >= 0; i--){ const rf = repRef(rows[i]); if(["ksis","dt","input"].every(k => REP.checks.has(repKey(k, monthKey, rf)))) rows.splice(i, 1); }
+    const repHead = repOn ? `<th class="rep-ck">KSIS approved</th><th class="rep-ck">DT results reported</th><th class="rep-ck">KSIS reported</th>` : "";
+    const repCells = row => repOn ? repTickCell("ksis", monthKey, repRef(row)) + repTickCell("dt", monthKey, repRef(row)) + repTickCell("input", monthKey, repRef(row)) : "";
     const emptyMsg = qTokens.length ? "No students match that search." : STATE.studentMonthMode==="month" ? `No enrolled students on the ${esc(monthLabel)} roster yet. Try <b>All time</b> — a student shows up here once their diagnostic is marked <b>Enrolled</b>.` : "No enrolled students yet. A student shows up here once their diagnostic is marked <b>Enrolled</b>.";
 
     const listTable = `<table class="stable">
