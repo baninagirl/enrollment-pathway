@@ -471,6 +471,17 @@
   .td-quote p{ margin:0; font-size:18.5px; line-height:1.5; font-style:italic; font-weight:500; }
   .td-quote cite{ display:block; margin-top:10px; font-style:normal; font-size:12.5px; color:var(--ink-faint); }
 
+  .td-reps{ display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)); gap:14px; margin-top:14px; }
+  .td-reps > .td-rep{ margin:0; }
+  .td-rep{ padding:18px 20px; display:flex; flex-direction:column; gap:10px; text-decoration:none; color:inherit; transition:transform .25s var(--spring, ease), box-shadow .25s var(--spring, ease); }
+  .td-rep:hover{ transform:translateY(-2px); box-shadow:var(--shadow-lift, var(--shadow)); }
+  .td-rep:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
+  .td-rep-num{ display:flex; align-items:baseline; gap:8px; }
+  .td-rep-num b{ font-family:"Sora", system-ui, sans-serif; font-size:28px; font-weight:600; letter-spacing:-.02em; font-variant-numeric:tabular-nums; }
+  .td-rep-num span{ font-size:13px; color:var(--ink-muted); }
+  .td-rep-track{ height:6px; border-radius:99px; background:var(--surface-2); overflow:hidden; }
+  .td-rep-track i{ display:block; height:100%; background:var(--good); border-radius:99px; }
+  @media (max-width: 720px){ .td-reps{ grid-template-columns:1fr; gap:10px; } .td-rep{ padding:14px 16px; gap:8px; } .td-rep-num b{ font-size:22px; } }
   .td-kicker{ font-size:12.5px; font-weight:600; color:var(--accent); margin-bottom:6px; }
   .td-title{ font-family:"Sora", system-ui, sans-serif; font-size:24px; font-weight:700; letter-spacing:-.03em; line-height:1.2; margin:0; }
   .td-dek{ color:var(--ink-muted); font-size:14.5px; margin:6px 0 0; line-height:1.5; max-width:64ch; }
@@ -1294,7 +1305,7 @@ window.kumonPtcNav = function(client, role){
     ["I never did a day's work in my life. It was all fun.", "Attributed to Thomas Edison"]
   ];
   const AV_COLORS = ["#3454D1","#D2453A","#24935A","#B9770E","#7B4FD1","#1F8FA8","#C2477F"];
-  const D = { enrAll:[], attHist:[], movesHist:[], students:[], enr:[], sched:[], moves:[], att:[], due:[], ms:[], proj:[], hist:[], rec:[], abs:[] };
+  const D = { rep:null, enrAll:[], attHist:[], movesHist:[], students:[], enr:[], sched:[], moves:[], att:[], due:[], ms:[], proj:[], hist:[], rec:[], abs:[] };
   const tdUi = { who: null, slot: null, kisSub: "all", adminId: null };   // adminId: an admin's own Today (whole centre + their to-dos)
   const loadIssues = new Set();
   let studentById = new Map(), enrById = new Map(), histBy = new Map();
@@ -1780,7 +1791,7 @@ window.kumonPtcNav = function(client, role){
     const tIn = $("#todoText"), dIn = $("#todoDue"), fIn = $("#todoFor");
     const draft = tIn ? { t: tIn.value, d: dIn ? dIn.value : "", f: fIn ? fIn.value : "", focus: document.activeElement === tIn } : keepTodoDraft;
     if(draft) keepTodoDraft = draft;   // so the to-do card is rebuilt with what's being typed and the chosen day
-    $("#view").innerHTML = warn + renderDay() + renderBookings() + renderTodos() + renderStories() + renderScore() + renderKis();
+    $("#view").innerHTML = warn + renderDay() + renderBookings() + renderTodos() + renderReporting() + renderStories() + renderScore() + renderKis();
     if(draft){ keepTodoDraft = draft; const a = $("#todoText"), b = $("#todoDue"), c = $("#todoFor");
       if(a){ a.value = draft.t || ""; if(draft.focus){ a.focus(); a.setSelectionRange(a.value.length, a.value.length); } } if(b) b.value = draft.d || ""; if(c && draft.f) c.value = draft.f; }
     if(drawerStack.length) paintDrawer();
@@ -1881,6 +1892,36 @@ window.kumonPtcNav = function(client, role){
   }
 
   /* ---------- loading ---------- */
+  /* Reporting counters (phase150): admins and superadmins see how much reporting is done for the open month.
+     Ticks come from reporting_checks; the totals are what New Students and the Student Roster Report last counted. */
+  async function loadReporting(){
+    D.rep = null;
+    if(!isAdmin()) return;
+    try{
+      const { data: st } = await sbClient.from("settings").select("id,value").in("id", ["open_month", "reporting_totals"]);
+      const val = id => ((st || []).find(x => x.id === id) || {}).value;
+      const om = val("open_month"), month = String((om && (om.key || om.month)) || om || "").slice(0, 7) || todayISO().slice(0, 7);
+      const tot = val("reporting_totals") || {};
+      // New Students works on this cycle (21st to 20th, named after the month of the 20th); teacher reports on the open month
+      const t = todayISO(), d = new Date(t.slice(0, 7) + "-01T00:00:00Z"); if(+t.slice(8) > 20) d.setUTCMonth(d.getUTCMonth() + 1);
+      const nsMonth = d.toISOString().slice(0, 7);
+      const { data, error } = await sbClient.from("reporting_checks").select("kind,month_key").in("month_key", [...new Set([nsMonth, month])]);
+      if(error) return;   // phase150 not run yet: no card
+      const c = { ksis: 0, dt: 0, input: 0 };
+      for(const r of data || []) if((r.kind === "input" ? month : nsMonth) === r.month_key) c[r.kind] = (c[r.kind] || 0) + 1;
+      D.rep = { month, nsMonth, c, ns: tot.ns && tot.ns[nsMonth], rr: tot.rr && tot.rr[month] };
+    }catch(e){ console.warn("reporting counters", e); }
+  }
+  function renderReporting(){
+    const R = D.rep; if(!R || !isAdmin()) return "";
+    const mName = k => new Date(k + "-15T00:00:00Z").toLocaleDateString("en-US", { timeZone: "UTC", month: "long" });
+    const row = (label, done, total, href, mk) => { const n = total == null ? null : Math.max(total, done), left = n == null ? null : n - done;
+      return `<a class="card td-rep" href="${href}"><div class="td-lab"><span>${label} · ${esc(mName(mk))}</span><span>${n == null ? "open the page once to count" : left === 0 ? "all done" : left + " left"}</span></div>
+        <div class="td-rep-num"><b>${done}</b><span>${n == null ? "done" : "of " + n + " reported"}</span></div>
+        <span class="td-rep-track"><i style="width:${n ? Math.round(done / n * 100) : 0}%"></i></span></a>`; };
+    return `<section class="td-sec"><div class="td-sec-head"><div><div class="td-kicker">Reporting</div><h2 class="td-title">Reported and not yet reported</h2></div><span class="td-sub">Tick them off with Reporting time</span></div>
+      <div class="td-reps">${row("KSIS approved", R.c.ksis, R.ns, "index.html#students", R.nsMonth)}${row("DT results reported", R.c.dt, R.ns, "index.html#students", R.nsMonth)}${row("Teacher reports inputted", R.c.input, R.rr, "roster.html", R.month)}</div></section>`;
+  }
   async function tdLoad(key, fn){ try{ await fn(); loadIssues.delete(key); }catch(e){ console.warn("today load", key, e); loadIssues.add(key); } }
   async function loadAll(){
     const wk = weekStart(), legacy = addDays(wk, -1);
@@ -1894,7 +1935,8 @@ window.kumonPtcNav = function(client, role){
       tdLoad("PTC done", async () => { D.ms = await selectAll("ptc_milestones", "student_id,month_no,due_date,status,done_on", q => q.gte("done_on", monthKey() + "-01").order("student_id")); }),
       tdLoad("payments", async () => { D.rec = await selectAll("payment_receipts", "student_id,covers_month,status,created_at", q => q.gte("covers_month", monthKey() + "-01").lte("covers_month", monthEndOf(monthKey())).order("student_id").order("id")); }),
       tdLoad("absences", async () => { D.abs = await selectAll("absence_records", "student_id,subject_enrollment_ids,marked_absent_at,resumed_at", q => q.order("marked_absent_at").order("id")); }),
-      loadToday()
+      loadToday(),
+      loadReporting()
     ]);
     // moves and arrivals are optional extras: a failed load just means none show
     studentById = new Map(D.students.map(s => [s.id, s]));

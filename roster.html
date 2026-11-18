@@ -510,6 +510,25 @@
   .name-link.name-sm{ font-size:12px; font-weight:500; }
   .lwc-pick{ display:grid; grid-template-columns:minmax(0,1.2fr) minmax(0,1fr); gap:8px; }
   .lwc-pick select{ width:100%; }
+  /* Reporting time (phase150) */
+  .btn.rep-toggle{ margin-left:auto; }
+  .btn.rep-toggle.on{ background:var(--accent-soft); border-color:var(--accent); color:var(--accent); }
+  .rep-bar{ display:flex; flex-wrap:wrap; align-items:center; gap:10px; padding:0 16px 12px; }
+  .rep-bar[hidden]{ display:none; }
+  .rep-prog{ display:flex; align-items:center; gap:10px; background:var(--surface-2); border-radius:14px; padding:8px 14px; font-size:12.5px; color:var(--ink-muted); }
+  .rep-prog b{ font-size:15px; color:var(--ink); font-variant-numeric:tabular-nums; }
+  .rep-track{ width:110px; height:6px; background:var(--surface); border-radius:99px; overflow:hidden; display:inline-block; }
+  .rep-track i{ display:block; height:100%; background:var(--good); border-radius:99px; transition:width .25s; }
+  .stable th.rep-ck{ text-align:center; color:var(--accent); background:var(--accent-soft) !important; }
+  .stable td.rep-ck{ text-align:center; background:color-mix(in srgb, var(--accent-soft) 55%, var(--surface)) !important; width:96px; }
+  .stable td.rep-ck.done{ background:color-mix(in srgb, var(--good) 12%, var(--surface)) !important; }
+  .rep-tick{ width:28px; height:28px; border-radius:50%; border:2px solid var(--border); background:var(--surface); display:inline-grid; place-items:center; cursor:pointer; padding:0; transition:background .15s, border-color .15s, transform .12s; }
+  .rep-tick:hover{ border-color:var(--accent); }
+  .rep-tick:active{ transform:scale(.9); }
+  .rep-tick svg{ opacity:0; transition:opacity .15s; }
+  .rep-tick.on{ background:var(--good); border-color:var(--good); }
+  .rep-tick.on svg{ opacity:1; }
+  .rep-when{ display:block; font-size:10.5px; color:var(--good); margin-top:2px; font-weight:600; }
   .zun-wrap{ display:flex; flex-direction:column; gap:10px; }
   .zun-pick[hidden]{ display:none; }
   .zun-tick{ display:flex; align-items:center; gap:8px; font-size:13px; font-weight:500; color:var(--ink); cursor:pointer; }
@@ -929,11 +948,13 @@ window.kumonPtcNav = function(client, role){
         <div class="card-head">
           <h3 id="repCardTitle">This cycle</h3>
           <span class="hint" id="repCount" style="font-size:12px; color:var(--ink-muted);"></span>
+          <button type="button" class="btn sm rep-toggle" id="repToggle" data-action="rep-toggle" hidden title="Show the Inputted tick column">Reporting time</button>
         </div>
+        <div class="rep-bar" id="repBar" hidden></div>
         <div class="table-scroll freeze">
           <table class="stable">
             <thead><tr>
-              <th>#</th><th class="namecol">Student</th><th>Subject</th><th>Tag</th><th>LWC</th><th>NWU</th><th>No. of days</th><th>No. of months</th><th>Test date</th><th>Test level</th><th>Test time</th><th>Test score</th><th>Test group</th><th>Grade</th><th id="repPaymentHead">Payment</th><th>Mode</th>
+              <th>#</th><th class="namecol">Student</th><th class="rep-ck" id="repInputHead" hidden>Inputted</th><th>Subject</th><th>Tag</th><th>LWC</th><th>NWU</th><th>No. of days</th><th>No. of months</th><th>Test date</th><th>Test level</th><th>Test time</th><th>Test score</th><th>Test group</th><th>Grade</th><th id="repPaymentHead">Payment</th><th>Mode</th>
             </tr></thead>
             <tbody id="repBody"></tbody>
           </table>
@@ -2367,7 +2388,7 @@ window.kumonPtcNav = function(client, role){
       payHead.title = "Paid or unpaid for this report's bill (next month's tuition, due the 25th)";
     }
 
-    const rows = rowsForReportView();
+    const rows = repPrepare(rowsForReportView());
     $("#repCount").textContent = rows.length + (rows.length===1 ? " record" : " records");
 
     const body = $("#repBody");
@@ -2397,11 +2418,73 @@ window.kumonPtcNav = function(client, role){
     if(r.is_monitor) return 2;                                   // Monitor (started an earlier month)
     return 0;
   }
+  /* ---------- Reporting time (phase150): "Inputted" tick per subject, per report month ----------
+     For Miss Joan and every admin / superadmin. Saved in reporting_checks (kind 'input'). */
+  function canReport(){ return currentRole === "admin" || currentRole === "superadmin"; }
+  const REP = { on: false, month: null, checks: new Map(), loading: false, missing: false, todo: false };
+  try{ REP.on = localStorage.getItem("kumonReportingTime") === "1"; }catch(_){ }
+  const repOnNow = () => canReport() && REP.on;
+  const repRefOf = r => r.subject_enrollment_id || r.id;
+  async function loadRepChecks(month){
+    if(REP.loading) return; REP.loading = true;
+    try{
+      const { data, error } = await sbClient.from("reporting_checks").select("*").eq("month_key", month).eq("kind", "input");
+      if(error) throw error;
+      REP.checks = new Map((data || []).map(x => [x.ref, x])); REP.missing = false;
+    }catch(e){ REP.missing = /reporting_checks|schema cache|does not exist/i.test(String(e.message || "")); if(!REP.missing) console.warn("reporting checks", e); }
+    REP.month = month; REP.loading = false; renderReport();
+  }
+  async function toggleRepCheck(month, ref){
+    const had = REP.checks.get(ref);
+    if(had){
+      REP.checks.delete(ref); renderReport();
+      const { error } = await sbClient.from("reporting_checks").delete().eq("id", had.id);
+      if(error){ REP.checks.set(ref, had); renderReport(); toast("Couldn't undo that: " + error.message); }
+    }else{
+      REP.checks.set(ref, { ref, checked_at: new Date().toISOString() }); renderReport();
+      const { data, error } = await sbClient.from("reporting_checks").insert({ kind: "input", month_key: month, ref, checked_by_name: currentTeacherName || (currentUser && currentUser.email) || null }).select().single();
+      if(error){ REP.checks.delete(ref); renderReport(); toast(/reporting_checks/.test(error.message || "") ? "Run phase150 in Supabase first." : "Couldn't save that: " + error.message); return; }
+      REP.checks.set(ref, data);
+    }
+  }
+  let repTotalSig = "";
+  async function saveRepTotal(month, total){
+    const sig = month + ":" + total; if(sig === repTotalSig) return; repTotalSig = sig;
+    try{
+      const { data } = await sbClient.from("settings").select("value").eq("id", "reporting_totals").maybeSingle();
+      const v = (data && data.value) || {}; v.rr = v.rr || {}; if(v.rr[month] === total) return;
+      v.rr[month] = total; await sbClient.from("settings").upsert({ id: "reporting_totals", value: v });
+    }catch(_){ }
+  }
+  const REP_CHECK = `<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 8.5l3 3 6-7"/></svg>`;
+  function repTickCell(r){
+    const x = REP.checks.get(repRefOf(r));
+    const when = x ? new Date(x.checked_at).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "Asia/Manila" }) : "";
+    return `<td class="rep-ck${x ? " done" : ""}"><button type="button" class="rep-tick${x ? " on" : ""}" data-action="rep-tick" data-ref="${esc(repRefOf(r))}" aria-pressed="${!!x}" title="${x ? `Inputted ${esc(when)}${x.checked_by_name ? " by " + esc(x.checked_by_name) : ""} · tap to undo` : "Tap when inputted"}">${REP_CHECK}</button>${x ? `<span class="rep-when">${esc(when)}</span>` : ""}</td>`;
+  }
+  // Runs at the start of every report render: button, column header, counter and the "Not inputted yet" filter.
+  function repPrepare(rows){
+    const month = monthKeyOf(viewMonth), on = repOnNow();
+    const btn = $("#repToggle"); if(btn){ btn.hidden = !canReport(); btn.classList.toggle("on", REP.on); btn.setAttribute("aria-pressed", String(REP.on)); }
+    const head = $("#repInputHead"); if(head) head.hidden = !on;
+    // the total for the Today counter: only when no filter is narrowing the list
+    const f = reportFilters, unfiltered = !f.search.trim() && f.subject === "all" && f.teacher === "all" && f.mode === "all" && f.grade === "all" && f.status === "active" && !f.levels.size;
+    if(canReport() && isCurrentCycle() && unfiltered) saveRepTotal(month, rows.length);
+    const bar = $("#repBar");
+    if(!on){ if(bar) bar.hidden = true; return rows; }
+    if(REP.month !== month && !REP.loading) loadRepChecks(month);
+    const done = rows.filter(r => REP.checks.has(repRefOf(r))).length, n = rows.length;
+    if(bar){ bar.hidden = false; bar.innerHTML = REP.missing ? `<div class="banner">Reporting ticks need phase150-reporting-checks.sql to be run in Supabase first.</div>`
+      : `<div class="rep-prog"><b>${done} / ${n}</b><span class="rep-track"><i style="width:${n ? Math.round(done / n * 100) : 0}%"></i></span><span>Inputted</span></div>
+         <div class="seg"><button class="${!REP.todo ? "active" : ""}" data-action="rep-filter" data-v="all">All</button><button class="${REP.todo ? "active" : ""}" data-action="rep-filter" data-v="todo">Not inputted yet</button></div>`; }
+    return REP.todo ? rows.filter(r => !REP.checks.has(repRefOf(r))) : rows;
+  }
   function reportRowHtml(r, idx, editable){
     return `
       <tr class="${editable?"clickrow":""}" ${editable?`data-action="edit-report" data-id="${r.id}"`:""}>
         <td class="rownum">${idx+1}</td>
         <td class="namecol"><span class="ln-row"><a class="name-link" href="student.html#s=${esc(r.student_id)}" data-action="open-profile" title="Open ${esc(displayName(r.student_id, r.student_name))}'s profile">${lnMark(esc(displayName(r.student_id, r.student_name)))}</a>${lnCopyBtn(lnLastOf(displayName(r.student_id, r.student_name)))}</span>${r.is_monitor ? monitorTagHtml(r) : ""}${newTagHtml(r)}</td>
+        ${repOnNow() ? repTickCell(r) : ""}
         <td><span class="pill ${r.subject==='Math'?'subj-math':'subj-reading'}">${esc(r.subject||"")}</span></td>
         <td>${r.archived ? `<span class="lvl empty-lvl" title="Archived snapshots don't keep the reporting tag.">—</span>` : reportTagPill(r.enrollment_type, r)}</td>
         <td>${fmtPlain(r.lwc)}</td>
@@ -3385,6 +3468,9 @@ window.kumonPtcNav = function(client, role){
     }
     else if(action === "rep-today"){ viewMonth = monthFromKey(openKey()); renderBoth(); }
     else if(action === "close-out-month"){ await closeOutMonth(); }
+    else if(action === "rep-toggle"){ REP.on = !REP.on; try{ localStorage.setItem("kumonReportingTime", REP.on ? "1" : "0"); }catch(_){ } renderReport(); }
+    else if(action === "rep-filter"){ REP.todo = btn.dataset.v === "todo"; renderReport(); }
+    else if(action === "rep-tick"){ toggleRepCheck(monthKeyOf(viewMonth), btn.dataset.ref); }
     else if(action === "edit-report"){
       const id = btn.dataset.id;
       openReportModal(id);
