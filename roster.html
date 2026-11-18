@@ -2435,10 +2435,15 @@ window.kumonPtcNav = function(client, role){
     REP.month = month; REP.loading = false; renderReport();
   }
   async function toggleRepCheck(month, ref){
+    const busyKey = "input" + "|" + month + "|" + ref; if(REP_BUSY.has(busyKey)) return; REP_BUSY.add(busyKey);
+    try{ await toggleRepCheckNow(month, ref); } finally { REP_BUSY.delete(busyKey); }
+  }
+  const REP_BUSY = new Set();
+  async function toggleRepCheckNow(month, ref){
     const had = REP.checks.get(ref);
     if(had){
       REP.checks.delete(ref); renderReport();
-      const { error } = await sbClient.from("reporting_checks").delete().eq("id", had.id);
+      const { error } = await sbClient.from("reporting_checks").delete().eq("kind", "input").eq("month_key", month).eq("ref", ref);
       if(error){ REP.checks.set(ref, had); renderReport(); toast("Couldn't undo that: " + error.message); }
     }else{
       REP.checks.set(ref, { ref, checked_at: new Date().toISOString() }); renderReport();
