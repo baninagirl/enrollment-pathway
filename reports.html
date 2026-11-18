@@ -945,7 +945,7 @@ window.kumonPtcNav = function(client, role){
       }catch(_){ teacherGroups = []; }
       const [enr, studs, scheds] = await Promise.all([
         fetchAll("subject_enrollments", "id,student_id,student_name,subject,teacher,current_level,current_page,mode,status,is_monitor,schedule", q => q.eq("status","active")),
-        fetchAll("students", "id,name,first_name,last_name,age_grade"),
+        fetchAll("students", "id,name,first_name,last_name,age_grade,status,subject,mode"),
         fetchAll("schedules", "subject_enrollment_id,slots,status", q => q.eq("status","active"))
       ]);
       const stuById = new Map(studs.map(s => [s.id, s]));
@@ -964,6 +964,20 @@ window.kumonPtcNav = function(client, role){
           onCal: timed.has(e.id), monitor: !!e.is_monitor
         };
       });
+      // Enrolled children who aren't on Student Roster yet (waiting for training, or on monitor schedule):
+      // counted too, so the totals are every enrollment the center has right now. They have no level or teacher yet.
+      const onRoster = new Set(enr.map(e => e.student_id));
+      for(const st of studs){
+        if(!["enrolled_pending_training", "monitor_schedule"].includes(st.status) || onRoster.has(st.id)) continue;
+        const subs = st.subject === "Both" ? ["Math", "Reading"] : (st.subject === "Math" || st.subject === "Reading") ? [st.subject] : [];
+        for(const subject of subs) rows.push({
+          id: "pending-" + st.id + "-" + subject, sid: st.id, subject,
+          name: st.name || "—", last: st.last_name || "", first: st.first_name || "",
+          teacher: "(Not on roster yet)", level: "", page: "", group: "none",
+          mode: st.mode === "KC" ? "KC" : (st.mode === "Paper" ? "Paper" : ""),
+          grade: normGrade(st.age_grade), onCal: false, monitor: false, pending: true
+        });
+      }
     }catch(err){
       console.warn(err);
       body.innerHTML = `<div class="banner">Couldn't load the numbers: ${esc(err.message || err)}</div>`;
@@ -1072,11 +1086,13 @@ window.kumonPtcNav = function(client, role){
     const scrollY = window.scrollY;
     const v = view(), b = base();
     const students = uniq(v.map(r => r.sid));
+    const pendingKids = uniq(v.filter(r => r.pending).map(r => r.sid));
     const math = v.filter(r => r.subject === "Math").length, reading = v.length - math;
     const bySid = new Map(); v.forEach(r => { const s = bySid.get(r.sid) || new Set(); s.add(r.subject); bySid.set(r.sid, s); });
     const both = [...bySid.values()].filter(s => s.size > 1).length;
-    const onCal = v.filter(r => r.onCal).length;
-    const noLevel = v.filter(r => r.group === "none").length;
+    const vr = v.filter(r => !r.pending);   // roster rows only: children not on the roster yet have no level or class time to check
+    const onCal = vr.filter(r => r.onCal).length;
+    const noLevel = vr.filter(r => r.group === "none").length;
     const teachersAll = [...new Set(rows.map(r => r.teacher))].sort((a,b) => a.localeCompare(b));
 
     // Showing line
@@ -1084,7 +1100,7 @@ window.kumonPtcNav = function(client, role){
     const showing = `Showing <b>${tSel.length ? (tSel.length <= 3 ? tSel.map(esc).join(", ") : tSel.length + " teachers") : "all teachers"}</b>`
       + ` · <b>${gSel.length ? gSel.map(esc).join(", ") : "all level groups"}</b>`
       + (F.subject !== "all" ? ` · <b>${F.subject} only</b>` : "") + (F.mode !== "all" ? ` · <b>${F.mode} only</b>` : "")
-      + ` · active students on Student Roster, monitor students included.`;
+      + ` · active students on Student Roster (monitor students and new joiners included), plus enrolled children not on the roster yet.`;
 
     // Donut data
     const groupParts = GROUPS.map(g => ({ key:g.key, label:g.label, value: b.filter(r => r.group === g.key).length, color:g.color }));
@@ -1135,8 +1151,8 @@ window.kumonPtcNav = function(client, role){
     const dupKey = {}; v.forEach(r => { const k = r.sid + "|" + r.subject; (dupKey[k] = dupKey[k] || []).push(r); });
     const dups = Object.values(dupKey).filter(a => a.length > 1);
     const issues = {
-      nolevel: v.filter(r => r.group === "none"),
-      nocal: v.filter(r => !r.onCal),
+      nolevel: vr.filter(r => r.group === "none"),
+      nocal: vr.filter(r => !r.onCal),
       dup: dups.flat()
     };
     const issueLabels = { nolevel:"No level yet", nocal:"Not on Calendar (no class time)", dup:"Same subject twice" };
@@ -1158,13 +1174,13 @@ window.kumonPtcNav = function(client, role){
         <div class="showing">${showing}</div>
 
         <div class="kpis">
-          <div class="kpi"><div class="v">${fmt(students)}</div><div class="l">Students</div><div class="s">each child once</div></div>
+          <div class="kpi"><div class="v">${fmt(students)}</div><div class="l">Students</div><div class="s">each child once${pendingKids ? ` · ${fmt(pendingKids)} not on roster yet` : ""}</div></div>
           <div class="kpi"><div class="v">${fmt(v.length)}</div><div class="l">Subjects</div><div class="s">Math + Reading rows</div></div>
           <div class="kpi"><div class="v">${fmt(math)}</div><div class="l">Math</div><div class="s">${pct(math, v.length)}% of subjects</div></div>
           <div class="kpi"><div class="v">${fmt(reading)}</div><div class="l">Reading</div><div class="s">${pct(reading, v.length)}% of subjects</div></div>
           <div class="kpi"><div class="v">${fmt(both)}</div><div class="l">Taking both</div><div class="s">${pct(both, students)}% of students</div></div>
-          <div class="kpi ${onCal < v.length ? "warn" : ""}"><div class="v">${pct(onCal, v.length)}%</div><div class="l">On Calendar</div><div class="s">${fmt(onCal)} of ${fmt(v.length)} have class times</div></div>
-          <div class="kpi ${noLevel ? "warn" : ""}"><div class="v">${fmt(noLevel)}</div><div class="l">No level yet</div><div class="s">${pct(noLevel, v.length)}% of subjects</div></div>
+          <div class="kpi ${onCal < vr.length ? "warn" : ""}"><div class="v">${pct(onCal, vr.length)}%</div><div class="l">On Calendar</div><div class="s">${fmt(onCal)} of ${fmt(vr.length)} have class times</div></div>
+          <div class="kpi ${noLevel ? "warn" : ""}"><div class="v">${fmt(noLevel)}</div><div class="l">No level yet</div><div class="s">${pct(noLevel, vr.length)}% of roster subjects</div></div>
         </div>
 
         <div class="grid3">
