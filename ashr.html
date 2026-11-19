@@ -441,6 +441,12 @@
   .ashr-toolbar{ display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:14px; }
   .ashr-toolbar input[type=search]{ flex:1 1 180px; min-width:0; font:inherit; font-size:13px; background:var(--surface); color:var(--ink); border:1px solid var(--border); border-radius:10px; padding:8px 12px; }
   .ashr-toolbar select{ width:auto; flex:0 1 auto; min-width:0; max-width:100%; }
+  /* The views and the double-award switch stay together on one line, and the toolbar stays at the top while scrolling. */
+  .ashr-toolbar{ position:sticky; top:env(safe-area-inset-top, 0px); z-index:5; background:var(--bg); padding:8px 0; margin-top:-8px; }
+  .tb-views{ display:flex; align-items:center; gap:10px; min-width:0; max-width:100%; flex:0 1 auto; }
+  .views-seg{ min-width:0; overflow-x:auto; scrollbar-width:none; flex:0 1 auto; }
+  .views-seg::-webkit-scrollbar{ display:none; }
+  .switch{ flex:none; white-space:nowrap; }
   .switch{ display:inline-flex; align-items:center; gap:8px; font-size:13px; font-weight:600; color:var(--ink-muted); cursor:pointer; user-select:none; padding:4px 2px; }
   .switch input{ position:absolute; opacity:0; width:1px; height:1px; }
   .switch .sw-track{ width:38px; height:22px; border-radius:99px; background:var(--border); position:relative; transition:background .2s; flex:none; }
@@ -450,7 +456,9 @@
   .switch input:focus-visible + .sw-track{ box-shadow:0 0 0 3px var(--accent-soft); }
   .ashr-seg button{ border:1px solid transparent; white-space:nowrap; }
   .ashr-seg button.on{ background:var(--accent-soft); color:var(--accent); border-color:var(--accent); box-shadow:none; }
-  .ashr-seg .n{ font-size:11px; font-weight:700; background:var(--surface); border-radius:99px; padding:1px 6px; margin-left:5px; color:var(--ink-muted); }
+  .ashr-seg button:disabled{ opacity:.4; cursor:default; }
+  .ashr-seg .n:empty{ display:none; }
+  .ashr-seg .n{ min-width:28px; text-align:center; display:inline-block; font-variant-numeric:tabular-nums;  font-size:11px; font-weight:700; background:var(--surface); border-radius:99px; padding:1px 6px; margin-left:5px; color:var(--ink-muted); }
   .ashr-layout{ display:grid; grid-template-columns:minmax(0,1fr); gap:16px; align-items:start; }
   .ashr-layout.has-sheet{ grid-template-columns:minmax(0,1fr) 360px; }
   .ashr-layout > .card{ margin-bottom:0; min-width:0; }
@@ -517,6 +525,7 @@
   @media (max-width:1180px){ .ashr-layout.has-sheet{ grid-template-columns:minmax(0,1fr); } .sheet{ position:fixed; left:0; right:0; bottom:0; top:auto; max-height:78vh; overflow:auto; border-radius:20px 20px 0 0; z-index:250; box-shadow:0 -20px 50px -20px rgba(20,22,30,.35); padding-bottom:calc(20px + env(safe-area-inset-bottom, 0px)); }
     .sheet-grip{ display:block; width:40px; height:5px; border-radius:99px; background:var(--border); margin:-8px auto 0; } }
   @media (max-width:860px){ .aw-legend{ grid-template-columns:repeat(4, minmax(0,1fr)); } .ashr-head-actions{ margin:0 0 14px; justify-content:flex-start; } }
+  @media (max-width:520px){ .tb-views{ flex-wrap:wrap; width:100%; } .views-seg{ width:100%; } }
   @media (max-width:520px){ .aw-legend{ grid-template-columns:repeat(2, minmax(0,1fr)); } .kv2{ grid-template-columns:1fr; } .rungs{ grid-template-columns:repeat(3, minmax(0,1fr)); } .cutnav .lbl{ min-width:0; } }
 
   .grid3{ display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:16px; margin-bottom:16px; }
@@ -1334,12 +1343,14 @@ window.kumonPtcNav = function(client, role){
         <div class="aw-legend" role="group" aria-label="Filter by award">${parts.map(([k, label]) => `<button type="button" class="leg${U.award === k ? " on" : ""}" data-action="award" data-v="${k}" aria-pressed="${U.award === k}"><span><i class="sw" style="background:${COLORS[k]}"></i>${esc(label)}</span><b>${cnt(k).toLocaleString("en-US")}</b></button>`).join("")}</div>
       </div>
       <div class="ashr-toolbar">
-        <div class="seg ashr-seg">${[["all","Everyone",null],["close","Close to next award",closeN],["double","Double award",dblN]].filter(x => (isLive || x[0] !== "close") && (U.showDouble || x[0] !== "double")).map(([k, l, n]) => `<button type="button" class="${U.view === k ? "on" : ""}" data-action="view" data-v="${k}">${l}${n != null ? `<span class="n">${n}</span>` : ""}</button>`).join("")}</div>
+        <div class="tb-views">
+        <div class="seg ashr-seg views-seg">${[["all","Everyone",null],["close","Close to next award",closeN],["double","Double award",dblN]].filter(x => isLive || x[0] !== "close").map(([k, l, n]) => { const off = k === "double" && !U.showDouble; return `<button type="button" class="${U.view === k ? "on" : ""}" data-action="view" data-v="${k}"${off ? ` disabled title="Turn on Show double awards to see them"` : ""}>${l}<span class="n">${off ? "–" : n != null ? n : ""}</span></button>`; }).join("")}</div>
+        <label class="switch"><input type="checkbox" id="ashrDouble"${U.showDouble ? " checked" : ""}><span class="sw-track" aria-hidden="true"></span>Show double awards</label>
+        </div>
         <input type="search" id="ashrSearch" placeholder="Search student…" value="${esc(U.q)}">
         <div class="seg ashr-seg">${["all","Math","Reading"].map(s => `<button type="button" class="${U.subject === s ? "on" : ""}" data-action="subject" data-v="${s}">${s === "all" ? "Both" : s}</button>`).join("")}</div>
         <select id="ashrTeacher">${tOpts}</select>
         <select id="ashrGrade"><option value="all">All grades</option>${grades.map(g => `<option${U.grade === g ? " selected" : ""}>${g}</option>`).join("")}</select>
-        <label class="switch"><input type="checkbox" id="ashrDouble"${U.showDouble ? " checked" : ""}><span class="sw-track" aria-hidden="true"></span>Show double awards</label>
       </div>
       <div class="ashr-layout${U.open && !narrow ? " has-sheet" : ""}">
         <div class="card">
