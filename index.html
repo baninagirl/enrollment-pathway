@@ -1736,6 +1736,11 @@ window.kumonPtcNav = function(client, role){
     try{ await toggleRepCheckNow(kind, month, ref); } finally { REP_BUSY.delete(busyKey); }
   }
   const REP_BUSY = new Set();
+  // Who ticked it: their teacher name if this browser has their profile saved, else their email.
+  function repWhoName(){
+    try{ const p = currentUser && JSON.parse(localStorage.getItem("kumonProfile:" + currentUser.id) || "null"); if(p && p.teacher_name) return p.teacher_name; }catch(_){ }
+    return (currentUser && currentUser.email) || null;
+  }
   async function toggleRepCheckNow(kind, month, ref){
     const k = repKey(kind, month, ref), had = REP.checks.get(k);
     if(had){
@@ -1745,7 +1750,7 @@ window.kumonPtcNav = function(client, role){
     }else{
       const temp = { kind, month_key: month, ref, checked_at: new Date().toISOString() };
       REP.checks.set(k, temp); renderStudents();
-      const { data, error } = await sbClient.from("reporting_checks").insert({ kind, month_key: month, ref, checked_by_name: currentTeacherName || (currentUser && currentUser.email) || null }).select().single();
+      const { data, error } = await sbClient.from("reporting_checks").insert({ kind, month_key: month, ref, checked_by_name: repWhoName() }).select().single();
       if(error){ REP.checks.delete(k); renderStudents(); toast(/reporting_checks/.test(error.message || "") ? "Run phase150 in Supabase first." : "Couldn't save that: " + error.message); return; }
       REP.checks.set(k, data);
     }
