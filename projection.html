@@ -1410,6 +1410,17 @@ window.kumonPtcNav = function(client, role){
       const o = over.get(r.level) || {};
       if(o.done && /^\d{4}-\d{2}-\d{2}$/.test(o.done)){ r.actual = o.done; r.actualKnown = true; r.actualLabel = "Entered by hand"; r.doneSet = true; }
     });
+    // A completion date typed in by hand is a real point on the Actual line (Nov 19): finished that level on that date.
+    // Later points never sit below it, so today's dot catches up even if the LWC hasn't been updated yet.
+    const hand = out.rows.filter(r => r.doneSet && r.actual > p.start_date).map(r => ({ d: r.actual, y: r.endY, label: `Finished ${r.level} (entered by hand)`, txt: `${r.level} done`, hand: true }));
+    if(hand.length){
+      out.actual = out.actual.concat(hand).sort((a, b) => a.start ? -1 : b.start ? 1 : (a.d < b.d ? -1 : a.d > b.d ? 1 : (a.hand ? -1 : 1)));
+      let top = -Infinity;
+      for(const q of out.actual){
+        if(q.y < top){ q.y = top; if(!q.hand && !q.start) q.label = (q.label || "") + " · at least as far as the completion entered by hand"; }
+        top = Math.max(top, q.y);
+      }
+    }
     out.lines = standardLines(subject, p.grade, p.sy_start);
     return out;
   }
