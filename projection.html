@@ -1018,6 +1018,7 @@ window.kumonPtcNav = function(client, role){
       <a class="navbtn" href="calendar.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>Calendar</a>
       <a class="navbtn" href="ptc.html" id="navPtcLink" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="7.5" r="3.2"/><circle cx="17" cy="9.5" r="2.4"/><path d="M3 20c0-3.6 2.7-6.3 6-6.3s6 2.7 6 6.3"/><path d="M15.2 14.4c.6-.2 1.2-.3 1.8-.3 2.5 0 4.4 1.9 4.4 4.6"/></svg>PTC<span class="badge ptc-badge" id="navPtcBadge" hidden></span></a>
       <a class="navbtn active" href="projection.html" id="navProjLink" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 20h18"/><path d="M4 16l5-5 4 3 7-8"/><path d="M15 6h5v5"/></svg>Projection</a>
+      <a class="navbtn" href="ashr.html" id="navAshrLink"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="9" r="5"/><path d="M8.5 13.2L7 21l5-2.6L17 21l-1.5-7.8"/></svg>ASHR</a>
       <a class="navbtn" href="payments.html" id="navPaymentsLink" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20M6 15h4"/></svg>Payments</a>
       <a class="navbtn" href="absent.html" id="navAbsentLink" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.5-7 8-7s8 3 8 7"/><path d="M2 2l20 20" stroke="currentColor"/></svg>Retention</a>
       <a class="navbtn" href="admin.html" id="navAdminLink" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v6c0 5-3.5 8-7 9-3.5-1-7-4-7-9V6l7-3z"/></svg>Admin</a>
@@ -1129,7 +1130,7 @@ window.kumonPtcNav = function(client, role){
   }
   // LWC is free text ("3A 80", "3A80", "BII-200") → { level, page } or null.
   function parseLwc(subject, txt){
-    const m = String(txt || "").split(",")[0].trim().match(/^(.*?[A-Za-z])\s*[-–]?\s*(\d{1,3})$/);   // "AI 70, ZII 100": the Zunzun part after the comma is not the Reading level
+    const m = String(txt || "").replace(/[\s,;]*\bZ\s*I{1,2}(?![A-Za-z]).*$/i, "").split(/[,;]/)[0].trim().match(/^(.*?[A-Za-z])\s*[-–]?\s*(\d{1,3})$/);   // "AI 70, ZII 100": the Zunzun part after the comma is not the Reading level
     if(!m || levelIndex(subject, m[1]) < 0) return null;
     return { level: normLevel(subject, m[1]), page: m[2] };
   }
@@ -1146,6 +1147,113 @@ window.kumonPtcNav = function(client, role){
     const i = Math.max(0, Math.min(L.length - 1, Math.floor((y + 1e-9) / 20)));
     return L[i] || "";
   }
+  /* ASHR cutoffs on the chart (Nov 19): the same award tables as the ASHR page, kept in its own box. */
+  const ASHR = (() => {
+  /* =====================================================================
+     ASHR — Advanced Student Honor Roll (Nov 19, from the original hub's ASHR tab)
+     Kumon checks twice a year (August and February cutoffs): a child's level against the
+     qualifying table for their school grade gives KIS / Bronze / Silver / Gold / ASF.
+     Same award as last cycle = "Double award" (tracked, no second certificate).
+     The cycle in progress is a live preview from each subject's LWC; "Lock in" saves it
+     (superadmins) to ashr_awards (phase153) and moves on to the next cycle.
+     ===================================================================== */
+  const TIERS = ["KIS","Bronze","Silver","Gold","ASF"];
+  const MATH_LV = ["7A","6A","5A","4A","3A","2A","A","B","C","D","E","F","G","H","I","J","K","L","M","N","O"];
+  const READ_LV = ["7A","6A","5A","4A","3A","2A","AI","AII","BI","BII","CI","CII","DI","DII","EI","EII","FI","FII","GI","GII","HI","HII","I-I","I-II","J","K","L","M","N","O"];
+  // Qualifying tables, from the flyers (same as the original hub's lib/ashr.js). null = not given at that grade.
+  const MATH_Q = {
+    August: {
+      PK3:["5A1","5A150","3A50","2A50","B50"], PK2:["4A1","4A150","2A50","A50","C50"], PK1:["3A1","3A150","A50","B50","D50"], K:["2A1","2A150","B50","C50","E50"],
+      P1:["A1","A150","C50","D50","F50"], P2:["B1","B150","D50","E50","G50"], P3:["C1","C150","E50","F50","H50"], P4:["D1","D150","F50","G50","I50"],
+      P5:["E1","E150","G50","H50","J50"], P6:["F1","F150","H50","I50","K50"], P7:["G1","G150","I50","J50","L50"], P8:["H1","H150","J50","K50","M50"],
+      P9:["I1","I150","K50","L50","N50"], P10:["J1","K100",null,null,"O50"], P11:["K1","M100",null,null,null] },
+    February: {
+      PK2:["4A1","3A50","2A150","A150","C150"], PK1:["3A1","2A50","A150","B150","D150"], K:["2A1","A50","B150","C150","E150"],
+      P1:["A1","B50","C150","D150","F150"], P2:["B1","C50","D150","E150","G150"], P3:["C1","D50","E150","F150","H150"], P4:["D1","E50","F150","G150","I150"],
+      P5:["E1","F50","G150","H150","J150"], P6:["F1","G50","H150","I150","K150"], P7:["G1","H50","I150","J150","L150"], P8:["H1","I50","J150","K150","M150"],
+      P9:["I1","J50","K150","L150","N150"], P10:["J1","L100",null,null,null], P11:["K1","N100",null,null,null] }
+  };
+  const READ_Q = {
+    August: {
+      PK2:["4A1","4A150","2A50","AI100","CI100"], PK1:["3A1","3A150","AI100","BI100","DI100"], K:["2A1","2A150","BI100","CI100","EI100"],
+      P1:["AI1","AII100","CI100","DI100","FI100"], P2:["BI1","BII100","DI100","EI100","GI100"], P3:["CI1","CII100","EI100","FI100","HI100"],
+      P4:["DI1","DII100","FI100","GI100","I-I100"], P5:["EI1","EII100","GI100","HI100","J100"], P6:["FI1","FII100","HI100","I-I100","K100"],
+      P7:["GI1","GII100","I-I100","J100","L100"], P8:["HI1","HII100","J100","K50","M100"], P9:["I-I1","I-II100","K100","L50","N100"] },
+    February: {
+      PK2:["4A1","3A50","2A150","AII100","CII100"], PK1:["3A1","2A50","AII150","BII100","DII100"], K:["2A1","AI100","BII100","CII100","EII100"],
+      P1:["AI1","BI100","CII100","DII100","FII100"], P2:["BI1","CI100","DII100","EII100","GII100"], P3:["CI1","DI100","EII100","FII100","HII100"],
+      P4:["DI1","EI100","FII100","GII100","I-II100"], P5:["EI1","FI100","GII100","HII100","J100"], P6:["FI1","GI100","HII100","I-II100","K100"],
+      P7:["GI1","HI100","I-II100","J150","L100"], P8:["HI1","I-I100","J150","K150",null], P9:["I-I1","J50","K150","L150",null] }
+  };
+  function normGradeA(raw){
+    const g = String(raw || "").trim().toUpperCase().replace(/\s+/g, "");
+    if(!g) return null;
+    if(g === "1ST") return "P1";
+    if(g === "PK") return "K";
+    if(/^(PK[123]|K)$/.test(g)) return g;
+    const m = g.match(/^(?:P|G|GRADE)?(\d{1,2})$/); if(m) return "P" + parseInt(m[1], 10);
+    return g;
+  }
+  // "D 72", "2A90", "AI 80", "A1 80" (=AI), "I-II 100", "CII 200, ZII 100" (Zunzun ignored) → { idx, page, label }
+  function parseLevel(subject, raw){
+    let s = String(raw || "").toUpperCase().split(/[,;&\/]/)[0].trim();
+    if(!s) return null;
+    s = s.replace(/\s+/g, " ");
+    if(subject === "Math"){
+      const m = s.replace(/\s/g, "").match(/^(\d?A|[A-O])(\d*)$/); if(!m) return null;
+      const i = MATH_LV.indexOf(m[1]); if(i < 0) return null;
+      return { idx:i, page: m[2] ? +m[2] : 1, token:m[1] };
+    }
+    const t = s.replace(/\s/g, "");
+    let m = t.match(/^([2-7]A)(\d*)$/); if(m) return { idx: READ_LV.indexOf(m[1]), page: m[2] ? +m[2] : 1, token:m[1] };
+    m = t.match(/^([J-O])(\d*)$/); if(m) return { idx: READ_LV.indexOf(m[1]), page: m[2] ? +m[2] : 1, token:m[1] };
+    m = s.match(/^([A-I])\s*-?\s*(II|I)\s*(\d*)$/) || s.match(/^([A-I])([12])\s+(\d+)$/);   // "DI 190" or the "D1 190" shorthand
+    if(m){ const sub = (m[2] === "II" || m[2] === "2") ? "II" : "I"; const tok = m[1] === "I" ? "I-" + sub : m[1] + sub; const i = READ_LV.indexOf(tok); if(i < 0) return null; return { idx:i, page: m[3] ? +m[3] : 1, token:tok }; }
+    return null;
+  }
+  const cmpPos = (a, b) => a.idx - b.idx || a.page - b.page;
+  const fmtLevel = (subject, code) => { const p = parseLevel(subject, code); return p ? `${p.token} ${p.page}` : code; };
+  // The cutoff day: the last day of February / August.
+  function cutoffDate(cycle){ const y = +cycle.slice(0,4), m = +cycle.slice(5); return new Date(Date.UTC(y, m, 0)).toISOString().slice(0,10); }
+  function cutoffOf(cycle){ return cycle.slice(5) === "02" ? "February" : "August"; }
+  function cycleLabel(cycle){ return `${cutoffOf(cycle)} ${cycle.slice(0,4)}`; }
+  function prevCycle(c){ const y = +c.slice(0,4); return c.slice(5) === "02" ? `${y-1}-08` : `${y}-02`; }
+  function nextCycle(c){ const y = +c.slice(0,4); return c.slice(5) === "02" ? `${y}-08` : `${y+1}-02`; }
+  function defaultCycle(){ const d = new Date(), y = d.getFullYear(), m = d.getMonth() + 1; return m <= 2 ? `${y}-02` : m <= 8 ? `${y}-08` : `${y+1}-02`; }
+  // Highest tier reached, the next tier and its level, for one subject.
+  function tierFor(subject, cycle, grade, lwc){
+    const g = normGradeA(grade);
+    const table = (subject === "Math" ? MATH_Q : READ_Q)[cutoffOf(cycle)];
+    if(!g) return { tier:null, why:"No grade" };
+    const row = table && table[g];
+    if(!row) return { tier:null, why:"Grade not on the table" };
+    const pos = parseLevel(subject, lwc);
+    if(!pos) return { tier:null, why: lwc ? "LWC not readable" : "No LWC yet" };
+    let tier = "N/A", next = null;
+    TIERS.forEach((name, i) => {
+      if(!row[i]) return;
+      const th = parseLevel(subject, row[i]);
+      if(cmpPos(pos, th) >= 0) tier = name;
+      else if(!next) next = { name, code: row[i], th };
+    });
+    let away = "";
+    if(next){
+      const lv = next.th.idx - pos.idx;
+      away = lv <= 0 ? `${Math.max(1, next.th.page - pos.page)} pages away` : `${lv} level${lv === 1 ? "" : "s"} away`;
+    }
+    return { tier, next, away, pos };
+  }
+  const TIER_TITLE = { NONE:"None", KIS:"KIS", BRONZE:"Bronze", SILVER:"Silver", GOLD:"Gold", ASF:"ASF", COMPLETER:"Completer", "DOUBLE AWARD":"Double award", "N/A":"N/A" };
+  const normTier = t => t ? (TIER_TITLE[String(t).trim().toUpperCase()] || String(t).trim()) : "";
+  function badge(t, extra){
+    if(!t || t === "N/A") return `<span class="ab ab-na">${t === "N/A" ? "Not yet" : "—"}</span>`;
+    const k = t === "Double award" ? "double" : t.toLowerCase();
+    return `<span class="ab ab-${esc(k)}">${esc(t)}${extra ? ` · ${esc(extra)}` : ""}</span>`;
+  }
+
+
+    return { tierFor, cutoffDate, defaultCycle, nextCycle, cycleLabel };
+  })();
   function levelAndPage(subject, y){
     const L = LADDER[subject] || [];
     let i = Math.floor((y + 1e-9) / 20), p = Math.round((y - i * 20) * 10);
@@ -1343,10 +1451,12 @@ window.kumonPtcNav = function(client, role){
   function isAuthorized(){ return isAdmin() || isTeacherScoped(); }
   function myName(){ return currentTeacherName || (currentUser && currentUser.email) || ""; }
   function studentName(id){ const s = studentById.get(id); return s ? (s.name || [s.first_name, s.last_name].filter(Boolean).join(" ")) : ""; }
+  // Last name first everywhere ("Aba, Ioseff Zayrie"). Without a saved first/last split, the last word is taken as the last name.
+  function lastFirst(full){ const p = String(full || "").trim().split(/\s+/).filter(Boolean); if(p.length < 2 || /,/.test(full)) return String(full || "").trim(); return `${p[p.length-1]}, ${p.slice(0,-1).join(" ")}`; }
   function displayName(id, fallback){
     const s = studentById.get(id);
     if(s && s.last_name && s.first_name) return `${s.last_name}, ${s.first_name}`;
-    return (s && s.name) || fallback || "";
+    return lastFirst((s && s.name) || fallback || "");
   }
   let toastTimer = null;
   function toast(msg){ const el = $("#toast"); if(!el) return; el.textContent = msg; el.hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(()=>{ el.hidden = true; }, 3200); }
@@ -1850,6 +1960,20 @@ window.kumonPtcNav = function(client, role){
     }
     const tx = X(T(today));
     if(tx >= Lp && tx <= R) g += `<line x1="${tx}" x2="${tx}" y1="${Tp}" y2="${B}" stroke="${C.ink}" stroke-dasharray="3 4" opacity=".35"/><text x="${tx+5}" y="${Tp+12}" font-size="11" font-family="Inter, Arial, sans-serif" fill="${C.muted}">Today</text>`;
+    // The next 2 ASHR cutoffs, with the award the plan reaches by then (from the ASHR page's tables).
+    { const grade = (c.p && c.p.grade) || (typeof draft !== "undefined" && draft && draft.grade) || "";
+      let cyc = ASHR.defaultCycle();
+      for(let k = 0; k < 2; k++, cyc = ASHR.nextCycle(cyc)){
+        const cd = ASHR.cutoffDate(cyc), cx = X(T(cd));
+        if(cx < Lp || cx > R) continue;
+        const t = grade ? ASHR.tierFor(subj, cyc, grade, levelAndPage(subj, projAt(c, cd))) : { tier:null };
+        const award = t.tier && t.tier !== "N/A" ? t.tier : t.tier === "N/A" ? "below KIS" : "";
+        const lbl = cyc.slice(5) === "02" ? "Feb" : "Aug";
+        g += `<line x1="${cx}" x2="${cx}" y1="${Tp}" y2="${B}" stroke="${C.proj}" stroke-dasharray="2 5" opacity=".55"/>` +
+             `<g data-tip="${esc(ASHR.cycleLabel(cyc))} ASHR cutoff${award ? `<br>The plan reaches: ${esc(award)}` : ""}"><rect x="${cx - (8 + (award.length + 9) * 3.3)}" y="${Tp + 18}" width="${16 + (award.length + 9) * 6.6}" height="20" rx="10" fill="${C.surface}" stroke="${C.proj}" stroke-width="1"/>` +
+             `<text x="${cx}" y="${Tp + 32}" text-anchor="middle" font-size="11" font-weight="700" font-family="Inter, Arial, sans-serif" fill="${C.proj}">${lbl} ’${cyc.slice(2,4)}${award ? " · " + esc(award) : ""}</text></g>`;
+      }
+    }
     const clipId = "plot" + Math.random().toString(36).slice(2, 8);
     g += `<clipPath id="${clipId}"><rect x="${Lp}" y="${Tp-2}" width="${R-Lp}" height="${B-Tp+4}"/></clipPath><g clip-path="url(#${clipId})">`;
     for(const s of vis.slice().reverse()){
