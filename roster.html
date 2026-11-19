@@ -510,6 +510,8 @@
   .name-link.name-sm{ font-size:12px; font-weight:500; }
   .lwc-pick{ display:grid; grid-template-columns:minmax(0,1.2fr) minmax(0,1fr); gap:8px; }
   .lwc-pick select{ width:100%; }
+  #closeOutProgress{ position:fixed; left:50%; bottom:calc(20px + env(safe-area-inset-bottom, 0px)); transform:translateX(-50%); z-index:200; background:var(--surface); color:var(--ink); border:1px solid var(--accent); border-radius:14px; padding:12px 18px; box-shadow:var(--shadow-lift, 0 10px 30px rgba(0,0,0,.15)); font-size:13.5px; display:flex; gap:8px; flex-wrap:wrap; max-width:calc(100vw - 32px); }
+  #closeOutProgress b{ color:var(--accent); }
   /* Reporting time (phase150) */
   .btn.rep-toggle{ margin-left:auto; }
   .btn.rep-toggle.on{ background:var(--accent-soft); border-color:var(--accent); color:var(--accent); }
@@ -2206,7 +2208,11 @@ window.kumonPtcNav = function(client, role){
     if(canCloseOut() && isCurrentCycle()){
       const cycleLabel = monthLabel(viewMonth);
       const candidates = openCloseOutCandidates();
-      closeOutHtml = candidates.length
+      // Some of this month is archived but the open month never moved on: a close-out stopped partway (Nov 19).
+      const stuck = history.some(h => h.cycle_key === openKey());
+      closeOutHtml = stuck
+        ? `<button class="btn primary" data-action="close-out-month" title="The last close-out stopped partway. This finishes it.">Finish closing out ${esc(cycleLabel)}${candidates.length ? ` (${candidates.length} left)` : ""}</button>`
+        : candidates.length
         ? `<button class="btn primary" data-action="close-out-month" title="Archive this cycle's numbers and start ${esc(cycleLabel)} fresh">Close out ${esc(cycleLabel)} (${candidates.length})</button>`
         : `<span class="hint" style="font-size:12px; color:var(--ink-muted);">Everything's closed out for ${esc(cycleLabel)}.</span>`;
     }
@@ -2216,12 +2222,26 @@ window.kumonPtcNav = function(client, role){
     wrap.innerHTML = [dupHtml, addBtnHtml, closeOutHtml].filter(Boolean).join("");
   }
 
+  // A request that hasn't answered in time counts as an error (so it can be retried) instead of hanging forever.
+  function withTimeout(promise, ms){
+    return Promise.race([Promise.resolve(promise), new Promise(res => setTimeout(() => res({ data: null, error: { message: "no answer from the database after " + Math.round(ms / 1000) + " seconds", timeout: true } }), ms))]);
+  }
+  // A small "working on it" bar so it's clear the close-out is still going and the page must stay open.
+  function closeOutProgress(text){
+    let el = document.getElementById("closeOutProgress");
+    if(!text){ if(el) el.remove(); return; }
+    if(!el){ el = document.createElement("div"); el.id = "closeOutProgress"; el.setAttribute("role", "status"); document.body.appendChild(el); }
+    el.innerHTML = `<b>Closing out — keep this page open.</b> <span>${esc(text)}</span>`;
+  }
   let closingOut = false;
   async function closeOutMonth(){
     if(!canCloseOut()) return;
     if(closingOut) return;   // a second click while the first close-out is still saving
     closingOut = true;
-    try{ await closeOutMonthNow(); } finally{ closingOut = false; }
+    // Leaving the page mid-way is what stopped October's close-out: warn before the tab closes or reloads.
+    const stay = e => { e.preventDefault(); e.returnValue = ""; };
+    window.addEventListener("beforeunload", stay);
+    try{ await closeOutMonthNow(); } finally{ closingOut = false; window.removeEventListener("beforeunload", stay); closeOutProgress(null); }
   }
   async function closeOutMonthNow(){
     // Ask the database which month is open right now — never close out a month guessed from today's date.
@@ -2238,12 +2258,18 @@ window.kumonPtcNav = function(client, role){
     const cycleLabel = monthLabel(monthFromKey(cycleKey));
     const nextLabel = monthLabel(monthFromKey(nextKey(cycleKey)));
     const candidates = openCloseOutCandidates();
-    if(!candidates.length){ alert(`Nothing to close out — every active enrollment already has a ${cycleLabel} record.`); return; }
+    // Resuming a close-out that stopped partway: some subjects are archived already, the open month didn't move.
+    const archivedBefore = history.filter(h => h.cycle_key === cycleKey);
+    const resuming = archivedBefore.length > 0;
+    if(!candidates.length && !resuming){ alert(`Nothing to close out — every active enrollment already has a ${cycleLabel} record.`); return; }
 
     const cycleEnd = new Date(monthFromKey(cycleKey).getFullYear(), monthFromKey(cycleKey).getMonth(), 20, 23, 59, 59);
     const early = new Date() <= cycleEnd
       ? `Heads up: ${cycleLabel} runs until ${cycleEnd.toLocaleDateString(undefined,{month:"short",day:"numeric"})}, and that hasn't passed yet.\n\n` : "";
-    const ok = confirm(
+    const ok = resuming ? confirm(
+      `The ${cycleLabel} close-out stopped partway: ${archivedBefore.length} enrollment${archivedBefore.length===1?" is":"s are"} archived${candidates.length ? `, ${candidates.length} still to go` : ""}.\n\n` +
+      `Finish it? This archives the rest, clears last month's NWU / days / test numbers that are still showing, fills in Actual, and makes ${nextLabel} the open month.\n\nA full backup is made first. Keep this page open until it says it's done.`
+    ) : confirm(
       early +
       `Close out ${cycleLabel} for ${candidates.length} enrollment${candidates.length===1?"":"s"}?\n\n` +
       `This archives their current LWC, NWU, No. of days, No. of months, and Achievement test numbers under ${cycleLabel}, then clears those fields. ${nextLabel} becomes the open month.\n\n` +
@@ -2286,14 +2312,21 @@ window.kumonPtcNav = function(client, role){
 
     // Snapshot each enrollment's own current numbers before they're cleared, so an undo can
     // put the exact prior values back rather than just guessing at blanks.
-    const priorFieldValues = candidates.map(e => ({
+    // When resuming, also the archived ones that still show last month's numbers (the clearing never reached them).
+    const archivedIds = new Set(archivedBefore.map(h => h.subject_enrollment_id));
+    const notCleared = enrollments.filter(e => archivedIds.has(e.id) && [e.nwu, e.no_of_days, e.no_of_months_current_level, e.test_date, e.test_level, e.test_time, e.test_score, e.test_group].some(v => v != null && String(v).trim() !== ""));
+    const toClear = [...candidates, ...notCleared];
+    const priorFieldValues = toClear.map(e => ({
       id: e.id, actual: e.actual,
       lwc: e.lwc, nwu: e.nwu, no_of_days: e.no_of_days, no_of_months_current_level: e.no_of_months_current_level,
       test_date: e.test_date, test_level: e.test_level, test_time: e.test_time, test_score: e.test_score, test_group: e.test_group
     }));
-    const candidateIds = candidates.map(e => e.id);
+    const candidateIds = toClear.map(e => e.id);
+    // Actual is filled in for every subject of the month, including ones archived before a stop.
+    const actualIds = [...new Set([...candidates.map(e => e.id), ...archivedIds])].filter(id => enrollments.some(e => e.id === id));
 
-    let { data: insertedHistory, error: histError } = await sbClient.from("enrollment_monthly_history").insert(rows).select();
+    closeOutProgress(`Archiving ${cycleLabel}…`);
+    let { data: insertedHistory, error: histError } = rows.length ? await sbClient.from("enrollment_monthly_history").insert(rows).select() : { data: [], error: null };
     // phase122 not run yet: close out without the schedule / date columns rather than not at all
     if(histError && /schedule_slots|enrolled_on/.test(histError.message || "")){
       rows.forEach(r => { delete r.schedule_slots; delete r.enrolled_on; });
@@ -2309,8 +2342,12 @@ window.kumonPtcNav = function(client, role){
     };
     // Cleared in chunks and checked: a refused update returns no rows, so count what really cleared.
     let clearError = null, clearedN = 0;
-    for(let i = 0; i < candidateIds.length && !clearError; i += 200){
-      const res = await sbClient.from("subject_enrollments").update(clearedFields).in("id", candidateIds.slice(i, i + 200)).select("id");
+    // 100 at a time, each try given 30 seconds and one retry, so one slow request can't stall the whole close-out.
+    for(let i = 0; i < candidateIds.length && !clearError; i += 100){
+      closeOutProgress(`Clearing last month's numbers… ${Math.min(i + 100, candidateIds.length)} of ${candidateIds.length}`);
+      const ids = candidateIds.slice(i, i + 100);
+      let res = await withTimeout(sbClient.from("subject_enrollments").update(clearedFields).in("id", ids).select("id"), 30000);
+      if(res.error) res = await withTimeout(sbClient.from("subject_enrollments").update(clearedFields).in("id", ids).select("id"), 30000);
       if(res.error) clearError = res.error; else clearedN += (res.data || []).length;
     }
     if(clearError || clearedN < candidateIds.length){
@@ -2320,13 +2357,16 @@ window.kumonPtcNav = function(client, role){
 
     // Actual = this month's last LWC (Nov 16, phase142). One database call per 500 subjects.
     let actualErr = null;
-    for(let i = 0; i < candidateIds.length && !actualErr; i += 500){
-      const { error } = await sbClient.rpc("set_actual_from_lwc", { p_ids: candidateIds.slice(i, i + 500) });
+    for(let i = 0; i < actualIds.length && !actualErr; i += 300){
+      closeOutProgress(`Filling in Actual… ${Math.min(i + 300, actualIds.length)} of ${actualIds.length}`);
+      let { error } = await withTimeout(sbClient.rpc("set_actual_from_lwc", { p_ids: actualIds.slice(i, i + 300) }), 30000);
+      if(error && error.timeout) ({ error } = await withTimeout(sbClient.rpc("set_actual_from_lwc", { p_ids: actualIds.slice(i, i + 300) }), 30000));
       if(error) actualErr = error;
     }
     if(actualErr) alert(`Archived, but Actual couldn't be filled in from the LWC (${/set_actual_from_lwc|schema cache|does not exist/i.test(actualErr.message || "") ? "run phase142 in Supabase" : actualErr.message}). Everything else went through.`);
 
     // Move the open month on (phase38).
+    closeOutProgress(`Making ${nextLabel} the open month…`);
     const prevOpenKey = openMonthKey;
     let advanced = false;
     try{ await saveOpenMonth(nextKey(cycleKey)); advanced = true; }
@@ -2336,7 +2376,8 @@ window.kumonPtcNav = function(client, role){
     if(advanced) viewMonth = monthFromKey(openKey());
     renderBoth();
     const unpaidKids = [...new Set(candidates.map(e => e.student_id))].filter(sid => closedPaymentStatus(sid, shiftMonth(cycleKey, 1), cycleKey) === "unpaid").length;
-    alert(`${candidates.length} enrollment${candidates.length===1?"":"s"} closed out for ${cycleLabel}.${advanced ? ` ${nextLabel} is now the open month.` : ""}` +
+    closeOutProgress(null);
+    alert((resuming ? `Finished closing out ${cycleLabel} (${archivedBefore.length + historyIds.length} enrollments in all).` : `${candidates.length} enrollment${candidates.length===1?"":"s"} closed out for ${cycleLabel}.`) + `${advanced ? ` ${nextLabel} is now the open month.` : ""}` +
       (unpaidKids ? `\n\n${unpaidKids} child${unpaidKids===1?" is":"ren are"} still unpaid for the ${cycleLabel} bill. They show as "Potential absent" on the ${nextLabel} report until they pay or are marked absent.` : ""));
 
     const label = `Close out ${cycleLabel} (${candidates.length})`;
