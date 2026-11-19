@@ -1666,6 +1666,17 @@ window.kumonPtcNav = function(client, role){
     if(!d) return `<span class="muted">—</span>`;
     return `<span class="tnum"${s.firstDay ? ` title="Set by hand"` : ` title="From their first training session"`}>${fmtDateShort(d)}</span>`;
   }
+  // First day on a New Students row is per subject (Nov 19): Math and Reading can start on different days.
+  // The subject's own Date enrolled wins; a subject that was on the roster before the child's first day
+  // (the old subject of an EO child) shows its own date or "—", never the new subject's first day.
+  function fmtRowStart(s, subj){
+    const e = STATE.enrollments.find(x => x.studentId === s.id && x.subject === subj && !x.archived);
+    if(e && e.enrolledOn) return `<span class="tnum" title="This subject's Date enrolled (Student Roster)">${fmtDateShort(String(e.enrolledOn).slice(0,10))}</span>`;
+    const d = firstDayFor(s);
+    if(e && d && e.createdAt && String(e.createdAt).slice(0,10) < cycleStartIso(d) && !e.addedMonth && e.enrollmentType !== "eo")
+      return `<span class="muted" title="Started before ${esc(fmtDateShort(d))} — set its own Date enrolled on Student Roster">—</span>`;
+    return fmtFirstDay(s);
+  }
   function canEditFirstDay(){ return currentRole === "admin" || currentRole === "superadmin"; }
 
   /* ---------- Reporting time (phase150): Miss Joan's ticks, for every admin / superadmin ----------
@@ -3121,7 +3132,7 @@ window.kumonPtcNav = function(client, role){
                 <td>${esc(s.ageGrade||"—")}</td>
                 <td>${row.subj ? fmtSubjectPill(row.subj) : "—"}</td>
                 <td>${fmtEnrollmentTagPill(s.id, row.subj)}</td>
-                <td>${fmtFirstDay(s)}</td>
+                <td>${fmtRowStart(s, row.subj)}</td>
                 <td>${pipelineScheduleLabel(s.id)}${s.status === "enrolled_pending_training" && subjectsNeedingSchedule(s).length ? ` <button type="button" class="btn sm ghost" data-action="open-new-schedule" data-kind="early" data-student="${s.id}" title="Set their schedule now, before training is done (goes on the monitor list)">Set schedule</button>`
                   : !scheduleFor(s.id) && canUseStudentCard() && activeEnrollmentsOf(s.id).length ? ` <button type="button" class="btn sm ghost" data-action="open-set-days" data-student="${s.id}" title="Set their 2 days a week">Set schedule</button>` : ""}</td>
                 <td>${fmtModePill(s.mode)}</td>
@@ -3145,7 +3156,7 @@ window.kumonPtcNav = function(client, role){
                 <td>${esc(s.ageGrade||"—")}</td>
                 <td>${row.subj ? fmtSubjectPill(row.subj) : "—"}</td>
                 <td>${fmtEnrollmentTagPill(s.id, row.subj)}</td>
-                <td>${fmtFirstDay(s)}</td>
+                <td>${fmtRowStart(s, row.subj)}</td>
                 <td>${esc(r.startPoint || "—")}</td>
                 <td>${esc(r.dtTest || "—")}</td>
                 <td class="tnum">${d ? fmtDateShort(d.date) : "—"}</td>
@@ -3535,13 +3546,22 @@ window.kumonPtcNav = function(client, role){
   // own starting subjects follow it — a subject added later (EO / Add subject) or resumed keeps its own date.
   // Math and Reading can start on different days (Nov 19): a subject that already has its own Date enrolled keeps it.
   // Only a subject with no date yet, or one whose date was just following the old first day, moves with it.
+  // First day of the reporting month a date falls in (the 21st of the month before, or of the same month after the 20th).
+  function cycleStartIso(iso){
+    const [y,m,d] = String(iso).slice(0,10).split("-").map(Number);
+    const start = d > 20 ? new Date(y, m-1, 21) : new Date(y, m-2, 21);
+    return start.getFullYear() + "-" + String(start.getMonth()+1).padStart(2,"0") + "-21";
+  }
   async function syncEnrolledOnFromFirstDay(studentId, iso, prevIso){
     if(!iso) return 0;
     const prev = String(prevIso || "").slice(0,10);
     const subs = STATE.enrollments.filter(e => e.studentId === studentId && !e.archived && (e.status || "active") === "active"
       && !e.addedMonth && e.enrollmentType !== "eo" && !e.resumedMonth
       && (!e.enrolledOn || (prev && String(e.enrolledOn).slice(0,10) === prev))
-      && String(e.enrolledOn || "").slice(0,10) !== iso);
+      && String(e.enrolledOn || "").slice(0,10) !== iso
+      // A subject that was already on the roster before the first day's month began (Oct 21 for a November first day)
+      // started earlier: the first day belongs to the newer subject, e.g. an EO added later (Nov 19).
+      && !(e.createdAt && String(e.createdAt).slice(0,10) < cycleStartIso(iso)));
     // A subject already on a closed month's report has started already: its date stays as it is.
     if(subs.length){
       const { data: done, error } = await sbClient.from("enrollment_monthly_history").select("subject_enrollment_id").in("subject_enrollment_id", subs.map(e => e.id)).limit(1000);
