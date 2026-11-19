@@ -585,7 +585,7 @@
   }
   .ptc-note{ width:100%; font-family:inherit; font-size:12.5px; padding:7px 9px; border-radius:8px; border:1px solid var(--border); background:var(--surface); color:var(--ink); resize:vertical; }
   .ptc-note-print{ display:none; white-space:pre-wrap; font-size:12.5px; width:100%; }
-  body.exporting .ptc-note{ display:none; } body.exporting .ptc-note-print{ display:block; }
+  body.exporting .ptc-note{ display:none; } body.exporting .ptc-note-print{ display:block; } body.exporting .pnote-view{ display:none; }
   .ptc-note-foot{ display:flex; justify-content:space-between; align-items:center; gap:8px; width:100%; font-size:11.5px; }
   .sect{ padding:16px 20px; }
   .sect h3, .subj-b h4{ font-size:14.5px; margin:0; }
@@ -605,6 +605,33 @@
   .a-off{ background:var(--warn-soft); color:var(--warn); font-weight:600; } .a-today{ border:1px dashed var(--border); color:var(--ink-muted); font-weight:600; }
   .a-future, .a-before{ background:transparent; color:var(--ink-faint); font-weight:500; }
   .pgrid{ display:grid; grid-template-columns:repeat(3,1fr); gap:10px; }
+  /* PTC history (Nov 19) */
+  .pnext{ display:flex; gap:12px; align-items:center; background:var(--surface-2); border-radius:12px; padding:10px 12px; flex-wrap:wrap; margin-bottom:10px; }
+  .pnext b{ font-size:14px; }
+  .psteps{ display:flex; gap:6px; flex-wrap:wrap; margin-bottom:12px; }
+  .pstep{ font-size:11.5px; font-weight:600; border-radius:99px; padding:3px 9px; border:1px solid var(--border); color:var(--ink-faint); }
+  .pstep.done{ background:var(--good-soft); border-color:transparent; color:var(--good); }
+  .pstep.now{ border-color:var(--accent); color:var(--accent); background:var(--accent-soft); }
+  .pstep.skip{ text-decoration:line-through; }
+  .ptl{ display:flex; flex-direction:column; }
+  .pev{ display:grid; grid-template-columns:16px minmax(0,1fr); gap:12px; padding-bottom:14px; position:relative; }
+  .pev::before{ content:""; position:absolute; left:7px; top:18px; bottom:0; width:2px; background:var(--border); }
+  .pev:last-child::before{ display:none; }
+  .pdot{ width:16px; height:16px; border-radius:50%; border:2px solid var(--accent); background:var(--surface); margin-top:3px; }
+  .pev.done .pdot{ background:var(--good); border-color:var(--good); }
+  .pev-body{ display:flex; flex-direction:column; gap:4px; align-items:flex-start; min-width:0; }
+  .pev-top{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+  .pev-top b{ font-size:14px; }
+  .pev-body > .faint{ font-size:12.5px; }
+  .pnext .faint{ font-size:12.5px; }
+  .pnote-view{ background:var(--surface-2); border-radius:10px; padding:9px 12px; font-size:13.5px; white-space:pre-wrap; align-self:stretch; }
+  .pnote-view.empty{ display:none; }
+  .pnote-edit{ align-self:stretch; display:flex; flex-direction:column; gap:6px; }
+  .pnote-edit .ptc-note-foot{ display:flex; gap:8px; justify-content:flex-end; align-items:center; }
+  .pnote-edit .ptc-note-foot .faint{ margin-right:auto; }
+  .linkbtn{ background:none; border:none; padding:0; font:inherit; font-size:13px; font-weight:600; color:var(--accent); cursor:pointer; }
+  .ptc-note-print{ display:none; }
+  @media print{ .pnote-view{ display:none !important; } .ptc-note-print:not(:empty){ display:block; font-size:12px; } }
   .pbox{ border:1px solid var(--border); border-radius:10px; padding:10px 12px; display:flex; flex-direction:column; gap:6px; align-items:flex-start; font-size:12.5px; }
   body.exporting .no-print, body.exporting .no-print-pay{ display:none !important; }
   @media (max-width:860px){ .pgrid{ grid-template-columns:1fr; } }
@@ -1314,6 +1341,7 @@ window.kumonPtcNav = function(client, role){
     const since = weekStartOf(new Date(Date.now() - (WEEKS + 1) * 7 * 86400e3));
     let att = { data: [], error: null }, firstTick = { data: [], error: null }, mv = { data: [], error: null };
     const fd = one(sbClient.rpc("ptc_first_day", { p_student: sid }));   // same first day the PTC page uses
+    const ses = one(sbClient.from("ptc_sessions").select("*").eq("student_id", sid));   // PTC Week meetings (quarterly)
     if(schedules.length){
       [att, firstTick, mv] = await Promise.all([
         one(sbClient.from("schedule_attendance").select("schedule_id,day,week_start,arrived,arrived_at")
@@ -1324,13 +1352,13 @@ window.kumonPtcNav = function(client, role){
         one(sbClient.from("schedule_moves").select("schedule_id,week_start,from_day,to_day,to_time").in("schedule_id", schedules.map(x => x.id)).gte("week_start", since))
       ]);
     }
-    const fdr = await fd;
+    const fdr = await fd, sesr = await ses;
     const ptcFirstDay = (!fdr.error && fdr.data) ? String(fdr.data).slice(0,10) : (st.data.first_day || null);
     return {
       student: st.data, enrollments: en.data || [], schedules, history: hi.data || [], projections: pr.data || [],
       absences: ab.data || [], milestones: ms.data || [], payments: pay.data || [], attendance: att.data || [],
       firstTick: firstTick.error ? null : ((firstTick.data || [])[0] || {}).week_start || null, firstDay: ptcFirstDay,
-      moves: mv.error ? [] : (mv.data || []),
+      moves: mv.error ? [] : (mv.data || []), sessions: sesr.error ? [] : (sesr.data || []),
       partial: [hi, pr, ab, ms, pay, sc, att, firstTick].some(r => r.error)
     };
   }
@@ -1431,21 +1459,67 @@ window.kumonPtcNav = function(client, role){
   const ordinalMonth = n => n + (n === 1 ? "st" : n === 2 ? "nd" : n === 3 ? "rd" : "th");
   function ptcDue(n, m){ return (m && m.due_date) || (prof.firstDay ? addMonths(prof.firstDay, n) : null); }
   function myName(){ return currentTeacherName || (currentUser && currentUser.email) || ""; }
-  function ptcLine(){
-    const box = (title, n) => {
+  // First-year PTCs (1, 2, 3, 6, 9, 12 months) are only for brand-new students: first day on or after Sep 21, 2026
+  // (phase154, same date as the PTC page). Everyone has the quarterly PTC Week meetings.
+  const PTC_NEW_SINCE = "2026-09-21";
+  const isNewForPtc = () => !!prof.firstDay && prof.firstDay >= PTC_NEW_SINCE;
+  const SES_LABEL = { invited:"Invited", confirmed:"Confirmed", scheduled:"Scheduled", done:"Done", held:"Done", cant:"Can't make it", moved:"Moved", no_show:"Didn't come", cancelled:"Cancelled", skipped:"Skipped" };
+  const fmtTime = t => { const m = /^(\d{1,2}):(\d{2})/.exec(t || ""); if(!m) return ""; const h = +m[1]; return `${((h + 11) % 12) + 1}:${m[2]} ${h < 12 ? "AM" : "PM"}`; };
+  // Every PTC for this child, newest first: PTC Week meetings, plus first-year PTCs (new students), plus any
+  // older first-year PTC that already has a note or was held (so nothing written before is lost).
+  function ptcEvents(){
+    const ev = [], isNew = isNewForPtc();
+    for(const x of prof.sessions || []){
+      const st = String(x.status || "").toLowerCase();
+      ev.push({ kind:"week", id:x.id, date:x.date || "", time:x.time, title:"PTC Week", tag:"Quarterly", status: SES_LABEL[st] || (st ? st.charAt(0).toUpperCase() + st.slice(1) : "Planned"),
+        done: st === "done" || st === "held", who: x.teacher || "", subj: x.subjects || "", note: x.note || "" });
+    }
+    for(const n of PTC_MONTHS){
       const m = prof.milestones.find(x => x.student_id === prof.student.id && x.month_no === n);
       const due = ptcDue(n, m);
-      const pill = m && m.status === "done" ? `<span class="pill p-good">Done ${esc(fmtDate(m.done_on || m.due_date))}</span>`
-        : m && m.status === "skipped" ? `<span class="pill p-muted">Skipped</span>`
-        : m && m.status === "scheduled" && m.scheduled_on ? `<span class="pill p-accent">Booked ${esc(fmtDate(m.scheduled_on))}</span>`
-        : !due ? `<span class="pill p-muted">No first day yet</span>`
-        : due <= todayISO() ? `<span class="pill p-warn">Due ${esc(fmtDate(due))}</span>` : `<span class="pill p-muted">${esc(fmtDate(due))}</span>`;
-      return `<div class="pbox"><b>${title}</b>${pill}
-        <textarea class="ptc-note" data-ptc-note="${n}" rows="3" placeholder="PTC notes — what was discussed, parent's concerns, agreed next steps…">${esc((m && m.note) || "")}</textarea>
-        <div class="ptc-note-print" data-ptc-print="${n}">${esc((m && m.note) || "")}</div>
-        <div class="ptc-note-foot no-print"><span class="faint" data-ptc-saved="${n}">${m && m.note && m.by_name && m.status !== "done" && m.status !== "skipped" ? "Last saved by " + esc(m.by_name) : ""}</span><button class="btn sm" data-action="ptc-note-save" data-month="${n}">Save note</button></div></div>`;
-    };
-    return `<div class="pgrid">${PTC_MONTHS.map(n => box(ordinalMonth(n) + " month PTC", n)).join("")}</div>`;
+      if(!isNew && !(m && (m.note || m.status === "done"))) continue;
+      if(isNew && !m && due && due > addMonths(todayISO(), 1)) continue;   // far-off ones show in the 1st → 12th row only
+      const st = m ? m.status : "open";
+      const label = !isNew && st !== "done" ? "Earlier note" : st === "done" ? "Done" : st === "skipped" ? "Skipped" : st === "scheduled" && m.scheduled_on ? "Booked" : st === "contacted" ? "Contacted" : st === "cant" ? "Can't make it" : due && due <= todayISO() ? "Due" : "Coming up";
+      ev.push({ kind:"ms", n, date: (st === "done" && m.done_on) || (m && m.scheduled_on) || due || "", time: m && m.scheduled_time, title: ordinalMonth(n) + " month PTC", tag:"First year",
+        status: label, done: st === "done", due: label === "Due", who: (m && m.by_name) || "", note: (m && m.note) || "" });
+    }
+    return ev.sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+  }
+  function ptcLine(){
+    const isNew = isNewForPtc(), ev = ptcEvents();
+    let head = "";
+    if(isNew){
+      const steps = PTC_MONTHS.map(n => { const m = prof.milestones.find(x => x.month_no === n); const st = m ? m.status : "open"; return { n, st }; });
+      const cur = steps.find(x => x.st !== "done" && x.st !== "skipped");
+      const nextM = cur ? prof.milestones.find(x => x.month_no === cur.n) : null, nextDue = cur ? ptcDue(cur.n, nextM) : null;
+      head = `<div class="pnext">${cur ? `<span class="pill ${nextDue && nextDue <= todayISO() && !(nextM && nextM.scheduled_on) ? "p-warn" : "p-muted"}">${nextM && nextM.status === "scheduled" && nextM.scheduled_on ? "Booked" : nextDue && nextDue <= todayISO() ? "Due" : "Next"}</span><div><b>${esc(ordinalMonth(cur.n))} month PTC</b><div class="faint">${nextM && nextM.scheduled_on ? "booked " + esc(fmtDate(nextM.scheduled_on)) : "due " + esc(fmtDate(nextDue))}</div></div>` : `<span class="pill p-good">All done</span><div><b>First-year PTCs</b><div class="faint">1st to 12th month</div></div>`}
+        <a class="btn sm no-print" href="ptc.html" style="margin-left:auto">Open PTC page</a></div>
+        <div class="psteps" aria-label="First-year PTCs">${steps.map(x => `<span class="pstep${x.st === "done" ? " done" : x === cur ? " now" : ""}${x.st === "skipped" ? " skip" : ""}">${ordinalMonth(x.n)}${x.st === "done" ? " ✓" : x.st === "skipped" ? " –" : ""}</span>`).join("")}</div>`;
+    }
+    const kindPill = e => e.kind === "week" ? `<span class="pill p-warn">${esc(e.tag)}</span>` : `<span class="pill p-accent">${esc(e.tag)}</span>`;
+    const statusPill = e => `<span class="pill ${e.done ? "p-good" : e.due ? "p-warn" : "p-muted"}">${esc(e.status)}${e.date ? " · " + esc(fmtDate(e.date)) : ""}${e.time && !e.done ? ", " + esc(fmtTime(e.time)) : ""}</span>`;
+    const key = e => e.kind === "week" ? "w:" + e.id : "m:" + e.n;
+    const evHtml = e => `<div class="pev${e.done ? " done" : ""}"><span class="pdot" aria-hidden="true"></span><div class="pev-body">
+        <div class="pev-top"><b>${esc(e.title)}</b>${kindPill(e)}${statusPill(e)}</div>
+        ${e.who || e.subj ? `<div class="faint">${esc([e.who, e.subj].filter(Boolean).join(" · "))}</div>` : ""}
+        <div class="pnote-view${e.note ? "" : " empty"}" data-ptc-view="${esc(key(e))}">${e.note ? esc(e.note) : ""}</div>
+        <div class="ptc-note-print" data-ptc-print="${esc(key(e))}">${esc(e.note)}</div>
+        <div class="pnote-edit no-print" data-ptc-edit="${esc(key(e))}" hidden><textarea class="ptc-note" data-ptc-note="${esc(key(e))}" rows="3" placeholder="What was discussed, parent's concerns, agreed next steps…">${esc(e.note)}</textarea>
+          <div class="ptc-note-foot"><span class="faint" data-ptc-saved="${esc(key(e))}"></span><button class="btn sm ghost" data-action="ptc-note-cancel" data-key="${esc(key(e))}">Cancel</button><button class="btn sm" data-action="ptc-note-save" data-key="${esc(key(e))}">Save note</button></div></div>
+        <button class="linkbtn no-print" data-action="ptc-note-open" data-key="${esc(key(e))}">${e.note ? "Edit note" : "+ Add note"}</button>
+      </div></div>`;
+    return `${head}${ev.length ? `<div class="ptl">${ev.map(evHtml).join("")}</div>` : `<div class="faint" style="padding:6px 0;">${isNew ? "No PTCs yet." : "No PTC Week meetings yet. They show here once this child is scheduled in a PTC Week."}</div>`}
+      ${!isNew ? `<div class="faint" style="font-size:12px;">${prof.firstDay ? `Started ${esc(fmtDate(prof.firstDay))}, before first-year PTCs were tracked, so only PTC Week meetings apply.` : "No first day yet, so only PTC Week meetings apply."}</div>` : ""}`;
+  }
+  // A PTC Week meeting's note lives on the meeting itself (the same record the PTC page edits).
+  async function saveSessionNote(id, text){
+    const P = prof, x = (P.sessions || []).find(y => y.id === id); if(!x) return false;
+    const { data, error } = await sbClient.from("ptc_sessions").update({ note: text.trim() || null, updated_by_name: myName(), updated_at: new Date().toISOString() }).eq("id", id).select();
+    if(error || !data || !data.length){ alert("Couldn't save the PTC note" + (error ? ": " + error.message : " — the database didn't allow it") + "."); return false; }
+    Object.assign(x, data[0]);
+    logHistory("ptc_note", `Saved a PTC Week note: ${displayName(P.student.id, P.student.name)}`, P.student.id, null);
+    return true;
   }
   // Saves one PTC's notes onto the same record the PTC page uses (so they show on both pages).
   async function savePtcNote(n, text){
@@ -1573,7 +1647,11 @@ window.kumonPtcNav = function(client, role){
     const pct = A.total ? Math.round(A.came / A.total * 100) : null;
     const lastPay = prof.payments.find(r => r.status !== "rejected") || null;
     const nextPtc = (() => {
-      if(!prof.firstDay) return { txt: "—", sub: "next PTC · no first day yet", tone: "" };
+      // Old students: their next PTC Week meeting.
+      if(!isNewForPtc()){
+        const up = (prof.sessions || []).filter(x => x.date && x.date >= todayISO() && !["cancelled","done","held"].includes(String(x.status || "").toLowerCase())).sort((a, b) => a.date.localeCompare(b.date))[0];
+        return up ? { txt: esc(fmtDate(up.date)), sub: "next PTC · PTC Week", tone: "accent" } : { txt: "—", sub: "next PTC · PTC Week, not scheduled", tone: "" };
+      }
       for(const n of PTC_MONTHS){
         const m = prof.milestones.find(x => x.month_no === n);
         if(m && (m.status === "done" || m.status === "skipped")) continue;
@@ -1652,7 +1730,7 @@ window.kumonPtcNav = function(client, role){
         </div>
         <div class="card sect"><div class="sec-h"><h3>Attendance</h3><span class="faint" style="font-size:12.5px;">last ${WEEKS} weeks · ${esc(A.days.join(" & ") || "no class days")}</span></div>${attHtml}</div>
         ${active.map(subjectBlock).join("")}
-        <div class="card sect"><div class="sec-h"><h3>PTC</h3></div>${ptcLine()}</div>
+        <div class="card sect"><div class="sec-h"><h3>PTC history</h3><span class="faint">${isNewForPtc() ? "First-year PTCs and PTC Week" : "PTC Week meetings"}</span></div>${ptcLine()}</div>
         <div class="card sect no-print-pay"><div class="sec-h"><h3>Payments</h3><a class="no-print" href="payments.html" style="font-size:12.5px;">Open Payments</a></div>${payHtml}</div>
       </div>`;
   }
@@ -1708,12 +1786,24 @@ window.kumonPtcNav = function(client, role){
     if(a === "logout"){ await sbClient.auth.signOut(); return; }
     if(a === "back-roster"){ if(document.referrer && /roster\.html/.test(document.referrer)){ e.preventDefault(); history.back(); } return; }
     if(a === "print"){ window.print(); return; }
+    if(a === "ptc-note-open" || a === "ptc-note-cancel"){
+      const k = btn.dataset.key, ed = document.querySelector(`[data-ptc-edit="${k}"]`), view = document.querySelector(`[data-ptc-view="${k}"]`), open = document.querySelector(`[data-action="ptc-note-open"][data-key="${k}"]`);
+      const show = a === "ptc-note-open";
+      if(ed) ed.hidden = !show; if(view) view.hidden = show; if(open) open.hidden = show;
+      if(show){ const t = ed && ed.querySelector("textarea"); if(t){ t.focus(); t.setSelectionRange(t.value.length, t.value.length); } }
+      return;
+    }
     if(a === "ptc-note-save"){
-      const n = Number(btn.dataset.month), box = document.querySelector(`[data-ptc-note="${n}"]`);
+      const k = btn.dataset.key, box = document.querySelector(`[data-ptc-note="${k}"]`), text = box ? box.value : "";
       btn.disabled = true; btn.textContent = "Saving…";
-      const ok = await savePtcNote(n, box ? box.value : "");
+      const ok = k.startsWith("w:") ? await saveSessionNote(k.slice(2), text) : await savePtcNote(Number(k.slice(2)), text);
       btn.disabled = false; btn.textContent = "Save note";
-      if(ok){ const sv = document.querySelector(`[data-ptc-saved="${n}"]`); if(sv) sv.textContent = "Saved ✓"; toast("PTC note saved."); }
+      if(ok){
+        const view = document.querySelector(`[data-ptc-view="${k}"]`), ed = document.querySelector(`[data-ptc-edit="${k}"]`), open = document.querySelector(`[data-action="ptc-note-open"][data-key="${k}"]`);
+        if(view){ view.textContent = text.trim(); view.classList.toggle("empty", !text.trim()); view.hidden = false; }
+        if(ed) ed.hidden = true; if(open){ open.hidden = false; open.textContent = text.trim() ? "Edit note" : "+ Add note"; }
+        toast("PTC note saved.");
+      }
       return;
     }
     if(a === "dl-jpeg" || a === "dl-pdf"){ btn.disabled = true; try{ await downloadProfile(a === "dl-pdf" ? "pdf" : "jpeg"); } finally { btn.disabled = false; } return; }
