@@ -2424,13 +2424,16 @@ window.kumonPtcNav = function(client, role){
   const REP = { on: false, month: null, checks: new Map(), loading: false, missing: false, todo: false };
   try{ REP.on = localStorage.getItem("kumonReportingTime") === "1"; }catch(_){ }
   const repOnNow = () => canReport() && REP.on;
-  const repRefOf = r => r.subject_enrollment_id || r.id;
+  // One key per child + subject (same as New Students), so a tick shows on both pages and still matches after close-out.
+  const repRefOf = r => r.student_id + "|" + r.subject;
   async function loadRepChecks(month){
     if(REP.loading) return; REP.loading = true;
     try{
       const { data, error } = await sbClient.from("reporting_checks").select("*").eq("month_key", month).eq("kind", "input");
       if(error) throw error;
-      REP.checks = new Map((data || []).map(x => [x.ref, x])); REP.missing = false;
+      // Ticks saved on Nov 18-19 used the subject's own id: read those under child + subject too.
+      const byId = new Map(enrollments.map(e => [String(e.id), e.student_id + "|" + e.subject]));
+      REP.checks = new Map((data || []).map(x => [byId.get(String(x.ref)) || x.ref, x])); REP.missing = false;
     }catch(e){ REP.missing = /reporting_checks|schema cache|does not exist/i.test(String(e.message || "")); if(!REP.missing) console.warn("reporting checks", e); }
     REP.month = month; REP.loading = false; renderReport();
   }
@@ -2443,7 +2446,7 @@ window.kumonPtcNav = function(client, role){
     const had = REP.checks.get(ref);
     if(had){
       REP.checks.delete(ref); renderReport();
-      const { error } = await sbClient.from("reporting_checks").delete().eq("kind", "input").eq("month_key", month).eq("ref", ref);
+      const { error } = await sbClient.from("reporting_checks").delete().eq("kind", "input").eq("month_key", month).in("ref", [...new Set([ref, had.ref].filter(Boolean))]);
       if(error){ REP.checks.set(ref, had); renderReport(); toast("Couldn't undo that: " + error.message); }
     }else{
       REP.checks.set(ref, { ref, checked_at: new Date().toISOString() }); renderReport();

@@ -1147,9 +1147,15 @@ window.kumonPtcNav = function(client, role){
   /* ---------- loading ---------- */
   async function load(){
     try{
-      const { data, error } = await sbClient.from("teacher_todos").select("*").order("created_at");
-      if(error) throw error;
-      todos = data || []; missing = false;
+      // Read in pages of 1,000 (the database's limit per request), so the newest to-dos never drop off.
+      let all = [];
+      for(let from = 0; ; from += 1000){
+        const { data, error } = await sbClient.from("teacher_todos").select("*").order("created_at").order("id").range(from, from + 999);
+        if(error) throw error;
+        all = all.concat(data || []);
+        if(!data || data.length < 1000) break;
+      }
+      todos = all; missing = false;
       flagCols = !todos.length || ("flagged" in todos[0]);
     }catch(e){ missing = /teacher_todos|schema cache|does not exist/i.test(String(e.message || "")); if(!missing) toast("Couldn't load to-dos — refresh to try again."); }
     if(isAdmin() && !profiles.length){

@@ -765,6 +765,10 @@ window.kumonPtcNav = function(client, role){
         <option value="partial">Partial</option>
         <option value="paid">Paid</option>
       </select>
+      <select id="whoFilter" title="New students: children who started in this report month, with their first payment">
+        <option value="all">All students</option>
+        <option value="new">New students</option>
+      </select>
       <button type="button" class="btn sm ghost" id="groupViewToggle" data-action="toggle-group-view">View by billing group</button>
     </div>
 
@@ -863,7 +867,7 @@ window.kumonPtcNav = function(client, role){
   let soaBulkN = "1";
   let bulkPaidMonth = null;   // "Tuition for" month in the selection bar's bulk Mark paid (defaults to the month on screen)
   let pageView = "month"; // "month" | "unpaid" | "absent"
-  const filters = { search: "", status: "all", teacher: "all" };
+  const filters = { search: "", status: "all", teacher: "all", who: "all" };
   let canViewOutstanding = false;
   function isTeacherScoped(){ return currentRole === "teacher" || currentRole === "trainer_teacher"; }
   // Marking someone absent is open to teachers too — but only for their own students (the page is already scoped to them,
@@ -1254,12 +1258,14 @@ window.kumonPtcNav = function(client, role){
     return keyOf(a).localeCompare(keyOf(b));
   }
   async function loadStudents(){
-    const { data, error } = await fetchAll("students", "id,name,first_name,last_name,age_grade,status,monthly_tuition,tuition_custom,billing_group_id", q => q.order("id"));
+    let { data, error } = await fetchAll("students", "id,name,first_name,last_name,age_grade,status,monthly_tuition,tuition_custom,billing_group_id,first_day,origin,subject,created_at", q => q.order("id"));
+    if(error && /tuition_custom/.test(error.message || "")) ({ data, error } = await fetchAll("students", "id,name,first_name,last_name,age_grade,status,monthly_tuition,billing_group_id,first_day,origin,subject,created_at", q => q.order("id")));   // phase148 not run yet: load without it
     if(error){ console.warn(error); return; }   // keep what's on screen
     students = (data || []).sort(byLastName);
   }
   async function loadEnrollments(){
-    const { data, error } = await fetchAll("subject_enrollments", "id,student_id,status,subject,teacher", q => q.order("id"));
+    let { data, error } = await fetchAll("subject_enrollments", "id,student_id,status,subject,teacher,enrolled_on,added_month,resumed_month", q => q.order("id"));
+    if(error && /enrolled_on|added_month|resumed_month/.test(error.message || "")) ({ data, error } = await fetchAll("subject_enrollments", "id,student_id,status,subject,teacher", q => q.order("id")));
     if(error){ console.warn(error); return; }   // keep what's on screen
     enrollments = data || [];
   }
@@ -1543,9 +1549,11 @@ window.kumonPtcNav = function(client, role){
     absences = data || [];
   }
 
+  // Last name first everywhere ("Aba, Ioseff Zayrie"). Without a saved first/last split, the last word is taken as the last name.
+  function lastFirst(full){ const p = String(full || "").trim().split(/\s+/).filter(Boolean); if(p.length < 2 || /,/.test(full)) return String(full || "").trim(); return `${p[p.length-1]}, ${p.slice(0,-1).join(" ")}`; }
   function displayName(s){
     if(s.last_name && s.first_name) return `${s.last_name}, ${s.first_name}`;
-    return s.name || "";
+    return lastFirst(s.name);
   }
   // Payments only applies to students who are actually on the roster (at least one active
   // subject enrollment) — a Pipeline lead who hasn't enrolled yet has no tuition to track.
@@ -1648,7 +1656,9 @@ window.kumonPtcNav = function(client, role){
     const active = activeSubjectsFor(studentId);
     if(active.length) return active.slice().sort();
     const any = [...new Set(enrollments.filter(e => e.student_id === studentId).map(e => e.subject).filter(Boolean))].sort();
-    return any.length ? any : ["Unassigned"];
+    if(any.length) return any;
+    const st = students.find(x => x.id === studentId), sub = String(st && st.subject || "");   // not on Student Roster yet: use New Students' subject
+    return sub === "Both" ? ["Math", "Reading"] : (sub === "Math" || sub === "Reading") ? [sub] : ["Unassigned"];
   }
   // Verified + pending already put toward one subject for a month.
   function loggedForSubject(studentId, ym, subject){
@@ -2339,6 +2349,7 @@ window.kumonPtcNav = function(client, role){
     $("#view-absent").hidden = pageView !== "absent";
     const statusFilterEl = $("#statusFilter"), groupToggleEl = $("#groupViewToggle");
     if(statusFilterEl) statusFilterEl.hidden = pageView !== "month";
+    const whoEl = $("#whoFilter"); if(whoEl){ whoEl.hidden = pageView !== "month"; whoEl.value = filters.who; }
     if(groupToggleEl) groupToggleEl.hidden = pageView !== "month";
   }
 
@@ -2377,9 +2388,57 @@ window.kumonPtcNav = function(client, role){
     `;
   }
 
+  /* ---------- New students filter (Nov 19) ----------
+     "New students" lists the children who started in the report month on screen (same months as New Students:
+     21st to the 20th, named after the month of the 20th) and shows their FIRST payment: the tuition for that
+     month, which is when they start. Everything else on this page stays on next month's tuition. */
+  let newData = { diagnostics: [], trainings: [], loaded: false };
+  async function loadNewStudentData(){
+    if(newData.loaded) return;
+    const [d, t] = await Promise.all([
+      fetchAll("diagnostics", "student_id,date", q => q.order("id")),
+      fetchAll("trainings", "student_id,date,status", q => q.order("id"))
+    ]);
+    newData = { diagnostics: (d && d.data) || [], trainings: (t && t.data) || [], loaded: true };
+  }
+  function cycleOfIso(iso){
+    const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso || "")); if(!m) return null;
+    const d = new Date(+m[1], +m[2] - 1 + (+m[3] > 20 ? 1 : 0), 1);
+    return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0");
+  }
+  function cohortMonthOf(s){
+    const tr = newData.trainings.filter(t => t.student_id === s.id && t.status !== "cancelled" && t.date).map(t => t.date).sort()[0];
+    const dt = newData.diagnostics.filter(d => d.student_id === s.id && d.date).map(d => d.date).sort().pop();
+    return cycleOfIso(s.first_day || tr || dt || s.created_at);
+  }
+  // Subjects a child is new in for report month R (empty = not new that month).
+  function newSubjectsIn(s, R){
+    if(s.status === "diagnostic_scheduled" || s.status === "not_enrolled") return [];
+    const mine = enrollments.filter(e => e.student_id === s.id);
+    const out = new Set();
+    mine.forEach(e => {
+      if(e.status === "inactive") return;
+      const start = cycleOfIso(e.enrolled_on) || (e.added_month ? String(e.added_month).slice(0, 7) : null) || (s.origin !== "roster" ? cohortMonthOf(s) : null);
+      if(start === R || (e.resumed_month && String(e.resumed_month).slice(0, 7) === R)) out.add(e.subject);
+    });
+    if(!mine.length && s.origin !== "roster" && cohortMonthOf(s) === R){
+      const sub = String(s.subject || "");
+      (sub === "Both" ? ["Math", "Reading"] : (sub === "Math" || sub === "Reading") ? [sub] : []).forEach(x => out.add(x));
+    }
+    return [...out].filter(Boolean);
+  }
+  function firstPaymentRows(){
+    const R = reportYm(selectedMonth);
+    let list = students.map(s => ({ s, subs: newSubjectsIn(s, R) })).filter(x => x.subs.length);
+    if(isTeacherScoped() || filters.teacher !== "all") list = list.filter(x => activeTeachersFor(x.s.id).some(teacherShown));
+    return list.map(({ s, subs }) => {
+      const due = tuitionRateFor(s) * subs.length, paid = verifiedPaidFor(s.id, R), balance = due - paid;
+      return { student: s, due, paid, balance, status: balance <= 0 ? "paid" : (paid > 0 ? "partial" : "unpaid"), first: true, newSubs: subs, coversYm: R };
+    });
+  }
   function filteredRows(){
     const ym = selectedMonth;
-    let rows = billableStudents().map(s => rowFor(s, ym));
+    let rows = filters.who === "new" ? firstPaymentRows() : billableStudents().map(s => rowFor(s, ym));
     if(filters.search.trim()){
       const q = filters.search.trim().toLowerCase();
       rows = rows.filter(r => displayName(r.student).toLowerCase().includes(q));
@@ -2396,7 +2455,9 @@ window.kumonPtcNav = function(client, role){
   }
 
   function renderTable(){
-    $("#tableTitle").textContent = billFullLabel(selectedMonth);
+    $("#tableTitle").textContent = filters.who === "new"
+      ? `New students · ${fmtMonthLabel(reportYm(selectedMonth))} — first payment (tuition for ${fmtMonthLabel(reportYm(selectedMonth)).split(" ")[0]})`
+      : billFullLabel(selectedMonth);
     const rows = filteredRows();
     $("#tableCount").textContent = rows.length ? `${rows.length} student${rows.length===1?"":"s"}` : "";
     const body = $("#paymentsBody");
@@ -2453,15 +2514,15 @@ window.kumonPtcNav = function(client, role){
     const s = r.student;
     return `<tr class="clickrow" data-action="open-payment-history" data-student="${esc(s.id)}" title="Click for payment history">
       <td class="sel-col"><input type="checkbox" data-action="soa-select" data-student="${esc(s.id)}" ${soaSelected.has(s.id) ? "checked" : ""}></td>
-      <td>${esc(displayName(s))}${subjectBadgesFor(s.id)}<button class="iconbtn" data-action="download-tuition" data-student="${esc(s.id)}" title="Download tuition image" aria-label="Download tuition image"><svg class="ib-svg" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 3.5v8.5M6.5 8.8 10 12.3l3.5-3.5"/><path d="M4 12.5v2.2A1.8 1.8 0 0 0 5.8 16.5h8.4a1.8 1.8 0 0 0 1.8-1.8v-2.2"/></svg></button></td>
+      <td>${esc(displayName(s))}${r.first ? r.newSubs.map(x => `<span class="pill ${x === "Math" ? "subj-math" : "subj-reading"} name-subj-pill" title="${esc(x)}">${x.charAt(0)}</span>`).join("") : subjectBadgesFor(s.id)}<button class="iconbtn" data-action="download-tuition" data-student="${esc(s.id)}" title="Download tuition image" aria-label="Download tuition image"><svg class="ib-svg" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 3.5v8.5M6.5 8.8 10 12.3l3.5-3.5"/><path d="M4 12.5v2.2A1.8 1.8 0 0 0 5.8 16.5h8.4a1.8 1.8 0 0 0 1.8-1.8v-2.2"/></svg></button></td>
       <td class="muted">${esc(s.age_grade || "—")}</td>
       <td class="muted">${esc(groupNameFor(s.billing_group_id) || "—")}</td>
       <td class="money">${peso(r.due)}${currentRole === "teacher" ? "" : ` <button class="iconbtn" data-action="edit-tuition" data-id="${esc(s.id)}" title="Edit tuition" aria-label="Edit tuition"><svg class="ib-svg" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12.9 4.1a1.8 1.8 0 0 1 2.6 2.6l-8.3 8.3-3.4.8.8-3.4z"/><path d="M11.6 5.4l2.9 2.9"/></svg></button>`}</td>
       <td class="money">${peso(r.paid)}</td>
       <td class="money">${peso(r.balance)}</td>
       <td>${statusPill(r.status)}</td>
-      ${[1,2,3,4].map(n => `<td class="soa-col"><input type="checkbox" data-action="soa-toggle" data-student="${esc(s.id)}" data-n="${n}" ${soaHas(s.id, n) ? "checked" : ""} ${soaReady() ? "" : "disabled"} title="SOA ${n} sent"></td>`).join("")}
-      <td><div class="row-actions"><button class="btn sm" data-action="open-log-payment" data-student="${esc(s.id)}">Log payment</button>${markPaidLeft(s.id) > 0 ? `<button class="btn sm paid-btn" data-action="mark-paid" data-student="${esc(s.id)}" title="Record this month's remaining tuition as paid, no receipt needed">Mark paid</button>` : waitingChip(s.id)}${canMarkAbsent() ? `<button class="btn sm danger" data-action="mark-absent" data-student="${esc(s.id)}">Mark absent</button>` : ""}</div></td>
+      ${r.first ? [1,2,3,4].map(() => `<td class="soa-col"></td>`).join("") : [1,2,3,4].map(n => `<td class="soa-col"><input type="checkbox" data-action="soa-toggle" data-student="${esc(s.id)}" data-n="${n}" ${soaHas(s.id, n) ? "checked" : ""} ${soaReady() ? "" : "disabled"} title="SOA ${n} sent"></td>`).join("")}
+      ${r.first ? `<td><div class="row-actions"><button class="btn sm" data-action="open-log-payment" data-student="${esc(s.id)}" data-covers="${esc(r.coversYm)}">Log payment</button></div></td>` : `<td><div class="row-actions"><button class="btn sm" data-action="open-log-payment" data-student="${esc(s.id)}">Log payment</button>${markPaidLeft(s.id) > 0 ? `<button class="btn sm paid-btn" data-action="mark-paid" data-student="${esc(s.id)}" title="Record this month's remaining tuition as paid, no receipt needed">Mark paid</button>` : waitingChip(s.id)}${canMarkAbsent() ? `<button class="btn sm danger" data-action="mark-absent" data-student="${esc(s.id)}">Mark absent</button>` : ""}</div></td>`}
     </tr>`;
   }
 
@@ -2701,10 +2762,13 @@ window.kumonPtcNav = function(client, role){
   function closeModal(){ $("#modalBackdrop").hidden = true; $("#modal").innerHTML = ""; }
 
   function studentOptions(selected){
-    return billableStudents().map(s => `<option value="${esc(s.id)}" ${s.id===selected?"selected":""}>${esc(displayName(s))}</option>`).join("");
+    const list = billableStudents();
+    // A new child who isn't on Student Roster yet (from the New students filter) still needs to be pickable.
+    if(selected && !list.some(s => s.id === selected)){ const extra = students.find(s => s.id === selected); if(extra) list.unshift(extra); }
+    return list.map(s => `<option value="${esc(s.id)}" ${s.id===selected?"selected":""}>${esc(displayName(s))}</option>`).join("");
   }
 
-  function openLogPaymentModal(studentId){
+  function openLogPaymentModal(studentId, coversYm){
     const modal = $("#modal");
     modal.innerHTML = `
       <div class="modal-head"><h3>Log a payment</h3><button class="iconbtn" data-action="close-modal">✕</button></div>
@@ -2736,7 +2800,7 @@ window.kumonPtcNav = function(client, role){
     `;
     $("#modalBackdrop").hidden = false;
     { const f = $("#logPaymentForm"), sid = f && f.elements.studentId.value;
-      if(sid) f.elements.coversMonth.value = reportYm(oldestOwedMonth(sid, selectedMonth)); }
+      if(sid) f.elements.coversMonth.value = reportYm(coversYm && sid === studentId ? coversYm : oldestOwedMonth(sid, selectedMonth)); }
     refreshLogPaymentSuggestion();
   }
 
@@ -3231,6 +3295,7 @@ window.kumonPtcNav = function(client, role){
     }
     if(e.target.id === "searchInput"){ filters.search = e.target.value; render(); }
     if(e.target.id === "statusFilter"){ filters.status = e.target.value; render(); }
+    if(e.target.id === "whoFilter"){ filters.who = e.target.value; if(filters.who === "new") loadNewStudentData().then(render); else render(); }
     if(e.target.id === "soaBulkN"){ soaBulkN = e.target.value; }
     if(e.target.id === "teacherFilter"){ filters.teacher = e.target.value; render(); }
     if(e.target.closest && e.target.closest("#logPaymentForm") && e.target.name === "studentId" && e.target.value){
@@ -3289,7 +3354,7 @@ window.kumonPtcNav = function(client, role){
     else if(action === "toggle-review-pause"){ if(isSuperadmin()) await setReviewPause(btn.dataset.on === "1"); }
     else if(action === "bulk-mark-unpaid"){ await bulkMarkUnpaid(); }
     else if(action === "mark-paid"){ markPaid(btn.dataset.student); }
-    else if(action === "open-log-payment"){ openLogPaymentModal(btn.dataset.student || null); }
+    else if(action === "open-log-payment"){ openLogPaymentModal(btn.dataset.student || null, btn.dataset.covers || null); }
     else if(action === "mark-absent"){ openMarkAbsentModal(btn.dataset.student); }
     else if(action === "resume-absence"){ await resumeAbsence(btn.dataset.id); }
     else if(action === "open-payment-history"){ openPaymentHistoryModal(btn.dataset.student); }

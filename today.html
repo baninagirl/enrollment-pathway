@@ -2083,9 +2083,15 @@ window.kumonPtcNav = function(client, role){
   function adminLabel(p){ if(!p) return ""; if(p.teacher_name) return p.teacher_name; const n = String(p.email || "").split("@")[0].replace(/[^a-z]+/gi, " ").trim().split(" ")[0] || "Admin"; return n.charAt(0).toUpperCase() + n.slice(1).toLowerCase(); }
   async function loadTodos(){
     try{
-      const { data, error } = await sbClient.from("teacher_todos").select("*").order("done").order("due_date", { ascending: true, nullsFirst: false }).order("created_at");
-      if(error) throw error;
-      todos = data || []; todosReady = true; todosMissing = false;
+      // Pages of 1,000 (the database's limit per request), so nothing past the first 1,000 is dropped.
+      let all = [];
+      for(let from = 0; ; from += 1000){
+        const { data, error } = await sbClient.from("teacher_todos").select("*").order("done").order("due_date", { ascending: true, nullsFirst: false }).order("created_at").order("id").range(from, from + 999);
+        if(error) throw error;
+        all = all.concat(data || []);
+        if(!data || data.length < 1000) break;
+      }
+      todos = all; todosReady = true; todosMissing = false;
     }catch(e){ todosMissing = /teacher_todos|schema cache|does not exist/i.test(String(e.message || "")); todos = []; todosReady = true; if(!todosMissing) console.warn("todos", e); }
     if(isAdmin() && !todoProfiles.length){
       const { data } = await sbClient.from("profiles").select("id,email,role,teacher_name").order("teacher_name");

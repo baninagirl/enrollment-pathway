@@ -543,6 +543,10 @@
   /* Reporting time (phase150) */
   .btn.rep-toggle.on{ background:var(--accent-soft); border-color:var(--accent); color:var(--accent); }
   .rep-bar{ display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin:0 0 12px; }
+  .ns-pay{ display:inline-block; font-size:10.5px; font-weight:600; border-radius:99px; padding:1px 8px; margin-right:6px; vertical-align:1px; }
+  .ns-pay.paid{ background:var(--good-soft); color:var(--good); }
+  .ns-pay.part, .ns-pay.wait{ background:var(--warn-soft); color:var(--warn); }
+  .ns-pay.unpaid{ background:var(--bad-soft); color:var(--bad); }
   .rep-prog{ display:flex; align-items:center; gap:10px; background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:8px 14px; font-size:12.5px; color:var(--ink-muted); }
   .rep-prog b{ font-family:var(--font-display, inherit); font-size:15px; color:var(--ink); font-variant-numeric:tabular-nums; }
   .rep-track{ width:110px; height:6px; background:var(--surface-2); border-radius:99px; overflow:hidden; display:inline-block; }
@@ -1667,6 +1671,50 @@ window.kumonPtcNav = function(client, role){
   /* ---------- Reporting time (phase150): Miss Joan's ticks, for every admin / superadmin ----------
      New Students gets 2 ticks per child per subject: KSIS approved, DT results reported. Saved per report month. */
   function canReport(){ return currentRole === "admin" || currentRole === "superadmin"; }
+
+  /* ---------- First payment on New Students (Nov 19) ----------
+     A new child's first tuition is for the month they start (the New Students month they're listed in).
+     Each row shows Paid / Part paid / Waiting / Unpaid for that subject, from Payments (only verified payments count as paid). */
+  const NSPAY = { rows: null, loading: false, off: false };
+  async function loadNsPayments(){
+    if(NSPAY.loading || NSPAY.off || !sbClient || !currentUser) return; NSPAY.loading = true;
+    try{
+      let all = [];
+      for(let from = 0; ; from += 1000){
+        const { data, error } = await sbClient.from("payment_receipts").select("student_id,status,covers_month,amount,allocation").in("status", ["verified", "pending"]).order("id").range(from, from + 999);
+        if(error) throw error;
+        all = all.concat(data || []);
+        if(!data || data.length < 1000) break;
+      }
+      NSPAY.rows = all;
+    }catch(e){
+      // Not allowed to read payments (or the table isn't there): stop asking. Anything else: try again on the next render.
+      if(/permission|denied|schema cache|does not exist|42501/i.test(String(e.message || e.code || ""))) NSPAY.off = true;
+      NSPAY.failedAt = Date.now(); console.warn("first payments", e);
+    }
+    NSPAY.loading = false; setTimeout(onData, 0);   // re-render on the next frame, never in the middle of a render
+  }
+  function nsRateFor(s){
+    const own = Number(s.monthlyTuition || 0) || 2200;
+    if(s.tuitionCustom) return own;
+    const g = String(s.ageGrade || "").trim().toUpperCase(), m = g.match(/(\d+)/);
+    return (!/^K/.test(g) && !/^PK/.test(g) && m && Number(m[1]) >= 7) ? 2350 : own;
+  }
+  function nsFirstPayPill(s, subj, monthKey){
+    if(!NSPAY.rows || !monthKey || !subj) return "";
+    const covers = monthKey + "-01", recs = NSPAY.rows.filter(r => r.student_id === s.id && String(r.covers_month).slice(0, 10) === covers);
+    const nSubj = studentSubject(s) === "Both" ? 2 : 1;
+    const share = r => (r.allocation && typeof r.allocation === "object" && Object.keys(r.allocation).length) ? Number(r.allocation[subj] || 0) : Number(r.amount || 0) / nSubj;
+    const paid = recs.filter(r => r.status === "verified").reduce((n, r) => n + share(r), 0);
+    const waiting = recs.filter(r => r.status === "pending").reduce((n, r) => n + share(r), 0);
+    const due = nsRateFor(s), month = new Date(monthKey + "-15T00:00:00").toLocaleDateString(undefined, { month: "long" });
+    const peso = n => "₱" + Math.round(n).toLocaleString("en-US");
+    const [cls, label, tip] = paid >= due ? ["paid", "Paid", `${month} tuition paid (${peso(paid)})`]
+      : paid > 0 ? ["part", "Part paid", `${peso(paid)} of ${peso(due)} paid for ${month}`]
+      : waiting > 0 ? ["wait", "Waiting", `${peso(waiting)} logged for ${month}, waiting to be verified on Payments`]
+      : ["unpaid", "Unpaid", `No ${month} tuition on Payments yet`];
+    return `<span class="ns-pay ${cls}" title="First payment · ${esc(tip)}">${label}</span>`;
+  }
   const REP = { on: false, month: null, checks: new Map(), loading: false, missing: false, todo: false };
   try{ REP.on = localStorage.getItem("kumonReportingTime") === "1"; }catch(_){ }
   const repKey = (kind, month, ref) => kind + "|" + month + "|" + ref;
@@ -1676,10 +1724,12 @@ window.kumonPtcNav = function(client, role){
     try{
       const { data, error } = await sbClient.from("reporting_checks").select("*").eq("month_key", month);
       if(error) throw error;
-      REP.checks = new Map((data || []).map(r => [repKey(r.kind, r.month_key, r.ref), r])); REP.month = month; REP.missing = false;
+      // Roster ticks saved on Nov 18-19 used the subject's own id: read those as child + subject too.
+      const byId = new Map(STATE.enrollments.map(e => [String(e.id), e.studentId + "|" + e.subject]));
+      REP.checks = new Map((data || []).map(r => [repKey(r.kind, r.month_key, byId.get(String(r.ref)) || r.ref), r])); REP.month = month; REP.missing = false;
     }catch(e){ REP.missing = /reporting_checks|schema cache|does not exist/i.test(String(e.message || "")); REP.month = month; if(!REP.missing) console.warn("reporting checks", e); }
     REP.loading = false;
-    renderStudents();
+    setTimeout(onData, 0);   // re-render on the next frame, never in the middle of a render
   }
   async function toggleRepCheck(kind, month, ref){
     const busyKey = kind + "|" + month + "|" + ref; if(REP_BUSY.has(busyKey)) return; REP_BUSY.add(busyKey);
@@ -1690,7 +1740,7 @@ window.kumonPtcNav = function(client, role){
     const k = repKey(kind, month, ref), had = REP.checks.get(k);
     if(had){
       REP.checks.delete(k); renderStudents();
-      const { error } = await sbClient.from("reporting_checks").delete().eq("kind", kind).eq("month_key", month).eq("ref", ref);
+      const { error } = await sbClient.from("reporting_checks").delete().eq("kind", kind).eq("month_key", month).in("ref", [...new Set([ref, had.ref].filter(Boolean))]);
       if(error){ REP.checks.set(k, had); renderStudents(); toast("Couldn't undo that: " + error.message); }
     }else{
       const temp = { kind, month_key: month, ref, checked_at: new Date().toISOString() };
@@ -3039,6 +3089,9 @@ window.kumonPtcNav = function(client, role){
     const isReport = STATE.studentsView === "report";
     // Reporting time: tick columns (KSIS approved, DT results reported) for admins / superadmins.
     const repOn = canReport() && REP.on && STATE.studentMonthMode === "month";
+    // First payment tag (month view only: a new child's first payment is the tuition for that month)
+    const payOn = STATE.studentMonthMode === "month" && !NSPAY.off;
+    if(payOn && !NSPAY.rows && !NSPAY.loading && !(NSPAY.failedAt && Date.now() - NSPAY.failedAt < 15000)) loadNsPayments();
     const repRef = row => row.s.id + "|" + (row.subj || "");
     if(repOn && REP.month !== monthKey && !REP.loading) loadRepChecks(monthKey);
     const repDone = kind => rows.filter(r => REP.checks.has(repKey(kind, monthKey, repRef(r)))).length;
@@ -3058,7 +3111,7 @@ window.kumonPtcNav = function(client, role){
               const st = STATUS_LABEL[s.status] || ["—","muted"];
               return `<tr class="clickrow" data-action="open-student" data-id="${s.id}">
                 <td class="tnum">${i+1}</td>
-                <td class="namecol"><span class="ln-row"><span class="ln-text">${lnMark(esc(displayName(s)))}</span>${lnCopyBtn(lnLastOf(displayName(s)))}</span>${row.src ? `<div class="hint" style="font-size:11.5px;margin-top:2px;">${esc(row.src)}</div>` : ""}</td>
+                <td class="namecol"><span class="ln-row"><span class="ln-text">${lnMark(esc(displayName(s)))}</span>${lnCopyBtn(lnLastOf(displayName(s)))}</span>${row.src || payOn ? `<div class="hint ns-src" style="font-size:11.5px;margin-top:2px;">${payOn ? nsFirstPayPill(s, row.subj, monthKey) : ""}${esc(row.src || "")}</div>` : ""}</td>
                 ${repCells(row)}
                 <td>${esc(s.ageGrade||"—")}</td>
                 <td>${row.subj ? fmtSubjectPill(row.subj) : "—"}</td>
@@ -3082,7 +3135,7 @@ window.kumonPtcNav = function(client, role){
               const r = diagResultFor(d, row.subj, row.isBoth);
               return `<tr class="clickrow" data-action="open-student" data-id="${s.id}">
                 <td class="tnum">${i+1}</td>
-                <td class="namecol"><span class="ln-row"><span class="ln-text">${lnMark(esc(displayName(s)))}</span>${lnCopyBtn(lnLastOf(displayName(s)))}</span>${row.src ? `<div class="hint" style="font-size:11.5px;margin-top:2px;">${esc(row.src)}</div>` : ""}</td>
+                <td class="namecol"><span class="ln-row"><span class="ln-text">${lnMark(esc(displayName(s)))}</span>${lnCopyBtn(lnLastOf(displayName(s)))}</span>${row.src || payOn ? `<div class="hint ns-src" style="font-size:11.5px;margin-top:2px;">${payOn ? nsFirstPayPill(s, row.subj, monthKey) : ""}${esc(row.src || "")}</div>` : ""}</td>
                 ${repCells(row)}
                 <td>${esc(s.ageGrade||"—")}</td>
                 <td>${row.subj ? fmtSubjectPill(row.subj) : "—"}</td>
@@ -3475,10 +3528,22 @@ window.kumonPtcNav = function(client, role){
   }
   // First day also sets Date enrolled on Student Roster (Nov 17), so there's one date to change. Only the child's
   // own starting subjects follow it — a subject added later (EO / Add subject) or resumed keeps its own date.
-  async function syncEnrolledOnFromFirstDay(studentId, iso){
+  // Math and Reading can start on different days (Nov 19): a subject that already has its own Date enrolled keeps it.
+  // Only a subject with no date yet, or one whose date was just following the old first day, moves with it.
+  async function syncEnrolledOnFromFirstDay(studentId, iso, prevIso){
     if(!iso) return 0;
+    const prev = String(prevIso || "").slice(0,10);
     const subs = STATE.enrollments.filter(e => e.studentId === studentId && !e.archived && (e.status || "active") === "active"
-      && !e.addedMonth && e.enrollmentType !== "eo" && !e.resumedMonth && String(e.enrolledOn || "").slice(0,10) !== iso);
+      && !e.addedMonth && e.enrollmentType !== "eo" && !e.resumedMonth
+      && (!e.enrolledOn || (prev && String(e.enrolledOn).slice(0,10) === prev))
+      && String(e.enrolledOn || "").slice(0,10) !== iso);
+    // A subject already on a closed month's report has started already: its date stays as it is.
+    if(subs.length){
+      const { data: done, error } = await sbClient.from("enrollment_monthly_history").select("subject_enrollment_id").in("subject_enrollment_id", subs.map(e => e.id)).limit(1000);
+      if(error) return 0;   // can't tell, so change nothing
+      const started = new Set((done || []).map(h => String(h.subject_enrollment_id)));
+      for(let i = subs.length - 1; i >= 0; i--) if(started.has(String(subs[i].id))) subs.splice(i, 1);
+    }
     for(const e of subs){ await db.collection("subject_enrollments").doc(e.id).update({ enrolledOn: iso }); e.enrolledOn = iso; }
     if(subs.length) logHistory("set_date_enrolled", `Date enrolled set to ${iso} from First day (${subs.map(e => e.subject).join(", ")})`, "student", studentId);
     return subs.length;
@@ -3487,9 +3552,10 @@ window.kumonPtcNav = function(client, role){
     const s = studentById(id); if(!s || !canEditFirstDay()) return;
     const v = value || null;
     await guardWrite(async ()=>{
+      const prevFirst = s.firstDay || null;
       await db.collection("students").doc(id).update({ firstDay: v });
       s.firstDay = v;
-      await syncEnrolledOnFromFirstDay(id, v);
+      await syncEnrolledOnFromFirstDay(id, v, prevFirst);
       logHistory("set_first_day", v ? `Set ${s.name}'s first day to ${v}` : `${s.name}'s first day now follows their first training`, "student", id);
       toast(v ? "First day saved." : "First day now follows their first training.");
     });
@@ -3940,7 +4006,7 @@ window.kumonPtcNav = function(client, role){
       }
       const prevFirstDay = s ? (s.firstDay || null) : null;
       await db.collection("students").doc(id).update(studentPatch);
-      if(studentPatch.firstDay && studentPatch.firstDay !== prevFirstDay) await syncEnrolledOnFromFirstDay(id, studentPatch.firstDay);
+      if(studentPatch.firstDay && studentPatch.firstDay !== prevFirstDay) await syncEnrolledOnFromFirstDay(id, studentPatch.firstDay, prevFirstDay);
       let renameFailed = false;
       // Name changed (phase35): copy it onto every subject, schedule, training and past month too.
       if(prevName !== [firstName, lastName, name].join("|") || pendingRenames.has(id)){
