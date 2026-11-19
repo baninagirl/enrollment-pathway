@@ -1412,7 +1412,7 @@ window.kumonPtcNav = function(client, role){
     });
     // A completion date typed in by hand is a real point on the Actual line (Nov 19): finished that level on that date.
     // Later points never sit below it, so today's dot catches up even if the LWC hasn't been updated yet.
-    const hand = out.rows.filter(r => r.doneSet && r.actual > p.start_date).map(r => ({ d: r.actual, y: r.endY, label: `Finished ${r.level} (entered by hand)`, txt: `${r.level} done`, hand: true }));
+    const hand = out.rows.filter(r => r.doneSet && r.actual > p.start_date).map(r => ({ d: r.actual, y: r.endY, label: `Finished ${r.level}, entered by hand`, txt: `Started ${(LADDER[p.subject] || [])[(LADDER[p.subject] || []).indexOf(r.level) + 1] || r.level + " done"}`, hand: true }));
     if(hand.length){
       out.actual = out.actual.concat(hand).sort((a, b) => a.start ? -1 : b.start ? 1 : (a.d < b.d ? -1 : a.d > b.d ? 1 : (a.hand ? -1 : 1)));
       let top = -Infinity;
@@ -1897,7 +1897,7 @@ window.kumonPtcNav = function(client, role){
           ${c.ok ? ins : `<div class="banner">“${esc(draft.start_level)}” isn't a ${esc(draft.subject)} level the projection knows. Pick the starting point above.</div>`}
           ${c.ok ? `<div class="sec"><div class="sec-h"><h3>Study projection</h3><span class="legend" id="legend"></span></div>
             <div class="chart"><svg id="chart" viewBox="0 0 1000 430" role="img" aria-label="Study projection chart"></svg></div>
-            <div class="hint">One row on the chart = one level. The Actual line uses each month's close-out (Monthly History) and today's LWC.</div></div>
+            <div class="hint">One row on the chart = one level; a dot on a line between two rows = starting the upper level. The Actual line uses each month's close-out (Monthly History), today's LWC and any completion date typed in below (finished a level = now on the next one).</div></div>
           <div class="sec"><div class="sec-h"><h3>Level plan</h3><span class="hint no-print">Change repeats or pages a day for any level · Levels shown <input type="number" min="1" max="30" data-f="level_count" value="${esc(draft.level_count)}" style="width:62px"></span></div>
             <div class="tbl"><table class="stable plan"><thead><tr><th>Level</th><th>Repeats</th><th>Total WS</th><th>Pages/day</th><th>Months</th><th>Target completion</th><th>Actual completion</th></tr></thead><tbody>
             ${c.rows.map(r => `<tr><td><b>${esc(r.level)}</b>${r.topic ? `<div class="topic">${esc(r.topic)}</div>` : ""}</td>
