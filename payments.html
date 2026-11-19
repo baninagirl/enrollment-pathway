@@ -705,6 +705,7 @@ window.kumonPtcNav = function(client, role){
       <a class="navbtn" href="calendar.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>Calendar</a>
       <a class="navbtn" href="ptc.html" id="navPtcLink" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="7.5" r="3.2"/><circle cx="17" cy="9.5" r="2.4"/><path d="M3 20c0-3.6 2.7-6.3 6-6.3s6 2.7 6 6.3"/><path d="M15.2 14.4c.6-.2 1.2-.3 1.8-.3 2.5 0 4.4 1.9 4.4 4.6"/></svg>PTC<span class="badge ptc-badge" id="navPtcBadge" hidden></span></a>
       <a class="navbtn" href="projection.html" id="navProjLink" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 20h18"/><path d="M4 16l5-5 4 3 7-8"/><path d="M15 6h5v5"/></svg>Projection</a>
+      <a class="navbtn" href="ashr.html" id="navAshrLink"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="9" r="5"/><path d="M8.5 13.2L7 21l5-2.6L17 21l-1.5-7.8"/></svg>ASHR</a>
       <a class="navbtn active" href="payments.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20M6 15h4"/></svg>Payments</a>
       <a class="navbtn" href="absent.html" id="navAbsentLink" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.5-7 8-7s8 3 8 7"/><path d="M2 2l20 20"/></svg>Retention</a>
       <a class="navbtn" href="admin.html" id="navAdminLink" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v6c0 5-3.5 8-7 9-3.5-1-7-4-7-9V6l7-3z"/></svg>Admin</a>
@@ -1536,6 +1537,7 @@ window.kumonPtcNav = function(client, role){
       if(!(await loadReceipts())){ toast("Couldn't check the latest payments — nothing was saved. Try again."); return; }
       const ym = bulkPaidMonthNow(), plan = bulkPaidPlan(ym);
       if(!plan.length){ render(); toast(`Everyone selected is already paid for ${fmtBillLabel(ym)}.`); return; }
+      await loadReviewPause().catch(() => {});   // the latest setting, not the one from when the page opened
       const verifiedNow = markPaidVerifiesNow(), now = new Date().toISOString();
       const rows = plan.map(x => {
         const row = { student_id: x.id, amount: x.total, allocation: x.alloc, covers_month: monthToDate(ym),
@@ -1813,6 +1815,7 @@ window.kumonPtcNav = function(client, role){
       if(!(await loadReceipts())){ toast("Couldn't check the latest payments — nothing was saved. Try again."); return; }
       const { alloc, total } = markPaidAllocation(studentId, ym);
       if(!total){ closeModal(); render(); toast(`${displayName(s)} is already paid for ${fmtBillLabel(ym)}.`); return; }
+      await loadReviewPause().catch(() => {});   // the latest setting, not the one from when the page opened
       const verifiedNow = markPaidVerifiesNow();
       const row = { student_id: studentId, amount: total, allocation: alloc, covers_month: monthToDate(ym),
         reference_number: "Marked paid (no receipt)", uploaded_by: currentUser ? currentUser.email : null,
@@ -2825,7 +2828,7 @@ window.kumonPtcNav = function(client, role){
             <label class="field">Logged by<input type="text" name="uploadedBy" value="${esc(currentUser ? currentUser.email : "")}"></label>
           </div>
           <label class="field">Receipt photo (optional)<input type="file" name="receiptFile" accept="image/*"></label>
-          <div class="banner info" style="margin:0;">New entries start "pending" — a superadmin verifies it from the review queue once it's confirmed, and then it counts toward this student's paid total.</div>
+          <div class="banner info" style="margin:0;">${isSuperadmin() ? "You're a superadmin, so this counts as paid right away." : `New entries start "pending" — a superadmin verifies it from the review queue once it's confirmed, and then it counts toward this student's paid total.`}</div>
         </div>
         <div class="modal-foot">
           <button type="button" class="btn ghost" data-action="close-modal">Cancel</button>
@@ -3245,14 +3248,15 @@ window.kumonPtcNav = function(client, role){
           reference_number: (fd.get("reference")||"").toString().trim() || null,
           uploaded_by: (fd.get("uploadedBy")||"").toString().trim() || null,
           receipt_path: receiptPath,
-          status: "pending"
+          // A superadmin's own entry is already checked: it counts right away (Nov 19). Everyone else's waits for review.
+          ...(isSuperadmin() ? { status: "verified", reviewed_by: currentUser ? currentUser.id : null, reviewed_at: new Date().toISOString() } : { status: "pending" })
         });
         if(error) throw error;
         const loggedStudent = students.find(x => x.id === studentId);
         logHistory("log_payment", `Logged ${peso(amount)} payment for ${loggedStudent ? displayName(loggedStudent) : "a student"}`, "payment_receipt", null);
         closeModal();
         await loadReceipts(); render();
-        toast("Payment logged — it counts once a superadmin verifies it.");
+        toast(isSuperadmin() ? "Payment logged — it counts right away." : "Payment logged — it counts once a superadmin verifies it.");
       }catch(err){
         toast("Couldn't log that payment: " + err.message);
       }finally{

@@ -789,6 +789,7 @@ window.kumonPtcNav = function(client, role){
       <a class="navbtn" href="calendar.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>Calendar</a>
       <a class="navbtn active" href="ptc.html" id="navPtcLink" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="7.5" r="3.2"/><circle cx="17" cy="9.5" r="2.4"/><path d="M3 20c0-3.6 2.7-6.3 6-6.3s6 2.7 6 6.3"/><path d="M15.2 14.4c.6-.2 1.2-.3 1.8-.3 2.5 0 4.4 1.9 4.4 4.6"/></svg>PTC<span class="badge ptc-badge" id="navPtcBadge" hidden></span></a>
       <a class="navbtn" href="projection.html" id="navProjLink" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 20h18"/><path d="M4 16l5-5 4 3 7-8"/><path d="M15 6h5v5"/></svg>Projection</a>
+      <a class="navbtn" href="ashr.html" id="navAshrLink"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="9" r="5"/><path d="M8.5 13.2L7 21l5-2.6L17 21l-1.5-7.8"/></svg>ASHR</a>
       <a class="navbtn" href="payments.html" id="navPaymentsLink" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20M6 15h4"/></svg>Payments</a>
       <a class="navbtn" href="absent.html" id="navAbsentLink" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.5-7 8-7s8 3 8 7"/><path d="M2 2l20 20" stroke="currentColor"/></svg>Retention</a>
       <a class="navbtn" href="admin.html" id="navAdminLink" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v6c0 5-3.5 8-7 9-3.5-1-7-4-7-9V6l7-3z"/></svg>Admin</a>
@@ -914,8 +915,10 @@ window.kumonPtcNav = function(client, role){
   function fromMin(m){ return String(Math.floor(m/60)).padStart(2,"0") + ":" + String(m%60).padStart(2,"0"); }
   function fmt12(t){ const m = typeof t === "number" ? t : toMin(t); if(m == null) return "—"; let h = Math.floor(m/60), mm = m%60; const ap = h >= 12 ? "PM" : "AM"; h = h % 12 || 12; return `${h}:${String(mm).padStart(2,"0")} ${ap}`; }
   function ordinal(n){ return n + (n === 1 ? "st" : n === 2 ? "nd" : n === 3 ? "rd" : "th"); }
-  function studentName(id){ const s = studentById.get(id); if(!s) return ""; return s.name || [s.first_name, s.last_name].filter(Boolean).join(" "); }
-  function sessName(x){ return x.student_name || studentName(x.student_id) || "(student)"; }
+  // Last name first everywhere ("Aba, Ioseff Zayrie"). Without a saved first/last split, the last word is taken as the last name.
+  function lastFirst(full){ const p = String(full || "").trim().split(/\s+/).filter(Boolean); if(p.length < 2 || /,/.test(full)) return String(full || "").trim(); return `${p[p.length-1]}, ${p.slice(0,-1).join(" ")}`; }
+  function studentName(id){ const s = studentById.get(id); if(!s) return ""; return s.last_name && s.first_name ? `${s.last_name}, ${s.first_name}` : lastFirst(s.name || [s.first_name, s.last_name].filter(Boolean).join(" ")); }
+  function sessName(x){ return lastFirst(x.student_name) || studentName(x.student_id) || "(student)"; }
   function lastNameOf(s){
     if(!s) return "";
     if(s.last_name) return String(s.last_name).trim().toLowerCase();
@@ -1436,7 +1439,7 @@ window.kumonPtcNav = function(client, role){
           const b = bookedFor(d.student_id);
           const canMark = isAdmin() || teachersOfDue(d).some(x => myGroupTeachers().includes(x));
           return `<tr>
-            <td><b>${esc(d.student_name || "")}</b> ${(d.subjects || []).map(s => `<span class="pill ${s === "Reading" ? "subj-reading" : "subj-math"} name-subj-pill">${s === "Reading" ? "R" : "M"}</span>`).join("")}
+            <td><b>${esc(lastFirst(d.student_name || ""))}</b> ${(d.subjects || []).map(s => `<span class="pill ${s === "Reading" ? "subj-reading" : "subj-math"} name-subj-pill">${s === "Reading" ? "R" : "M"}</span>`).join("")}
               <div class="readonly-note" title="${d.first_day_set_by_hand ? "Set by hand on the student card" : "From their first training session"}">First day ${esc(fmtDate(d.first_day, { weekday: undefined, year:"numeric" }))}</div></td>
             <td><span class="pill mo">${ordinal(d.month_no)} month</span></td>
             <td class="tnum">${esc(fmtDate(d.due_date, d.due_date.slice(0,4) !== t.slice(0,4) ? { year:"numeric" } : {}))}<div style="margin-top:4px;">${when}</div></td>
@@ -1648,7 +1651,7 @@ window.kumonPtcNav = function(client, role){
   /* --- milestone done / skip --- */
   MODALS.milestone = (s) => {
     const d = due.find(x => x.student_id === s.studentId && x.month_no === s.month);
-    const name = d ? d.student_name : studentName(s.studentId);
+    const name = d ? lastFirst(d.student_name) : studentName(s.studentId);
     const earlier = due.filter(x => x.student_id === s.studentId && x.month_no < s.month && x.due_date <= todayISO());
     return {
       title: `${s.skip ? "Skip" : "PTC done"} — ${esc(name)}`,
@@ -1700,7 +1703,7 @@ window.kumonPtcNav = function(client, role){
     const date = d.scheduled_on || (b && b.date) || todayISO();
     const time = d.scheduled_time || (b && b.time) || "";
     return {
-      title: `Scheduled — ${esc(d.student_name || studentName(s.studentId))}`,
+      title: `Scheduled — ${esc(lastFirst(d.student_name) || studentName(s.studentId))}`,
       body: `<div class="hint">${ordinal(s.month)}-month PTC, due ${esc(fmtDate(d.due_date))}. When is it?</div>
         <div class="field-row"><label class="field">Date<input type="date" id="msSchedDate" value="${esc(date)}"></label>
         <label class="field">Time (optional)<input type="time" id="msSchedTime" value="${esc(time)}"></label></div>`,
@@ -1710,7 +1713,7 @@ window.kumonPtcNav = function(client, role){
   MODALS.msNote = (s) => {
     const d = due.find(x => x.student_id === s.studentId && x.month_no === s.month) || {};
     return {
-      title: `Notes — ${esc(d.student_name || studentName(s.studentId))}`,
+      title: `Notes — ${esc(lastFirst(d.student_name) || studentName(s.studentId))}`,
       body: `<div class="hint">${ordinal(s.month)}-month PTC, due ${esc(fmtDate(d.due_date))}.</div>
         <textarea id="msNoteText" rows="5" placeholder="e.g. called mom Oct 21, no answer · dad prefers Saturdays…">${esc(d.note || "")}</textarea>`,
       foot: `<button class="btn" data-action="close-modal">Cancel</button><button class="btn primary" data-action="ms-note-save">Save</button>`
@@ -1896,7 +1899,7 @@ window.kumonPtcNav = function(client, role){
       size: "wide",
       title: "No session yet",
       body: m.length ? `<div class="hint">Active students (or subjects) added after the draft. “Book” finds the best free time — next to a sibling's session when there is one.</div>
-        <table class="stable"><thead><tr><th>Student</th><th>Teacher</th><th></th></tr></thead><tbody>${m.map(p => `<tr><td><b>${esc(p.student_name)}</b> <span class="muted">${esc(p.subjects)}</span></td><td>${esc(p.teacher)}</td><td><button class="btn sm" data-action="book-missing" data-student="${esc(p.student_id)}" data-teacher="${esc(p.teacher)}">Book</button></td></tr>`).join("")}</tbody></table>`
+        <table class="stable"><thead><tr><th>Student</th><th>Teacher</th><th></th></tr></thead><tbody>${m.map(p => `<tr><td><b>${esc(lastFirst(p.student_name))}</b> <span class="muted">${esc(p.subjects)}</span></td><td>${esc(p.teacher)}</td><td><button class="btn sm" data-action="book-missing" data-student="${esc(p.student_id)}" data-teacher="${esc(p.teacher)}">Book</button></td></tr>`).join("")}</tbody></table>`
         : `<div class="empty">Everyone has a session.</div>`,
       foot: m.length ? `<button class="btn" data-action="close-modal">Close</button><button class="btn primary" data-action="book-all-missing">Book all ${m.length}</button>` : `<button class="btn" data-action="close-modal">Close</button>`
     };
