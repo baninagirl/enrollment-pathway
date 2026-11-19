@@ -1424,7 +1424,7 @@ window.kumonPtcNav = function(client, role){
           <td class="tnum">${esc(fmtDate(m.due_date))}</td>
           <td>${m.status === "done" ? `<span class="pill st-confirmed">Done</span>` : `<span class="pill st-draft">Skipped</span>`}</td>
           <td class="tnum">${esc(fmtDate(m.done_on))}</td>
-          <td><span class="note-chip">${esc(m.note || "")}</span></td>
+          <td><span class="note-chip">${esc(m.note || "")}</span>${isAdmin() || enrollments.some(e => e.student_id === m.student_id && myGroupTeachers().includes(e.teacher)) ? ` <button class="btn sm ghost" data-action="ms-note" data-student="${esc(m.student_id)}" data-month="${m.month_no}">${m.note ? "Edit note" : "+ Note"}</button>` : ""}</td>
           <td class="muted">${esc(m.by_name || "")}</td>
           <td><button class="btn sm ghost" data-action="ms-undo" data-id="${esc(m.id)}" title="Put it back on the due list (notes are kept)">Undo</button></td>
         </tr>`).join("")}</tbody></table>` : `<div class="empty">Nothing marked done or skipped yet.</div>`;
@@ -1711,10 +1711,12 @@ window.kumonPtcNav = function(client, role){
     };
   };
   MODALS.msNote = (s) => {
-    const d = due.find(x => x.student_id === s.studentId && x.month_no === s.month) || {};
+    // A PTC on the due list, or one already done / skipped (notes can be added after the meeting too).
+    const d = due.find(x => x.student_id === s.studentId && x.month_no === s.month) || milestones.find(x => x.student_id === s.studentId && x.month_no === s.month) || {};
+    const held = d.status === "done" || d.status === "skipped";
     return {
-      title: `Notes — ${esc(lastFirst(d.student_name) || studentName(s.studentId))}`,
-      body: `<div class="hint">${ordinal(s.month)}-month PTC, due ${esc(fmtDate(d.due_date))}.</div>
+      title: `Notes — ${esc(lastFirst(d.student_name || "") || studentName(s.studentId))}`,
+      body: `<div class="hint">${ordinal(s.month)}-month PTC, ${held ? `${d.status === "done" ? "done" : "skipped"} ${esc(fmtDate(d.done_on))}` : `due ${esc(fmtDate(d.due_date))}`}.</div>
         <textarea id="msNoteText" rows="5" placeholder="e.g. called mom Oct 21, no answer · dad prefers Saturdays…">${esc(d.note || "")}</textarea>`,
       foot: `<button class="btn" data-action="close-modal">Cancel</button><button class="btn primary" data-action="ms-note-save">Save</button>`
     };
@@ -2223,7 +2225,16 @@ window.kumonPtcNav = function(client, role){
     if(a === "ms-note"){ openModal({ kind:"msNote", studentId: btn.dataset.student, month: +btn.dataset.month }); return; }
     if(a === "ms-note-save"){
       const st = modalState; btn.disabled = true;
-      if(await saveMsFields(st.studentId, st.month, { note: $("#msNoteText").value.trim() || null }, "notes updated")){ closeModal(); toast("Notes saved."); }
+      const text = $("#msNoteText").value.trim() || null;
+      const held = milestones.find(x => x.student_id === st.studentId && x.month_no === st.month && (x.status === "done" || x.status === "skipped"));
+      if(held){
+        // Done / skipped: only the note changes (it stays done, and "By" still says who held it).
+        const { data, error } = await sbClient.from("ptc_milestones").update({ note: text, updated_at: new Date().toISOString() }).eq("id", held.id).select("id");
+        if(error || !data || !data.length){ alert("Couldn't save the note" + (error ? ": " + error.message : " (not allowed)") + "."); btn.disabled = false; return; }
+        logHistory("ptc_status", `${studentName(st.studentId)} — ${ordinal(st.month)} month PTC: note added after the meeting`, "student", st.studentId, { note: text });
+        await loadMilestones(); render(); closeModal(); toast("Notes saved.");
+      }
+      else if(await saveMsFields(st.studentId, st.month, { note: text }, "notes updated")){ closeModal(); toast("Notes saved."); }
       else btn.disabled = false;
       return;
     }
