@@ -815,6 +815,22 @@ window.kumonPtcNav = function(client, role){
           </table>
         </div>
       </div>
+      <!-- Nov 19: everyone who hasn't fully paid this bill, not just the follow-up list above -->
+      <div class="card" style="margin-top:16px;">
+        <div class="card-head">
+          <h3 id="owingTitle">Not fully paid</h3>
+          <span class="muted" id="owingCount" style="font-size:12.5px;"></span>
+        </div>
+        <p class="hint" style="padding:10px 16px 0;">Every active student who still owes this month's tuition: nothing paid yet, or only part of it (one subject of two, say). Payments waiting to be verified don't count until a superadmin verifies them.</p>
+        <div class="table-scroll">
+          <table class="stable">
+            <thead><tr>
+              <th>Student</th><th>Grade</th><th>Group</th><th>Tuition due</th><th>Paid</th><th>Balance</th><th>Status</th><th></th>
+            </tr></thead>
+            <tbody id="owingBody"></tbody>
+          </table>
+        </div>
+      </div>
     </div>
 
     <div id="view-absent" hidden>
@@ -2535,8 +2551,27 @@ window.kumonPtcNav = function(client, role){
     return rows;
   }
 
+  function renderOwingTable(){
+    let rows = billableStudents().map(s => rowFor(s, selectedMonth)).filter(r => r.status !== "paid");
+    if(filters.search.trim()){ const q = filters.search.trim().toLowerCase(); rows = rows.filter(r => displayName(r.student).toLowerCase().includes(q)); }
+    $("#owingTitle").textContent = `Not fully paid — ${billFullLabel(selectedMonth)}`;
+    $("#owingCount").textContent = rows.length ? `${rows.length} student${rows.length===1?"":"s"}` : "";
+    const body = $("#owingBody");
+    if(!rows.length){ body.innerHTML = `<tr><td colspan="8"><div class="empty">Everyone active has paid this month's tuition.</div></td></tr>`; return; }
+    body.innerHTML = rows.map(r => { const s = r.student; return `<tr class="clickrow" data-action="open-payment-history" data-student="${esc(s.id)}" title="Click for payment history">
+        <td>${esc(displayName(s))}${subjectBadgesFor(s.id)}</td>
+        <td class="muted">${esc(s.age_grade || "—")}</td>
+        <td class="muted">${esc(groupNameFor(s.billing_group_id) || "—")}</td>
+        <td class="money">${peso(r.due)}</td>
+        <td class="money">${peso(r.paid)}</td>
+        <td class="money">${peso(r.balance)}</td>
+        <td>${statusPill(r.status)}</td>
+        <td><div class="row-actions"><button class="btn sm" data-action="open-log-payment" data-student="${esc(s.id)}">Log payment</button>${markPaidLeft(s.id) > 0 ? `<button class="btn sm paid-btn" data-action="mark-paid" data-student="${esc(s.id)}" title="Record this month's remaining tuition as paid, no receipt needed">Mark paid</button>` : waitingChip(s.id)}${canMarkAbsent() ? `<button class="btn sm danger" data-action="mark-absent" data-student="${esc(s.id)}">Mark absent</button>` : ""}</div></td>
+      </tr>`; }).join("");
+  }
   function renderUnpaidTable(){
     if(pageView !== "unpaid") return;
+    renderOwingTable();
     const rows = filteredUnpaidRows();
     const overdue = isPastTenthOf(selectedMonth);
     $("#unpaidTitle").textContent = `Unpaid — as of ${fmtBillLabel(selectedMonth)}`;
