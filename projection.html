@@ -1284,6 +1284,14 @@ window.kumonPtcNav = function(client, role){
   function syStartFor(date){ const y = Number(date.slice(0,4)); return (date.slice(5) >= "06-01" ? y : y - 1) + "-06-01"; }
   // the school year the grade belongs to: this one (the grade on a plan is the child's grade now), or a later one
   // for a plan that starts after June. Never the year they started Kumon (that put 77 plans a year or more off, Nov 19).
+  // The child's grade on a date: the grade on the plan is for the school year that starts on "School year starts";
+  // every June after that they go up one (Nov 20: the Aug '27 ASHR marker used this year's grade).
+  function gradeOn(grade, syStart, date){
+    const i = GRADES.indexOf(String(grade || "").trim().toUpperCase());
+    if(i < 0 || !syStart || !date) return grade;
+    const yrs = Number(syStartFor(date).slice(0, 4)) - Number(syStartFor(syStart).slice(0, 4));
+    return GRADES[Math.max(0, Math.min(GRADES.length - 1, i + yrs))];
+  }
   function planSyStart(startDate){ const t = todayISO(); return syStartFor(startDate && startDate > t ? startDate : t); }
 
   /* the KIS / award lines for one projection: value at a date */
@@ -1866,7 +1874,7 @@ window.kumonPtcNav = function(client, role){
         for(let t = T(from); t <= T(end); t += 2 * MS_DAY){ const d = iso(t); if(projAt(c, d) >= c.lines.kis(d)){ cross = d; break; } }
       }
       const ashrCyc = ASHR.defaultCycle();
-      const ashrNow = draft.grade ? ASHR.tierFor(draft.subject, ashrCyc, draft.grade, levelAndPage(draft.subject, nowY)) : null;
+      const ashrNow = draft.grade ? ASHR.tierFor(draft.subject, ashrCyc, gradeOn(draft.grade, draft.sy_start, ASHR.cutoffDate(ashrCyc)), levelAndPage(draft.subject, nowY)) : null;
       const ashrLine = ashrNow && ashrNow.tier
         ? `<div class="d ashr-now">ASHR (${esc(ASHR.cycleLabel(ashrCyc))}): <b>${ashrNow.tier === "N/A" ? "not yet" : esc(ashrNow.tier)}</b>${ashrNow.next ? ` · ${esc(ashrNow.next.name)} ${esc(ashrNow.away)}` : ""}</div>` : "";
       ins = `<div class="insights">
@@ -2002,7 +2010,8 @@ window.kumonPtcNav = function(client, role){
       for(let k = 0; k < 2; k++, cyc = ASHR.nextCycle(cyc)){
         const cd = ASHR.cutoffDate(cyc), cx = X(T(cd));
         if(cx < Lp || cx > R) continue;
-        const t = grade ? ASHR.tierFor(subj, cyc, grade, levelAndPage(subj, projAt(c, cd))) : { tier:null };
+        const sy = (c.p && c.p.sy_start) || (typeof draft !== "undefined" && draft && draft.sy_start) || "";
+        const t = grade ? ASHR.tierFor(subj, cyc, gradeOn(grade, sy, cd), levelAndPage(subj, projAt(c, cd))) : { tier:null };
         const award = t.tier && t.tier !== "N/A" ? t.tier : t.tier === "N/A" ? "below KIS" : "";
         const lbl = cyc.slice(5) === "02" ? "Feb" : "Aug";
         g += `<line x1="${cx}" x2="${cx}" y1="${Tp}" y2="${B}" stroke="${C.proj}" stroke-dasharray="2 5" opacity=".55"/>` +

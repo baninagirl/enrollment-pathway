@@ -1144,7 +1144,7 @@ window.kumonPtcNav = function(client, role){
   }
 
   let currentTeacherName = null;
-  let enr = [], studs = new Map(), locked = [], lockedMissing = false, activeCycle = defaultCycle(), plans = new Map();
+  let enr = [], studs = new Map(), locked = [], lockedMissing = false, loadFail = new Set(), activeCycle = defaultCycle(), plans = new Map();
   const U = { cycle: null, view: "all", subject: "all", grade: "all", teacher: "all", award: "all", q: "", open: null, showDouble: true };
   try{ const v = JSON.parse(localStorage.getItem("kumonAshrUi") || "null"); if(v && ["all","Math","Reading"].includes(v.subject)) U.subject = v.subject; if(v && v.showDouble === false) U.showDouble = false; }catch(_){ }
   const saveUi = () => { try{ localStorage.setItem("kumonAshrUi", JSON.stringify({ subject:U.subject, showDouble:U.showDouble })); }catch(_){ } };
@@ -1217,9 +1217,12 @@ window.kumonPtcNav = function(client, role){
     ]);
     enr = e.filter(x => x.subject === "Math" || x.subject === "Reading");
     studs = new Map(s.map(x => [x.id, x]));
+    // A failed load must never look normal (Nov 20): without the saved awards the page would fall back to the Roster's
+    // Award, and Lock in could overwrite the real August 2026 record. So a failure is shown, and editing and Lock in stop.
+    loadFail = new Set();
     try{ locked = await fetchAll("ashr_awards", "*"); lockedMissing = false; }
-    catch(err){ locked = []; lockedMissing = /ashr_awards|schema cache|does not exist/i.test(String(err.message || "")); }
-    try{ const pj = await fetchAll("study_projections", "*"); plans = new Map(pj.filter(p => p.subject_enrollment_id).map(p => [p.subject_enrollment_id, p])); }catch(_){ plans = new Map(); }
+    catch(err){ locked = []; lockedMissing = /ashr_awards|schema cache|does not exist/i.test(String(err.message || "")); if(!lockedMissing) loadFail.add("saved awards"); }
+    try{ const pj = await fetchAll("study_projections", "*"); plans = new Map(pj.filter(p => p.subject_enrollment_id).map(p => [p.subject_enrollment_id, p])); }catch(_){ plans = new Map(); loadFail.add("projections"); }
     if(!U.cycle) U.cycle = activeCycle;
   }
   const rawLwc = e => (e.lwc && String(e.lwc).trim()) ? e.lwc : [e.current_level, e.current_page].filter(Boolean).join(" ");
@@ -1268,7 +1271,7 @@ window.kumonPtcNav = function(client, role){
     set.add(activeCycle);
     return [...set].sort();
   }
-  const canEditLast = r => !r.locked && !r.lastLocked && (isAdmin() || (currentTeacherName && r.teacher === currentTeacherName));
+  const canEditLast = r => !loadFail.size && !r.locked && !r.lastLocked && (isAdmin() || (currentTeacherName && r.teacher === currentTeacherName));
   const COPY_SVG = `<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><rect x="5" y="5" width="8" height="8" rx="2"/><path d="M3 10V4a1 1 0 0 1 1-1h6"/></svg>`;
   const tierBadge = (t, extra) => { if(!t || t === "N/A") return `<span class="ab ab-na">Not yet</span>`; const k = t === "Double award" ? "double" : String(t).toLowerCase(); return `<span class="ab ab-${esc(k)}">${esc(t)}</span>${extra || ""}`; };
   const COLORS = { KIS:"var(--aw-kis)", Bronze:"var(--aw-bronze)", Silver:"var(--aw-silver)", Gold:"var(--aw-gold)", ASF:"var(--aw-asf)", none:"var(--aw-na)", info:"var(--warn)" };
@@ -1336,10 +1339,11 @@ window.kumonPtcNav = function(client, role){
     if(!host){ host = document.createElement("div"); host.id = "ashrSheetHost"; document.body.appendChild(host); }
     host.innerHTML = narrow && sheet ? `<div class="sheet-scrim" data-action="close-sheet"></div>${sheet}` : "";
     body.innerHTML = `
+      ${loadFail.size ? `<div class="banner">The ${esc([...loadFail].join(" and "))} didn't load, so awards here may be wrong. Last award and Lock in are off until it loads. Refresh the page to try again.</div>` : ""}
       ${lockedMissing ? `<div class="banner">Past cutoffs, Lock in and the August 2026 record need phase153-ashr.sql to be run in Supabase. Everything else works.</div>` : ""}
       <div class="ashr-head-actions">
         <button type="button" class="btn sm ghost" data-action="how">How it works</button>
-        ${currentRole === "superadmin" && isLive && !lockedMissing ? `<button type="button" class="btn sm" data-action="lock">Lock in ${esc(cycleLabel(U.cycle))}</button>` : ""}
+        ${currentRole === "superadmin" && isLive && !lockedMissing && !loadFail.size ? `<button type="button" class="btn sm" data-action="lock">Lock in ${esc(cycleLabel(U.cycle))}</button>` : ""}
       </div>
       <div class="cutnav">
         <button type="button" class="arr" data-action="cycle-step" data-d="-1" ${ci <= 0 ? "disabled" : ""} aria-label="Earlier cutoff">‹</button>
@@ -1408,6 +1412,7 @@ window.kumonPtcNav = function(client, role){
   }
 
   async function saveLast(id, value){
+    if(loadFail.size){ render(); return; }
     const e = enr.find(x => x.id === id); if(!e) return;
     const before = e.award, v = value || null;
     e.award = v; render();
@@ -1430,6 +1435,9 @@ window.kumonPtcNav = function(client, role){
   }
   async function lockIn(){
     if(currentRole !== "superadmin") return;
+    // Read everything fresh right before saving; stop if anything fails, so a stale or empty load can't be locked in.
+    try{ await loadAll(); }catch(err){ alert("Couldn't load the latest data: " + (err.message || err) + "\n\nNothing was saved. Refresh and try again."); return; }
+    if(loadFail.size || lockedMissing){ render(); alert(`The ${[...loadFail].join(" and ") || "saved awards"} didn't load, so nothing was locked in. Refresh the page and try again.`); return; }
     const cycle = activeCycle, label = cycleLabel(cycle), rows = liveRows(cycle).filter(r => r.tier && r.tier !== "N/A");
     if(!confirm(`Lock in ${label}?\n\nThis saves ${rows.length} award${rows.length === 1 ? "" : "s"} (KIS to ASF, double awards included) as ${label}'s record, then moves the page on to ${cycleLabel(nextCycle(cycle))}.\n\nOnly do this once the ${cutoffOf(cycle)} cutoff has passed.`)) return;
     const payload = rows.map(r => ({ student_id:r.sid, subject_enrollment_id:r.id, subject:r.subject, cycle, grade:r.grade || null, level_raw:r.lwc || null,
@@ -1438,7 +1446,8 @@ window.kumonPtcNav = function(client, role){
     const prev = prevCycle(cycle);
     const prevRows = liveRows(cycle).filter(r => r.last && r.last !== "None" && !r.lastLocked).map(r => ({ student_id:r.sid, subject_enrollment_id:r.id, subject:r.subject, cycle:prev, result:r.last, tier:r.last, teacher: r.teacher === "(No teacher)" ? null : r.teacher, source:"imported", student_name:r.name }));
     for(const set of [prevRows, payload]) for(let i = 0; i < set.length; i += 300){
-      const { error } = await sbClient.from("ashr_awards").upsert(set.slice(i, i + 300), { onConflict:"student_id,subject,cycle" });
+      // the previous cutoff's record is only added where none exists yet; an existing one is never replaced
+      const { error } = await sbClient.from("ashr_awards").upsert(set.slice(i, i + 300), set === prevRows ? { onConflict:"student_id,subject,cycle", ignoreDuplicates:true } : { onConflict:"student_id,subject,cycle" });
       if(error){ alert("Couldn't save the awards: " + error.message + "\n\nNothing was moved on. Try again."); return; }
     }
     const { error } = await sbClient.from("settings").upsert({ id:"ashr_cycle", value:{ cycle: nextCycle(cycle) } });
