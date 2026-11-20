@@ -563,7 +563,10 @@
   .at-block{ margin-top:18px; padding-top:14px; border-top:1px solid var(--border); }
   .at-block .ws-grid-wrap{ display:inline-block; max-width:100%; vertical-align:top; }
   .at-grid{ min-width:0; width:auto; } .at-grid th, .at-grid td{ padding:5px 14px; }
-  .at-cols{ display:grid; grid-template-columns:repeat(auto-fit, minmax(280px, 1fr)); gap:18px; margin-top:10px; }
+  .at-cols{ display:grid; grid-template-columns:repeat(auto-fit, minmax(280px, 1fr)); gap:18px; margin-top:10px; align-items:start; }
+  .at-grid{ width:100%; }
+  .at-grid th:first-child{ text-align:left; }
+  .at-grid td{ text-align:center; }
   .at-count{ display:grid; grid-template-columns:repeat(auto-fill, minmax(118px, 1fr)); gap:8px 14px; }
   .at-count .field.inline{ justify-content:space-between; }
   .at-count input{ width:64px; font:inherit; font-size:13px; padding:4px 6px; border:1px solid var(--border); border-radius:7px; background:var(--surface); color:var(--ink); }
@@ -1713,17 +1716,23 @@ window.kumonPtcNav = function(client, role){
     const body = $("#wsBody"); const sub = wsUi.countSubject; const c = latestCount(sub);
     const subTabs = WS_SUBJECTS.concat("AT").map(s => `<button class="ws-sub${s === sub ? " on" : ""}" data-countsub="${s}">${WS_NAME[s]}</button>`).join("");
     if(sub === "AT"){
-      const col = s => `<div style="min-width:0"><h4 style="margin:6px 0">${s === "ME" ? "Math (ME AT)" : "English (EE (US) AT)"}</h4><div class="at-count">${AT_LEVELS[s].map(lv => `<label class="field inline">${esc(lv)}<input type="number" min="0" data-at-sub="${s}" data-at-lv="${esc(lv)}" placeholder="0"></label>`).join("")}</div></div>`;
+      // Same way as the worksheets (Nov 20): a table per subject, Import from Excel, Start from the current estimate.
+      const tbl = s2 => `<div style="min-width:0"><div class="ws-grid-wrap"><table class="ws-grid at-grid"><thead><tr><th>${s2 === "ME" ? "Math (ME AT)" : "English (EE (US) AT)"}</th><th>On the shelf</th></tr></thead><tbody>
+        ${AT_LEVELS[s2].map(lv => `<tr><th>${esc(lv)}</th><td><input type="number" min="0" step="1" inputmode="numeric" data-at-sub="${s2}" data-at-lv="${esc(lv)}" placeholder="0" aria-label="${esc(atItem(s2, lv))}"></td></tr>`).join("")}
+        </tbody></table></div></div>`;
       body.innerHTML = `<div class="ws-subs">${subTabs}</div>
         <div class="card sect"><div class="sec-h"><h3>Shelf count — Achievement tests</h3><span class="faint">${c ? "last counted " + esc(fmtDate(c.counted_on)) : "never counted"}</span></div>
-          <div class="hint">How many of each test are on the shelf (leave empty for none).</div>
-          <div class="ws-set"><label class="field inline">Counted on <input type="date" id="countDate" value="${todayISO()}" max="${todayISO()}"></label><span class="grow"></span><button class="btn primary" data-action="save-count">Save count</button></div>
-          <div class="at-cols">${col("ME")}${col("EEU")}</div></div>`;
+          <div class="hint">Type how many of each test are on the shelf, or <b>Import from Excel</b> (a "Level" column and a count column; one sheet for Math and one for English, or one sheet with both). An empty box counts as 0. After saving, the count shows on <b>Stock per level</b> → Achievement tests.</div>
+          <div class="ws-set"><label class="field inline">Counted on <input type="date" id="countDate" value="${todayISO()}" max="${todayISO()}"></label>
+            ${c ? `<button class="btn sm ghost" data-action="prefill">Start from the current estimate</button>` : ""}
+            <label class="btn sm">Import from Excel<input type="file" id="countFile" accept=".xlsx,.xls,.csv" hidden></label>
+            <span class="grow"></span><button class="btn primary" data-action="save-count">Save count</button></div>
+          <div class="at-cols" id="countGrid">${tbl("ME")}${tbl("EEU")}</div></div>`;
       return;
     }
     body.innerHTML = `<div class="ws-subs">${subTabs}</div>
       <div class="card sect"><div class="sec-h"><h3>Shelf count — ${WS_NAME[sub]}</h3><span class="faint">${c ? "last counted " + esc(fmtDate(c.counted_on)) : "never counted"}</span></div>
-        <div class="hint">Type how many copies of each block are on the shelf, or <b>Import from Excel</b> (same layout as Kumon's order file: Level, 1, 11 … 191). You can count a few levels at a time: only the levels you fill in are replaced (an empty box in a filled level counts as 0); levels left completely empty keep their earlier count. Put away any delivery first.</div>
+        <div class="hint">Type how many copies of each block are on the shelf, or <b>Import from Excel</b> (same layout as Kumon's order file: Level, ${blocksOf(sub).slice(0, 2).join(", ")} … ${blocksOf(sub)[blocksOf(sub).length - 1]}). You can count a few levels at a time: only the levels you fill in are replaced (an empty box in a filled level counts as 0); levels left completely empty keep their earlier count. Put away any delivery first.</div>
         <div class="ws-set"><label class="field inline">Counted on <input type="date" id="countDate" value="${todayISO()}" max="${todayISO()}"></label>
           ${c ? `<button class="btn sm ghost" data-action="prefill">Start from the current estimate</button>` : ""}
           <label class="btn sm">Import from Excel<input type="file" id="countFile" accept=".xlsx,.xls,.csv" hidden></label>
@@ -1793,7 +1802,7 @@ window.kumonPtcNav = function(client, role){
     const btn = $('[data-action="save-count"]'); if(btn) btn.disabled = true;
     const { data, error } = await sbClient.from("ws_counts").insert([{ subject: sub, counted_on: date, counted_by: currentUser ? currentUser.email : null, lines, positions }]).select("id");
     if(btn && btn.isConnected) btn.disabled = false;
-    if(error || !data || !data.length){ alert("Couldn't save the count: " + (error ? error.message : "the database didn't allow it")); return; }
+    if(error || !data || !data.length){ alert("Couldn't save the count: " + (error ? error.message : "the database didn't allow it") + (error && /subject_check/.test(error.message || "") ? "\n\nRun phase156-shelf-count-at.sql in Supabase, then save again." : "") + "\n\nWhat you typed is still on the page."); return; }
     logHistory("ws_count", `Shelf count for ${WS_NAME[sub]}: ${fmtN(n)} copies (${date})`, data[0].id);
     await loadCounts(); wsUi.tab = "stock"; wsUi.stockSubject = sub; render(); toast("Count saved.");
   }
@@ -1845,8 +1854,43 @@ window.kumonPtcNav = function(client, role){
   }
   // Fills the count grid from an Excel/CSV laid out like Kumon's order file: a "Level" header row with the block
   // numbers across, one row per level. Nothing is saved until Save count is pressed.
+  // Kumon writes pre-school levels as ZI / ZII; the Hub calls them Z1 / Z2.
+  const normCountLevel = v => { const x = String(v == null ? "" : v).trim().toUpperCase().replace(/^LEVEL\s+/, "").replace(/\s+/g, ""); return x === "ZI" ? "Z1" : x === "ZII" ? "Z2" : x; };
+  // Achievement tests: any sheet with a "Level" header and a count column. Which subject: the sheet's name
+  // (ME / Math, or EE / English / EEU), a "Subject" column, or a heading row above; a level only one subject has
+  // (e.g. B = Math, B1 = English) is placed on its own.
+  async function importAtFile(file){
+    const wb = XLSX.read(new Uint8Array(await file.arrayBuffer()), { type: "array" });
+    const subOf = t => { t = String(t || "").toUpperCase(); return /\bEE|ENGLISH|READING|EEU/.test(t) ? "EEU" : /\bME\b|MATH/.test(t) ? "ME" : null; };
+    let filled = 0; const skipped = [], hit = { ME: 0, EEU: 0 };
+    for(const name of wb.SheetNames){
+      const rows = XLSX.utils.sheet_to_json(wb.Sheets[name], { header: 1, defval: null });
+      let sheetSub = subOf(name), cur = sheetSub;
+      const hi = rows.findIndex(r => r && r.some(v => /^level$/i.test(String(v || "").trim()))); if(hi < 0) continue;
+      const head = rows[hi].map(v => String(v || "").trim().toLowerCase());
+      const li = head.findIndex(h => h === "level");
+      const si = head.findIndex(h => h === "subject" || h === "item");
+      let qi = head.findIndex(h => /^(on the shelf|count|counted|qty|quantity|stock|on hand|total)$/.test(h));
+      if(qi < 0) qi = head.findIndex((h, k) => k !== li && k !== si && rows.slice(hi + 1).some(r => r && r[k] !== null && r[k] !== "" && !isNaN(Number(r[k]))));
+      if(qi < 0) continue;
+      for(const r of rows.slice(hi + 1)){
+        if(!r) continue;
+        const lvRaw = r[li]; if(lvRaw == null || String(lvRaw).trim() === ""){ const t = subOf(r.filter(Boolean).join(" ")); if(t) cur = t; continue; }
+        const lv = normCountLevel(lvRaw); if(lv === "TOTAL") continue;
+        const v = r[qi]; if(v === null || v === "" || isNaN(Number(v))) continue;
+        let s2 = (si >= 0 && subOf(r[si])) || cur;
+        if(!s2){ const inMe = AT_LEVELS.ME.includes(lv), inEe = AT_LEVELS.EEU.includes(lv); s2 = inMe && !inEe ? "ME" : inEe && !inMe ? "EEU" : null; }
+        const inp = s2 && document.querySelector(`input[data-at-sub="${s2}"][data-at-lv="${lv}"]`);
+        if(!inp){ skipped.push(lv); continue; }
+        inp.value = Math.max(0, Math.round(Number(v))); filled++; hit[s2]++;
+      }
+    }
+    if(!filled){ alert(`Nothing in "${file.name}" matched the achievement tests. The sheet needs a "Level" column and a count column, and a sheet name with ME / Math or EE / English so the Hub knows which subject.`); return; }
+    toast(`Filled ${filled} tests (${hit.ME} Math, ${hit.EEU} English)${skipped.length ? " · skipped: " + [...new Set(skipped)].join(", ") : ""}. Check them, then press Save count.`);
+  }
   async function importCountFile(file){
     if(!window.XLSX){ alert("The Excel reader didn't load — check the connection and refresh the page."); return; }
+    if(wsUi.countSubject === "AT"){ try{ await importAtFile(file); }catch(err){ alert("Couldn't read that file: " + (err.message || err)); } return; }
     try{
       const wb = XLSX.read(new Uint8Array(await file.arrayBuffer()), { type: "array" });
       const sub = wsUi.countSubject; const blocks = blocksOf(sub); let filled = 0; const levelsHit = new Set(), unknown = [];
@@ -1855,7 +1899,7 @@ window.kumonPtcNav = function(client, role){
         const hi = rows.findIndex(r => r && String(r[0] || "").trim().toLowerCase() === "level"); if(hi < 0) continue;
         const head = rows[hi].map(h => Number(h));
         for(const r of rows.slice(hi + 1)){
-          if(!r || r[0] == null) continue; const lv = String(r[0]).trim().toUpperCase(); if(!lv || lv === "TOTAL") continue;
+          if(!r || r[0] == null) continue; const lv = normCountLevel(r[0]); if(!lv || lv === "TOTAL") continue;
           if(!WS_LEVELS[sub].includes(lv)){ if(r.slice(1).some(v => v !== null && v !== "")) unknown.push(lv); continue; }
           head.forEach((b, k) => {
             if(!blocks.includes(b)) return; const v = r[k]; if(v === null || v === "") return;
@@ -1903,6 +1947,7 @@ window.kumonPtcNav = function(client, role){
       if(await saveSettings({ calib })){ render(); toast("Saved — the suggestions now use it."); }
       return;
     }
+    if(a === "prefill" && wsUi.countSubject === "AT"){ const st = atStockNow(); if(!st) return; $$("input[data-at-sub]").forEach(i => { const n = ((st.map[i.dataset.atSub] || {})[i.dataset.atLv]) || 0; i.value = Math.max(0, Math.round(n)); }); return; }
     if(a === "prefill"){ const st = stockNow(wsUi.countSubject); if(!st) return; $$("#countGrid input[data-lv]").forEach(i => { if(st.uncounted && st.uncounted.includes(i.dataset.lv)) return; const n = getN(st.map, i.dataset.lv, i.dataset.b); i.value = Math.max(0, Math.round(n)); }); return; }
   });
   document.addEventListener("change", async (e) => {
