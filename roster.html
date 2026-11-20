@@ -46,6 +46,15 @@
 @keyframes hubssShrink{from{transform:scaleX(1)}to{transform:scaleX(0)}}
 @keyframes hubssShake{0%,100%{translate:0}20%{translate:-5px}40%{translate:5px}60%{translate:-3px}80%{translate:3px}}
 @media (prefers-reduced-motion:reduce){.hubss,.hubss *{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}}
+  .mp{ position:relative; display:flex; flex-direction:column; gap:5px; font-size:12.5px; font-weight:600; color:var(--ink-muted); }
+  .mp .mp-list{ display:flex; flex-direction:column; margin-top:4px; border:1px solid var(--border); border-radius:12px; background:var(--surface); max-height:260px; overflow-y:auto; box-shadow:0 8px 24px -12px rgba(20,22,30,.18); }
+  .mp .mp-opt{ display:flex; flex-direction:column; align-items:flex-start; gap:1px; text-align:left; border:0; border-bottom:1px solid var(--border); background:transparent; color:var(--ink); font:inherit; font-size:13.5px; padding:9px 12px; cursor:pointer; }
+  .mp .mp-opt:last-child{ border-bottom:0; }
+  .mp .mp-opt:hover, .mp .mp-opt:focus-visible{ background:var(--accent-soft); outline:none; }
+  .mp .mp-opt .hint, .mp .mp-picked .hint{ font-size:12px; font-weight:400; }
+  .mp .mp-none{ padding:10px 12px; font-size:13px; color:var(--ink-muted); }
+  .mp .mp-picked{ display:flex; align-items:center; gap:10px; border:1px solid var(--accent); background:var(--accent-soft); border-radius:12px; padding:8px 8px 8px 12px; }
+  .mp .mp-txt{ display:flex; flex-direction:column; min-width:0; flex:1; font-size:13.5px; color:var(--ink); font-weight:400; }
 </style>
 <script>
 /* How it works: every write to the database (insert / update / delete / RPC) goes through fetch, so this wraps fetch
@@ -1244,10 +1253,46 @@ window.kumonPtcNav = function(client, role){
       </div>
     </div>`;
   }
+  /* Merge any two students (Nov 20): type part of a name and pick from the matches, instead of scrolling a list
+     of every student. Shows each match's subjects and teacher so look-alike names are easy to tell apart. */
+  const mergePick = { mergeKeep: null, mergeDrop: null };
+  function mergePickHtml(id, label){
+    const sel = mergePick[id] && students.find(x => x.id === mergePick[id]);
+    return `<div class="field mp" data-mp="${id}"><span>${label}</span>
+      <input type="hidden" id="${id}" value="${esc(sel ? sel.id : "")}">
+      ${sel ? `<div class="mp-picked"><span class="mp-txt"><b>${esc(sel.name)}</b><span class="hint">${esc(describeStudentForDup(sel))}</span></span><button type="button" class="btn sm ghost" data-action="mp-clear" data-mp="${id}">Change</button></div>`
+            : `<input type="text" class="mp-in" data-mp-in="${id}" placeholder="Type a name…" autocomplete="off" aria-label="${esc(label)}"><div class="mp-list" data-mp-list="${id}" hidden></div>`}
+    </div>`;
+  }
+  function mergePickMatches(q){
+    const norm = t => String(t || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9 ]+/g, " ");
+    const words = norm(q).split(/\s+/).filter(Boolean); if(!words.length) return [];
+    return students.filter(x => { const n = norm(x.name); return words.every(w => n.includes(w)); })
+      .sort((a, b) => (a.name || "").localeCompare(b.name || "")).slice(0, 8);
+  }
+  document.addEventListener("input", e => {
+    const inp = e.target.closest && e.target.closest("[data-mp-in]"); if(!inp) return;
+    const id = inp.dataset.mpIn, box = document.querySelector(`[data-mp-list="${id}"]`); if(!box) return;
+    const other = mergePick[id === "mergeKeep" ? "mergeDrop" : "mergeKeep"];
+    const m = mergePickMatches(inp.value).filter(x => x.id !== other);
+    box.hidden = !inp.value.trim();
+    box.innerHTML = m.length ? m.map(x => `<button type="button" class="mp-opt" data-action="mp-pick" data-mp="${id}" data-id="${esc(x.id)}"><b>${esc(x.name)}</b><span class="hint">${esc(describeStudentForDup(x))}${x.status && x.status !== "active" ? " · " + esc(String(x.status).replace(/_/g, " ")) : ""}</span></button>`).join("")
+      : `<div class="mp-none">No student matches “${esc(inp.value.trim())}”.</div>`;
+  });
+  document.addEventListener("keydown", e => {
+    const inp = e.target.closest && e.target.closest("[data-mp-in]"); if(!inp || e.key !== "Enter") return;
+    e.preventDefault(); const first = document.querySelector(`[data-mp-list="${inp.dataset.mpIn}"] .mp-opt`); if(first) first.click();
+  });
+  function mergePickRefresh(id){
+    const wrap = document.querySelector(`[data-mp="${id}"].mp`); if(!wrap) return;
+    const label = wrap.querySelector("span").textContent;
+    wrap.outerHTML = mergePickHtml(id, label);
+    if(!mergePick[id]){ const i = document.querySelector(`[data-mp-in="${id}"]`); if(i) i.focus(); }
+  }
   function openDuplicatesModal(){
     if(!canCloseOut()) return;
+    if(!$("#modalBackdrop") || $("#modalBackdrop").hidden) mergePick.mergeKeep = mergePick.mergeDrop = null;   // fresh each time it's opened
     const pairs = duplicatePairs();
-    const opts = students.slice().sort((x,y) => (x.name||"").localeCompare(y.name||"")).map(s => `<option value="${esc(s.id)}">${esc(s.name)}</option>`).join("");
     $("#modal").innerHTML = `
       <div class="modal-head"><h3>Possible duplicates</h3><button class="iconbtn" data-action="close-modal">✕</button></div>
       <div class="modal-body">
@@ -1255,8 +1300,8 @@ window.kumonPtcNav = function(client, role){
         ${pairs.length ? pairs.map(([a, b], i) => dupCardHtml(a, b, i)).join("") : `<div class="empty">No likely duplicates found.</div>`}
         <div style="border-top:1px solid var(--border); padding-top:12px; display:flex; flex-direction:column; gap:8px;">
           <b style="font-size:13px;">Merge any two students</b>
-          <label class="field">Keep<select id="mergeKeep"><option value="">Choose…</option>${opts}</select></label>
-          <label class="field">Merge into it (this record is deleted)<select id="mergeDrop"><option value="">Choose…</option>${opts}</select></label>
+          ${mergePickHtml("mergeKeep", "Keep")}
+          ${mergePickHtml("mergeDrop", "Merge into it (this record is deleted)")}
           <div><button type="button" class="btn sm primary" data-action="merge-manual">Merge</button></div>
         </div>
       </div>
@@ -1271,7 +1316,7 @@ window.kumonPtcNav = function(client, role){
     if(error){ alert("Couldn't merge: " + error.message); return; }
     logHistory("merge_students", `Merged ${drop ? drop.name : "a student"} into ${keep ? keep.name : "a student"}`, "student", keepId);
     await Promise.all([loadStudents(), loadEnrollments(), loadSchedules(), loadHistory(), loadReceipts()]);
-    dupPairsCache = null;
+    dupPairsCache = null; mergePick.mergeKeep = mergePick.mergeDrop = null;
     renderBoth();
     openDuplicatesModal();
   }
@@ -3493,6 +3538,8 @@ window.kumonPtcNav = function(client, role){
       const keepId = picked ? picked.value : btn.dataset.a;
       await mergeStudents(keepId, keepId === btn.dataset.a ? btn.dataset.b : btn.dataset.a);
     }
+    else if(action === "mp-pick"){ mergePick[btn.dataset.mp] = btn.dataset.id; mergePickRefresh(btn.dataset.mp); if(btn.dataset.mp === "mergeKeep" && !mergePick.mergeDrop){ const i = document.querySelector('[data-mp-in="mergeDrop"]'); if(i) i.focus(); } }
+    else if(action === "mp-clear"){ mergePick[btn.dataset.mp] = null; mergePickRefresh(btn.dataset.mp); }
     else if(action === "merge-manual"){ await mergeStudents(($("#mergeKeep")||{}).value, ($("#mergeDrop")||{}).value); }
     else if(action === "not-duplicate"){ await markNotDuplicate(btn.dataset.a, btn.dataset.b); }
     else if(action === "use-existing-student"){
