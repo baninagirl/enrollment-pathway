@@ -262,6 +262,12 @@
   h1,h2,h3,.brand{ font-family:"Sora", system-ui, sans-serif; }
   h1,h2,h3{ text-wrap:balance; margin:0; }
   .tnum{ font-variant-numeric: tabular-nums; }
+  .rep-hl-cell{ cursor:pointer; }
+  .rep-hl-cell:hover{ color:var(--accent); }
+  tr.rep-hl > td, .stable tr.rep-hl > td.rep-ck, .stable tr.rep-hl > td.rep-ck.done{ background:#FFF4C2 !important; }
+  tr.rep-hl > td.rep-hl-cell{ font-weight:700; box-shadow:inset 3px 0 0 #E0A800; }
+  @media (prefers-color-scheme: dark){ :root:not([data-theme="light"]) tr.rep-hl > td, :root:not([data-theme="light"]) .stable tr.rep-hl > td.rep-ck{ background:#3A3214 !important; } }
+  :root[data-theme="dark"] tr.rep-hl > td, :root[data-theme="dark"] .stable tr.rep-hl > td.rep-ck{ background:#3A3214 !important; }
   button{ font-family:inherit; }
   a{ color:var(--accent); }
 
@@ -1728,6 +1734,8 @@ window.kumonPtcNav = function(client, role){
     return `<span class="ns-pay ${cls}" title="First payment · ${esc(tip)}">${label}</span>`;
   }
   const REP = { on: false, month: null, checks: new Map(), loading: false, missing: false, todo: false };
+  // Highlight a row on New Students (Nov 24), like clicking a row number in Google Sheets: stays while you switch tabs.
+  let nsHL = null; try{ nsHL = localStorage.getItem("kumonNewStudentsHL") || null; }catch(_){ }
   try{ REP.on = localStorage.getItem("kumonReportingTime") === "1"; }catch(_){ }
   const repKey = (kind, month, ref) => kind + "|" + month + "|" + ref;
   async function loadRepChecks(month){
@@ -3131,8 +3139,8 @@ window.kumonPtcNav = function(client, role){
             ${rows.map((row, i) => {
               const s = row.s;
               const st = STATUS_LABEL[s.status] || ["—","muted"];
-              return `<tr class="clickrow" data-action="open-student" data-id="${s.id}">
-                <td class="tnum">${i+1}</td>
+              return `<tr class="clickrow${nsHL === repRef(row) ? " rep-hl" : ""}" data-action="open-student" data-id="${s.id}">
+                <td class="tnum rep-hl-cell" data-action="ns-hl" data-ref="${esc(repRef(row))}" title="${nsHL === repRef(row) ? "Highlighted — tap to clear" : "Tap to highlight this row"}">${i+1}</td>
                 <td class="namecol"><span class="ln-row"><span class="ln-text">${lnMark(esc(displayName(s)))}</span>${lnCopyBtn(lnLastOf(displayName(s)))}</span>${row.src || payOn ? `<div class="hint ns-src" style="font-size:11.5px;margin-top:2px;">${payOn ? nsFirstPayPill(s, row.subj, monthKey) : ""}${esc(row.src || "")}</div>` : ""}</td>
                 ${repCells(row)}
                 <td>${esc(s.ageGrade||"—")}</td>
@@ -3155,8 +3163,8 @@ window.kumonPtcNav = function(client, role){
               const s = row.s;
               const d = activeDiagnosticFor(s.id);
               const r = diagResultFor(d, row.subj, row.isBoth);
-              return `<tr class="clickrow" data-action="open-student" data-id="${s.id}">
-                <td class="tnum">${i+1}</td>
+              return `<tr class="clickrow${nsHL === repRef(row) ? " rep-hl" : ""}" data-action="open-student" data-id="${s.id}">
+                <td class="tnum rep-hl-cell" data-action="ns-hl" data-ref="${esc(repRef(row))}" title="${nsHL === repRef(row) ? "Highlighted — tap to clear" : "Tap to highlight this row"}">${i+1}</td>
                 <td class="namecol"><span class="ln-row"><span class="ln-text">${lnMark(esc(displayName(s)))}</span>${lnCopyBtn(lnLastOf(displayName(s)))}</span>${row.src || payOn ? `<div class="hint ns-src" style="font-size:11.5px;margin-top:2px;">${payOn ? nsFirstPayPill(s, row.subj, monthKey) : ""}${esc(row.src || "")}</div>` : ""}</td>
                 ${repCells(row)}
                 <td>${esc(s.ageGrade||"—")}</td>
@@ -5715,6 +5723,7 @@ window.kumonPtcNav = function(client, role){
     else if(a === "rep-toggle"){ REP.on = !REP.on; try{ localStorage.setItem("kumonReportingTime", REP.on ? "1" : "0"); }catch(_){ } renderStudents(); }
     else if(a === "rep-filter"){ REP.todo = el.dataset.v === "todo"; renderStudents(); }
     else if(a === "rep-tick"){ toggleRepCheck(el.dataset.kind, el.dataset.month, el.dataset.ref); }
+    else if(a === "ns-hl"){ nsHL = nsHL === el.dataset.ref ? null : el.dataset.ref; try{ nsHL ? localStorage.setItem("kumonNewStudentsHL", nsHL) : localStorage.removeItem("kumonNewStudentsHL"); }catch(_){ } renderStudents(); }
     else if(a === "mark-outcome"){ markOutcome(el.dataset.id, el.dataset.outcome, el.dataset.subject); }
     else if(a === "cancel-diagnostic"){ cancelDiagnostic(el.dataset.id); }
     else if(a === "edit-diagnostic"){ openEditDiagnosticModal(el.dataset.id); }

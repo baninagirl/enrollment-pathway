@@ -396,6 +396,12 @@
   .selectcol{ width:34px; }
   .selectcol input, .row-check{ width:15px; height:15px; margin:0; cursor:pointer; accent-color:var(--accent); }
   .rownum{ color:var(--ink-faint); font-variant-numeric:tabular-nums; font-size:12px; }
+  .rep-hl-cell{ cursor:pointer; }
+  .rep-hl-cell:hover{ color:var(--accent); }
+  tr.rep-hl > td, .stable tr.rep-hl > td.rep-ck, .stable tr.rep-hl > td.rep-ck.done{ background:#FFF4C2 !important; }
+  tr.rep-hl > td.rep-hl-cell{ color:var(--ink); font-weight:700; box-shadow:inset 3px 0 0 #E0A800; }
+  @media (prefers-color-scheme: dark){ :root:not([data-theme="light"]) tr.rep-hl > td, :root:not([data-theme="light"]) .stable tr.rep-hl > td.rep-ck{ background:#3A3214 !important; } }
+  :root[data-theme="dark"] tr.rep-hl > td, :root[data-theme="dark"] .stable tr.rep-hl > td.rep-ck{ background:#3A3214 !important; }
   .bulk-bar{ display:flex; align-items:center; gap:8px; padding:10px 16px; border-bottom:1px solid var(--border); background:var(--accent-soft); flex-wrap:wrap; }
   .bulk-bar .count{ font-size:13px; font-weight:700; color:var(--accent-soft-ink); margin-right:auto; }
   .btn.ghost.on{ background:var(--accent-soft); color:var(--accent-soft-ink); }
@@ -965,7 +971,7 @@ window.kumonPtcNav = function(client, role){
         <div class="rep-bar" id="repBar" hidden></div>
         <div class="table-scroll freeze">
           <table class="stable">
-            <thead><tr>
+            <thead><tr id="repHeadRow">
               <th>#</th><th class="namecol">Student</th><th class="rep-ck" id="repInputHead" hidden>KSIS reported</th><th>Subject</th><th>Tag</th><th>LWC</th><th>NWU</th><th>No. of days</th><th>No. of months</th><th>Test date</th><th>Test level</th><th>Test time</th><th>Test score</th><th>Test group</th><th>Grade</th><th id="repPaymentHead">Payment</th><th>Mode</th>
             </tr></thead>
             <tbody id="repBody"></tbody>
@@ -2483,9 +2489,33 @@ window.kumonPtcNav = function(client, role){
     );
   }
 
+  /* Report columns (Nov 24). During Reporting time, Tag and No. of days move to the far right (Joan's request),
+     so the columns she types from read in the same order as the KSIS sheet. */
+  const REP_COLS = {
+    subject: ["Subject", r => `<td><span class="pill ${r.subject==='Math'?'subj-math':'subj-reading'}">${esc(r.subject||"")}</span></td>`],
+    tag: ["Tag", r => `<td>${r.archived ? `<span class="lvl empty-lvl" title="Archived snapshots don't keep the reporting tag.">—</span>` : reportTagPill(r.enrollment_type, r)}</td>`],
+    lwc: ["LWC", r => `<td>${fmtPlain(r.lwc)}</td>`], nwu: ["NWU", r => `<td>${fmtPlain(r.nwu)}</td>`],
+    days: ["No. of days", r => `<td>${fmtPlain(r.no_of_days)}</td>`], months: ["No. of months", r => `<td>${fmtPlain(r.no_of_months_current_level)}</td>`],
+    tdate: ["Test date", r => `<td>${fmtPlain(r.test_date)}</td>`], tlevel: ["Test level", r => `<td>${fmtPlain(r.test_level)}</td>`],
+    ttime: ["Test time", r => `<td>${fmtPlain(r.test_time)}</td>`], tscore: ["Test score", r => `<td>${fmtPlain(r.test_score)}</td>`],
+    tgroup: ["Test group", r => `<td>${fmtPlain(r.test_group)}</td>`], grade: ["Grade", r => `<td>${esc(gradeFor(r.student_id) || "—")}</td>`],
+    pay: ["Payment", (r, editable) => `<td>${editable ? fmtPaymentPill(r.student_id, reportPaymentMonth()) + potentialAbsentPill(r) : livePaymentPillClosed(r.student_id, r.payment_month || reportPaymentMonth(), monthKeyOf(viewMonth))}</td>`],
+    mode: ["Mode", r => `<td>${fmtMode(r.mode)}</td>`]
+  };
+  const repColOrder = () => repOnNow()
+    ? ["subject","lwc","nwu","months","tdate","tlevel","ttime","tscore","tgroup","grade","pay","mode","tag","days"]
+    : ["subject","tag","lwc","nwu","days","months","tdate","tlevel","ttime","tscore","tgroup","grade","pay","mode"];
+  /* Highlight a row, like clicking a row number in Google Sheets (Nov 24): tap the # to mark where you are; it stays
+     marked while you switch tabs or pages (saved on this device), until you tap it again or mark another row. */
+  const REP_HL_KEY = "kumonRosterReportHL";
+  let repHL = null; try{ repHL = localStorage.getItem(REP_HL_KEY) || null; }catch(_){ }
+  function setRepHL(ref){ repHL = repHL === ref ? null : ref; try{ repHL ? localStorage.setItem(REP_HL_KEY, repHL) : localStorage.removeItem(REP_HL_KEY); }catch(_){ } renderReport(); }
   function renderReport(){
     const rmLabel = $("#repMonthLabel"), rmRange = $("#repMonthRange"), rcTitle = $("#repCardTitle");
     if(!rmLabel) return; // report view not in the DOM yet on first paint — nothing to do
+    const headRow = $("#repHeadRow");
+    if(headRow) headRow.innerHTML = `<th title="Tap a row's number to highlight it">#</th><th class="namecol">Student</th><th class="rep-ck" id="repInputHead" hidden>KSIS reported</th>`
+      + repColOrder().map(k => k === "pay" ? `<th id="repPaymentHead">Payment</th>` : `<th>${REP_COLS[k][0]}</th>`).join("");
     rmLabel.textContent = monthLabel(viewMonth);
     rmRange.textContent = monthRangeLabel(viewMonth);
     rcTitle.textContent = isCurrentCycle() ? "This cycle — editable" : "Archived cycle";
@@ -2590,24 +2620,11 @@ window.kumonPtcNav = function(client, role){
   }
   function reportRowHtml(r, idx, editable){
     return `
-      <tr class="${editable?"clickrow":""}" ${editable?`data-action="edit-report" data-id="${r.id}"`:""}>
-        <td class="rownum">${idx+1}</td>
+      <tr class="${editable?"clickrow":""}${repHL === repRefOf(r) ? " rep-hl" : ""}" ${editable?`data-action="edit-report" data-id="${r.id}"`:""}>
+        <td class="rownum rep-hl-cell" data-action="rep-hl" data-ref="${esc(repRefOf(r))}" title="${repHL === repRefOf(r) ? "Highlighted — tap to clear" : "Tap to highlight this row"}">${idx+1}</td>
         <td class="namecol"><span class="ln-row"><a class="name-link" href="student.html#s=${esc(r.student_id)}" data-action="open-profile" title="Open ${esc(displayName(r.student_id, r.student_name))}'s profile">${lnMark(esc(displayName(r.student_id, r.student_name)))}</a>${lnCopyBtn(lnLastOf(displayName(r.student_id, r.student_name)))}</span>${r.is_monitor ? monitorTagHtml(r) : ""}${newTagHtml(r)}</td>
         ${repOnNow() ? repTickCell(r) : ""}
-        <td><span class="pill ${r.subject==='Math'?'subj-math':'subj-reading'}">${esc(r.subject||"")}</span></td>
-        <td>${r.archived ? `<span class="lvl empty-lvl" title="Archived snapshots don't keep the reporting tag.">—</span>` : reportTagPill(r.enrollment_type, r)}</td>
-        <td>${fmtPlain(r.lwc)}</td>
-        <td>${fmtPlain(r.nwu)}</td>
-        <td>${fmtPlain(r.no_of_days)}</td>
-        <td>${fmtPlain(r.no_of_months_current_level)}</td>
-        <td>${fmtPlain(r.test_date)}</td>
-        <td>${fmtPlain(r.test_level)}</td>
-        <td>${fmtPlain(r.test_time)}</td>
-        <td>${fmtPlain(r.test_score)}</td>
-        <td>${fmtPlain(r.test_group)}</td>
-        <td>${esc(gradeFor(r.student_id) || "—")}</td>
-        <td>${editable ? fmtPaymentPill(r.student_id, reportPaymentMonth()) + potentialAbsentPill(r) : livePaymentPillClosed(r.student_id, r.payment_month || reportPaymentMonth(), monthKeyOf(viewMonth))}</td>
-        <td>${fmtMode(r.mode)}</td>
+        ${repColOrder().map(k => REP_COLS[k][1](r, editable)).join("")}
       </tr>`;
   }
   function renderReportAndActions(){ renderPageHeadActions(); renderReport(); }
@@ -3588,6 +3605,7 @@ window.kumonPtcNav = function(client, role){
     else if(action === "close-out-month"){ await closeOutMonth(); }
     else if(action === "rep-toggle"){ REP.on = !REP.on; try{ localStorage.setItem("kumonReportingTime", REP.on ? "1" : "0"); }catch(_){ } renderReport(); }
     else if(action === "rep-filter"){ REP.todo = btn.dataset.v === "todo"; renderReport(); }
+    else if(action === "rep-hl"){ setRepHL(btn.dataset.ref); }
     else if(action === "rep-tick"){ toggleRepCheck(monthKeyOf(viewMonth), btn.dataset.ref); }
     else if(action === "edit-report"){
       const id = btn.dataset.id;
