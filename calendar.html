@@ -1283,14 +1283,14 @@ window.kumonPtcNav = function(client, role){
     const { error } = await sbClient.from("schedule_moves").delete().in("schedule_id", scheduleIds).eq("week_start", weekStart).eq("from_day", fromDay);
     await loadMoves(); renderCalendar();
     if(error){ calToast("Couldn't cancel that (" + (error.message || "connection problem") + ")."); return; }
-    logHistory("class_move_undo", `Cancelled ${name}'s make-up — back on ${fromDay} (week of ${fmtShortDate(weekStart)})`, "schedule", scheduleIds[0]);
-    calToast(`${chipDisplayName(name)}'s move is cancelled.`);
+    logHistory("class_move_undo", `Put ${name} back on ${fromDay} (week of ${fmtShortDate(weekStart)})`, "schedule", scheduleIds[0]);
+    calToast(`${chipDisplayName(name)} is back on ${fromDay} ${fmtShortDate(dateOfDay(weekStart, fromDay))}.`);
   }
   // Moves one visit to toDay/toTime for the week. Moving it onto its regular day and time removes the move.
   async function moveVisit(kidKey, fromDay, fromTime, toDay, toTime, toWeek){
     const v = visitOf(kidKey, fromDay, fromTime);
     if(!v) return;
-    if(v.makeup){ calToast("This is a make-up class from last week. Open it with the arrows to cancel it."); return; }
+    if(v.makeup){ calToast("This class was moved here from last week. Use the arrows on it to put it back."); return; }
     if(toWeek && !toWeekReady){ calToast("Moving to next week needs phase161 run in Supabase first."); return; }
     if(v.od === "Sun" || toDay === "Sun"){ calToast("Sunday classes can't be moved — the Calendar switches to the next week on Sundays."); return; }
     const name = v.it.studentName || "the student";
@@ -1328,9 +1328,9 @@ window.kumonPtcNav = function(client, role){
     const ot = firstTimeOn(v.it.scheduleId, v.od) || v.it.origTime || v.it.time;
     const back = !ups.length;
     const where = toWeek ? `next ${toDay} (${fmtShortDate(dateOfDay(toWeek, toDay))}) ${fmtTime(toTime)}` : `${toDay} ${fmtTime(toTime)}`;
-    logHistory(back ? "class_move_undo" : "class_move", back ? `Put ${name} back on ${v.od} ${fmtTime(ot)} (${weekLabel()})` : `Moved ${name} from ${v.od} ${fmtTime(ot)} to ${where}${toWeek ? " (make-up)" : " for " + weekLabel()}`, "schedule", v.it.scheduleId);
+    logHistory(back ? "class_move_undo" : "class_move", back ? `Put ${name} back on ${v.od} ${fmtTime(ot)} (${weekLabel()})` : `Moved ${name} from ${v.od} ${fmtTime(ot)} to ${where}${toWeek ? "" : " for " + weekLabel()}`, "schedule", v.it.scheduleId);
     calToast(back ? `${chipDisplayName(name)} is back on ${v.od} ${fmtTime(ot)}.` : toWeek
-      ? `${chipDisplayName(name)}'s ${v.od} class moved to ${where}. It shows there as a make-up; their regular classes stay.`
+      ? `${chipDisplayName(name)} moved to ${where}, for that week only. After that it's back to ${v.od}.`
       : `${chipDisplayName(name)} moved to ${toDay} ${fmtTime(toTime)} for ${weekLabel()} only. After that it's back to ${v.od}.`);
   }
   // Small dialog for moving to any day/time (and on phones, where dragging doesn't work).
@@ -1344,12 +1344,12 @@ window.kumonPtcNav = function(client, role){
     const first = v.entries.slice().sort((a, b) => toMin(a.time) - toMin(b.time))[0];
     const nextWk = addWeekIso(moveWeekStart(), 1);
     const dayOpts = `<optgroup label="${esc(weekLabel() === "this week" ? "This week" : "Week of " + fmtShortDate(moveWeekStart()))}">` + DAY_ORDER.filter(d => d !== "Sun").map(d => `<option value="${d}" ${d === it.day ? "selected" : ""}>${d}</option>`).join("") + `</optgroup>`
-      + (toWeekReady && !v.makeup ? `<optgroup label="Next week (make-up)">` + DAY_ORDER.filter(d => d !== "Sun").map(d => `<option value="next:${d}">${d} ${esc(fmtShortDate(dateOfDay(nextWk, d)))}</option>`).join("") + `</optgroup>` : "");
+      + (toWeekReady && !v.makeup ? `<optgroup label="Next week">` + DAY_ORDER.filter(d => d !== "Sun").map(d => `<option value="next:${d}">${d} ${esc(fmtShortDate(dateOfDay(nextWk, d)))}</option>`).join("") + `</optgroup>` : "");
     if(v.makeup){
-      el.innerHTML = `<div class="move-dlg" role="dialog" aria-modal="true" aria-label="Make-up class">
-        <b>${esc(chipDisplayName(it.studentName))} · make-up class</b>
-        <div class="move-sub">Moved here from ${esc(od)} ${esc(fmtTime(ot))}, week of ${esc(fmtShortDate(it.origWeek))}. Their regular classes this week stay as they are.</div>
-        <div class="move-foot"><button type="button" class="btn sm" data-mv="cancel-makeup">Cancel the make-up</button><span style="flex:1"></span><button type="button" class="btn sm ghost" data-mv="cancel">Close</button></div></div>`;
+      el.innerHTML = `<div class="move-dlg" role="dialog" aria-modal="true" aria-label="Moved class">
+        <b>Move ${esc(chipDisplayName(it.studentName))}</b>
+        <div class="move-sub">Moved here from ${esc(od)} ${esc(fmtShortDate(dateOfDay(it.origWeek, od)))}, ${esc(fmtTime(ot))}. Their regular classes this week stay as they are.</div>
+        <div class="move-foot"><button type="button" class="btn sm" data-mv="cancel-makeup">Put back to ${esc(od)} ${esc(fmtShortDate(dateOfDay(it.origWeek, od)))}</button><span style="flex:1"></span><button type="button" class="btn sm ghost" data-mv="cancel">Close</button></div></div>`;
       el.hidden = false;
       el.onclick = async (ev) => {
         const b = ev.target.closest("[data-mv]");
@@ -1360,7 +1360,7 @@ window.kumonPtcNav = function(client, role){
     }
     el.innerHTML = `<div class="move-dlg" role="dialog" aria-modal="true" aria-label="Move class">
       <b>Move ${esc(chipDisplayName(it.studentName))} for ${esc(weekLabel())}</b>
-      <div class="move-sub">Regular class: ${esc(od)} ${esc(fmtTime(ot))}${v.entries.length > 1 ? " (" + esc([...new Set(v.entries.map(x => x.subject))].join(" + ")) + ")" : ""}. It goes back to that automatically after this week.${toWeekReady ? " Can't come at all this week? Pick a day under <b>Next week</b> for a make-up class." : ""}</div>
+      <div class="move-sub">Regular class: ${esc(od)} ${esc(fmtTime(ot))}${v.entries.length > 1 ? " (" + esc([...new Set(v.entries.map(x => x.subject))].join(" + ")) + ")" : ""}. It goes back to that automatically after this week.${toWeekReady ? " Can't come at all this week? Pick a day under <b>Next week</b>." : ""}</div>
       <div class="move-row"><label>Day<select id="mvDay">${dayOpts}</select></label><label>Starts at<input type="time" id="mvTime" value="${esc(first.time)}"></label></div>
       <div class="move-foot">${it.moved ? `<button type="button" class="btn sm" data-mv="back">Put back to ${esc(od)} ${esc(fmtTime(ot))}</button>` : ""}<span style="flex:1"></span>
         <button type="button" class="btn sm ghost" data-mv="cancel">Cancel</button><button type="button" class="btn sm primary" data-mv="go">Move</button></div></div>`;
@@ -1863,7 +1863,7 @@ window.kumonPtcNav = function(client, role){
           const mv = canMove() && it.scheduleId;
           const dragAttrs = mv ? `${it.makeup ? "" : ` draggable="true"`} data-kid="${esc(kidKey(it))}" data-day="${esc(it.day)}" data-time="${esc(it.time)}"` : "";
           const moveBtn = mv && firstOfKid ? `<button type="button" class="mv-btn" data-mvopen="1" title="Move this class to another day/time, this week only" aria-label="Move this week"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 9l-3 3 3 3M19 9l3 3-3 3M2 12h20"/></svg></button>` : "";
-          const movedLine = it.moved && firstOfKid ? `<span class="moved-sub">${it.makeup ? `make-up · from ${esc(it.origDay)} ${esc(fmtShortDate(dateOfDay(it.origWeek, it.origDay)))}` : `moved from ${esc(it.origDay)} ${esc(fmtTime(it.origTime))} · this week`}</span>` : "";
+          const movedLine = it.moved && firstOfKid ? `<span class="moved-sub">${it.makeup ? `moved from ${esc(it.origDay)} ${esc(fmtShortDate(dateOfDay(it.origWeek, it.origDay)))} · this week` : `moved from ${esc(it.origDay)} ${esc(fmtTime(it.origTime))} · this week`}</span>` : "";
           const kd = it.makeup ? { came: arrived, picked: false } : (kidDay.get(kidDayKey(it)) || { came: arrived, picked: false });
           const outcome = !it.scheduleId ? "" : kd.came ? "came" : kd.picked ? "picked" : (isPast && !beforeSchedule(it.scheduleId, d)) ? "missed" : "";
           const canPick = it.scheduleId && !it.makeup && (isToday || isPast) && !kd.came && canTick();
@@ -1879,7 +1879,7 @@ window.kumonPtcNav = function(client, role){
             ${teacherLine}${movedLine}${statusLine}
           </div>`;
         }).join("")}${(ghostByCell[ck] || []).map(g => g.nextWeek
-          ? `<div class="cal-ghost next-wk" title="Moved to next week as a make-up — not counted as missed">${esc(chipDisplayName(g.studentName))} → next ${esc(g.awayDay)} ${esc(fmtShortDate(dateOfDay(g.awayWeek, g.awayDay)))}, ${esc(fmtTime(g.awayTime))}${g.subjects.length > 1 ? `<span class="ghost-sub">${esc(g.subjects.join(" + "))}</span>` : ""}${canMove() ? ` <button type="button" class="st-btn quiet" data-cancel-away="${esc(g.scheds.join(","))}" data-from="${esc(g.day)}" data-name="${esc(g.studentName)}">Undo</button>` : ""}</div>`
+          ? `<div class="cal-ghost next-wk" title="Moved to next week only — not counted as missed">${esc(chipDisplayName(g.studentName))} → next ${esc(g.awayDay)} ${esc(fmtShortDate(dateOfDay(g.awayWeek, g.awayDay)))}, ${esc(fmtTime(g.awayTime))}${g.subjects.length > 1 ? `<span class="ghost-sub">${esc(g.subjects.join(" + "))}</span>` : ""}${canMove() ? ` <button type="button" class="st-btn quiet" data-cancel-away="${esc(g.scheds.join(","))}" data-from="${esc(g.day)}" data-name="${esc(g.studentName)}">Put back</button>` : ""}</div>`
           : `<div class="cal-ghost" title="Moved for this week only">${esc(chipDisplayName(g.studentName))} → ${esc(g.day)} ${esc(fmtTime(g.time))}${g.subjects.length > 1 ? `<span class="ghost-sub">${esc(g.subjects.join(" + "))}</span>` : ""}</div>`).join("")}${(bkByCell[ck] || []).map(b => `<div class="cal-chip bk-chip ${b.kind}${b.done ? " done" : ""}" title="${esc(b.label + " — " + b.name + (b.who ? " — " + b.who : ""))}"><span class="bk-kind">${esc(b.label)}</span><span class="chip-name">${esc(chipDisplayName(b.name))}</span>${showTeacherLabel && b.who ? `<span class="teacher-sub">${esc(b.who)}</span>` : ""}</div>`).join("")}</div>`;
       }
     }

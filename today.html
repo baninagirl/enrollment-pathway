@@ -1433,7 +1433,7 @@ window.kumonPtcNav = function(client, role){
       for(const slot of slots) for(const e of enrs){
         if(!mineEnr(e)) continue;
         out.push({ scheduleId: sc.id, origDay: mv.from_day, origWeek: mv.week_start, e, studentId: e.student_id, mode: slot.mode === "RI" ? "RI" : "IC",
-          time: fromMin(toMin(mv.to_time) + toMin(slot.time) - toMin(first || slot.time)), movedFrom: "make-up · " + mv.from_day + " " + new Date(T(addDays(mv.week_start, DAY_ORDER.indexOf(mv.from_day)))).toLocaleDateString("en-US", { timeZone: "UTC", month: "short", day: "numeric" }) });
+          time: fromMin(toMin(mv.to_time) + toMin(slot.time) - toMin(first || slot.time)), movedFrom: mv.from_day + " " + new Date(T(addDays(mv.week_start, DAY_ORDER.indexOf(mv.from_day)))).toLocaleDateString("en-US", { timeZone: "UTC", month: "short", day: "numeric" }) });
       }
     }
     return out;
@@ -1616,7 +1616,7 @@ window.kumonPtcNav = function(client, role){
     const s = studentById.get(sid), fl = [];
     if(!opts.extra){
       if(opts.kid){
-        if(opts.kid.movedFrom) fl.push(`<span class="td-chip td-good">${/^make-up/.test(opts.kid.movedFrom) ? esc(opts.kid.movedFrom.replace(/^make-up · /, "Make-up for ")) : "Moved here from " + esc(opts.kid.movedFrom)}</span>`);
+        if(opts.kid.movedFrom) fl.push(`<span class="td-chip td-good">Moved here from ${esc(opts.kid.movedFrom)}</span>`);
         if(opts.kid.movedTo) fl.push(`<span class="td-chip td-mute">Moved to ${esc(opts.kid.movedTo)}</span>`);
         if(opts.kid.picked && !opts.kid.arrived) fl.push(`<span class="td-chip td-warn">Picked up worksheets</span>`);
         if(opts.kid.ri) fl.push(`<span class="td-chip td-mute">RI</span>`);
