@@ -626,6 +626,10 @@
   .rk-col.over{ background:var(--accent-soft); box-shadow:inset 0 0 0 2px var(--accent); }
   .rk-col h3{ margin:2px 6px; font-size:13px; font-weight:700; color:var(--ink-muted); display:flex; align-items:center; gap:8px; min-height:26px; }
   .rk-col h3 i{ width:8px; height:8px; border-radius:50%; }
+  .rk-seg{ display:flex; gap:4px; margin:0 6px 2px; }
+  .rk-seg button{ flex:1; height:28px; border-radius:99px; border:1px solid var(--border); background:var(--surface); color:var(--ink-muted); font:inherit; font-size:12.5px; font-weight:600; cursor:pointer; }
+  .rk-seg button.on{ background:var(--accent-soft); border-color:var(--accent); color:var(--accent); }
+  .rk-more{ margin:2px 6px 0; height:32px; border-radius:12px; border:1px dashed var(--border); background:transparent; color:var(--accent); font:inherit; font-size:13px; font-weight:600; cursor:pointer; }
   .rk-col h3 span{ margin-left:auto; font-size:12px; background:var(--surface); border-radius:99px; padding:1px 8px; }
   .rk-qa-btn{ flex:none; display:inline-grid; place-items:center; width:26px; height:26px; margin:0 -2px 0 0; padding:0; border-radius:8px; border:1px solid transparent; background:var(--surface); color:var(--accent); cursor:pointer; transition:background .15s, border-color .15s, transform .12s; }
   .rk-qa-btn:hover{ background:var(--accent-soft); border-color:var(--accent); }
@@ -659,7 +663,7 @@
   .rk-note{ font-size:12.5px; color:var(--ink-muted); line-height:1.4; }
   .rk-chips{ display:flex; flex-wrap:wrap; gap:5px; align-items:center; }
   .rk-chip{ font-size:11px; font-weight:600; border-radius:99px; padding:2px 8px; background:var(--surface-2); color:var(--ink-muted); }
-  .rk-chip.bad{ background:var(--bad-soft); color:var(--bad); } .rk-chip.warn{ background:var(--warn-soft); color:var(--warn); }
+  .rk-chip.bad{ background:var(--bad-soft); color:var(--bad); } .rk-chip.warn{ background:var(--warn-soft); color:var(--warn); } .rk-chip.good{ background:var(--good-soft); color:var(--good); }
   .rk-flag{ display:inline-grid; place-items:center; }
   .rk-move{ display:flex; gap:2px; flex-wrap:wrap; margin-left:-4px; }
   .rk-move button{ appearance:none; border:0; background:transparent; color:var(--accent); font:inherit; font-size:12px; font-weight:600; padding:2px 4px; border-radius:6px; cursor:pointer; }
@@ -1070,7 +1074,8 @@ window.kumonPtcNav = function(client, role){
 
   /* ---------- state ---------- */
   let todos = [], profiles = [], loaded = false, missing = false, flagCols = true;
-  const ui = { multi: false, view: "board", smart: "today", whose: null, month: todayISO().slice(0,7), day: todayISO(), adding: false, editing: null, qa: null };
+  const ui = { multi: false, view: "board", smart: "today", whose: null, month: todayISO().slice(0,7), day: todayISO(), adding: false, editing: null, qa: null, doneRange: "today", doneShow: 30 };
+  try{ if(localStorage.getItem("kumonTodoDoneRange") === "all") ui.doneRange = "all"; }catch(_){ }
   // The page always opens on Board (List and Calendar are a tap away but are not remembered).
   const fading = new Set();   // just ticked: shown crossed out for a moment, like Reminders
 
@@ -1266,7 +1271,11 @@ window.kumonPtcNav = function(client, role){
   function renderBoard(){
     const today = todayISO(), tmrw = addDays(today, 1), m = mine(), all = isAllView();
     const open = m.filter(t => !t.done || fading.has(t.id));
-    const doneToday = m.filter(t => t.done && !fading.has(t.id) && t.done_at && new Date(new Date(t.done_at).getTime() + 8 * 3600e3).toISOString().slice(0, 10) === today);
+    const phDay = ts => new Date(new Date(ts).getTime() + 8 * 3600e3).toISOString().slice(0, 10);
+    // Done column (Nov 24): "Today" or "All" — everything ever ticked, newest first, 30 at a time.
+    const doneAllList = m.filter(t => t.done && !fading.has(t.id)).sort((a, b) => String(b.done_at || "").localeCompare(String(a.done_at || "")));
+    const doneAllMode = ui.doneRange === "all";
+    const doneToday = doneAllMode ? doneAllList.slice(0, ui.doneShow || 30) : doneAllList.filter(t => t.done_at && phDay(t.done_at) === today);
     const colOf = t => !t.due_date ? "later" : t.due_date < today ? "overdue" : t.due_date === today ? "today" : "later";
     const sortT = (a, b) => (b.flagged ? 1 : 0) - (a.flagged ? 1 : 0) || ((a.due_date || "9999") < (b.due_date || "9999") ? -1 : (a.due_date || "9999") > (b.due_date || "9999") ? 1 : 0) || (a.created_at < b.created_at ? -1 : 1);
     const chip = (cls, tx) => `<span class="rk-chip ${cls}">${esc(tx)}</span>`;
@@ -1274,6 +1283,7 @@ window.kumonPtcNav = function(client, role){
       const fin = (t.done && col === "done") || fading.has(t.id);
       const chips = [
         col !== "done" && t.due_date ? (t.due_date < today ? chip("bad", "Overdue · " + whenLabel(t.due_date)) : t.due_date === today ? chip("warn", "Today") : chip("", whenLabel(t.due_date))) : "",
+        col === "done" && doneAllMode && t.done_at ? chip("good", "Done " + (phDay(t.done_at) === today ? "today" : whenLabel(phDay(t.done_at)))) : "",
         all ? chip("", nameOfUser(t.owner_id)) : "",
         fromAdmin(t) ? chip("", "From " + nameOfUser(t.created_by)) : "",
         t.share_key ? chip("", "Shared" + (() => { const n = todos.filter(x => x.share_key === t.share_key && x.owner_id !== t.owner_id).length; return n ? " with " + n : ""; })()) : "",
@@ -1285,16 +1295,19 @@ window.kumonPtcNav = function(client, role){
         <div class="rk-body"><button type="button" class="rk-tx" data-act="edit" data-id="${esc(t.id)}">${esc(t.text)}</button>${t.note ? `<div class="rk-note">${esc(t.note)}</div>` : ""}${chips ? `<div class="rk-chips">${chips}</div>` : ""}${moves}</div>
       </div>`;
     };
-    const cols = [["overdue", "Overdue", "var(--bad)"], ["today", "Today", "var(--warn)"], ["later", "Later", "var(--accent)"], ["done", "Done today", "var(--good)"]];
+    const cols = [["overdue", "Overdue", "var(--bad)"], ["today", "Today", "var(--warn)"], ["later", "Later", "var(--accent)"], ["done", doneAllMode ? "Done" : "Done today", "var(--good)"]];
     const colHtml = ([k, label, dot]) => {
       const list = k === "done" ? doneToday : open.filter(t => colOf(t) === k).sort(sortT);
       const canAdd = k === "today" || k === "later", qaOpen = canAdd && ui.qa === k;
       const plus = canAdd ? `<button type="button" class="rk-qa-btn${qaOpen ? " on" : ""}" data-act="qa" data-col="${k}" aria-label="Add a to-do to ${label}" title="Add to ${label}"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>` : "";
       const composer = qaOpen ? `<form class="rk-qa" data-qa-form="${k}"><input type="text" class="rk-qa-in" maxlength="300" placeholder="${k === "today" ? "New to-do for today" : "New to-do, no date"}" autocomplete="off" aria-label="New to-do for ${label}"><div class="rk-qa-row"><span class="rk-qa-hint">Press Enter to add</span><button type="submit" class="rk-qa-add">Add</button></div></form>` : "";
-      return `<div class="rk-col" data-col="${k}"><h3><i style="background:${dot}"></i>${label}<span>${list.length}</span>${plus}</h3>
-        ${composer}${list.length ? list.map(t => card(t, k)).join("") : (qaOpen ? "" : `<div class="rk-empty">${k === "done" ? "Tick something off" : k === "overdue" ? "Nothing overdue" : "Nothing here"}</div>`)}</div>`;
+      const doneSeg = k === "done" ? `<div class="rk-seg" role="group" aria-label="Which done to-dos"><button type="button" data-act="done-range" data-v="today" class="${doneAllMode ? "" : "on"}" aria-pressed="${!doneAllMode}">Today</button><button type="button" data-act="done-range" data-v="all" class="${doneAllMode ? "on" : ""}" aria-pressed="${doneAllMode}">All</button></div>` : "";
+      const total = k === "done" && doneAllMode ? doneAllList.length : list.length;
+      const more = k === "done" && doneAllMode && doneAllList.length > list.length ? `<button type="button" class="rk-more" data-act="done-more">Show ${Math.min(30, doneAllList.length - list.length)} more (${doneAllList.length - list.length} left)</button>` : "";
+      return `<div class="rk-col" data-col="${k}"><h3><i style="background:${dot}"></i>${k === "done" ? "Done" : label}<span>${total}</span>${plus}</h3>${doneSeg}
+        ${composer}${list.length ? list.map(t => card(t, k)).join("") : (qaOpen ? "" : `<div class="rk-empty">${k === "done" ? (doneAllMode ? "Nothing done yet" : "Tick something off") : k === "overdue" ? "Nothing overdue" : "Nothing here"}</div>`)}${more}</div>`;
     };
-    const countOf = k => k === "done" ? doneToday.length : open.filter(t => colOf(t) === k).length;
+    const countOf = k => k === "done" ? (doneAllMode ? doneAllList.length : doneToday.length) : open.filter(t => colOf(t) === k).length;
     const tabs = `<div class="rk-tabs" role="tablist" aria-label="Board columns">${cols.map(([k, label, dot]) => `<button type="button" role="tab" data-act="rk-jump" data-col="${k}" class="${k === (ui.rkTab || "today") ? "on" : ""}"><i style="background:${dot}"></i>${label}<span>${countOf(k)}</span></button>`).join("")}</div>`;
     return `<section class="card rm-main rk-addcard">${addRow(today)}</section>${tabs}<div class="rk-board">${cols.map(colHtml).join("")}</div>`;
   }
@@ -1570,6 +1583,8 @@ window.kumonPtcNav = function(client, role){
     const a = b.dataset.act;
     if(a === "unassign"){ ui.assign = assignKeys().filter(k => k !== b.dataset.k); render(); return; }
     if(a === "sharemode"){ ui.shareMode = b.dataset.v; render(); return; }
+    if(a === "done-range"){ ui.doneRange = b.dataset.v; ui.doneShow = 30; try{ localStorage.setItem("kumonTodoDoneRange", ui.doneRange); }catch(_){ } render(); return; }
+    if(a === "done-more"){ ui.doneShow = (ui.doneShow || 30) + 30; render(); return; }
     if(a === "rk-jump"){ ui.rkTab = b.dataset.col; rkScrollTo(b.dataset.col, true); return; }
     if(a === "qa"){ ui.qa = ui.qa === b.dataset.col ? null : b.dataset.col; render(); focusQa(); return; }
     if(a === "smart"){ ui.smart = b.dataset.k; render(); }
