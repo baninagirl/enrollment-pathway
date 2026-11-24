@@ -435,6 +435,8 @@
     box-shadow:0 10px 28px rgba(0,0,0,.22); opacity:.95; max-width:220px; }
   body.touch-dragging{ -webkit-user-select:none; user-select:none; }
   .cal-chip.moved{ outline:1.5px dashed currentColor; outline-offset:-1.5px; }
+  .cal-ghost.next-wk{ color:var(--accent); }
+  .cal-ghost.next-wk .st-btn{ margin-left:4px; }
   .cal-chip .moved-sub{ font-weight:600; font-size:10px; opacity:.85; margin-left:22px; }
   .mv-btn{ position:static; flex:none; width:18px; height:18px; padding:2px; border:none; border-radius:5px; background:transparent; color:inherit; opacity:0; cursor:pointer; }
   .mv-btn svg{ width:100%; height:100%; display:block; }
@@ -961,6 +963,7 @@ window.kumonPtcNav = function(client, role){
 
   let sbClient = null, currentUser = null, currentRole = null, currentTeacherName = null;
   let schedules = [], enrollments = [], trainers = [], attendance = [], moves = [];
+  let inMoves = [], toWeekReady = true, attendanceOther = [];   // moves to next week (phase161); attendanceOther: make-up ticks, saved under the week they replace
   // teachers: empty Set = everyone; otherwise only those names (pick as many as you like).
   // Each Set: empty = everything; otherwise only those (tick as many as you like).
   let filters = { teachers: new Set(), groups: new Set(), levels: new Set(), mode:"all" };
@@ -1147,6 +1150,7 @@ window.kumonPtcNav = function(client, role){
     const rows = (data || []).slice().sort((a,b) => (a.week_start === wk) - (b.week_start === wk));
     const byKey = new Map(); rows.forEach(r => byKey.set(r.schedule_id + "|" + r.day, r));
     attendance = [...byKey.values()];
+    await loadMakeupTicks();
   }
   // Monday of this week as the CENTER's date (local), e.g. "2026-10-19".
   function currentWeekStart(){
@@ -1188,6 +1192,12 @@ window.kumonPtcNav = function(client, role){
     return mon.getFullYear() + "-" + String(mon.getMonth() + 1).padStart(2, "0") + "-" + String(mon.getDate()).padStart(2, "0");
   }
   let movesReady = true;
+  /* Moves to NEXT week (Nov 24, phase161: schedule_moves.to_week). A Saturday-only child who can't come this Saturday
+     can be moved to a day next week. This week their class shows "→ next Sat" (not Missed); next week it shows as a
+     make-up class on the day picked, on top of their regular ones. Its tick is saved under the class it replaces
+     (that week, that day), so attendance counts it for the week they missed. */
+  const addWeekIso = (iso, n) => { const [y, m, d] = iso.split("-").map(Number); const x = new Date(y, m - 1, d + 7 * n); return x.getFullYear() + "-" + String(x.getMonth() + 1).padStart(2, "0") + "-" + String(x.getDate()).padStart(2, "0"); };
+  const isAwayMove = m => !!(m && m.to_week && m.to_week !== m.week_start);
   async function loadMoves(){
     const { data, error } = await fetchAll("schedule_moves", "*", q => q.eq("week_start", moveWeekStart()).order("id"));
     if(error){
@@ -1197,6 +1207,16 @@ window.kumonPtcNav = function(client, role){
     }
     movesReady = true;
     moves = data || [];
+    const inc = await fetchAll("schedule_moves", "*", q => q.eq("to_week", moveWeekStart()).order("id"));
+    if(inc.error){ if(/to_week/.test(inc.error.message || "")) toWeekReady = false; inMoves = []; }
+    else { toWeekReady = true; inMoves = (inc.data || []).filter(m => m.week_start !== moveWeekStart()); }
+    await loadMakeupTicks();
+  }
+  async function loadMakeupTicks(){
+    const weeks = [...new Set(inMoves.map(m => m.week_start))];
+    if(!weeks.length){ attendanceOther = []; return; }
+    const o = await fetchAll("schedule_attendance", "*", q => q.in("week_start", weeks).in("schedule_id", [...new Set(inMoves.map(m => m.schedule_id))]).order("schedule_id"));
+    if(!o.error) attendanceOther = o.data || [];
   }
   // A schedule made this week (a new student) shouldn't show its earlier days as Missed.
   function beforeSchedule(scheduleId, day){
@@ -1221,30 +1241,57 @@ window.kumonPtcNav = function(client, role){
     const m = e.scheduleId ? moves.find(x => x.schedule_id === e.scheduleId && x.from_day === e.day) : null;
     if(!m) return e;
     const base = firstTimeOn(e.scheduleId, e.day) || e.time;
-    return Object.assign({}, e, { day: m.to_day, time: fromMin(toMin(m.to_time) + toMin(e.time) - toMin(base)), origDay: e.day, origTime: e.time, moved: true });
+    const nt = fromMin(toMin(m.to_time) + toMin(e.time) - toMin(base));
+    if(isAwayMove(m)) return Object.assign({}, e, { away: true, awayDay: m.to_day, awayTime: nt, awayWeek: m.to_week });
+    return Object.assign({}, e, { day: m.to_day, time: nt, origDay: e.day, origTime: e.time, moved: true });
   }
+  // Make-up classes arriving this week from a move made last week (or earlier).
+  function makeupEntries(){
+    if(!inMoves.length) return [];
+    const all = buildEntries(), out = [];
+    for(const m of inMoves){
+      const base = firstTimeOn(m.schedule_id, m.from_day);
+      all.filter(e => e.scheduleId === m.schedule_id && e.day === m.from_day).forEach(e => {
+        out.push(Object.assign({}, e, { day: m.to_day, time: fromMin(toMin(m.to_time) + toMin(e.time) - toMin(base || e.time)),
+          origDay: m.from_day, origTime: e.time, origWeek: m.week_start, moved: true, makeup: true }));
+      });
+    }
+    return out;
+  }
+  const entriesWithMoves = () => buildEntries().map(withMove).concat(makeupEntries());
   const kidOf = x => x.studentId || x.studentName;
   // The clicked chip's visit: same child, shown on the same day, from the same regular day, moved or not alike,
   // and within half an hour of it (Math + Reading back to back) — never the child's other classes that day.
   function visitOf(kidKey, day, time){
-    const all = buildEntries().map(withMove).filter(x => !x.cont && x.scheduleId && kidOf(x) === kidKey && x.day === day);
+    const all = entriesWithMoves().filter(x => !x.away && !x.cont && x.scheduleId && kidOf(x) === kidKey && x.day === day);
     const it = all.find(x => x.time === time); if(!it) return null;
-    const od = it.origDay || it.day, mv = !!it.moved;
-    let list = all.filter(x => (x.origDay || x.day) === od && !!x.moved === mv);
+    const od = it.origDay || it.day, mv = !!it.moved, mk = !!it.makeup;
+    let list = all.filter(x => (x.origDay || x.day) === od && !!x.moved === mv && !!x.makeup === mk);
     // grow outwards in half-hour steps from the clicked time, so only the connected block is taken
     const keep = new Set([it]); let grew = true;
     while(grew){ grew = false; for(const x of list){ if(keep.has(x)) continue; if([...keep].some(k => Math.abs(toMin(k.time) - toMin(x.time)) <= 30)){ keep.add(x); grew = true; } } }
     list = [...keep];
     const bySched = new Map();   // one row per schedule: its first time in this block
     for(const x of list){ const c = bySched.get(x.scheduleId); if(!c || toMin(x.time) < toMin(c.time)) bySched.set(x.scheduleId, x); }
-    return { it, od, moved: mv, entries: list, scheds: [...bySched.values()] };
+    return { it, od, moved: mv, makeup: mk, entries: list, scheds: [...bySched.values()] };
   }
   const weekLabel = () => { const wk = moveWeekStart(); return new Date().getDay() === 0 ? `next week (from ${fmtShortDate(wk)})` : "this week"; };
   function fmtShortDate(iso){ const d = new Date(iso + "T00:00:00"); return d.toLocaleDateString(undefined, { month:"short", day:"numeric" }); }
+  function dateOfDay(weekIso, day){ const [y, m, d] = weekIso.split("-").map(Number); const x = new Date(y, m - 1, d + DAY_ORDER.indexOf(day)); return x.getFullYear() + "-" + String(x.getMonth() + 1).padStart(2, "0") + "-" + String(x.getDate()).padStart(2, "0"); }
+  // Cancel a move to next week (from this week's "→ next Sat" note, or from the make-up class itself next week).
+  async function cancelAwayMove(scheduleIds, weekStart, fromDay, name){
+    const { error } = await sbClient.from("schedule_moves").delete().in("schedule_id", scheduleIds).eq("week_start", weekStart).eq("from_day", fromDay);
+    await loadMoves(); renderCalendar();
+    if(error){ calToast("Couldn't cancel that (" + (error.message || "connection problem") + ")."); return; }
+    logHistory("class_move_undo", `Cancelled ${name}'s make-up — back on ${fromDay} (week of ${fmtShortDate(weekStart)})`, "schedule", scheduleIds[0]);
+    calToast(`${chipDisplayName(name)}'s move is cancelled.`);
+  }
   // Moves one visit to toDay/toTime for the week. Moving it onto its regular day and time removes the move.
-  async function moveVisit(kidKey, fromDay, fromTime, toDay, toTime){
+  async function moveVisit(kidKey, fromDay, fromTime, toDay, toTime, toWeek){
     const v = visitOf(kidKey, fromDay, fromTime);
     if(!v) return;
+    if(v.makeup){ calToast("This is a make-up class from last week. Open it with the arrows to cancel it."); return; }
+    if(toWeek && !toWeekReady){ calToast("Moving to next week needs phase161 run in Supabase first."); return; }
     if(v.od === "Sun" || toDay === "Sun"){ calToast("Sunday classes can't be moved — the Calendar switches to the next week on Sundays."); return; }
     const name = v.it.studentName || "the student";
     const delta = toMin(toTime) - toMin(v.it.time);
@@ -1252,12 +1299,14 @@ window.kumonPtcNav = function(client, role){
     const rows = v.scheds.map(x => {
       const base = firstTimeOn(x.scheduleId, v.od) || x.origTime || x.time;
       const nt = fromMin(toMin(x.time) + delta);
-      return { x, back: toDay === v.od && nt === base, row: { schedule_id: x.scheduleId, week_start: wk, from_day: v.od, to_day: toDay, to_time: nt, moved_by: by } };
+      const row = { schedule_id: x.scheduleId, week_start: wk, from_day: v.od, to_day: toDay, to_time: nt, moved_by: by };
+      if(toWeekReady) row.to_week = toWeek || null;
+      return { x, back: !toWeek && toDay === v.od && nt === base, row };
     });
     // The child already has another class that day (not this visit): check it's really meant.
     if(!rows.every(r => r.back)){
       const ids = new Set(v.entries.map(x => x.scheduleId + "|" + x.time));
-      const other = buildEntries().map(withMove).find(x => !x.cont && kidOf(x) === kidKey && x.day === toDay && !ids.has(x.scheduleId + "|" + x.time));
+      const other = toWeek ? null : entriesWithMoves().find(x => !x.away && !x.cont && kidOf(x) === kidKey && x.day === toDay && !ids.has(x.scheduleId + "|" + x.time));
       if(other && !confirm(`${chipDisplayName(name)} already has a class on ${toDay} at ${fmtTime(other.time)}.\n\nMove the ${v.od} ${fmtTime(v.it.origTime || v.it.time)} class to ${toDay} ${fmtTime(toTime)} as well?`)) return;
     }
     const ups = rows.filter(r => !r.back).map(r => r.row), dels = rows.filter(r => r.back).map(r => r.row.schedule_id);
@@ -1278,8 +1327,11 @@ window.kumonPtcNav = function(client, role){
     if(failed){ calToast(/row-level security|permission/i.test(failed) ? "Couldn't move that class — this student isn't in your group." : "Couldn't move that class (" + failed + "). Check it on the Calendar and try again."); return; }
     const ot = firstTimeOn(v.it.scheduleId, v.od) || v.it.origTime || v.it.time;
     const back = !ups.length;
-    logHistory(back ? "class_move_undo" : "class_move", back ? `Put ${name} back on ${v.od} ${fmtTime(ot)} (${weekLabel()})` : `Moved ${name} from ${v.od} ${fmtTime(ot)} to ${toDay} ${fmtTime(toTime)} for ${weekLabel()}`, "schedule", v.it.scheduleId);
-    calToast(back ? `${chipDisplayName(name)} is back on ${v.od} ${fmtTime(ot)}.` : `${chipDisplayName(name)} moved to ${toDay} ${fmtTime(toTime)} for ${weekLabel()} only. After that it's back to ${v.od}.`);
+    const where = toWeek ? `next ${toDay} (${fmtShortDate(dateOfDay(toWeek, toDay))}) ${fmtTime(toTime)}` : `${toDay} ${fmtTime(toTime)}`;
+    logHistory(back ? "class_move_undo" : "class_move", back ? `Put ${name} back on ${v.od} ${fmtTime(ot)} (${weekLabel()})` : `Moved ${name} from ${v.od} ${fmtTime(ot)} to ${where}${toWeek ? " (make-up)" : " for " + weekLabel()}`, "schedule", v.it.scheduleId);
+    calToast(back ? `${chipDisplayName(name)} is back on ${v.od} ${fmtTime(ot)}.` : toWeek
+      ? `${chipDisplayName(name)}'s ${v.od} class moved to ${where}. It shows there as a make-up; their regular classes stay.`
+      : `${chipDisplayName(name)} moved to ${toDay} ${fmtTime(toTime)} for ${weekLabel()} only. After that it's back to ${v.od}.`);
   }
   // Small dialog for moving to any day/time (and on phones, where dragging doesn't work).
   function openMoveDialog(kidKey, fromDay, fromTime){
@@ -1290,19 +1342,35 @@ window.kumonPtcNav = function(client, role){
     if(!el){ el = document.createElement("div"); el.id = "moveDlg"; el.className = "move-dlg-back"; document.body.appendChild(el); }
     const od = v.od, ot = firstTimeOn(it.scheduleId, od) || it.origTime || it.time;
     const first = v.entries.slice().sort((a, b) => toMin(a.time) - toMin(b.time))[0];
-    const dayOpts = DAY_ORDER.filter(d => d !== "Sun").map(d => `<option value="${d}" ${d === it.day ? "selected" : ""}>${d}</option>`).join("");
+    const nextWk = addWeekIso(moveWeekStart(), 1);
+    const dayOpts = `<optgroup label="${esc(weekLabel() === "this week" ? "This week" : "Week of " + fmtShortDate(moveWeekStart()))}">` + DAY_ORDER.filter(d => d !== "Sun").map(d => `<option value="${d}" ${d === it.day ? "selected" : ""}>${d}</option>`).join("") + `</optgroup>`
+      + (toWeekReady && !v.makeup ? `<optgroup label="Next week (make-up)">` + DAY_ORDER.filter(d => d !== "Sun").map(d => `<option value="next:${d}">${d} ${esc(fmtShortDate(dateOfDay(nextWk, d)))}</option>`).join("") + `</optgroup>` : "");
+    if(v.makeup){
+      el.innerHTML = `<div class="move-dlg" role="dialog" aria-modal="true" aria-label="Make-up class">
+        <b>${esc(chipDisplayName(it.studentName))} · make-up class</b>
+        <div class="move-sub">Moved here from ${esc(od)} ${esc(fmtTime(ot))}, week of ${esc(fmtShortDate(it.origWeek))}. Their regular classes this week stay as they are.</div>
+        <div class="move-foot"><button type="button" class="btn sm" data-mv="cancel-makeup">Cancel the make-up</button><span style="flex:1"></span><button type="button" class="btn sm ghost" data-mv="cancel">Close</button></div></div>`;
+      el.hidden = false;
+      el.onclick = async (ev) => {
+        const b = ev.target.closest("[data-mv]");
+        if(ev.target === el || (b && b.dataset.mv === "cancel")){ el.hidden = true; return; }
+        if(b && b.dataset.mv === "cancel-makeup"){ el.hidden = true; await cancelAwayMove(v.scheds.map(x => x.scheduleId), it.origWeek, od, it.studentName || "the student"); }
+      };
+      return;
+    }
     el.innerHTML = `<div class="move-dlg" role="dialog" aria-modal="true" aria-label="Move class">
       <b>Move ${esc(chipDisplayName(it.studentName))} for ${esc(weekLabel())}</b>
-      <div class="move-sub">Regular class: ${esc(od)} ${esc(fmtTime(ot))}${v.entries.length > 1 ? " (" + esc([...new Set(v.entries.map(x => x.subject))].join(" + ")) + ")" : ""}. It goes back to that automatically after this week.</div>
+      <div class="move-sub">Regular class: ${esc(od)} ${esc(fmtTime(ot))}${v.entries.length > 1 ? " (" + esc([...new Set(v.entries.map(x => x.subject))].join(" + ")) + ")" : ""}. It goes back to that automatically after this week.${toWeekReady ? " Can't come at all this week? Pick a day under <b>Next week</b> for a make-up class." : ""}</div>
       <div class="move-row"><label>Day<select id="mvDay">${dayOpts}</select></label><label>Starts at<input type="time" id="mvTime" value="${esc(first.time)}"></label></div>
       <div class="move-foot">${it.moved ? `<button type="button" class="btn sm" data-mv="back">Put back to ${esc(od)} ${esc(fmtTime(ot))}</button>` : ""}<span style="flex:1"></span>
         <button type="button" class="btn sm ghost" data-mv="cancel">Cancel</button><button type="button" class="btn sm primary" data-mv="go">Move</button></div></div>`;
     el.hidden = false;
     const close = () => { el.hidden = true; document.removeEventListener("keydown", onKey, true); };
     const go = async () => {
-      const d = $("#mvDay").value, t = $("#mvTime").value;
-      if(!d || !t) return;
-      close(); await moveVisit(kidKey, first.day, first.time, d, t);
+      const raw = $("#mvDay").value, t = $("#mvTime").value;
+      if(!raw || !t) return;
+      const nextDay = raw.startsWith("next:") ? raw.slice(5) : null;
+      close(); await moveVisit(kidKey, first.day, first.time, nextDay || raw, t, nextDay ? addWeekIso(moveWeekStart(), 1) : null);
     };
     const onKey = (ev) => { if(ev.key === "Escape"){ ev.preventDefault(); close(); } else if(ev.key === "Enter" && ev.target.closest && ev.target.closest(".move-row")){ ev.preventDefault(); go(); } };
     document.addEventListener("keydown", onKey, true);
@@ -1560,9 +1628,10 @@ window.kumonPtcNav = function(client, role){
   const pendingTicks = new Map();   // "scheduleId|day" -> arrived (true/false)
   let lastKidDay = new Map();      // child|day -> { came, picked, rows } from the last time the grid was drawn
   const pendingPicks = new Map();   // "scheduleId|day" -> picked_up (true/false), same idea for pick-ups
-  function attendanceFor(scheduleId, day){
-    const k = scheduleId + "|" + day;
-    const saved = attendance.find(a => a.schedule_id === scheduleId && a.day === day) || null;
+  function attendanceFor(scheduleId, day, week){
+    const k = scheduleId + "|" + day + (week ? "|" + week : "");
+    const saved = week ? (attendanceOther.find(a => a.schedule_id === scheduleId && a.day === day && a.week_start === week) || null)
+      : (attendance.find(a => a.schedule_id === scheduleId && a.day === day) || null);
     if(!pendingTicks.has(k) && !pendingPicks.has(k)) return saved;
     return Object.assign({ schedule_id: scheduleId, day, arrived: false, picked_up: false }, saved || {},
       pendingTicks.has(k) ? { arrived: pendingTicks.get(k) } : {}, pendingPicks.has(k) ? { picked_up: pendingPicks.get(k) } : {}, { pending: true });
@@ -1609,10 +1678,10 @@ window.kumonPtcNav = function(client, role){
       document.body.appendChild(el); }
     el.textContent = msg; el.hidden = false; clearTimeout(el._t); el._t = setTimeout(() => { el.hidden = true; }, 4200);
   }
-  async function toggleArrived(scheduleId, day, arrived){
-    const k = scheduleId + "|" + day;
+  async function toggleArrived(scheduleId, day, arrived, week){
+    const k = scheduleId + "|" + day + (week ? "|" + week : "");
     pendingTicks.set(k, arrived);
-    const row = { schedule_id: scheduleId, day, week_start: currentWeekStart(), arrived, arrived_at: arrived ? new Date().toISOString() : null };
+    const row = { schedule_id: scheduleId, day, week_start: week || currentWeekStart(), arrived, arrived_at: arrived ? new Date().toISOString() : null };
     let error = null;
     for(let attempt = 0; attempt < 3; attempt++){
       // One row per student/day/week: insert it, or update it if it's already there (no "already exists" failures).
@@ -1643,7 +1712,8 @@ window.kumonPtcNav = function(client, role){
   // Teacher + mode only — what the Level picker counts from.
   function baseEntries(){
     const scope = isTeacherScoped() ? new Set(myGroupTeachers()) : null;
-    return buildEntries().map(withMove).filter(en => {
+    return entriesWithMoves().filter(en => {
+      if(en.away) return false;
       if(scope && !scope.has(en.teacher)) return false;
       if(filters.teachers.size && !filters.teachers.has(en.teacher)) return false;
       if(filters.mode !== "all" && en.mode !== filters.mode) return false;
@@ -1659,6 +1729,12 @@ window.kumonPtcNav = function(client, role){
     });
   }
 
+  // This week's classes moved to next week (shown as a note at their regular slot, never as Missed).
+  function awayEntries(){
+    const scope = isTeacherScoped() ? new Set(myGroupTeachers()) : null;
+    return buildEntries().map(withMove).filter(en => en.away && (!scope || scope.has(en.teacher)) && (!filters.teachers.size || filters.teachers.has(en.teacher))
+      && (filters.mode === "all" || en.mode === filters.mode) && (!filters.levels.size || filters.levels.has(levelKey(en.level))));
+  }
   function renderCalendar(){
     const entries = filteredEntries();
     const bk = bookingEntries(), bkByCell = {};
@@ -1701,19 +1777,28 @@ window.kumonPtcNav = function(client, role){
     { const seenG = new Set();
       const gIdx = new Map();
       for(const e of entries.slice().sort((a, b) => toMin(a.time) - toMin(b.time))){
-        if(!e.moved) continue;
+        if(!e.moved || e.makeup) continue;   // a make-up from last week has no regular slot to leave a note at this week
         const kidK = (e.studentId || e.studentName) + "|" + e.origDay + "|" + e.day;   // one note per child per moved visit
         const g = gIdx.get(kidK);
         if(g){ if(!g.subjects.includes(e.subject)) g.subjects.push(e.subject); continue; }
         const k = e.origDay + "|" + e.origTime, ng = Object.assign({}, e, { subjects: [e.subject] });
         gIdx.set(kidK, ng); (ghostByCell[k] = ghostByCell[k] || []).push(ng);
       } }
+    // moved to next week: a note at the regular slot, one per child per day
+    { const seenA = new Map();
+      for(const e of awayEntries()){
+        const kidK = (e.studentId || e.studentName) + "|" + e.day;
+        const g = seenA.get(kidK);
+        if(g){ if(!g.subjects.includes(e.subject)) g.subjects.push(e.subject); if(!g.scheds.includes(e.scheduleId)) g.scheds.push(e.scheduleId); continue; }
+        const ng = Object.assign({}, e, { subjects: [e.subject], scheds: [e.scheduleId], nextWeek: true });
+        seenA.set(kidK, ng); const k = e.day + "|" + e.time; (ghostByCell[k] = ghostByCell[k] || []).push(ng);
+      } }
     const times = [...new Set(entries.map(e => e.time).concat(contEntries.map(e => e.time), Object.keys(ghostByCell).map(k => k.split("|")[1]), bk.map(b => b.time)))].sort();
     const showTeacherLabel = filters.teachers.size !== 1;
     // One outcome per child per day (Math + Reading together): came if either subject is ticked, picked up if marked
     const kidDayKey = it => (it.studentId || it.studentName) + "|" + it.day;
     const kidDay = new Map();
-    for(const e of entries){ if(!e.scheduleId) continue; const r = attendanceFor(e.scheduleId, e.origDay || e.day) || {};
+    for(const e of entries){ if(!e.scheduleId || e.makeup) continue; const r = attendanceFor(e.scheduleId, e.origDay || e.day) || {};
       const o = kidDay.get(kidDayKey(e)) || { came: false, picked: false, rows: [] };
       if(r.arrived) o.came = true; if(r.picked_up) o.picked = true; o.rows.push({ scheduleId: e.scheduleId, origDay: e.origDay || e.day }); kidDay.set(kidDayKey(e), o); }
     lastKidDay = kidDay;
@@ -1762,7 +1847,7 @@ window.kumonPtcNav = function(client, role){
           const cls = it.subject === "Reading" ? "subj-reading" : "subj-math";
           const teacherLine = showTeacherLabel && it.teacher ? `<span class="teacher-sub">${esc(it.teacher)}</span>` : "";
           const titleBits = [it.studentName, it.subject, it.level ? "Level " + it.level : "", it.teacher].filter(Boolean).join(" — ");
-          const rec = it.scheduleId ? attendanceFor(it.scheduleId, it.origDay || it.day) : null;
+          const rec = it.scheduleId ? attendanceFor(it.scheduleId, it.origDay || it.day, it.origWeek) : null;
           const arrived = !!(rec && rec.arrived);
           const modeTag = it.mode === "RI" ? `<span class="mode-tag">RI</span>` : "";
           const lvlTag = it.level ? `<span class="lvl-tag" title="Level">${esc(String(it.level).toUpperCase())}</span>` : "";
@@ -1773,15 +1858,15 @@ window.kumonPtcNav = function(client, role){
           const isPast = todayIdx >= 0 && DAY_ORDER.indexOf(d) < todayIdx;
           // Past days this week can still be ticked (a teacher may only remember later) — otherwise they'd show as Missed.
           const checkbox = ((isToday || isPast || movedPast) && it.scheduleId)
-            ? `<input type="checkbox" data-action="toggle-arrived" data-schedule="${esc(it.scheduleId)}" data-day="${esc(it.origDay || it.day)}" ${arrived?"checked":""}>`
+            ? `<input type="checkbox" data-action="toggle-arrived" data-schedule="${esc(it.scheduleId)}" data-day="${esc(it.origDay || it.day)}"${it.origWeek ? ` data-week="${esc(it.origWeek)}"` : ""} ${arrived?"checked":""}>`
             : "";
           const mv = canMove() && it.scheduleId;
-          const dragAttrs = mv ? ` draggable="true" data-kid="${esc(kidKey(it))}" data-day="${esc(it.day)}" data-time="${esc(it.time)}"` : "";
+          const dragAttrs = mv ? `${it.makeup ? "" : ` draggable="true"`} data-kid="${esc(kidKey(it))}" data-day="${esc(it.day)}" data-time="${esc(it.time)}"` : "";
           const moveBtn = mv && firstOfKid ? `<button type="button" class="mv-btn" data-mvopen="1" title="Move this class to another day/time, this week only" aria-label="Move this week"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 9l-3 3 3 3M19 9l3 3-3 3M2 12h20"/></svg></button>` : "";
-          const movedLine = it.moved && firstOfKid ? `<span class="moved-sub">moved from ${esc(it.origDay)} ${esc(fmtTime(it.origTime))} · this week</span>` : "";
-          const kd = kidDay.get(kidDayKey(it)) || { came: arrived, picked: false };
+          const movedLine = it.moved && firstOfKid ? `<span class="moved-sub">${it.makeup ? `make-up · from ${esc(it.origDay)} ${esc(fmtShortDate(dateOfDay(it.origWeek, it.origDay)))}` : `moved from ${esc(it.origDay)} ${esc(fmtTime(it.origTime))} · this week`}</span>` : "";
+          const kd = it.makeup ? { came: arrived, picked: false } : (kidDay.get(kidDayKey(it)) || { came: arrived, picked: false });
           const outcome = !it.scheduleId ? "" : kd.came ? "came" : kd.picked ? "picked" : (isPast && !beforeSchedule(it.scheduleId, d)) ? "missed" : "";
-          const canPick = it.scheduleId && (isToday || isPast) && !kd.came && canTick();
+          const canPick = it.scheduleId && !it.makeup && (isToday || isPast) && !kd.came && canTick();
           const bag = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 7h12l-1 13H7z"/><path d="M9 7a3 3 0 0 1 6 0"/></svg>`;
           const pickAttrs = `data-kidday="${esc(kidDayKey(it))}" data-name="${esc(it.studentName)}" data-dayname="${esc(d)}"`;
           const statusLine = !firstOfKid ? "" : outcome === "picked"
@@ -1793,7 +1878,9 @@ window.kumonPtcNav = function(client, role){
             <div class="chip-top"><label class="chip-row">${numTag}${checkbox}<span class="chip-name">${esc(chipDisplayName(it.studentName))}${lvlTag} ${modeTag}${ccCells.chips.has(ccChipKey(it.scheduleId, it.day, it.time, it.subject)) ? `<span class="cc-chip-dot" title="Has an open comment"></span>` : ""}</span></label>${(pickBtn || moveBtn) ? `<span class="chip-acts">${pickBtn}${moveBtn}</span>` : ""}</div>
             ${teacherLine}${movedLine}${statusLine}
           </div>`;
-        }).join("")}${(ghostByCell[ck] || []).map(g => `<div class="cal-ghost" title="Moved for this week only">${esc(chipDisplayName(g.studentName))} → ${esc(g.day)} ${esc(fmtTime(g.time))}${g.subjects.length > 1 ? `<span class="ghost-sub">${esc(g.subjects.join(" + "))}</span>` : ""}</div>`).join("")}${(bkByCell[ck] || []).map(b => `<div class="cal-chip bk-chip ${b.kind}${b.done ? " done" : ""}" title="${esc(b.label + " — " + b.name + (b.who ? " — " + b.who : ""))}"><span class="bk-kind">${esc(b.label)}</span><span class="chip-name">${esc(chipDisplayName(b.name))}</span>${showTeacherLabel && b.who ? `<span class="teacher-sub">${esc(b.who)}</span>` : ""}</div>`).join("")}</div>`;
+        }).join("")}${(ghostByCell[ck] || []).map(g => g.nextWeek
+          ? `<div class="cal-ghost next-wk" title="Moved to next week as a make-up — not counted as missed">${esc(chipDisplayName(g.studentName))} → next ${esc(g.awayDay)} ${esc(fmtShortDate(dateOfDay(g.awayWeek, g.awayDay)))}, ${esc(fmtTime(g.awayTime))}${g.subjects.length > 1 ? `<span class="ghost-sub">${esc(g.subjects.join(" + "))}</span>` : ""}${canMove() ? ` <button type="button" class="st-btn quiet" data-cancel-away="${esc(g.scheds.join(","))}" data-from="${esc(g.day)}" data-name="${esc(g.studentName)}">Undo</button>` : ""}</div>`
+          : `<div class="cal-ghost" title="Moved for this week only">${esc(chipDisplayName(g.studentName))} → ${esc(g.day)} ${esc(fmtTime(g.time))}${g.subjects.length > 1 ? `<span class="ghost-sub">${esc(g.subjects.join(" + "))}</span>` : ""}</div>`).join("")}${(bkByCell[ck] || []).map(b => `<div class="cal-chip bk-chip ${b.kind}${b.done ? " done" : ""}" title="${esc(b.label + " — " + b.name + (b.who ? " — " + b.who : ""))}"><span class="bk-kind">${esc(b.label)}</span><span class="chip-name">${esc(chipDisplayName(b.name))}</span>${showTeacherLabel && b.who ? `<span class="teacher-sub">${esc(b.who)}</span>` : ""}</div>`).join("")}</div>`;
       }
     }
     grid.style.gridTemplateColumns = (matchMedia("(max-width:860px)").matches ? "62px" : "84px") + ` repeat(${days.length}, minmax(150px, 1fr))`;
@@ -2205,7 +2292,7 @@ window.kumonPtcNav = function(client, role){
   document.addEventListener("change", (e)=>{
     if(e.target.id === "calModeFilter"){ filters.mode = e.target.value; renderCalendar(); if(MP.mpLevels) mpRender("mpLevels"); }
     if(e.target.dataset && e.target.dataset.action === "toggle-arrived"){
-      toggleArrived(e.target.dataset.schedule, e.target.dataset.day, e.target.checked);
+      toggleArrived(e.target.dataset.schedule, e.target.dataset.day, e.target.checked, e.target.dataset.week || null);
     }
   });
 
@@ -2321,6 +2408,11 @@ window.kumonPtcNav = function(client, role){
   // a held name shouldn't also open the phone's own drag / menu / tick the box underneath
   document.addEventListener("contextmenu", (e) => { if(T.chip && e.target.closest && e.target.closest(".cal-chip[draggable]")) e.preventDefault(); });
   document.addEventListener("click", (e) => { if(T.suppressClick){ e.preventDefault(); e.stopPropagation(); T.suppressClick = false; } }, true);
+  document.addEventListener("click", async (e) => {
+    const b = e.target.closest && e.target.closest("[data-cancel-away]"); if(!b) return;
+    e.preventDefault(); e.stopPropagation();
+    await cancelAwayMove(b.dataset.cancelAway.split(","), moveWeekStart(), b.dataset.from, b.dataset.name || "the student");
+  }, true);
   document.addEventListener("click", (e) => {
     const b = e.target.closest && e.target.closest("[data-mvopen]");
     if(!b) return;

@@ -1349,7 +1349,7 @@ window.kumonPtcNav = function(client, role){
         // The first tick ever kept for this child (not just in the last 12 weeks): weeks before it weren't tracked.
         one(sbClient.from("schedule_attendance").select("week_start").in("schedule_id", schedules.map(x => x.id)).order("week_start", { ascending:true }).limit(1)),
         // Classes moved to another day for one week (phase117) — shown as "came Wed" instead of a plain tick.
-        one(sbClient.from("schedule_moves").select("schedule_id,week_start,from_day,to_day,to_time").in("schedule_id", schedules.map(x => x.id)).gte("week_start", since))
+        one(sbClient.from("schedule_moves").select("*").in("schedule_id", schedules.map(x => x.id)).gte("week_start", since))
       ]);
     }
     const fdr = await fd, sesr = await ses;
@@ -1405,7 +1405,14 @@ window.kumonPtcNav = function(client, role){
         if(!arrived && state === "miss" && trackedFrom && dISO < trackedFrom) state = "before";
         if(!arrived && absentRanges.some(([a, b]) => a && dISO >= a && dISO <= b)) state = "off";
         const mvd = (prof.moves || []).find(m => ids.has(m.schedule_id) && String(m.week_start).slice(0,10) === ws && m.from_day === day);
-        return { day, date: dISO, state, movedTo: mvd ? mvd.to_day : null };
+        // moved to the next week as a make-up (phase161): not missed while the make-up day hasn't come yet
+        const nextWk = mvd && mvd.to_week && String(mvd.to_week).slice(0,10) !== ws;
+        if(nextWk && !arrived && state === "miss"){
+          const md = new Date(String(mvd.to_week).slice(0,10) + "T00:00:00"); md.setDate(md.getDate() + DAY_ORDER.indexOf(mvd.to_day));
+          const mISO = md.getFullYear() + "-" + String(md.getMonth()+1).padStart(2,"0") + "-" + String(md.getDate()).padStart(2,"0");
+          if(mISO >= todayISOlocal) state = "future";
+        }
+        return { day, date: dISO, state, movedTo: mvd ? (nextWk ? "next " + mvd.to_day : mvd.to_day) : null };
       });
       weeks.push({ ws, cells });
     }

@@ -1306,7 +1306,7 @@ window.kumonPtcNav = function(client, role){
     ["I never did a day's work in my life. It was all fun.", "Attributed to Thomas Edison"]
   ];
   const AV_COLORS = ["#3454D1","#D2453A","#24935A","#B9770E","#7B4FD1","#1F8FA8","#C2477F"];
-  const D = { enrAll:[], attHist:[], movesHist:[], students:[], enr:[], sched:[], moves:[], att:[], due:[], ms:[], proj:[], hist:[], rec:[], abs:[] };
+  const D = { enrAll:[], attHist:[], movesHist:[], students:[], enr:[], sched:[], moves:[], movesIn:[], att:[], attMk:[], due:[], ms:[], proj:[], hist:[], rec:[], abs:[] };
   const tdUi = { who: null, slot: null, kisSub: "all", adminId: null };   // adminId: an admin's own Today (whole centre + their to-dos)
   const loadIssues = new Set();
   let studentById = new Map(), enrById = new Map(), histBy = new Map();
@@ -1413,6 +1413,8 @@ window.kumonPtcNav = function(client, role){
           if(!mineEnr(e)) continue;
           const mv = D.moves.find(x => x.schedule_id === sc.id && x.from_day === slot.day);
           const base = { scheduleId: sc.id, origDay: slot.day, e, studentId: e.student_id, mode: slot.mode === "RI" ? "RI" : "IC" };
+          // moved to next week (phase161): not expected today, shown as moved
+          if(mv && mv.to_week && mv.to_week !== mv.week_start){ if(slot.day === dow) out.push(Object.assign(base, { time: slot.time, movedTo: "next " + mv.to_day })); continue; }
           if(mv){
             const t = fromMin(toMin(mv.to_time) + toMin(slot.time) - toMin(firstOn(slot.day) || slot.time));
             if(mv.to_day === dow) out.push(Object.assign(base, { time: t, movedFrom: slot.day !== dow ? slot.day : null }));
@@ -1421,10 +1423,24 @@ window.kumonPtcNav = function(client, role){
         }
       }
     }
+    // make-up classes moved here from an earlier week (phase161); their tick is saved under the class they replace
+    for(const mv of D.movesIn){
+      if(mv.to_day !== dow) continue;
+      const sc = D.sched.find(x => x.id === mv.schedule_id); if(!sc) continue;
+      const enrs = sc.subject_enrollment_id ? D.enr.filter(e => e.id === sc.subject_enrollment_id) : D.enr.filter(e => e.student_id === sc.student_id && !hasLinked.has(e.id));
+      const slots = (Array.isArray(sc.slots) ? sc.slots : []).filter(x => x && x.day === mv.from_day && x.time);
+      const first = slots.map(x => x.time).sort()[0];
+      for(const slot of slots) for(const e of enrs){
+        if(!mineEnr(e)) continue;
+        out.push({ scheduleId: sc.id, origDay: mv.from_day, origWeek: mv.week_start, e, studentId: e.student_id, mode: slot.mode === "RI" ? "RI" : "IC",
+          time: fromMin(toMin(mv.to_time) + toMin(slot.time) - toMin(first || slot.time)), movedFrom: "make-up · " + mv.from_day + " " + new Date(T(addDays(mv.week_start, DAY_ORDER.indexOf(mv.from_day)))).toLocaleDateString("en-US", { timeZone: "UTC", month: "short", day: "numeric" }) });
+      }
+    }
     return out;
   }
-  const arrivedFor = (scheduleId, day) => D.att.some(a => a.schedule_id === scheduleId && a.day === day && a.arrived);
-  const pickedFor = (scheduleId, day) => D.att.some(a => a.schedule_id === scheduleId && a.day === day && a.picked_up);
+  const attRow = (scheduleId, day, week) => week ? D.attMk.find(a => a.schedule_id === scheduleId && a.day === day && a.week_start === week) : D.att.find(a => a.schedule_id === scheduleId && a.day === day);
+  const arrivedFor = (scheduleId, day, week) => { const r = attRow(scheduleId, day, week); return !!(r && r.arrived); };
+  const pickedFor = (scheduleId, day, week) => { const r = attRow(scheduleId, day, week); return !!(r && r.picked_up); };
   // classes grouped by start time, one row per child (Math and Reading together)
   function slotsToday(){
     const bySlot = new Map();
@@ -1433,11 +1449,12 @@ window.kumonPtcNav = function(client, role){
       const kids = bySlot.get(m), k = c.studentId;
       if(!kids.has(k)) kids.set(k, { studentId: k, items: [], keys: [], movedFrom: null, movedTo: null, arrived: false, ri: false });
       const kid = kids.get(k); kid.items.push(c.e);
-      if(!c.movedTo && !kid.keys.includes(c.scheduleId + "|" + c.origDay)) kid.keys.push(c.scheduleId + "|" + c.origDay);
+      const key = c.scheduleId + "|" + c.origDay + (c.origWeek ? "|" + c.origWeek : "");
+      if(!c.movedTo && !kid.keys.includes(key)) kid.keys.push(key);
       if(c.movedFrom) kid.movedFrom = c.movedFrom; if(c.movedTo) kid.movedTo = c.movedTo;
       if(c.mode === "RI") kid.ri = true;
-      if(arrivedFor(c.scheduleId, c.origDay)) kid.arrived = true;
-      if(pickedFor(c.scheduleId, c.origDay)) kid.picked = true;
+      if(arrivedFor(c.scheduleId, c.origDay, c.origWeek)) kid.arrived = true;
+      if(pickedFor(c.scheduleId, c.origDay, c.origWeek)) kid.picked = true;
     }
     return [...bySlot.entries()].sort((a, b) => a[0] - b[0]).map(([m, kids]) => ({ m, kids: [...kids.values()].sort((a, b) => nameOf(a.studentId).localeCompare(nameOf(b.studentId))) }));
   }
@@ -1599,7 +1616,7 @@ window.kumonPtcNav = function(client, role){
     const s = studentById.get(sid), fl = [];
     if(!opts.extra){
       if(opts.kid){
-        if(opts.kid.movedFrom) fl.push(`<span class="td-chip td-good">Moved here from ${esc(opts.kid.movedFrom)}</span>`);
+        if(opts.kid.movedFrom) fl.push(`<span class="td-chip td-good">${/^make-up/.test(opts.kid.movedFrom) ? esc(opts.kid.movedFrom.replace(/^make-up · /, "Make-up for ")) : "Moved here from " + esc(opts.kid.movedFrom)}</span>`);
         if(opts.kid.movedTo) fl.push(`<span class="td-chip td-mute">Moved to ${esc(opts.kid.movedTo)}</span>`);
         if(opts.kid.picked && !opts.kid.arrived) fl.push(`<span class="td-chip td-warn">Picked up worksheets</span>`);
         if(opts.kid.ri) fl.push(`<span class="td-chip td-mute">RI</span>`);
@@ -1934,12 +1951,18 @@ window.kumonPtcNav = function(client, role){
         const byKey = new Map(); rows.sort((a, b) => (a.week_start === wk) - (b.week_start === wk)).forEach(r => byKey.set(r.schedule_id + "|" + r.day, r)); D.att = [...byKey.values()];
       }),
       tdLoad("moves", async () => {
-        try{ D.moves = await selectAll("schedule_moves", "schedule_id,week_start,from_day,to_day,to_time", q => q.eq("week_start", moveWeek()).order("schedule_id")); }
+        try{ D.moves = await selectAll("schedule_moves", "*", q => q.eq("week_start", moveWeek()).order("schedule_id")); }
         catch(e){ if(/does not exist|schema cache/i.test(String(e.message || ""))){ D.moves = []; return; } throw e; }
+        // make-ups moved here from an earlier week (phase161), and their ticks
+        try{
+          D.movesIn = (await selectAll("schedule_moves", "*", q => q.eq("to_week", moveWeek()).order("schedule_id"))).filter(m => m.week_start !== moveWeek());
+          const wks = [...new Set(D.movesIn.map(m => m.week_start))];
+          D.attMk = wks.length ? await selectAll("schedule_attendance", "*", q => q.in("week_start", wks).in("schedule_id", [...new Set(D.movesIn.map(m => m.schedule_id))]).order("schedule_id")) : [];
+        }catch(_){ D.movesIn = []; D.attMk = []; }
       }),
       tdLoad("visit history", async () => { D.attHist = await selectAll("schedule_attendance", "schedule_id,day,week_start,arrived,picked_up", q => q.gte("week_start", from).order("week_start").order("schedule_id").order("day")); }),
       tdLoad("reschedule history", async () => {
-        try{ D.movesHist = await selectAll("schedule_moves", "schedule_id,week_start,from_day,to_day", q => q.gte("week_start", from).order("week_start").order("schedule_id")); }
+        try{ D.movesHist = await selectAll("schedule_moves", "*", q => q.gte("week_start", from).order("week_start").order("schedule_id")); }
         catch(e){ if(/does not exist|schema cache/i.test(String(e.message || ""))){ D.movesHist = []; return; } throw e; }
       })
     ]);
@@ -1982,7 +2005,7 @@ window.kumonPtcNav = function(client, role){
           for(const slot of (sc.slots || [])){
             if(!slot || !slot.day || DAY_ORDER.indexOf(slot.day) < 0) continue;
             const mv = moves.find(m => m.schedule_id === sc.id && m.week_start === wk && m.from_day === slot.day);
-            const date = addDays(wk, DAY_ORDER.indexOf(mv ? mv.to_day : slot.day));
+            const date = addDays(mv && mv.to_week ? mv.to_week : wk, DAY_ORDER.indexOf(mv ? mv.to_day : slot.day));   // a make-up next week happens then
             if(date < start || date > today) continue;
             const recs = att.filter(r => ids.has(r.schedule_id) && r.day === slot.day && (r.week_start === wk || r.week_start === addDays(wk, -1)));
             const v = visits.get(date) || { came: false, picked: false, rows: [] };
@@ -2044,11 +2067,14 @@ window.kumonPtcNav = function(client, role){
     const wk = weekStart(), at = new Date().toISOString();
     const before = D.att.slice();
     // show it straight away; put it back if the save fails
-    keys.forEach(key => { const [sid, day] = key.split("|"); const i = D.att.findIndex(a => a.schedule_id === sid && a.day === day);
-      const row = Object.assign({}, i >= 0 ? D.att[i] : { schedule_id: sid, day, week_start: wk }, { week_start: wk, arrived: on, arrived_at: on ? at : null });
-      if(i >= 0) D.att[i] = row; else D.att.push(row); });
+    const beforeMk = D.attMk.slice();
+    // a key with a third part is a make-up class: saved under the week of the class it replaces
+    keys.forEach(key => { const [sid, day, w] = key.split("|"); const list = w ? D.attMk : D.att, ws = w || wk;
+      const i = list.findIndex(a => a.schedule_id === sid && a.day === day && (!w || a.week_start === w));
+      const row = Object.assign({}, i >= 0 ? list[i] : { schedule_id: sid, day, week_start: ws }, { week_start: ws, arrived: on, arrived_at: on ? at : null });
+      if(i >= 0) list[i] = row; else list.push(row); });
     render();
-    const payload = keys.map(key => { const [sid, day] = key.split("|"); return { schedule_id: sid, day, week_start: wk, arrived: on, arrived_at: on ? at : null }; });
+    const payload = keys.map(key => { const [sid, day, w] = key.split("|"); return { schedule_id: sid, day, week_start: w || wk, arrived: on, arrived_at: on ? at : null }; });
     let error = null;
     for(let attempt = 0; attempt < 3; attempt++){
       ({ error } = await sbClient.from("schedule_attendance").upsert(payload, { onConflict: "schedule_id,day,week_start" }));
@@ -2058,7 +2084,7 @@ window.kumonPtcNav = function(client, role){
     }
     tickBusy.delete(k);
     if(error){
-      console.warn(error); D.att = before; render();
+      console.warn(error); D.att = before; D.attMk = beforeMk; render();
       toast(/row-level security|permission/i.test(String(error.message || "")) ? "Couldn't save that tick — this student isn't in your group's list. Ask an admin." : "Couldn't save that tick — check the connection and tap it again.");
       return;
     }
