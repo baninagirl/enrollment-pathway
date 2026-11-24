@@ -2667,11 +2667,18 @@ window.kumonPtcNav = function(client, role){
       .eq("id", a.id).is("resumed_at", null).select("id");
     if(e2) return { message: e2.message };
     if(!closed || !closed.length) return { already: true };
+    // A subject deleted since they were marked absent can't come back — only the ones that still exist are switched
+    // on (Nov 24: one deleted subject used to make every Resume fail, including the automatic one after a payment).
+    let liveIds = ids;
     if(ids.length){
+      const { data: still, error: e0 } = await sbClient.from("subject_enrollments").select("id").in("id", ids);
+      if(!e0 && still) liveIds = ids.filter(id => still.some(r => r.id === id));
+    }
+    if(liveIds.length){
       const upd = { status:"active", enrollment_type: tag, enrollment_type_set_at: nowIso, updated_at: nowIso, resumed_month: rMonth };
-      let { data: back, error: e1 } = await sbClient.from("subject_enrollments").update(upd).in("id", ids).select("id");
-      if(e1 && /resumed_month/.test(e1.message || "")){ delete upd.resumed_month; ({ data: back, error: e1 } = await sbClient.from("subject_enrollments").update(upd).in("id", ids).select("id")); }
-      if(e1 || !back || back.length !== ids.length){
+      let { data: back, error: e1 } = await sbClient.from("subject_enrollments").update(upd).in("id", liveIds).select("id");
+      if(e1 && /resumed_month/.test(e1.message || "")){ delete upd.resumed_month; ({ data: back, error: e1 } = await sbClient.from("subject_enrollments").update(upd).in("id", liveIds).select("id")); }
+      if(e1 || !back || back.length !== liveIds.length){
         await sbClient.from("absence_records").update({ resumed_at: null, resumed_by: null }).eq("id", a.id);
         if(back && back.length && !e1) await sbClient.from("subject_enrollments").update({ status:"inactive", updated_at: nowIso }).in("id", back.map(x => x.id));
         return { message: e1 ? e1.message : "the database didn't allow switching the subjects back on" };
@@ -2679,7 +2686,7 @@ window.kumonPtcNav = function(client, role){
     }
     // the teacher each subject goes back to (picked when the payment was logged, or in the Resume box)
     const moved = [];
-    for(const id of ids){
+    for(const id of liveIds){
       const want = teacherMap && teacherMap[id], e = enrollments.find(x => x.id === id);
       if(want && (!e || want !== e.teacher)){
         const { error } = await sbClient.from("subject_enrollments").update({ teacher: want, updated_at: nowIso }).eq("id", id);
@@ -2687,7 +2694,7 @@ window.kumonPtcNav = function(client, role){
         else console.warn("teacher switch failed", error);
       }
     }
-    return { ok: true, moved, tag, month: rMonth };
+    return { ok: true, moved, tag, month: rMonth, gone: ids.length - liveIds.length };
   }
   function resumeTeacherChoices(){
     return [...new Set(enrollments.filter(e => (e.status || "active") === "active").map(e => (e.teacher || "").trim()).filter(Boolean))].sort();
@@ -2740,6 +2747,7 @@ window.kumonPtcNav = function(client, role){
       await Promise.all([loadEnrollments(), loadAbsences()]);
       render();
       toast(`${displayName(s)} is back on the roster.`);
+      if(res.gone) alert(`${displayName(s)} is back, but ${res.gone === 1 ? "1 of their subjects was" : res.gone + " of their subjects were"} deleted since they were marked absent. Add ${res.gone === 1 ? "it" : "them"} again on the Student Roster if they're taking ${res.gone === 1 ? "it" : "them"}.`);
     } finally { delete form.dataset.busy; if(sb && sb.isConnected){ sb.disabled = false; sb.textContent = "Resume"; } }
   }
 

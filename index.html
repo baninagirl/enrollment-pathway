@@ -1734,8 +1734,13 @@ window.kumonPtcNav = function(client, role){
     if(!canReport() || REP.loading) return;
     REP.loading = true;
     try{
-      const { data, error } = await sbClient.from("reporting_checks").select("*").eq("month_key", month);
-      if(error) throw error;
+      // read in pages of 1,000 (the database's limit per read), or ticks past the first 1,000 look un-ticked (Nov 24)
+      const data = [];
+      for(let from = 0; ; from += 1000){
+        const { data: page, error } = await sbClient.from("reporting_checks").select("*").eq("month_key", month).order("id").range(from, from + 999);
+        if(error) throw error;
+        data.push(...(page || [])); if(!page || page.length < 1000) break;
+      }
       // Roster ticks saved on Nov 18-19 used the subject's own id: read those as child + subject too.
       const byId = new Map(STATE.enrollments.map(e => [String(e.id), e.studentId + "|" + e.subject]));
       REP.checks = new Map((data || []).map(r => [repKey(r.kind, r.month_key, byId.get(String(r.ref)) || r.ref), r])); REP.month = month; REP.missing = false;

@@ -1385,11 +1385,18 @@ window.kumonPtcNav = function(client, role){
     // RESUME within 4 months of their last payment, RETURNEE after; they show on New Students this report month
     const gone = monthDiff(a.last_paid_month, monthKeyOfToday());
     const tag = gone !== null && gone > 4 ? "new_returnee" : "resume";
+    // A subject deleted since they were marked absent can't come back — only the ones that still exist are
+    // switched on (Nov 24: one deleted subject used to make every Resume fail).
+    let liveIds = ids, goneCount = 0;
     if(ids.length){
+      const { data: still, error: e0 } = await sbClient.from("subject_enrollments").select("id").in("id", ids);
+      if(!e0 && still){ liveIds = ids.filter(id => still.some(r => r.id === id)); goneCount = ids.length - liveIds.length; }
+    }
+    if(liveIds.length){
       const upd = { status:"active", enrollment_type: tag, enrollment_type_set_at: nowIso, updated_at: nowIso, resumed_month: currentCycleKey() };
-      let { data: back, error: e1 } = await sbClient.from("subject_enrollments").update(upd).in("id", ids).select("id");
-      if(e1 && /resumed_month/.test(e1.message || "")){ delete upd.resumed_month; ({ data: back, error: e1 } = await sbClient.from("subject_enrollments").update(upd).in("id", ids).select("id")); }
-      if(e1 || !back || back.length !== ids.length){
+      let { data: back, error: e1 } = await sbClient.from("subject_enrollments").update(upd).in("id", liveIds).select("id");
+      if(e1 && /resumed_month/.test(e1.message || "")){ delete upd.resumed_month; ({ data: back, error: e1 } = await sbClient.from("subject_enrollments").update(upd).in("id", liveIds).select("id")); }
+      if(e1 || !back || back.length !== liveIds.length){
         // Put the record back to open so the child doesn't drop off the follow-up list half-resumed.
         await sbClient.from("absence_records").update({ resumed_at: null, resumed_by: null }).eq("id", absenceId);
         alert("Couldn't resume — the subjects couldn't be switched back on" + (e1 ? " (" + e1.message + ")" : " (the database didn't allow it)") + ". Nothing was changed.");
@@ -1398,7 +1405,7 @@ window.kumonPtcNav = function(client, role){
     }
     // the teacher each subject goes back to
     const moved = [];
-    for(const id of ids){
+    for(const id of liveIds){
       const want = teacherMap && teacherMap[id], e = enrollments.find(x => x.id === id);
       if(want && e && want !== e.teacher){
         const { error } = await sbClient.from("subject_enrollments").update({ teacher: want, updated_at: nowIso }).eq("id", id);
@@ -1411,6 +1418,7 @@ window.kumonPtcNav = function(client, role){
     await Promise.all([loadEnrollments(), loadAbsences()]);
     render();
     toast(`${displayName(s)} is back on the roster.`);
+    if(goneCount) alert(`${displayName(s)} is back, but ${goneCount === 1 ? "1 of their subjects was" : goneCount + " of their subjects were"} deleted since they were marked absent${liveIds.length ? "" : " (that was all of them)"}. Add ${goneCount === 1 ? "it" : "them"} again on the Student Roster if they're taking ${goneCount === 1 ? "it" : "them"}.`);
   }
 
   // ---------------- Details modal (click a row) ----------------

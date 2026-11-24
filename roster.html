@@ -2522,8 +2522,13 @@ window.kumonPtcNav = function(client, role){
   async function loadRepChecks(month){
     if(REP.loading) return; REP.loading = true;
     try{
-      const { data, error } = await sbClient.from("reporting_checks").select("*").eq("month_key", month).eq("kind", "input");
-      if(error) throw error;
+      // read in pages of 1,000 (the database's limit per read), or ticks past the first 1,000 look un-ticked (Nov 24)
+      const data = [];
+      for(let from = 0; ; from += 1000){
+        const { data: page, error } = await sbClient.from("reporting_checks").select("*").eq("month_key", month).eq("kind", "input").order("id").range(from, from + 999);
+        if(error) throw error;
+        data.push(...(page || [])); if(!page || page.length < 1000) break;
+      }
       // Ticks saved on Nov 18-19 used the subject's own id: read those under child + subject too.
       const byId = new Map(enrollments.map(e => [String(e.id), e.student_id + "|" + e.subject]));
       REP.checks = new Map((data || []).map(x => [byId.get(String(x.ref)) || x.ref, x])); REP.missing = false;
