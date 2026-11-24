@@ -1091,11 +1091,26 @@ window.kumonPtcNav = function(client, role){
   // added to the roster. Not captured in a monthly close-out snapshot (same limitation
   // as Schedule), so an archived row shows "not tracked" instead of guessing.
   // The date shown in the Edit form: the set date (enrolled_on, phase120) or else the Philippine day the row was added.
+  /* Date enrolled follows First day (Nov 24, phase160): a new child who came through the Pipeline and has a First day
+     set on New Students — every subject they started with uses that date. A subject added later (EO, in a later
+     report month) keeps its own. Returns the First day to follow, or null. */
+  function followsFirstDay(e){
+    const st = e && students.find(x => x.id === e.student_id);
+    if(!st || st.origin !== "pipeline" || !st.first_day) return null;
+    const fd = String(st.first_day).slice(0, 10);
+    if(e.enrollment_type === "eo" && e.created_at){
+      const made = new Date(Date.parse(e.created_at) + 8*3600e3).toISOString().slice(0, 10);
+      if(cycleKeyOf(new Date(made + "T12:00:00")) > cycleKeyOf(new Date(fd + "T12:00:00"))) return null;
+    }
+    return fd;
+  }
+  // Only a real Date enrolled (Nov 24): an empty one stays empty and shows "Not set", instead of the day the row
+  // was typed into the Hub (all those Oct 18, 2026 dates were just the day the roster was imported).
   function enrolledISO(e){
     if(!e) return "";
-    if(e.enrolled_on) return String(e.enrolled_on).slice(0,10);
-    const t = Date.parse(e.created_at || ""); return isNaN(t) ? "" : new Date(t + 8*3600e3).toISOString().slice(0,10);
+    return e.enrolled_on ? String(e.enrolled_on).slice(0,10) : "";
   }
+  const phTodayISO = () => new Date(Date.now() + 8*3600e3).toISOString().slice(0,10);
   function fmtEnrolledDate(iso){
     if(!iso) return `<span class="lvl empty-lvl">—</span>`;
     const d = /^\d{4}-\d{2}-\d{2}$/.test(String(iso)) ? new Date(iso + "T00:00:00") : new Date(iso);   // a plain date (enrolled_on) is that calendar day, not UTC midnight
@@ -1566,7 +1581,7 @@ window.kumonPtcNav = function(client, role){
     // status/monthly_tuition/billing_group_id are for the Payment tag (paymentStatusFor,
     // below) — Roster otherwise never touched billing fields before.
     const mine = nextLoad("students");
-    let { data, error } = await fetchAll("students", "id,name,age_grade,first_name,last_name,status,monthly_tuition,tuition_custom,billing_group_id,origin,created_at", q => q.order("name").order("id"));
+    let { data, error } = await fetchAll("students", "id,name,age_grade,first_name,last_name,status,monthly_tuition,tuition_custom,billing_group_id,origin,created_at,first_day", q => q.order("name").order("id"));
     if(error && /tuition_custom/.test(error.message || "")) ({ data, error } = await fetchAll("students", "id,name,age_grade,first_name,last_name,status,monthly_tuition,billing_group_id,origin,created_at", q => q.order("name").order("id")));   // phase148 not run yet: load without it
     if(!isLatestLoad("students", mine)) return;   // a newer reload started meanwhile — its result wins
     if(error){ console.warn(error); return; }   // keep what's on screen
@@ -2767,7 +2782,7 @@ window.kumonPtcNav = function(client, role){
           <td>${fmtMode(e.mode)}</td>
           <td><span class="pill ${(e.status||'active')==='inactive'?'status-inactive':'status-active'}">${(e.status||"active")==="inactive"?"Inactive":"Active"}</span></td>
           <td>${e.archived ? livePaymentPillClosed(e.student_id, e.payment_month || shiftMonth(monthKeyOf(viewMonth), 1), monthKeyOf(viewMonth)) : (e.status||"active")==="inactive" ? `<span class="lvl empty-lvl">—</span>` : fmtPaymentPill(e.student_id)}</td>
-          <td>${e.archived ? (e.enrolled_on ? fmtEnrolledDate(e.enrolled_on) : `<span class="lvl empty-lvl" title="This month was closed out before the enrollment date was saved with it.">not tracked</span>`) : fmtEnrolledDate(e.enrolled_on || e.created_at)}</td>
+          <td>${e.archived ? (e.enrolled_on ? fmtEnrolledDate(e.enrolled_on) : `<span class="lvl empty-lvl" title="This month was closed out before the enrollment date was saved with it.">not tracked</span>`) : ((followsFirstDay(e) || e.enrolled_on) ? fmtEnrolledDate(followsFirstDay(e) || e.enrolled_on) : `<span class="lvl empty-lvl" title="No Date enrolled yet — set it in Edit">Not set</span>`)}</td>
         </tr>
       `;
       // While this month is open, children who start in a later report month go to their own group at the bottom.
@@ -2977,9 +2992,13 @@ window.kumonPtcNav = function(client, role){
           <label class="field">Teacher<select name="teacher">${teacherOptions(enrollment.teacher)}</select></label>
           <div class="field-row">
             ${(()=>{ const g = gradeFor(enrollment.student_id); const opts = gradeOptions(g); return `<label class="field">Grade<select name="editGrade">${g && !GRADE_OPTIONS.includes(g) ? `<option value="${esc(g)}" selected>${esc(g)}</option>` : ""}${opts}</select></label>`; })()}
-            <label class="field">Date enrolled<input type="date" name="enrolled_on" value="${esc(enrolledISO(enrollment))}" max="${esc(enrolledISO({ created_at:new Date().toISOString() }))}"></label>
+            ${(()=>{ const fd = followsFirstDay(enrollment); return fd
+              ? `<label class="field">Date enrolled<input type="date" name="enrolled_on" value="${esc(fd)}" readonly aria-readonly="true" style="opacity:.75; cursor:not-allowed;" title="Follows First day on New Students"></label>`
+              : `<label class="field">Date enrolled<input type="date" name="enrolled_on" value="${esc(enrolledISO(enrollment))}" max="${esc(phTodayISO())}"></label>`; })()}
           </div>
-          <span class="hint" style="font-size:11.5px; margin:-4px 0 12px; display:block;">Grade is the child's (both subjects). Date enrolled is this subject's; it also sets the start date on Projection.</span>
+          <span class="hint" style="font-size:11.5px; margin:-4px 0 12px; display:block;">${followsFirstDay(enrollment)
+            ? "Grade is the child's (both subjects). Date enrolled follows their <b>First day</b> on New Students — change it there."
+            : "Grade is the child's (both subjects). Date enrolled is this subject's; it also sets the start date on Projection."}</span>
           <label class="field" style="flex-direction:row; align-items:center; gap:8px; margin-bottom:2px;"><input type="hidden" name="monitor_field" value="1"><input type="checkbox" name="is_monitor" value="1" ${enrollment.is_monitor ? "checked" : ""} style="width:auto;"> Monitor student</label>
           <span class="hint" style="font-size:11.5px; margin:0 0 12px; display:block;">${enrollment.is_monitor
             ? `On monitor since ${esc(monitorCycleLabel(monitorSinceKey(enrollment)) || "—")}. Untick to move them to the regular roster.`

@@ -1509,7 +1509,7 @@ window.kumonPtcNav = function(client, role){
           <div class="ptc-note-foot"><span class="faint" data-ptc-saved="${esc(key(e))}"></span><button class="btn sm ghost" data-action="ptc-note-cancel" data-key="${esc(key(e))}">Cancel</button><button class="btn sm" data-action="ptc-note-save" data-key="${esc(key(e))}">Save note</button></div></div>
         <button class="linkbtn no-print" data-action="ptc-note-open" data-key="${esc(key(e))}">${e.note ? "Edit note" : "+ Add note"}</button>
       </div></div>`;
-    return `${head}${ev.length ? `<div class="ptl">${ev.map(evHtml).join("")}</div>` : `<div class="faint" style="padding:6px 0;">${isNew ? "No PTCs yet." : "No PTC Week meetings yet. They show here once this child is scheduled in a PTC Week."}</div>`}
+    return `${head}${ev.length ? `<div class="ptl">${ev.map(evHtml).join("")}</div>` : `<div class="faint" style="padding:4px 0; font-size:13px;">${isNew ? "No PTCs yet." : "No PTC Week meetings yet. They show here once this child is scheduled in a PTC Week."}</div>`}
       ${!isNew ? `<div class="faint" style="font-size:12px;">${prof.firstDay ? `Started ${esc(fmtDate(prof.firstDay))}, before first-year PTCs were tracked, so only PTC Week meetings apply.` : "No first day yet, so only PTC Week meetings apply."}</div>` : ""}`;
   }
   // A PTC Week meeting's note lives on the meeting itself (the same record the PTC page edits).
@@ -1730,7 +1730,7 @@ window.kumonPtcNav = function(client, role){
         </div>
         <div class="card sect"><div class="sec-h"><h3>Attendance</h3><span class="faint" style="font-size:12.5px;">last ${WEEKS} weeks · ${esc(A.days.join(" & ") || "no class days")}</span></div>${attHtml}</div>
         ${active.map(subjectBlock).join("")}
-        <div class="card sect"><div class="sec-h"><h3>PTC history</h3><span class="faint">${isNewForPtc() ? "First-year PTCs and PTC Week" : "PTC Week meetings"}</span></div>${ptcLine()}</div>
+        <div class="card sect"><div class="sec-h"><h3>PTC history</h3><span class="faint" style="font-size:12.5px;">${isNewForPtc() ? "First-year PTCs and PTC Week" : "PTC Week meetings"}</span></div>${ptcLine()}</div>
         <div class="card sect no-print-pay"><div class="sec-h"><h3>Payments</h3><a class="no-print" href="payments.html" style="font-size:12.5px;">Open Payments</a></div>${payHtml}</div>
       </div>`;
   }

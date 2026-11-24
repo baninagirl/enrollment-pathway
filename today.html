@@ -526,6 +526,17 @@
   .td-kadd{ margin-top:16px; display:flex; gap:10px; align-items:center; flex-wrap:wrap; background:var(--surface); border-radius:16px; box-shadow:var(--shadow); padding:8px 8px 8px 16px; }
   .td-kadd input[type=text]{ flex:1; min-width:180px; border:0; background:transparent; font:inherit; font-size:15px; font-weight:500; color:var(--ink); outline:none; padding:8px 0; }
   .td-kadd input[type=text]::placeholder{ color:var(--ink-faint); }
+  .td-kadd .as-wrap{ display:flex; flex-wrap:wrap; align-items:center; gap:6px; flex-basis:100%; padding:2px 0 4px; }
+  .td-kadd .as-k{ font-size:12px; font-weight:600; color:var(--ink-muted); margin-right:2px; }
+  .td-kadd .as-chip{ display:inline-flex; align-items:center; gap:4px; height:28px; padding:0 4px 0 11px; border-radius:99px; background:var(--accent-soft); color:var(--accent); font-size:12.5px; font-weight:600; }
+  .td-kadd .as-chip:not(:has(button)){ padding-right:11px; }
+  .td-kadd .as-chip button{ border:none; background:transparent; color:inherit; font-size:15px; line-height:1; width:20px; height:20px; border-radius:50%; cursor:pointer; }
+  .td-kadd .as-chip button:hover{ background:var(--surface); }
+  .td-kadd .as-wrap select{ height:28px; border-radius:99px; border:1px dashed var(--accent); background:var(--surface); color:var(--accent); font:inherit; font-size:12.5px; font-weight:600; padding:0 10px; max-width:180px; cursor:pointer; }
+  .td-kadd .as-mode{ display:flex; flex-wrap:wrap; align-items:center; gap:6px; flex-basis:100%; padding-bottom:4px; }
+  .td-kadd .as-mode button{ height:28px; padding:0 12px; border-radius:99px; border:1px solid var(--border); background:var(--surface); color:var(--ink-muted); font:inherit; font-size:12.5px; font-weight:600; cursor:pointer; }
+  .td-kadd .as-mode button.on{ background:var(--accent-soft); border-color:var(--accent); color:var(--accent); }
+  .td-kadd .as-hint{ font-size:12px; color:var(--ink-faint); }
   .td-kadd:focus-within{ box-shadow:var(--shadow), 0 0 0 2px var(--accent); }
   .td-kboard{ display:grid; grid-template-columns:repeat(4, minmax(0,1fr)); gap:16px; margin-top:16px; align-items:start; }
   .td-kcol{ background:var(--surface-2, #F1F2F6); border-radius:18px; padding:10px; display:flex; flex-direction:column; gap:10px; min-height:160px; transition:background .2s, box-shadow .2s; }
@@ -2163,6 +2174,7 @@ window.kumonPtcNav = function(client, role){
         <div class="td-tc-when" role="group" aria-label="When">${[["Today", today], ["Tomorrow", tmrw], ["No date", ""]].map(([l, v]) => `<button type="button" data-todo="due" data-v="${v}" aria-pressed="${due0 === v}">${l}</button>`).join("")}
           <label class="td-datepill${due0 && due0 !== today && due0 !== tmrw ? " on" : ""}" title="Pick a date"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M8 3v4M16 3v4M4 10h16M5 5h14v15H5z"/></svg><span id="todoPickTx">${due0 && due0 !== today && due0 !== tmrw ? esc(fmtDate(due0, { year: undefined })) : "Pick date"}</span><input type="date" id="todoPick" min="${today}" value="${due0 && due0 !== today && due0 !== tmrw ? esc(due0) : ""}" aria-label="Pick a date"></label></div>
         <button type="submit" class="td-tc-addbtn">Add</button>
+        ${isAdmin() ? tdAssignHtml() : ""}
       </form>`;
     const total = left + doneToday;
     const ring = total ? `<span class="td-tc-ring" title="${doneToday} done today"><svg viewBox="0 0 36 36" width="36" height="36" aria-hidden="true"><circle cx="18" cy="18" r="15" fill="none" stroke="var(--border)" stroke-width="3.5"/>${doneToday ? `<circle cx="18" cy="18" r="15" fill="none" stroke="var(--good)" stroke-width="3.5" stroke-linecap="round" stroke-dasharray="${(doneToday / total * 94.25).toFixed(1)} 94.25" transform="rotate(-90 18 18)" style="transition:stroke-dasharray .6s cubic-bezier(.2,.8,.2,1)"/>` : ""}</svg><b>${doneToday}/${total}</b></span>` : "";
@@ -2171,6 +2183,58 @@ window.kumonPtcNav = function(client, role){
     return `<section class="td-sec"><div class="td-sec-head"><div><div class="td-kicker">To-dos</div><h2 class="td-title td-tc-title">${ring}<span>${title}</span></h2></div>${openBtn}</div>
       ${addBar}<div class="td-kboard">${cols.map(colHtml).join("")}</div></section>`;
   }
+  /* Assign to (admins, Nov 19): give one to-do to several people, a whole group or every teacher, like on the
+     To-dos page. Starts on the list on screen. Several people: "Each does their own" (separate copies) or
+     "One shared job" (phase149: ticked by one = ticked for all). */
+  const TD_ALL = "__all__";
+  let tdAssign = null, tdShare = "each", tdAssignFor = null;
+  const tdIsGroup = v => typeof v === "string" && v.startsWith("group:");
+  const tdGroupShort = g => String(g.name || g.key).replace(/\s*\(.*\)\s*$/, "");
+  function tdPeople(){ const m = new Map(); todoProfiles.concat(adminTeam).forEach(p => { if(p && p.id && !m.has(p.id)) m.set(p.id, p); }); return [...m.values()]; }
+  function tdTeachers(){ return tdPeople().filter(p => (p.role === "teacher" || p.role === "trainer_teacher") && p.id !== currentUser.id); }
+  function tdOwnersFor(v){
+    if(v === TD_ALL) return tdTeachers().map(p => p.id);
+    if(tdIsGroup(v)){ const g = teacherGroups.find(x => "group:" + x.key === v); return g ? tdTeachers().filter(p => g.teachers.includes(p.teacher_name)).map(p => p.id) : []; }
+    return [v];
+  }
+  function tdAssignKeys(){ const own = todoOwner(); if(!tdAssign || !tdAssign.length || tdAssignFor !== own){ tdAssign = [own]; tdAssignFor = own; } return tdAssign; }
+  function tdAssignOwners(){ const out = []; tdAssignKeys().forEach(k => tdOwnersFor(k).forEach(id => { if(id && !out.includes(id)) out.push(id); })); return out; }
+  function tdAssignLabel(k){
+    if(k === TD_ALL) return `Everyone (${tdTeachers().length} teachers)`;
+    if(tdIsGroup(k)){ const g = teacherGroups.find(x => "group:" + x.key === k); return g ? "All of " + tdGroupShort(g) : "Group"; }
+    if(currentUser && k === currentUser.id) return "Me";
+    return adminLabel(tdPeople().find(p => p.id === k)) || "Someone";
+  }
+  function tdAssignOptions(){
+    const others = tdPeople().filter(p => p.id !== currentUser.id).sort((a, b) => adminLabel(a).localeCompare(adminLabel(b)));
+    const opt = p => `<option value="${esc(p.id)}">${esc(adminLabel(p))}</option>`;
+    let html = `<option value="${esc(currentUser.id)}">Me</option><option value="${TD_ALL}">Everyone (all ${tdTeachers().length} teachers)</option>`;
+    const used = new Set();
+    const admins = others.filter(p => p.role === "admin" || p.role === "superadmin");
+    if(admins.length){ admins.forEach(p => used.add(p.id)); html += `<optgroup label="Admin team">${admins.map(opt).join("")}</optgroup>`; }
+    teacherGroups.forEach(g => {
+      const ps = others.filter(p => g.teachers.includes(p.teacher_name) && !used.has(p.id)); if(!ps.length) return;
+      ps.forEach(p => used.add(p.id));
+      html += `<optgroup label="${esc(g.name)}"><option value="group:${esc(g.key)}">Everyone in ${esc(tdGroupShort(g))} (${ps.filter(p => p.role === "teacher" || p.role === "trainer_teacher").length})</option>${ps.map(opt).join("")}</optgroup>`;
+    });
+    const rest = others.filter(p => !used.has(p.id));
+    if(rest.length) html += `<optgroup label="Not in a group">${rest.map(opt).join("")}</optgroup>`;
+    return html;
+  }
+  function tdAssignHtml(){
+    const keys = tdAssignKeys(), n = tdAssignOwners().length;
+    const chips = keys.map(k => `<span class="as-chip">${esc(tdAssignLabel(k))}${keys.length > 1 ? `<button type="button" data-todo="unassign" data-id="${esc(k)}" aria-label="Remove ${esc(tdAssignLabel(k))}">×</button>` : ""}</span>`).join("");
+    const mode = n > 1 ? `<div class="as-mode" role="radiogroup" aria-label="How the to-do is given">
+        <button type="button" role="radio" aria-checked="${tdShare !== "shared"}" class="${tdShare !== "shared" ? "on" : ""}" data-todo="sharemode" data-id="each">Each does their own</button>
+        <button type="button" role="radio" aria-checked="${tdShare === "shared"}" class="${tdShare === "shared" ? "on" : ""}" data-todo="sharemode" data-id="shared">One shared job</button>
+        <span class="as-hint">${tdShare === "shared" ? `Done by one = done for all ${n}.` : `${n} separate to-dos, each ticked on its own.`}</span></div>` : "";
+    return `<div class="as-wrap"><span class="as-k">Assign to</span>${chips}<select id="tdAssignAdd" aria-label="Add a person"><option value="">+ Add</option>${tdAssignOptions()}</select></div>${mode}`;
+  }
+  document.addEventListener("change", e => {
+    if(e.target.id !== "tdAssignAdd" || !e.target.value) return;
+    const keys = tdAssignKeys().slice(); if(!keys.includes(e.target.value)) keys.push(e.target.value);
+    tdAssign = keys; render();
+  });
   // The + on the Today / Later columns: Today gets today's date, Later gets no date. Goes on the list on screen.
   let todoQa = null;
   async function quickAddTodo(col, text){
@@ -2193,18 +2257,30 @@ window.kumonPtcNav = function(client, role){
   }, true);
   async function addTodo(){
     const tx = ($("#todoText") || {}).value || "", text = tx.trim(); if(!text) return;
-    const due = ($("#todoDue") || {}).value || null, sel = $("#todoFor");
-    const owner = sel ? sel.value : todoOwner();
-    const row = { owner_id: owner, text, due_date: due, created_by: currentUser.id, created_by_email: currentUser.email || null };
-    const { data, error } = await sbClient.from("teacher_todos").insert(row).select().single();
-    if(error){ toast("Couldn't add that: " + error.message); return; }
-    todos.push(data);
+    const due = ($("#todoDue") || {}).value || null;
+    const owners = isAdmin() ? tdAssignOwners() : [todoOwner()];
+    if(!owners.length){ toast("No one to give it to — pick someone under Assign to."); return; }
+    const owner = owners.length === 1 ? owners[0] : "multi";
+    const shared = owners.length > 1 && tdShare === "shared";
+    const key = shared ? (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random().toString(16).slice(2)) : null;
+    const rows = owners.map(o => { const r = { owner_id: o, text, due_date: due, created_by: currentUser.id, created_by_email: currentUser.email || null }; if(shared) r.share_key = key; return r; });
+    const { data: added, error } = await sbClient.from("teacher_todos").insert(rows).select();
+    if(error){ toast(/share_key/.test(error.message || "") ? "Run phase149 in Supabase for shared to-dos." : "Couldn't add that: " + error.message); return; }
+    todos.push(...(added || []));
+    const data = (added || []).find(t => t.owner_id === todoOwner()) || (added || [])[0] || {};
+    if(owner === "multi"){
+      const names = owners.map(todoWhoName);
+      toast(shared ? `Added 1 shared to-do for ${owners.length} people. Done by one = done for all.` : `Added to ${owners.length} lists.`);
+      logHistory("todo_assign", `Gave ${names.join(", ")} ${shared ? "a shared" : "a"} to-do: ${text}`);
+    } else if(owner !== todoOwner()) toast(`Added to ${todoWhoName(owner)}'s list.`);
     ["#todoText"].forEach(sel => { const el = $(sel); if(el) el.value = ""; });
     keepTodoDraft = null; justAddedTodo = data.id; render(); justAddedTodo = null;
     const f = $("#todoText"); if(f) f.focus();
-    if(owner !== currentUser.id) logHistory("todo_assign", `Gave ${todoWhoName(owner)} a to-do: ${text}`);
+    if(owner !== "multi" && owner !== currentUser.id) logHistory("todo_assign", `Gave ${todoWhoName(owner)} a to-do: ${text}`);
   }
   async function todoAction(kind, id, btn){
+    if(kind === "unassign"){ tdAssign = tdAssignKeys().filter(k => k !== id); render(); return; }
+    if(kind === "sharemode"){ tdShare = id === "shared" ? "shared" : "each"; render(); return; }
     if(kind === "showdone"){ showDoneTodos = !showDoneTodos; render(); return; }
     if(kind === "qa"){ todoQa = todoQa === id ? null : id; render(); const i = document.querySelector(".td-qa-in"); if(i) i.focus(); return; }
     if(kind === "move"){ await moveTodo(id, btn.dataset.to); return; }

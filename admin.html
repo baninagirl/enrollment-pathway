@@ -957,7 +957,7 @@ window.kumonPtcNav = function(client, role){
         const sc = schedFor(e.id);
         return { sid:e.student_id, name:e.student_name, teacher:e.teacher, subject:e.subject, mode:e.mode, lwc:e.lwc, nwu:e.nwu,
           test:[e.test_date, e.test_level, e.test_time, e.test_score, e.test_group],
-          enrolled: e.enrolled_on || (e.created_at ? new Date(Date.parse(e.created_at) + 8*3600e3).toISOString().slice(0,10) : ""),
+          enrolled: e.enrolled_on || "",   // only a real Date enrolled (Nov 24), never the day the row was added
           slots: sc && Array.isArray(sc.slots) ? sc.slots : null }; }) });
 
       const wb = new ExcelJS.Workbook();

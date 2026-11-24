@@ -3126,7 +3126,7 @@ window.kumonPtcNav = function(client, role){
     const emptyMsg = qTokens.length ? "No students match that search." : STATE.studentMonthMode==="month" ? `No enrolled students on the ${esc(monthLabel)} roster yet. Try <b>All time</b> — a student shows up here once their diagnostic is marked <b>Enrolled</b>.` : "No enrolled students yet. A student shows up here once their diagnostic is marked <b>Enrolled</b>.";
 
     const listTable = `<table class="stable">
-          <thead><tr><th>#</th><th class="namecol">Student</th>${repHead}<th>Grade</th><th>Subject</th><th>Tag</th><th title="Also their Date enrolled on Student Roster">First day</th><th>Schedule</th><th>Mode</th><th>Status</th></tr></thead>
+          <thead><tr><th>#</th><th class="namecol">Student</th>${repHead}<th>Grade</th><th>Subject</th><th>Tag</th><th title="This subject's Date enrolled (Student Roster). For a new child it follows their First day.">Date enrolled</th><th>Schedule</th><th>Mode</th><th>Status</th></tr></thead>
           <tbody>
             ${rows.map((row, i) => {
               const s = row.s;
@@ -3149,7 +3149,7 @@ window.kumonPtcNav = function(client, role){
         </table>`;
 
     const reportTable = `<table class="stable">
-          <thead><tr><th>#</th><th class="namecol">Student</th>${repHead}<th>Grade</th><th>Subject</th><th>Tag</th><th title="Also their Date enrolled on Student Roster">First day</th><th>Start point</th><th>DT test</th><th>DT date</th><th>Score</th><th>Time</th></tr></thead>
+          <thead><tr><th>#</th><th class="namecol">Student</th>${repHead}<th>Grade</th><th>Subject</th><th>Tag</th><th title="This subject's Date enrolled (Student Roster). For a new child it follows their First day.">Date enrolled</th><th>Start point</th><th>DT test</th><th>DT date</th><th>Score</th><th>Time</th></tr></thead>
           <tbody>
             ${rows.map((row, i) => {
               const s = row.s;
@@ -3298,7 +3298,7 @@ window.kumonPtcNav = function(client, role){
             <label class="field">Day 2<select name="day2" required>${daySelectOptions(d2.day)}</select></label>
             <label class="field">Time<input type="time" name="time2" required value="${esc(d2.time || "16:00")}"></label>
           </div>
-          <label class="field">Start date<input type="date" name="startDate" required value="${esc((withSched && withSched.startDate) || todayISO())}"></label>
+          <input type="hidden" name="startDate" value="${esc((withSched && withSched.startDate) || autoScheduleStart(s))}">
           <div class="hint" style="font-size:11px; text-transform:uppercase; letter-spacing:.04em; margin-top:4px;">Use these days for</div>
           ${enr.map(e => { const has = linkedScheduleOf(e.id); return `<label class="check-row" style="display:flex; gap:8px; align-items:center; font-size:13.5px;">
               <input type="checkbox" name="enr_${e.id}" ${!missing.length || !has ? "checked" : ""}>
@@ -3558,9 +3558,31 @@ window.kumonPtcNav = function(client, role){
     const start = d > 20 ? new Date(y, m-1, 21) : new Date(y, m-2, 21);
     return start.getFullYear() + "-" + String(start.getMonth()+1).padStart(2,"0") + "-21";
   }
+  /* Schedule "Start date" isn't asked for any more (Nov 24): it's only when the class slots begin on the Calendar,
+     so it's set by itself — the child's First day (or first training), else today. An existing schedule keeps its date. */
+  function autoScheduleStart(s){
+    const fd = s ? firstDayFor(s) : null;
+    return fd ? String(fd).slice(0,10) : todayISO();
+  }
   async function syncEnrolledOnFromFirstDay(studentId, iso, prevIso){
     if(!iso) return 0;
     const prev = String(prevIso || "").slice(0,10);
+    // A new child who came through the Pipeline (Nov 24, phase160): every subject they started with always takes the
+    // First day; only an EO added in a later report month keeps its own date. (phase160 also does this in the database.)
+    const stu = STATE.students.find(x => x.id === studentId);
+    if(stu && stu.origin === "pipeline"){
+      const fdKey = monthKeyOf(cycleMonthFor(new Date(iso + "T12:00:00")));
+      const madeKey = e => e.createdAt ? monthKeyOf(cycleMonthFor(new Date(new Date(Date.parse(e.createdAt) + 8*3600e3).toISOString().slice(0,10) + "T12:00:00"))) : "";
+      const follow = STATE.enrollments.filter(e => e.studentId === studentId && !e.archived
+        && !(e.enrollmentType === "eo" && madeKey(e) > fdKey) && String(e.enrolledOn || "").slice(0,10) !== iso);
+      for(const e of follow){ await db.collection("subject_enrollments").doc(e.id).update({ enrolledOn: iso }); e.enrolledOn = iso; }
+      if(follow.length) logHistory("set_date_enrolled", `Date enrolled set to ${iso} from First day (${follow.map(e => e.subject).join(", ")})`, "student", studentId);
+      // their class slots start showing on the Calendar from the First day too
+      for(const row of STATE.schedules.filter(x => x.studentId === studentId && x.status === "active" && x.startDate !== iso)){
+        try{ await db.collection("schedules").doc(row.id).update({ startDate: iso }); row.startDate = iso; }catch(_){ }
+      }
+      return follow.length;
+    }
     const subs = STATE.enrollments.filter(e => e.studentId === studentId && !e.archived && (e.status || "active") === "active"
       && !e.addedMonth && e.enrollmentType !== "eo" && !e.resumedMonth
       && (!e.enrolledOn || (prev && String(e.enrolledOn).slice(0,10) === prev))
@@ -3983,8 +4005,8 @@ window.kumonPtcNav = function(client, role){
               <label class="field">Day 2<select name="day2">${daySelectOptions(slot2?slot2.day:"", true)}</select></label>
               <label class="field">Time<input type="time" name="time2" value="${esc(slot2?slot2.time:"")}"></label>
             </div>
-            <label class="field">Start date<input type="date" name="startDate" value="${esc(sched.startDate||todayISO())}"></label>
-            <div class="hint">Updates every linked schedule row for this student (Math and Reading move together).</div>
+            <input type="hidden" name="startDate" value="${esc(sched.startDate||autoScheduleStart(s))}">
+            <div class="hint">Math and Reading move together.</div>
           ` : `<div class="hint">No regular schedule set yet — use "New regular schedule" once they're ready for one.</div>`}
         </div>
         <div class="modal-foot">
@@ -4866,7 +4888,7 @@ window.kumonPtcNav = function(client, role){
             </label>
             <label class="field">Time<input type="time" name="time2" required value="16:00"></label>
           </div>
-          <label class="field">Start date<input type="date" name="startDate" required value="${todayISO()}"></label>
+          <input type="hidden" name="startDate" value="${esc(autoScheduleStart(presetStudent))}">
           <label class="field">Worksheet mode
             <select name="mode">
               <option value="" ${!presetMode?"selected":""}>—</option>
@@ -5264,7 +5286,7 @@ window.kumonPtcNav = function(client, role){
     const studentId = fd.get("studentId");
     const day1 = fd.get("day1"), time1 = fd.get("time1");
     const day2 = fd.get("day2"), time2 = fd.get("time2");
-    const startDate = fd.get("startDate");
+    const startDate = autoScheduleStart(studentById(studentId));   // set by itself (Nov 24): their First day, else today
     if(!studentId || !day1 || !time1 || !day2 || !time2 || !startDate) return false;
     if(day1 === day2){ toast("Pick two different days."); return false; }
     const s = studentById(studentId);
