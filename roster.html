@@ -2615,7 +2615,7 @@ window.kumonPtcNav = function(client, role){
           ${zunzunHtml(e)}
           <div class="field-row">
             <label class="field">No. of days${numberInput("no_of_days", e.no_of_days)}</label>
-            <label class="field">No. of months (current level)${numberInput("no_of_months_current_level", e.no_of_months_current_level)}</label>
+            <label class="field">No. of months (current level)${numberInput("no_of_months_current_level", e.no_of_months_current_level, true)}</label>
           </div>
           <div class="field-row">
             <label class="field">Test date<input type="date" name="test_date_pick" value="${esc(testDateIso(e.test_date))}"></label>
@@ -2884,9 +2884,12 @@ window.kumonPtcNav = function(client, role){
     return `<select name="test_group"><option value="">—</option>${v && !hit ? `<option value="${esc(v)}" selected>${esc(v)}</option>` : ""}${["1","2","3"].map(g => `<option value="${g}" ${g === hit ? "selected" : ""}>${g}</option>`).join("")}</select>`;
   }
   // Whole numbers only (no typing letters by mistake). An old value that isn't a number stays as text so it isn't lost.
-  function numberInput(name, value){
+  // decimals: allow 0.8, 1.5 … (No. of months on the current level, Nov 24)
+  function numberInput(name, value, decimals){
     const v = value == null ? "" : String(value).trim();
-    return v && !/^\d+$/.test(v) ? `<input type="text" name="${name}" value="${esc(v)}">` : `<input type="number" name="${name}" value="${esc(v)}" min="0" step="1" inputmode="numeric">`;
+    const ok = decimals ? /^\d+(\.\d+)?$/ : /^\d+$/;
+    return v && !ok.test(v) ? `<input type="text" name="${name}" value="${esc(v)}">`
+      : `<input type="number" name="${name}" value="${esc(v)}" min="0" step="${decimals ? "any" : "1"}" inputmode="${decimals ? "decimal" : "numeric"}">`;
   }
   function pageSelectHtml(name, value){
     const pages = []; for(let n = 10; n <= 200; n += 10) pages.push(String(n));
