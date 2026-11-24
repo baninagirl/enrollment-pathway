@@ -632,6 +632,10 @@
   .td-tick{ width:22px; height:22px; border-radius:50%; border:1.5px solid var(--border); flex:none; }
   .td-tick-btn{ appearance:none; background:none; border:0; padding:11px; margin:-11px -4px -11px -11px; border-radius:50%; cursor:pointer; flex:none; display:grid; place-items:center; touch-action:manipulation; }
   .td-tick-btn:hover .td-tick{ border-color:var(--good); }
+  .td-pick-btn{ appearance:none; flex:none; margin-left:auto; width:34px; height:34px; border-radius:10px; border:1px solid var(--border); background:var(--surface); color:var(--ink-faint); display:grid; place-items:center; cursor:pointer; padding:7px; touch-action:manipulation; }
+  .td-pick-btn svg{ width:100%; height:100%; display:block; }
+  .td-pick-btn:hover{ color:var(--warn); border-color:var(--warn); }
+  .td-pick-btn.on{ background:var(--warn-soft); border-color:var(--warn); color:var(--warn); }
   .td-tick-btn:focus-visible{ outline:2px solid var(--accent); outline-offset:-4px; }
   .td-tick-btn[disabled]{ opacity:.5; cursor:progress; }
   .td-legend button{ appearance:none; background:none; border:0; font:inherit; color:inherit; display:inline-flex; align-items:center; gap:5px; padding:6px 8px; border-radius:99px; cursor:pointer; }
@@ -1634,8 +1638,13 @@ window.kumonPtcNav = function(client, role){
     const tick = !opts.tick ? "" : canTick
       ? `<button type="button" class="td-tick-btn" data-arrive="${esc(opts.kid.keys.join(","))}" data-on="${opts.kid.arrived ? "0" : "1"}" aria-pressed="${opts.kid.arrived ? "true" : "false"}" aria-label="${opts.kid.arrived ? "Arrived — tap to undo" : "Mark arrived"}" title="${opts.kid.arrived ? "Arrived — tap to undo" : "Tap when they arrive"}"><span class="td-tick${opts.kid.arrived ? " yes" : ""}"></span></button>`
       : `<span class="td-tick${opts.kid && opts.kid.arrived ? " yes" : ""}" title="${opts.kid && opts.kid.arrived ? "Arrived" : "Not yet"}"></span>`;
+    // Worksheets picked up (Nov 24): the same bin as on the Calendar, for a child who didn't come but whose worksheets
+    // were taken home. Saved on the same row as the tick, so the Calendar shows it too.
+    const PICK_BAG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 7h12l-1 13H7z"/><path d="M9 7a3 3 0 0 1 6 0"/></svg>`;
+    const pick = canTick && !opts.kid.arrived
+      ? `<button type="button" class="td-pick-btn${opts.kid.picked ? " on" : ""}" data-pickup="${esc(opts.kid.keys.join(","))}" data-on="${opts.kid.picked ? "0" : "1"}" aria-pressed="${opts.kid.picked ? "true" : "false"}" aria-label="${opts.kid.picked ? "Worksheets picked up — tap to undo" : "Mark worksheets picked up"}" title="${opts.kid.picked ? "Worksheets picked up — tap to undo" : "Didn't come, but worksheets were picked up"}">${PICK_BAG}</button>` : "";
     const teachers = (enrs.length ? [...new Set(enrs.map(e => e.teacher).filter(Boolean))] : ownerTeachers(sid)).join(", ");   // always shown, so lists say whose child it is
-    return `<div class="td-kid${opts.kid && opts.kid.movedTo ? " out" : ""}" tabindex="0" role="button" data-kid="${esc(sid)}">${tick}${avatar(sid)}<div style="min-width:0"><div class="td-nm">${esc(nameOf(sid, opts.fallbackName))}</div><div class="td-sub">${esc(s && s.age_grade ? normGrade(s.age_grade) : "")}${teachers ? " · " + esc(teachers) : ""}</div></div>${enrs.map(e => subjChip(e, (bestPos(e.subject, e) || {}).txt)).join("")}<span class="td-flags">${opts.extra || fl.join("")}</span></div>`;
+    return `<div class="td-kid${opts.kid && opts.kid.movedTo ? " out" : ""}" tabindex="0" role="button" data-kid="${esc(sid)}">${tick}${avatar(sid)}<div style="min-width:0"><div class="td-nm">${esc(nameOf(sid, opts.fallbackName))}</div><div class="td-sub">${esc(s && s.age_grade ? normGrade(s.age_grade) : "")}${teachers ? " · " + esc(teachers) : ""}</div></div>${enrs.map(e => subjChip(e, (bestPos(e.subject, e) || {}).txt)).join("")}<span class="td-flags">${opts.extra || fl.join("")}</span>${pick}</div>`;
   }
 
   /* ---------- rendering ---------- */
@@ -2092,6 +2101,34 @@ window.kumonPtcNav = function(client, role){
     const nm = sc ? nameOf(sc.student_id || ((D.enr.find(e => e.id === sc.subject_enrollment_id) || {}).student_id)) : "a student";
     logHistory("toggle_arrived", `Marked ${nm} ${on ? "arrived" : "not arrived"} for ${keys[0].split("|")[1]} (from Today)`, keys[0].split("|")[0]);
   }
+  async function togglePicked(keys, on){
+    const k = "pick|" + keys.join(","); if(tickBusy.has(k)) return; tickBusy.add(k);
+    const wk = weekStart(), at = new Date().toISOString(), by = currentUser ? (currentUser.email || null) : null;
+    const before = D.att.slice(), beforeMk = D.attMk.slice();
+    keys.forEach(key => { const [sid, day, w] = key.split("|"); const list = w ? D.attMk : D.att, ws = w || wk;
+      const i = list.findIndex(a => a.schedule_id === sid && a.day === day && (!w || a.week_start === w));
+      const row = Object.assign({}, i >= 0 ? list[i] : { schedule_id: sid, day, week_start: ws, arrived: false }, { week_start: ws, picked_up: on, picked_up_at: on ? at : null, picked_up_by: on ? by : null });
+      if(i >= 0) list[i] = row; else list.push(row); });
+    render();
+    const payload = keys.map(key => { const [sid, day, w] = key.split("|"); return { schedule_id: sid, day, week_start: w || wk, picked_up: on, picked_up_at: on ? at : null, picked_up_by: on ? by : null }; });
+    let error = null;
+    for(let attempt = 0; attempt < 3; attempt++){
+      ({ error } = await sbClient.from("schedule_attendance").upsert(payload, { onConflict: "schedule_id,day,week_start" }));
+      if(!error) break;
+      if(/jwt|token|expired|401/i.test(String(error.message || ""))){ try{ await sbClient.auth.refreshSession(); }catch(_){ } }
+      await new Promise(r => setTimeout(r, 600 * (attempt + 1)));
+    }
+    tickBusy.delete(k);
+    if(error){
+      console.warn(error); D.att = before; D.attMk = beforeMk; render();
+      toast(/row-level security|permission/i.test(String(error.message || "")) ? "Couldn't save that — this student isn't in your group's list. Ask an admin." : "Couldn't save that — check the connection and tap it again.");
+      return;
+    }
+    const sc = D.sched.find(x => x.id === keys[0].split("|")[0]);
+    const nm = sc ? nameOf(sc.student_id || ((D.enr.find(e => e.id === sc.subject_enrollment_id) || {}).student_id)) : "a student";
+    logHistory(on ? "worksheets_picked_up" : "worksheets_picked_up_undo", on ? `Marked ${nm}'s worksheets picked up for ${keys[0].split("|")[1]} (from Today)` : `Undid ${nm}'s worksheet pick-up for ${keys[0].split("|")[1]} (from Today)`, keys[0].split("|")[0]);
+    toast(on ? `${nm}: worksheets picked up.` : `${nm}: pick-up undone.`);
+  }
   // Ticks made on the Calendar (or another device) show here within a couple of seconds.
   let attLiveTimer = null;
   function watchAttendance(){
@@ -2450,6 +2487,7 @@ window.kumonPtcNav = function(client, role){
   document.addEventListener("click", (e) => {
     const mk = e.target.closest("[data-mark]"); if(mk){ e.stopPropagation(); if(!mk.disabled) markVisit(mk.dataset.sid, mk.dataset.mark); return; }
     const ar = e.target.closest("[data-arrive]"); if(ar){ e.stopPropagation(); if(!ar.disabled) toggleArrived(ar.dataset.arrive.split(","), ar.dataset.on === "1", ar); return; }
+    const pu = e.target.closest("[data-pickup]"); if(pu){ e.stopPropagation(); togglePicked(pu.dataset.pickup.split(","), pu.dataset.on === "1"); return; }
     const rg = e.target.closest("[data-ring]"); if(rg){ openDrawer({ type: "ring", k: rg.dataset.ring }); return; }
     const td = e.target.closest("[data-todo]"); if(td){ e.stopPropagation(); todoAction(td.dataset.todo, td.dataset.id, td); return; }
     const sl = e.target.closest("[data-slot]"); if(sl){ tdUi.slot = Number(sl.dataset.slot); render(); return; }
