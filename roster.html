@@ -546,6 +546,14 @@
   .rep-tick.on{ background:var(--good); border-color:var(--good); }
   .rep-tick.on svg{ opacity:1; }
   .rep-when{ display:block; font-size:10.5px; color:var(--good); margin-top:2px; font-weight:600; }
+  body.rep-wide .main{ max-width:none; }
+  .stable.rep-compact th{ padding:7px 8px; font-size:10.5px; letter-spacing:.02em; }
+  .stable.rep-compact td{ padding:7px 8px; font-size:13px; }
+  .freeze .stable.rep-compact .namecol{ width:160px; min-width:160px; max-width:160px; }
+  .freeze .stable.rep-compact th:first-child, .freeze .stable.rep-compact td:first-child:not([colspan]){ width:38px; min-width:38px; max-width:38px; padding-left:10px; padding-right:4px; }
+  .freeze .stable.rep-compact .namecol{ left:38px; }
+  .stable.rep-compact td.rep-ck, .stable.rep-compact th.rep-ck{ width:62px; padding-left:4px; padding-right:4px; }
+  .stable.rep-compact .pill{ font-size:11.5px; padding:2px 8px; }
   .zun-wrap{ display:flex; flex-direction:column; gap:10px; }
   .zun-pick[hidden]{ display:none; }
   .zun-tick{ display:flex; align-items:center; gap:8px; font-size:13px; font-weight:500; color:var(--ink); cursor:pointer; }
@@ -970,7 +978,7 @@ window.kumonPtcNav = function(client, role){
         </div>
         <div class="rep-bar" id="repBar" hidden></div>
         <div class="table-scroll freeze">
-          <table class="stable">
+          <table class="stable" id="repTable">
             <thead><tr id="repHeadRow">
               <th>#</th><th class="namecol">Student</th><th class="rep-ck" id="repInputHead" hidden>KSIS reported</th><th>Subject</th><th>Tag</th><th>LWC</th><th>NWU</th><th>No. of days</th><th>No. of months</th><th>Test date</th><th>Test level</th><th>Test time</th><th>Test score</th><th>Test group</th><th>Grade</th><th id="repPaymentHead">Payment</th><th>Mode</th>
             </tr></thead>
@@ -2497,13 +2505,16 @@ window.kumonPtcNav = function(client, role){
     lwc: ["LWC", r => `<td>${fmtPlain(r.lwc)}</td>`], nwu: ["NWU", r => `<td>${fmtPlain(r.nwu)}</td>`],
     days: ["No. of days", r => `<td>${fmtPlain(r.no_of_days)}</td>`], months: ["No. of months", r => `<td>${fmtPlain(r.no_of_months_current_level)}</td>`],
     tdate: ["Test date", r => `<td>${fmtPlain(r.test_date)}</td>`], tlevel: ["Test level", r => `<td>${fmtPlain(r.test_level)}</td>`],
-    ttime: ["Test time", r => `<td>${fmtPlain(r.test_time)}</td>`], tscore: ["Test score", r => `<td>${fmtPlain(r.test_score)}</td>`],
+    ttime: ["Test time", r => `<td>${repOnNow() && r.test_time ? esc(String(r.test_time).replace(/\s*MINUTES?\b/i, " min").replace(/\s*MINS?\b/i, " min")) : fmtPlain(r.test_time)}</td>`], tscore: ["Test score", r => `<td>${fmtPlain(r.test_score)}</td>`],
     tgroup: ["Test group", r => `<td>${fmtPlain(r.test_group)}</td>`], grade: ["Grade", r => `<td>${esc(gradeFor(r.student_id) || "—")}</td>`],
     pay: ["Payment", (r, editable) => `<td>${editable ? fmtPaymentPill(r.student_id, reportPaymentMonth()) + potentialAbsentPill(r) : livePaymentPillClosed(r.student_id, r.payment_month || reportPaymentMonth(), monthKeyOf(viewMonth))}</td>`],
     mode: ["Mode", r => `<td>${fmtMode(r.mode)}</td>`]
   };
+  // Reporting time: everything Joan types into KSIS in one glance, no sideways scrolling (Nov 24): compact rows, short
+  // headers, the page uses the full width, and Grade and Paid step aside (they aren't in the KSIS report).
+  const REP_SHORT = { months:"Months", tdate:"AT date", tlevel:"Level", ttime:"Time", tscore:"Score", tgroup:"Group", days:"Days" };
   const repColOrder = () => repOnNow()
-    ? ["subject","lwc","nwu","months","tdate","tlevel","ttime","tscore","tgroup","grade","pay","mode","tag","days"]
+    ? ["subject","lwc","nwu","months","tdate","tlevel","ttime","tscore","tgroup","mode","tag","days"]
     : ["subject","tag","lwc","nwu","days","months","tdate","tlevel","ttime","tscore","tgroup","grade","pay","mode"];
   /* Highlight a row, like clicking a row number in Google Sheets (Nov 24): tap the # to mark where you are; it stays
      marked while you switch tabs or pages (saved on this device), until you tap it again or mark another row. */
@@ -2513,9 +2524,11 @@ window.kumonPtcNav = function(client, role){
   function renderReport(){
     const rmLabel = $("#repMonthLabel"), rmRange = $("#repMonthRange"), rcTitle = $("#repCardTitle");
     if(!rmLabel) return; // report view not in the DOM yet on first paint — nothing to do
-    const headRow = $("#repHeadRow");
-    if(headRow) headRow.innerHTML = `<th title="Tap a row's number to highlight it">#</th><th class="namecol">Student</th><th class="rep-ck" id="repInputHead" hidden>KSIS reported</th>`
-      + repColOrder().map(k => k === "pay" ? `<th id="repPaymentHead">Payment</th>` : `<th>${REP_COLS[k][0]}</th>`).join("");
+    const headRow = $("#repHeadRow"), compact = repOnNow();
+    const tbl = $("#repTable"); if(tbl) tbl.classList.toggle("rep-compact", compact);
+    document.body.classList.toggle("rep-wide", compact && viewMode === "report");
+    if(headRow) headRow.innerHTML = `<th title="Tap a row's number to highlight it">#</th><th class="namecol">Student</th><th class="rep-ck" id="repInputHead" hidden>${compact ? "KSIS" : "KSIS reported"}</th>`
+      + repColOrder().map(k => k === "pay" ? `<th id="repPaymentHead">Payment</th>` : `<th${compact && REP_SHORT[k] ? ` title="${REP_COLS[k][0]}"` : ""}>${compact && REP_SHORT[k] ? REP_SHORT[k] : REP_COLS[k][0]}</th>`).join("");
     rmLabel.textContent = monthLabel(viewMonth);
     rmRange.textContent = monthRangeLabel(viewMonth);
     rcTitle.textContent = isCurrentCycle() ? "This cycle — editable" : "Archived cycle";
@@ -3576,7 +3589,7 @@ window.kumonPtcNav = function(client, role){
     if(!btn) return;
     const action = btn.dataset.action;
     if(action === "logout"){ await sbClient.auth.signOut(); }
-    else if(action === "roster-view"){ viewMode = btn.dataset.view; renderView(); }
+    else if(action === "roster-view"){ viewMode = btn.dataset.view; document.body.classList.toggle("rep-wide", viewMode === "report" && repOnNow()); renderView(); }
     // Roster and Report now browse the very same cycle timeline — one shared viewMonth — so
     // stepping the nav from either view's toolbar moves both, and renderBoth() keeps whichever
     // one isn't on screen right now caught up too, ready the instant you switch to it.
