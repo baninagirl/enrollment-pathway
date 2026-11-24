@@ -632,7 +632,14 @@
   .td-tick{ width:22px; height:22px; border-radius:50%; border:1.5px solid var(--border); flex:none; }
   .td-tick-btn{ appearance:none; background:none; border:0; padding:11px; margin:-11px -4px -11px -11px; border-radius:50%; cursor:pointer; flex:none; display:grid; place-items:center; touch-action:manipulation; }
   .td-tick-btn:hover .td-tick{ border-color:var(--good); }
-  .td-pick-btn{ appearance:none; flex:none; margin-left:auto; width:34px; height:34px; border-radius:10px; border:1px solid var(--border); background:var(--surface); color:var(--ink-faint); display:grid; place-items:center; cursor:pointer; padding:7px; touch-action:manipulation; }
+  /* right next to the Arrived circle: the two things a teacher marks for a child sit together (Nov 24) */
+  .td-pick-btn{ appearance:none; flex:none; width:30px; height:30px; margin-left:-2px; border-radius:50%; border:1.5px solid var(--border); background:var(--surface); color:var(--ink-faint); display:grid; place-items:center; cursor:pointer; padding:6px; touch-action:manipulation; }
+  .td-pick-gap{ flex:none; width:28px; }
+  .td-legend{ margin-left:auto; display:inline-flex; align-items:center; gap:6px; font-size:12px; color:var(--ink-faint); }
+  .td-legend .td-tick{ width:14px; height:14px; }
+  .td-legend-bag{ width:18px; height:18px; border:1.5px solid var(--border); border-radius:50%; padding:3px; display:grid; place-items:center; margin-left:8px; }
+  .td-legend-bag svg{ width:100%; height:100%; }
+  @media (max-width:640px){ .td-legend{ display:none; } }
   .td-pick-btn svg{ width:100%; height:100%; display:block; }
   .td-pick-btn:hover{ color:var(--warn); border-color:var(--warn); }
   .td-pick-btn.on{ background:var(--warn-soft); border-color:var(--warn); color:var(--warn); }
@@ -1644,7 +1651,7 @@ window.kumonPtcNav = function(client, role){
     const pick = canTick && !opts.kid.arrived
       ? `<button type="button" class="td-pick-btn${opts.kid.picked ? " on" : ""}" data-pickup="${esc(opts.kid.keys.join(","))}" data-on="${opts.kid.picked ? "0" : "1"}" aria-pressed="${opts.kid.picked ? "true" : "false"}" aria-label="${opts.kid.picked ? "Worksheets picked up — tap to undo" : "Mark worksheets picked up"}" title="${opts.kid.picked ? "Worksheets picked up — tap to undo" : "Didn't come, but worksheets were picked up"}">${PICK_BAG}</button>` : "";
     const teachers = (enrs.length ? [...new Set(enrs.map(e => e.teacher).filter(Boolean))] : ownerTeachers(sid)).join(", ");   // always shown, so lists say whose child it is
-    return `<div class="td-kid${opts.kid && opts.kid.movedTo ? " out" : ""}" tabindex="0" role="button" data-kid="${esc(sid)}">${tick}${avatar(sid)}<div style="min-width:0"><div class="td-nm">${esc(nameOf(sid, opts.fallbackName))}</div><div class="td-sub">${esc(s && s.age_grade ? normGrade(s.age_grade) : "")}${teachers ? " · " + esc(teachers) : ""}</div></div>${enrs.map(e => subjChip(e, (bestPos(e.subject, e) || {}).txt)).join("")}<span class="td-flags">${opts.extra || fl.join("")}</span>${pick}</div>`;
+    return `<div class="td-kid${opts.kid && opts.kid.movedTo ? " out" : ""}" tabindex="0" role="button" data-kid="${esc(sid)}">${tick}${opts.tick ? (pick || (canTick ? `<span class="td-pick-gap" aria-hidden="true"></span>` : "")) : ""}${avatar(sid)}<div style="min-width:0"><div class="td-nm">${esc(nameOf(sid, opts.fallbackName))}</div><div class="td-sub">${esc(s && s.age_grade ? normGrade(s.age_grade) : "")}${teachers ? " · " + esc(teachers) : ""}</div></div>${enrs.map(e => subjChip(e, (bestPos(e.subject, e) || {}).txt)).join("")}<span class="td-flags">${opts.extra || fl.join("")}</span></div>`;
   }
 
   /* ---------- rendering ---------- */
@@ -1699,7 +1706,7 @@ window.kumonPtcNav = function(client, role){
         <div class="td-legend"><button type="button" data-ring="arrived"><i style="background:var(--good)"></i>Arrived <b>${arr}</b></button><button type="button" data-ring="picked"><i style="background:var(--warn)"></i>Picked up <b>${pick}</b></button><button type="button" data-ring="notyet"><i style="background:var(--accent)"></i>Not yet <b>${uniq.length - arr - pick}</b></button></div></div>
       <div style="min-width:0">${slots.length ? `<div class="td-tl"><div class="td-tl-track"></div>${slots.map((s, i) => `<button class="td-tl-block${now >= s.m + 60 ? " past" : ""}${s.m === tdUi.slot ? " on" : ""}" data-slot="${s.m}" style="left:${X(s.m)}%;width:calc(${Math.min(60, (slots[i + 1] ? slots[i + 1].m : s.m + 60) - s.m) / (B - A) * 100}% - 4px)" title="${fmtT(s.m)}: ${plural(s.kids.length, "child", "children")}">${s.kids.length}</button>`).join("")}
           ${now >= A && now <= B ? `<div class="td-tl-now" style="left:${X(now)}%"></div>` : ""}<div class="td-tl-axis">${hours.map(h => `<span style="left:${X(h * 60)}%">${fmtT(h * 60)}</span>`).join("")}</div></div>` : ""}
-        ${sl ? `<div class="td-slot-h"><b>${fmtT(sl.m)}</b><span>${plural(sl.kids.length, "child", "children")}${slots.length > 1 ? " · tap another time above to switch" : ""}</span></div>${sl.kids.map(k => kidRow(k.studentId, { tick: true, kid: k, items: k.items })).join("")}` : `<div class="td-empty">Nobody is scheduled today. Center visits come from the Calendar.</div>`}
+        ${sl ? `<div class="td-slot-h"><b>${fmtT(sl.m)}</b><span>${plural(sl.kids.length, "child", "children")}${slots.length > 1 ? " · tap another time above to switch" : ""}</span><span class="td-legend"><span class="td-tick" aria-hidden="true"></span>Arrived<span class="td-legend-bag" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 7h12l-1 13H7z"/><path d="M9 7a3 3 0 0 1 6 0"/></svg></span>Worksheets picked up</span></div>${sl.kids.map(k => kidRow(k.studentId, { tick: true, kid: k, items: k.items })).join("")}` : `<div class="td-empty">Nobody is scheduled today. Center visits come from the Calendar.</div>`}
       </div></div></section>`;
   }
   // Today's student trainings and DTs. A teacher sees the ones assigned to her; "Whole centre" sees all, with who's assigned.
