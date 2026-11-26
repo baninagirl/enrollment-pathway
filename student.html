@@ -613,6 +613,16 @@
   .pstep.done{ background:var(--good-soft); border-color:transparent; color:var(--good); }
   .pstep.now{ border-color:var(--accent); color:var(--accent); background:var(--accent-soft); }
   .pstep.skip{ text-decoration:line-through; }
+  /* PTC week meeting, opened from "Start" on the PTC page (Nov 26) */
+  .meet-card{ border:1.5px solid var(--accent); }
+  .meet-card .meet-h{ display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+  .meet-card .meet-h h3{ margin:0; font-family:"Sora",sans-serif; font-size:17px; }
+  .meet-grid{ display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:10px; margin-top:12px; }
+  .meet-grid label{ display:flex; flex-direction:column; gap:5px; font-size:12.5px; font-weight:600; color:var(--ink-muted); }
+  .meet-grid textarea{ font:inherit; font-size:13.5px; border:1px solid var(--border); border-radius:10px; padding:9px 11px; background:var(--surface); color:var(--ink); resize:vertical; min-height:64px; }
+  .meet-prev{ border-left:3px solid var(--accent); padding:4px 0 4px 12px; font-size:13px; color:var(--ink-muted); margin-top:10px; white-space:pre-wrap; }
+  .meet-foot{ display:flex; gap:8px; justify-content:flex-end; flex-wrap:wrap; margin-top:12px; align-items:center; }
+  @media (max-width:700px){ .meet-grid{ grid-template-columns:1fr; } }
   .ptl{ display:flex; flex-direction:column; }
   .pev{ display:grid; grid-template-columns:16px minmax(0,1fr); gap:12px; padding-bottom:14px; position:relative; }
   .pev::before{ content:""; position:absolute; left:7px; top:18px; bottom:0; width:2px; background:var(--border); }
@@ -1277,6 +1287,8 @@ window.kumonPtcNav = function(client, role){
     window.addEventListener("hashchange", route);
   }
   function currentStudentId(){ const m = (location.hash || "").match(/^#s=([\w-]+)/); return m ? m[1] : null; }
+  // "Start" on the PTC page opens #s=<child>&ptc=<meeting>: the meeting card shows on top of the profile.
+  function currentMeetingId(){ const m = (location.hash || "").match(/[&#]ptc=([\w-]+)/); return m ? m[1] : null; }
   function route(){
     const id = currentStudentId();
     if(id) openProfile(id); else { location.replace("roster.html"); }
@@ -1519,6 +1531,65 @@ window.kumonPtcNav = function(client, role){
     return `${head}${ev.length ? `<div class="ptl">${ev.map(evHtml).join("")}</div>` : `<div class="faint" style="padding:4px 0; font-size:13px;">${isNew ? "No PTCs yet." : "No PTC Week meetings yet. They show here once this child is scheduled in a PTC Week."}</div>`}
       ${!isNew ? `<div class="faint" style="font-size:12px;">${prof.firstDay ? `Started ${esc(fmtDate(prof.firstDay))}, before first-year PTCs were tracked, so only PTC Week meetings apply.` : "No first day yet, so only PTC Week meetings apply."}</div>` : ""}`;
   }
+
+  /* ---- PTC week meeting (opened with "Start" on the PTC page) ---- */
+  const MEET_FIELDS = [["progress","Progress"],["home","Home study"],["goal","Next goal"],["other","Other notes"]];
+  function splitMeetNote(note){
+    const out = { progress:"", home:"", goal:"", other:"" }; let cur = "other";
+    String(note || "").split("\n").forEach(line => {
+      const f = MEET_FIELDS.find(([k, l]) => line.startsWith(l + ":"));
+      if(f){ cur = f[0]; out[cur] = line.slice(f[1].length + 1).trim(); }
+      else out[cur] = out[cur] ? out[cur] + "\n" + line : line;
+    });
+    Object.keys(out).forEach(k => out[k] = out[k].trim());
+    return out;
+  }
+  function meetingCard(){
+    const id = currentMeetingId(); if(!id) return "";
+    const x = (prof.sessions || []).find(y => y.id === id);
+    if(!x) return `<div class="banner no-print">This PTC week meeting isn't on this child's record any more (it may have been removed). <a href="ptc.html#week">Back to my PTC week</a></div>`;
+    const st = String(x.status || "");
+    const f = splitMeetNote(x.note);
+    const prev = ptcEvents().filter(e => !(e.kind === "week" && e.id === id) && e.note && e.date && e.date < (x.date || "9999"))[0];   // the last PTC before this one
+    const held = st === "done" || st === "no_show";
+    return `<div class="card sect meet-card no-print">
+      <div class="meet-h"><h3>PTC week meeting</h3><span class="pill p-accent">${x.date ? esc(fmtDate(x.date)) + (x.time ? ", " + esc(fmtTime(x.time)) : "") : "no time"}</span>
+        <span class="faint">${esc([x.teacher, x.subjects].filter(Boolean).join(" · "))}</span><span class="grow"></span>
+        ${st === "done" ? `<span class="pill p-good">Done</span>` : st === "no_show" ? `<span class="pill p-warn">Didn't come</span>` : ""}</div>
+      ${prev ? `<div class="meet-prev"><b>Last PTC${prev.date ? " (" + esc(fmtDate(prev.date)) + ")" : ""}:</b> ${esc(prev.note)}</div>` : ""}
+      <div class="meet-grid">${MEET_FIELDS.map(([k, l]) => `<label>${l}<textarea id="meet_${k}" rows="2" placeholder="${{ progress:"How they're doing in class, level, speed…", home:"Pages a day at home, who helps…", goal:"What we agreed to aim for…", other:"Anything else the parent said" }[k]}">${esc(f[k])}</textarea></label>`).join("")}</div>
+      <div class="faint" style="font-size:12px; margin-top:8px;">Level, grade level, study plan, last test and attendance are just below. The note saves to PTC history on this profile.</div>
+      <div class="meet-foot"><span class="faint" id="meetSaved"></span>
+        ${st !== "no_show" ? `<button class="btn" data-action="meet-save" data-status="no_show">Didn't come</button>` : ""}
+        <button class="btn primary" data-action="meet-save" data-status="done">${st === "done" ? "Save note" : "Done · save note"}</button></div>
+    </div>`;
+  }
+  async function saveMeeting(status){
+    const P = prof, id = currentMeetingId(), x = (P.sessions || []).find(y => y.id === id); if(!x) return false;
+    const parts = MEET_FIELDS.map(([k, l]) => { const v = (($("#meet_" + k) || {}).value || "").trim(); return v ? (k === "other" ? v : l + ": " + v) : ""; }).filter(Boolean);
+    const note = parts.join("\n") || null;
+    const wasDone = x.status === "done";
+    const { data, error } = await sbClient.from("ptc_sessions").update({ status, note, moved_at: null, updated_by_name: myName(), updated_at: new Date().toISOString() }).eq("id", id).select();
+    if(error || !data || !data.length){ alert("Couldn't save the meeting" + (error ? ": " + error.message : " — the database didn't allow it") + "."); return false; }
+    Object.assign(x, data[0]);
+    logHistory("ptc_status", `PTC week meeting ${status === "done" ? "done" : "— didn't come"}: ${displayName(P.student.id, P.student.name)}`, P.student.id, null);
+    // A meeting held also counts for this child's first-year PTC that's due by then (or within 2 weeks after) — same rule as the PTC page.
+    if(status === "done" && isNewForPtc()){
+      const limit = addDays(x.date || todayISO(), 14), rows = [];
+      for(const n of PTC_MONTHS){
+        const m = P.milestones.find(y => y.month_no === n);
+        if(m && (m.status === "done" || m.status === "skipped")) continue;
+        const due = ptcDue(n, m); if(!due || due > limit) continue;
+        rows.push({ student_id: P.student.id, month_no: n, due_date: due, status: "done", done_on: x.date || todayISO(), note: [m && m.note, "PTC week meeting"].filter(Boolean).join("\n"), by_name: myName(), ptc_session_id: id, updated_at: new Date().toISOString() });
+      }
+      if(rows.length){ const r = await sbClient.from("ptc_milestones").upsert(rows, { onConflict:"student_id,month_no" }).select(); if(!r.error && r.data) r.data.forEach(d => { const i = P.milestones.findIndex(y => y.month_no === d.month_no); if(i >= 0) P.milestones[i] = d; else P.milestones.push(d); }); }
+    }
+    if(status !== "done" && wasDone){
+      const r = await sbClient.from("ptc_milestones").update({ status:"open", done_on:null, ptc_session_id:null, updated_at: new Date().toISOString() }).eq("ptc_session_id", id).eq("status", "done").select();
+      if(!r.error && r.data) r.data.forEach(d => { const i = P.milestones.findIndex(y => y.id === d.id); if(i >= 0) P.milestones[i] = d; });
+    }
+    return true;
+  }
   // A PTC Week meeting's note lives on the meeting itself (the same record the PTC page edits).
   async function saveSessionNote(id, text){
     const P = prof, x = (P.sessions || []).find(y => y.id === id); if(!x) return false;
@@ -1718,9 +1789,10 @@ window.kumonPtcNav = function(client, role){
       </tbody></table></div>` : `<div class="hint">No payments recorded.</div>`;
 
     $("#view").innerHTML = `
-      <div class="detail-top no-print"><a class="btn sm ghost" href="roster.html" data-action="back-roster">‹ Student roster</a><span class="grow"></span>
+      <div class="detail-top no-print">${currentMeetingId() ? `<a class="btn sm ghost" href="ptc.html#week">‹ My PTC week</a>` : `<a class="btn sm ghost" href="roster.html" data-action="back-roster">‹ Student roster</a>`}<span class="grow"></span>
         <button class="btn sm" data-action="dl-jpeg">Save as JPEG</button><button class="btn sm" data-action="dl-pdf">Save as PDF</button><button class="btn sm" data-action="print">Print</button></div>
       ${prof.partial ? `<div class="banner no-print">Some parts couldn't load (connection problem) — refresh to try again.</div>` : ""}
+      ${meetingCard()}
       <div id="profileSheet">
         <div class="card prof-head">
           <div class="prof-top"><div><div class="print-only print-title">STUDENT PROFILE · Kumon Iligan City</div>
@@ -1798,6 +1870,13 @@ window.kumonPtcNav = function(client, role){
       const show = a === "ptc-note-open";
       if(ed) ed.hidden = !show; if(view) view.hidden = show; if(open) open.hidden = show;
       if(show){ const t = ed && ed.querySelector("textarea"); if(t){ t.focus(); t.setSelectionRange(t.value.length, t.value.length); } }
+      return;
+    }
+    if(a === "meet-save"){
+      btn.disabled = true;
+      const ok = await saveMeeting(btn.dataset.status);
+      if(ok){ renderProfile(); const el = $("#meetSaved"); if(el) el.textContent = btn.dataset.status === "done" ? "Saved ✓" : "Saved as didn't come ✓"; }
+      else btn.disabled = false;
       return;
     }
     if(a === "ptc-note-save"){

@@ -527,6 +527,55 @@
     .fam-actions{ justify-content:flex-start; max-width:none; }
     .day-row{ grid-template-columns: 22px 90px repeat(4, minmax(0,1fr)); }
   }
+  /* PTC week, run by the teachers (Nov 26) */
+  .mw-head{ display:flex; gap:18px; align-items:center; flex-wrap:wrap; padding:16px 18px; margin-bottom:12px; }
+  .mw-ring{ position:relative; width:96px; height:96px; flex:none; }
+  .mw-ring svg{ width:100%; height:100%; transform:rotate(-90deg); }
+  .mw-ring circle:last-child{ transition:stroke-dasharray .6s var(--spring, ease); }
+  .mw-ring .n{ position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; padding:0 10px; }
+  .mw-ring .n b{ font-family:"Sora",sans-serif; font-size:22px; line-height:1.1; }
+  .mw-ring .n span{ font-size:10px; color:var(--ink-faint); line-height:1.2; }
+  .mw-title{ flex:1; min-width:220px; display:flex; flex-direction:column; gap:4px; }
+  .mw-title h3{ font-family:"Sora",sans-serif; font-size:19px; letter-spacing:-.01em; margin:0; }
+  .mw-steps{ display:flex; gap:6px; flex-wrap:wrap; margin-top:6px; }
+  .mw-step{ display:inline-flex; align-items:center; gap:7px; border-radius:99px; padding:4px 12px 4px 4px; font-size:12.5px; font-weight:600; background:var(--surface-2); color:var(--ink-muted); }
+  .mw-step i{ width:20px; height:20px; border-radius:50%; display:grid; place-items:center; font-style:normal; font-size:11px; background:var(--surface); }
+  .mw-step.done{ background:var(--good-soft); color:var(--good); } .mw-step.done i{ background:var(--good); color:#fff; }
+  .mw-step.now{ background:var(--accent-soft); color:var(--accent-soft-ink); box-shadow:inset 0 0 0 1.5px var(--accent); } .mw-step.now i{ background:var(--accent); color:var(--accent-ink); }
+  .mw-times{ display:flex; gap:12px; align-items:center; flex-wrap:wrap; background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:10px 14px; margin-bottom:12px; font-size:13px; }
+  .mw-times > span:first-child{ flex:1; min-width:200px; }
+  .mw-fix{ display:flex; gap:12px; align-items:center; flex-wrap:wrap; border:1px solid var(--accent); background:var(--accent-soft); border-radius:12px; padding:12px 14px; margin-bottom:12px; }
+  .mw-fix.warn{ border-color:var(--warn); background:var(--warn-soft); }
+  .mw-fix p{ margin:0; flex:1; min-width:220px; font-size:13.5px; color:var(--ink); }
+  .mw-fix-act{ display:flex; gap:8px; flex-wrap:wrap; }
+  .mw-warn{ color:var(--bad); font-weight:600; }
+  .mw-edit .day-rows{ padding:12px 16px 0; }
+  .mw-cap{ padding:10px 16px; font-size:13px; color:var(--ink-muted); }
+  .mw-cap.bad{ color:var(--bad); }
+  .mw-edit .row-actions{ padding:0 16px 14px; }
+  .mw-tabs{ display:flex; gap:6px; flex-wrap:wrap; align-items:center; margin:4px 0 8px; }
+  .mw-tab{ font:inherit; font-size:13px; font-weight:600; border-radius:99px; padding:7px 14px; border:1px solid var(--border); color:var(--ink-muted); background:var(--surface); display:inline-flex; gap:7px; align-items:center; cursor:pointer; }
+  .mw-tab em{ font-style:normal; font-size:11.5px; border-radius:99px; padding:1px 7px; background:var(--surface-2); }
+  .mw-tab.on{ background:var(--accent-soft); border-color:var(--accent); color:var(--accent-soft-ink); } .mw-tab.on em{ background:var(--surface); }
+  .mw-hint{ font-size:12.5px; margin:0 2px 10px; }
+  .mw-list{ display:flex; flex-direction:column; gap:8px; margin-bottom:14px; }
+  .card .mw-list{ padding:12px; margin:0; }
+  .mw-fam{ display:grid; grid-template-columns:auto minmax(0,1fr) auto; gap:14px; align-items:center; background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:11px 14px; }
+  .mw-when{ width:78px; text-align:center; border-radius:11px; background:var(--surface-2); padding:6px 4px; display:flex; flex-direction:column; }
+  .mw-when b{ font-size:15px; font-variant-numeric:tabular-nums; } .mw-when b small{ font-size:10.5px; margin-left:2px; color:var(--ink-muted); }
+  .mw-when span{ font-size:11px; color:var(--ink-muted); }
+  .mw-main{ display:flex; flex-direction:column; gap:4px; min-width:0; }
+  .mw-name{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; font-size:14px; } .mw-name .faint{ font-size:12px; }
+  .mw-kids{ display:flex; gap:6px; flex-wrap:wrap; }
+  .mw-kid{ font-size:12px; border-radius:8px; padding:2px 8px; background:var(--surface-2); color:var(--ink-muted); }
+  .mw-other{ font-size:12px; color:var(--ink-muted); }
+  .mw-note{ font-size:12px; }
+  .mw-act{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; justify-content:flex-end; }
+  .mw-act a.btn{ text-decoration:none; }
+  .linkbtn{ font:inherit; font-size:12.5px; font-weight:600; color:var(--accent); background:none; border:none; padding:4px 2px; cursor:pointer; }
+  .linkbtn:hover{ text-decoration:underline; }
+  .mw-prog .mw-row{ cursor:pointer; } .mw-prog .mw-row:hover td{ background:var(--surface-2); }
+  @media (max-width:760px){ .mw-fam{ grid-template-columns:auto minmax(0,1fr); } .mw-act{ grid-column:1 / -1; justify-content:flex-start; } .mw-ring{ width:80px; height:80px; } }
 </style>
 <script>try{if(localStorage.getItem("kumonRailCollapsed")==="1")document.documentElement.classList.add("rail-collapsed")}catch(e){}</script>
 <script>
@@ -859,6 +908,7 @@ window.kumonPtcNav = function(client, role){
   let sessions = [];                 // ptc_sessions of every week that's still open + the one being viewed
   let families = new Map();          // student_id -> family_id (ptc_families)
   let notSiblings = new Set();       // "a|b" (a < b)
+  let hours = [];                    // ptc_teacher_hours: each teacher's free times per PTC week (phase162)
   let due = [];                      // rpc ptc_due(30)
   let milestones = [];               // ptc_milestones (done / skipped)
 
@@ -872,7 +922,8 @@ window.kumonPtcNav = function(client, role){
     dueTeacher: "all", dueSearch: "", dueStatus: "all",
     weekId: null,
     weekView: lsGet("weekView", "teacher"),   // teacher | family
-    weekTeacher: "all", weekDay: "all", weekStatus: "all", weekSearch: ""
+    weekTeacher: "all", weekDay: "all", weekStatus: "all", weekSearch: "",
+    myTeacher: "", myTab: lsGet("myTab", "invite"), editTimes: false, timesDraft: null, copied: new Set()
   };
   let modalState = null;            // { kind, ... } — move modals re-render on live updates
 
@@ -1070,7 +1121,7 @@ window.kumonPtcNav = function(client, role){
     const h = (location.hash || "").replace("#","");
     if(h === "due" || h === "week") ui.tab = h;
     $("#dueSection").innerHTML = `<div class="empty">Loading…</div>`;
-    await Promise.all([loadStaff(), loadStudents(), loadEnrollments(), loadSchedules(), loadWeeks(), loadFamilies(), loadDue(), loadMilestones()]);
+    await Promise.all([loadStaff(), loadStudents(), loadEnrollments(), loadSchedules(), loadWeeks(), loadFamilies(), loadDue(), loadMilestones(), loadHours()]);
     pickDefaultWeek();
     await loadSessions();
     render();
@@ -1078,11 +1129,12 @@ window.kumonPtcNav = function(client, role){
       if(what.has("weeks")) await loadWeeks();
       if(what.has("sessions") || what.has("weeks")) await loadSessions();
       if(what.has("families")) await loadFamilies();
+      if(what.has("hours")) await loadHours();
       if(what.has("milestones")){ await Promise.all([loadMilestones(), loadDue()]); if(window.kumonPtcNavRefresh) window.kumonPtcNavRefresh(); }
       render(); if(modalState && modalState.live) renderModal();
     }, 1500);
     const ch = sbClient.channel("realtime:ptc-page");
-    [["ptc_weeks","weeks"],["ptc_sessions","sessions"],["ptc_families","families"],["ptc_milestones","milestones"]].forEach(([t,k]) =>
+    [["ptc_weeks","weeks"],["ptc_sessions","sessions"],["ptc_families","families"],["ptc_milestones","milestones"],["ptc_teacher_hours","hours"]].forEach(([t,k]) =>
       ch.on("postgres_changes", { event:"*", schema:"public", table:t }, () => reload(k)));
     ch.subscribe();
   }
@@ -1148,6 +1200,9 @@ window.kumonPtcNav = function(client, role){
       sessions = await selectAll("ptc_sessions", "*", q => q.in("week_id", [...ids]).order("id"));
     });
   }
+  async function loadHours(){ return keepOnFail("hours", async () => {
+    hours = await selectAll("ptc_teacher_hours", "*", q => q.order("teacher"));
+  }); }
   async function loadFamilies(){ return keepOnFail("families", async () => {
     const [f, n] = await Promise.all([selectAll("ptc_families", "student_id,family_id"), selectAll("ptc_not_siblings", "a,b")]);
     families = new Map(f.map(r => [r.student_id, r.family_id]));
@@ -1474,7 +1529,9 @@ window.kumonPtcNav = function(client, role){
   }
 
   /* ----- PTC week ----- */
-  function renderWeek(){
+  function renderWeek(){ renderWeekShell(); }
+  // The admin-run table views from before Nov 26 (kept, not shown).
+  function renderWeekOld(){
     const w = currentWeek();
     const weekSel = weeks.length ? `<select id="weekPick">${weeks.map(x => `<option value="${esc(x.id)}"${x.id === ui.weekId ? " selected" : ""}>${esc(x.name)}${x.closed_at ? " (closed)" : ""}</option>`).join("")}</select>` : "";
     const adminBtns = isAdmin() ? `
@@ -1735,7 +1792,7 @@ window.kumonPtcNav = function(client, role){
     const slotsTotal = s.days.filter(d => d.on).reduce((n, d) => n + daySlots(d, 15).length, 0);
     return {
       size: "wide",
-      title: s.id ? "PTC week — days & hours" : "New PTC week",
+      title: s.id ? "Edit PTC week" : "New PTC week",
       body: `<label class="field">Name<input type="text" id="wkName" value="${esc(s.name)}"></label>
         <div class="field-row">
           <label class="field">First day<input type="date" id="wkStart" value="${esc(s.start)}"></label>
@@ -1745,8 +1802,7 @@ window.kumonPtcNav = function(client, role){
           <div class="day-row head"><span></span><span>Day</span><span>From</span><span>To</span><span>Break from</span><span>Break to</span></div>
           ${rows || `<div class="hint">Pick the first and last day.</div>`}
         </div>
-        <div class="hint">15-minute sessions: <b>${slotsTotal}</b> per teacher across the week. Leave the break blank for none.</div>
-        ${s.id ? `<div class="hint">Changing the hours doesn't move anyone — sessions now outside the hours show under “things to fix”.</div>` : ""}`,
+        <div class="hint">These are the starting hours each teacher sees (<b>${slotsTotal}</b> 15-minute PTCs). Teachers change them to their own free times and book their own families.</div>`,
       foot: (s.id ? `<button class="btn danger" data-action="week-delete" style="margin-right:auto;">Delete week</button><button class="btn" data-action="week-close">${s.closed ? "Reopen week" : "Close week"}</button>` : "")
         + `<button class="btn" data-action="close-modal">Cancel</button><button class="btn primary" data-action="week-save">${s.id ? "Save" : "Create"}</button>`
     };
@@ -1796,7 +1852,7 @@ window.kumonPtcNav = function(client, role){
     closeModal();
     await loadWeeks(); if(res.data) ui.weekId = res.data.id; lsSet("weekId", ui.weekId);
     await loadSessions(); render();
-    toast(s.id ? "Saved." : "PTC week created — now click Make draft.");
+    toast(s.id ? "Saved." : "PTC week created. Teachers can now set their times and book their families.");
   }
 
   /* --- deleting sessions (admins) --- */
@@ -1876,9 +1932,9 @@ window.kumonPtcNav = function(client, role){
       foot: `<button class="btn" data-action="close-modal">Cancel</button><button class="btn primary" data-action="draft-go"${s.busy ? " disabled" : ""}>${s.adding ? "Add them" : "Make draft"}</button>`
     };
   };
-  async function runDraft(pairs, quiet){
+  async function runDraft(pairs, quiet, weekFor){
     const w = currentWeek(); if(!w) return null;
-    const plan = planPlacement(w, pairs, weekSessions());
+    const plan = planPlacement(weekFor || w, pairs, weekSessions());
     const by = myName();
     const rows = plan.placed.concat(plan.unplaced.map(i => Object.assign({}, i, { date:null, time:null }))).map(i => ({
       week_id: w.id, student_id: i.student_id, student_name: i.student_name || studentName(i.student_id), teacher: i.teacher,
@@ -2030,8 +2086,8 @@ window.kumonPtcNav = function(client, role){
     return lines.join("\n");
   }
   MODALS.invite = (s) => {
-    const txt = inviteText(s.family);
-    const v = weekSessions().filter(x => sessFamily(x) === s.family);
+    const txt = s.text || inviteText(s.family);
+    const v = weekSessions().filter(x => sessFamily(x) === s.family && (!s.teacher || x.teacher === s.teacher));
     const canMark = v.some(x => canEditTeacher(x.teacher) && x.status === "draft");
     return {
       size:"wide",
@@ -2089,6 +2145,311 @@ window.kumonPtcNav = function(client, role){
     await Promise.all([loadMilestones(), loadDue()]);
     if(window.kumonPtcNavRefresh) window.kumonPtcNavRefresh();
     toast(`Also marked ${rows.length} new-student PTC${rows.length === 1 ? "" : "s"} done.`);
+  }
+
+  /* ================= PTC week, run by the teachers (Nov 26, phase162) ================= */
+  // Admins name the week (its dates). Each teacher saves their own free times, books, invites and meets their own families.
+  function hoursRow(w, t){ return hours.find(h => h.week_id === w.id && h.teacher === t) || null; }
+  // The teacher's days: their saved times (only days still in the week), else the week's own default hours.
+  function teacherDays(w, t){
+    const r = hoursRow(w, t);
+    if(!r) return w.days;
+    const inWeek = new Set(w.days.map(d => d.date));
+    return (Array.isArray(r.days) ? r.days : []).filter(d => inWeek.has(d.date)).sort((a,b) => a.date < b.date ? -1 : 1);
+  }
+  function teacherWeek(w, t){ return { id: w.id, name: w.name, days: teacherDays(w, t), slot_minutes: w.slot_minutes || 15 }; }
+  function slotCount(days, slotMin){ return days.reduce((n, d) => n + daySlots(d, slotMin).length, 0); }
+  function weekRange(w){ return w.days.length ? `${fmtDate(w.days[0].date)} – ${fmtDate(w.days[w.days.length-1].date)}` : "no days yet"; }
+  function pairsOf(t){ return neededPairs().filter(p => p.teacher === t); }
+  function missingOf(t){ const have = new Set(weekSessions().filter(x => x.teacher === t).map(x => x.student_id)); return pairsOf(t).filter(p => !have.has(p.student_id)); }
+  // Stage of one family's meetings with this teacher: the earliest stage any of them is at.
+  function stageOf(list){
+    if(list.some(x => !x.date)) return "notime";
+    if(list.some(x => x.status === "draft")) return "invite";
+    if(list.some(x => x.status === "invited" || x.status === "cant")) return "waiting";
+    if(list.some(x => x.status === "confirmed")) return "confirmed";
+    return "done";
+  }
+  const MY_TABS = [["invite","To invite"],["waiting","Waiting"],["confirmed","Confirmed"],["done","Done"]];
+  function myFamilies(w, t){
+    const mine = weekSessions().filter(x => x.teacher === t);
+    const map = new Map();
+    mine.forEach(x => { const f = sessFamily(x); (map.get(f) || map.set(f, []).get(f)).push(x); });
+    return [...map.entries()].map(([key, list]) => ({ key, list: list.sort(bySlot), stage: stageOf(list) }))
+      .sort((a, b) => bySlot(a.list[0], b.list[0]));
+  }
+  function teacherList(){
+    const names = new Set([...enrollments.map(e => e.teacher), ...weekSessions().map(x => x.teacher)].filter(Boolean));
+    return [...names].sort((a, b) => a.localeCompare(b));
+  }
+  // Who this page is showing: teachers see themselves (or a group colleague they pick); admins pick from the progress table.
+  function myTeacher(){
+    if(isTeacherScoped()) return ui.myTeacher || currentTeacherName || "";
+    return ui.myTeacher || "";
+  }
+
+  function renderWeekShell(){
+    const w = currentWeek();
+    const weekSel = weeks.length > 1 ? `<select id="weekPick">${weeks.map(x => `<option value="${esc(x.id)}"${x.id === ui.weekId ? " selected" : ""}>${esc(x.name)}${x.closed_at ? " (closed)" : ""}</option>`).join("")}</select>` : "";
+    const weekLoadBad = loadIssues.has("weeks") || loadIssues.has("sessions") || loadIssues.has("hours");
+    const loadWarn = weekLoadBad ? `<div class="banner" style="margin-bottom:12px;">Couldn't load the PTC week (connection problem). What's shown may be out of date. Refresh the page before making changes.</div>` : "";
+    if(!w){
+      $("#weekSection").innerHTML = loadWarn + (loadIssues.has("weeks") ? `<div class="card"><div class="empty">The PTC weeks couldn't be loaded. Refresh the page.</div></div>`
+        : `<div class="card"><div class="empty">${isAdmin() ? `No PTC week yet. Name the week and pick its dates. Teachers then set their own times and book their own families.<div style="margin-top:12px;"><button class="btn primary" data-action="week-new">New PTC week</button></div>` : "No PTC week yet. An admin names the week first, then you can set your times here."}</div></div>`);
+      return;
+    }
+    const t = myTeacher();
+    if(isAdmin() && !t){ $("#weekSection").innerHTML = loadWarn + renderProgress(w, weekSel); return; }
+    $("#weekSection").innerHTML = loadWarn + renderMyWeek(w, t, weekSel);
+    restoreFocus();
+  }
+
+  /* ----- admins: progress only ----- */
+  function renderProgress(w, weekSel){
+    const rows = teacherList().map(t => {
+      const pairs = pairsOf(t).length, list = weekSessions().filter(x => x.teacher === t);
+      const timed = list.filter(x => x.date).length;
+      const c = k => list.filter(x => k.includes(x.status)).length;
+      return { t, pairs, timed, set: !!hoursRow(w, t), invite: c(["draft"]), waiting: c(["invited","cant"]), confirmed: c(["confirmed"]), done: c(["done","no_show"]), total: Math.max(pairs, list.length) };
+    }).filter(r => r.total);
+    const all = rows.reduce((a, r) => { ["total","timed","waiting","confirmed","done"].forEach(k => a[k] += r[k]); return a; }, { total:0, timed:0, waiting:0, confirmed:0, done:0 });
+    return `<div class="toolbar">${weekSel}<button class="btn sm" data-action="week-new">New PTC week</button><button class="btn sm" data-action="week-edit">Edit week</button><button class="btn sm" data-action="siblings">Siblings</button><span class="grow"></span>${w.closed_at ? `<span class="pill st-draft">Closed</span>` : ""}</div>
+      <div class="mw-head card">
+        ${ringSvg(all.confirmed + all.done, all.total, "PTCs confirmed")}
+        <div class="mw-title"><h3>${esc(w.name)}</h3><span class="faint">${esc(weekRange(w))} · teachers set their own times and book their own families</span></div>
+      </div>
+      <div class="card"><div class="table-scroll"><table class="stable mw-prog"><thead><tr><th>Teacher</th><th>Times</th><th>Booked</th><th>To invite</th><th>Waiting</th><th>Confirmed</th><th>Done</th><th></th></tr></thead><tbody>
+        ${rows.map(r => `<tr class="mw-row" data-action="my-open" data-teacher="${esc(r.t)}">
+          <td><b>${esc(r.t)}</b></td>
+          <td>${r.set ? `<span class="pill st-confirmed">Set</span>` : `<span class="pill st-draft">Not set</span>`}</td>
+          <td class="tnum">${!r.set && !r.timed ? `<span class="pill st-moved">Not started</span>` : `${r.timed} of ${r.total}`}</td>
+          <td class="tnum">${r.invite}</td><td class="tnum">${r.waiting}</td><td class="tnum">${r.confirmed}</td><td class="tnum">${r.done}</td>
+          <td><span class="btn sm ghost">Open</span></td></tr>`).join("") || `<tr><td colspan="8" class="faint">No teachers with active students.</td></tr>`}
+      </tbody></table></div></div>`;
+  }
+  function ringSvg(n, total, word){
+    const pct = total ? Math.min(1, n / total) : 0, C = 97.4;
+    return `<div class="mw-ring" role="img" aria-label="${n} of ${total} ${word}"><svg viewBox="0 0 36 36"><circle cx="18" cy="18" r="15.5" fill="none" stroke="var(--surface-2)" stroke-width="4"/><circle cx="18" cy="18" r="15.5" fill="none" stroke="var(--good)" stroke-width="4" stroke-linecap="round" stroke-dasharray="${(pct * C).toFixed(1)} ${C}"${pct ? "" : ` stroke-opacity="0"`}/></svg><div class="n"><b>${n}</b><span>of ${total} ${esc(word)}</span></div></div>`;
+  }
+
+  /* ----- a teacher's week ----- */
+  function renderMyWeek(w, t, weekSel){
+    if(!t) return `<div class="card"><div class="empty">Your account isn't linked to a teacher name, so there's no PTC week to show. Ask a superadmin to set it in Admin.</div></div>`;
+    const tw = teacherWeek(w, t), slotMin = tw.slot_minutes;
+    const set = !!hoursRow(w, t);
+    const fams = myFamilies(w, t), missing = missingOf(t);
+    const kidsTotal = pairsOf(t).length;
+    const cap = slotCount(tw.days, slotMin);
+    const famTotal = new Set([...fams.map(f => f.key), ...missing.map(p => p.family)]).size;
+    const ready = fams.filter(f => f.stage === "confirmed" || f.stage === "done").length;
+    const count = {}; fams.forEach(f => count[f.stage] = (count[f.stage] || 0) + 1);
+    const notime = fams.filter(f => f.stage === "notime");
+    const outside = weekSessions().filter(x => x.teacher === t && x.date && !inHours(tw, x));
+    const editing = ui.editTimes || (!set && !fams.length);
+    const picker = isAdmin() ? `<button class="btn sm ghost" data-action="my-back">‹ All teachers</button>`
+      : (myGroupTeachers().length > 1 ? `<select id="myTeacherPick">${myGroupTeachers().map(n => `<option value="${esc(n)}"${n === t ? " selected" : ""}>${esc(n)}${n === currentTeacherName ? " (you)" : ""}</option>`).join("")}</select>` : "");
+    const step = (n, label, state) => `<span class="mw-step ${state}"><i>${state === "done" ? "✓" : n}</i>${label}</span>`;
+    const booked = !missing.length && !notime.length;
+    const steps = `<div class="mw-steps">${step(1, "My free times", set ? "done" : "now")}${step(2, "Book my families", booked && fams.length ? "done" : set ? "now" : "")}${step(3, "Invite parents", fams.length && !count.invite && booked ? "done" : booked && fams.length ? "now" : "")}</div>`;
+
+    let html = `<div class="toolbar">${picker}${weekSel}<span class="grow"></span>${w.closed_at ? `<span class="pill st-draft">Closed</span>` : ""}</div>
+      <div class="card mw-head">
+        ${ringSvg(ready, famTotal, famTotal === 1 ? "family confirmed" : "families confirmed")}
+        <div class="mw-title"><h3>${t === currentTeacherName ? "My PTC week" : esc(t) + "'s PTC week"} · ${esc(weekRange(w))}</h3>
+          <span class="faint">${kidsTotal} child${kidsTotal === 1 ? "" : "ren"} · ${famTotal} famil${famTotal === 1 ? "y" : "ies"} · ${slotMin}-minute PTCs</span>
+          ${steps}</div>
+      </div>`;
+
+    // 1. free times
+    if(editing) html += timesEditor(w, t);
+    else html += `<div class="mw-times"><span><b>My free times:</b> ${set ? tw.days.map(d => `${esc(fmtDate(d.date))} ${esc(fmt12(d.from))}–${esc(fmt12(d.to))}`).join(" · ") || "none" : "not set yet"}</span><span class="faint">${cap} PTCs fit</span><button class="btn sm" data-action="my-times">${set ? "Change my times" : "Set my free times"}</button></div>`;
+
+    // 2. booking
+    if(missing.length && !editing){
+      const short = missing.length + weekSessions().filter(x => x.teacher === t).length > cap;
+      html += `<div class="mw-fix"><p><b>${missing.length} child${missing.length === 1 ? " doesn't" : "ren don't"} have a PTC time yet.</b> ${set ? "Fill my times books them all near each family's usual class time, next to a sibling's PTC when there is one. You can move anyone after." : "Set your free times first, then Fill my times books them all."}${short ? ` <br><span class="mw-warn">Your times fit ${cap} PTCs, so not everyone fits. Add more hours, or book the rest by hand.</span>` : ""}</p>
+        <div class="mw-fix-act"><button class="btn sm" data-action="my-hand">Book by hand</button><button class="btn sm primary" data-action="my-fill"${set ? "" : " disabled"}>Fill my times</button></div></div>`;
+    }
+    if(outside.length) html += `<div class="mw-fix warn"><p><b>${outside.length} PTC${outside.length === 1 ? " is" : "s are"} outside your free times</b> (you changed your times after booking). Use <b>Change time</b> on ${outside.length === 1 ? "it" : "them"} below.</p></div>`;
+
+    if(notime.length){
+      html += `<div class="card"><div class="card-head"><h3>No time yet <span class="faint">${notime.length}</span></h3><span class="hint">Pick a time for each, then invite the parent.</span></div><div class="mw-list">${notime.map(f => famCard(w, t, f)).join("")}</div></div>`;
+    }
+
+    // 3. the four stages
+    if(fams.length > notime.length){
+      const tab = ui.myTab;
+      const q = ui.weekSearch.trim().toLowerCase();
+      const shown = fams.filter(f => f.stage === tab && (!q || f.list.some(searchMatch)));
+      html += `<div class="mw-tabs">${MY_TABS.map(([k, l]) => `<button class="mw-tab${tab === k ? " on" : ""}" data-action="my-tab" data-tab="${k}">${l}<em>${count[k] || 0}</em></button>`).join("")}<span class="grow"></span><input type="text" id="weekSearch" placeholder="Search child or parent…" value="${esc(ui.weekSearch)}" style="max-width:220px;"></div>
+        <div class="mw-hint faint">${{ invite:"Copy the invite, send it to the parent by text or Messenger, then tap Mark invited.", waiting:"When the parent replies, tap Confirmed, or Can't make it to pick another time.", confirmed:"On the day, tap Start. The child's profile opens with everything for the meeting and a place for your notes.", done:"Meetings held. Open the notes any time; they're also on the child's profile under PTC history." }[tab]}</div>
+        <div class="mw-list">${shown.map(f => famCard(w, t, f)).join("") || `<div class="empty">${q ? "No family matches your search." : { invite:"Everyone has been invited.", waiting:"No one is waiting for an answer.", confirmed:"No confirmed families yet.", done:"No meetings held yet." }[tab]}</div>`}</div>`;
+    }
+    return html;
+  }
+
+  function famCard(w, t, f){
+    const list = f.list, first = list[0];
+    const kids = [...new Set(list.map(x => x.student_id))];
+    const p = parentOf(kids);
+    const others = weekSessions().filter(o => sessFamily(o) === f.key && o.teacher !== t).sort(bySlot);
+    const canEdit = canEditTeacher(t);
+    const when = first.date ? `<b>${esc(fmt12(first.time).replace(/ (AM|PM)$/, ""))}<small>${esc(fmt12(first.time).slice(-2))}</small></b><span>${esc(fmtDate(first.date))}</span>` : `<b>—</b><span>no time</span>`;
+    const solo = kids.length === 1 && !p.name;   // the card's title is already the child's name
+    const kidChips = list.map(x => `<span class="mw-kid">${solo ? esc(x.subjects || "") : esc(sessName(x)) + (x.subjects ? " · " + esc(x.subjects) : "")}${list.length > 1 && x.date && x !== first ? " · " + esc(fmt12(x.time)) : ""}</span>`).join("");
+    const otherLine = others.length ? `<div class="mw-other">${others.map(o => `${esc(sessName(o).split(",")[1] ? sessName(o).split(",")[1].trim() : sessName(o))} also meets <b>${esc(o.teacher)}</b>${o.date ? ` · ${esc(fmtDate(o.date))} ${esc(fmt12(o.time))}` : " · no time yet"}`).join("<br>")}</div>` : "";
+    const tags = [];
+    if(list.some(x => x.status === "draft" && x.moved_at)) tags.push(`<span class="pill st-moved">Moved · re-invite</span>`);
+    if(list.some(x => x.status === "cant")) tags.push(`<span class="pill st-cant">Can't make it</span>`);
+    if(f.stage === "done") tags.push(list.every(x => x.status === "no_show") ? `<span class="pill st-no_show">Didn't come</span>` : `<span class="pill st-done">Done</span>`);
+    if(list.some(x => x.date && !inHours(teacherWeek(w, t), x))) tags.push(`<span class="pill st-cant">Outside your times</span>`);
+    const fk = esc(f.key), tt = esc(t);
+    const change = canEdit ? `<button class="linkbtn" data-action="my-resched" data-family="${fk}" data-teacher="${tt}">Change time</button>` : "";
+    let act = "";
+    if(!canEdit) act = `<span class="readonly-note">Another group's</span>`;
+    else if(f.stage === "notime") act = `<button class="btn sm primary" data-action="my-resched" data-family="${fk}" data-teacher="${tt}">Pick a time</button>`;
+    else if(f.stage === "invite") act = change + (ui.copied.has(f.key)
+      ? `<span class="pill st-confirmed">Copied ✓</span><button class="btn sm primary" data-action="my-status" data-family="${fk}" data-teacher="${tt}" data-status="invited">Mark invited</button>`
+      : `<button class="btn sm primary" data-action="my-copy" data-family="${fk}" data-teacher="${tt}">Copy invite</button>`);
+    else if(f.stage === "waiting") act = list.some(x => x.status === "cant")
+      ? `<button class="linkbtn" data-action="my-status" data-family="${fk}" data-teacher="${tt}" data-status="confirmed">They can come after all</button><button class="btn sm primary" data-action="my-resched" data-family="${fk}" data-teacher="${tt}">Pick a new time</button>`
+      : `<button class="linkbtn" data-action="my-copy" data-family="${fk}" data-teacher="${tt}">Copy invite again</button><button class="btn sm" data-action="my-cant" data-family="${fk}" data-teacher="${tt}">Can't make it</button><button class="btn sm primary" data-action="my-status" data-family="${fk}" data-teacher="${tt}" data-status="confirmed">Confirmed</button>`;
+    else if(f.stage === "confirmed") act = change + list.filter(x => x.status === "confirmed").map(x => `<a class="btn sm primary" href="student.html#s=${esc(x.student_id)}&ptc=${esc(x.id)}">Start${list.length > 1 ? " · " + esc((sessName(x).split(",")[1] || sessName(x)).trim()) : ""}</a>`).join("");
+    else act = list.map(x => `<a class="btn sm" href="student.html#s=${esc(x.student_id)}&ptc=${esc(x.id)}">${x.note ? "Open note" : "Add note"}${list.length > 1 ? " · " + esc((sessName(x).split(",")[1] || sessName(x)).trim()) : ""}</a>`).join("");
+    return `<div class="mw-fam">
+      <div class="mw-when">${when}</div>
+      <div class="mw-main"><div class="mw-name"><b>${esc(p.name || (kids.length > 1 ? "Family of " + kids.length : sessName(first)))}</b>${p.phone ? `<span class="faint">${esc(p.phone)}</span>` : ""}${tags.join("")}</div>
+        <div class="mw-kids">${kidChips}</div>${otherLine}${list.find(x => x.note && f.stage !== "done") ? `<div class="faint mw-note">✎ ${esc(list.find(x => x.note).note)}</div>` : ""}</div>
+      <div class="mw-act">${act}</div></div>`;
+  }
+
+  /* ----- free times editor ----- */
+  function timesDraft(w, t){
+    if(ui.timesDraft && ui.timesDraft.week === w.id && ui.timesDraft.teacher === t) return ui.timesDraft;
+    const r = hoursRow(w, t);
+    const days = w.days.map(d => { const x = r && (r.days || []).find(y => y.date === d.date); return x ? Object.assign({ on:true }, x) : Object.assign({}, d, { on: !r }); });
+    return (ui.timesDraft = { week: w.id, teacher: t, days });
+  }
+  function timesEditor(w, t){
+    const s = timesDraft(w, t), slotMin = w.slot_minutes || 15;
+    const cap = slotCount(s.days.filter(d => d.on), slotMin);
+    const need = pairsOf(t).length;
+    return `<div class="card mw-edit"><div class="card-head"><h3>My free times</h3><span class="hint">Tick the days you're free and set your hours. Leave the break blank for none.</span></div>
+      <div class="day-rows">
+        <div class="day-row head"><span></span><span>Day</span><span>From</span><span>To</span><span>Break from</span><span>Break to</span></div>
+        ${s.days.map((d, i) => `<div class="day-row">
+          <input type="checkbox" data-mt-on="${i}"${d.on ? " checked" : ""} aria-label="Free on ${esc(fmtDate(d.date))}">
+          <span>${esc(fmtDate(d.date))}</span>
+          ${["from","to","break_from","break_to"].map(k => `<input type="time" data-mt-f="${k}" data-i="${i}" value="${esc(d[k] || "")}"${d.on ? "" : " disabled"}>`).join("")}
+        </div>`).join("")}
+      </div>
+      <div class="mw-cap ${cap < need ? "bad" : ""}"><b>${cap}</b> PTCs fit in these times · you have <b>${need}</b> child${need === 1 ? "" : "ren"}${cap < need ? ` · <b>${need - cap} won't fit</b>, add more hours` : ""}</div>
+      <div class="row-actions" style="justify-content:flex-end;">${hoursRow(w, t) || weekSessions().some(x => x.teacher === t) ? `<button class="btn sm" data-action="my-times-cancel">Cancel</button>` : ""}<button class="btn sm primary" data-action="my-times-save">Save my times</button></div>
+    </div>`;
+  }
+  function readTimes(){
+    const s = ui.timesDraft; if(!s) return;
+    $$("[data-mt-f]").forEach(inp => { const d = s.days[+inp.dataset.i]; if(d) d[inp.dataset.mtF] = inp.value; });
+    $$("[data-mt-on]").forEach(inp => { const d = s.days[+inp.dataset.mtOn]; if(d) d.on = inp.checked; });
+  }
+  async function saveTimes(){
+    readTimes();
+    const s = ui.timesDraft, w = currentWeek(); if(!s || !w) return false;
+    const days = s.days.filter(d => d.on).map(d => ({ date:d.date, from:d.from, to:d.to, break_from:d.break_from || null, break_to:d.break_to || null }));
+    const bad = days.find(d => toMin(d.from) == null || toMin(d.to) == null || toMin(d.to) <= toMin(d.from));
+    if(bad){ alert(`Check your hours on ${fmtDate(bad.date)}.`); return false; }
+    const row = { week_id: w.id, teacher: s.teacher, days, updated_by_name: myName(), updated_at: new Date().toISOString() };
+    const { data, error } = await sbClient.from("ptc_teacher_hours").upsert([row], { onConflict:"week_id,teacher" }).select();
+    if(error || !data || !data.length){ alert("Couldn't save your times" + (error ? ": " + error.message : " — the database didn't allow it") + "."); return false; }
+    const i = hours.findIndex(h => h.week_id === w.id && h.teacher === s.teacher);
+    if(i >= 0) hours[i] = data[0]; else hours.push(data[0]);
+    logHistory("ptc_times", `${s.teacher}: free times for ${w.name}`, "ptc_week", w.id, { days });
+    ui.timesDraft = null; ui.editTimes = false;
+    return true;
+  }
+
+  /* ----- invite (one teacher's meetings with one family) ----- */
+  function myInviteText(familyKey, t){
+    const w = currentWeek(), slotMin = (w && w.slot_minutes) || 15;
+    const fam = weekSessions().filter(x => sessFamily(x) === familyKey);
+    const mine = fam.filter(x => x.teacher === t && x.date).sort(bySlot);
+    const others = fam.filter(x => x.teacher !== t && x.date).sort(bySlot);
+    const p = parentOf([...new Set(fam.map(x => x.student_id))]);
+    const first = n => { const s = studentById.get(n.student_id); return (s && s.first_name) || (sessName(n).split(",")[1] || sessName(n)).trim(); };
+    const lines = [`Good day${p.name ? ", " + p.name : ""}! 😊 This is ${t} from Kumon Iligan City.`, "", `Our Parent-Teacher Conference (PTC) week is ${w ? weekRange(w) : ""}. I've set aside this time for you:`];
+    mine.forEach(x => lines.push(`• ${fmtDateLong(x.date)}, ${fmt12(x.time)} – ${fmt12(toMin(x.time) + slotMin)}: ${first(x)}${x.subjects ? " (" + x.subjects + ")" : ""}`));
+    if(others.length){ lines.push(""); others.forEach(o => lines.push(`${first(o)} also meets ${o.teacher}: ${fmtDateLong(o.date)}, ${fmt12(o.time)}.`)); }
+    lines.push("", "Does that time work for you? If not, just reply and we'll find another time. Thank you!");
+    return lines.join("\n");
+  }
+
+  /* ----- change time / pick a time: back-to-back times free for this teacher and the family ----- */
+  MODALS.resched = (s) => {
+    const w = currentWeek(); if(!w) return { title:"Change time", body:"" };
+    const list = weekSessions();
+    const fam = list.filter(o => sessFamily(o) === s.family && o.teacher === s.teacher);
+    if(!fam.length) return { title:"Change time", body:`<div class="empty">Nothing to move.</div>`, foot:`<button class="btn" data-action="close-modal">Close</button>` };
+    const tw = teacherWeek(w, s.teacher), slotMin = tw.slot_minutes, L = fam.length;
+    const occ = occupancy(list.map(x => Object.assign({}, x, { family: sessFamily(x) })), new Set(fam.map(o => o.id)));
+    const others = list.filter(o => sessFamily(o) === s.family && o.teacher !== s.teacher && o.date);
+    const ct = classTimesOf([...new Set(fam.map(o => o.student_id))]);
+    const opts = [];
+    for(const d of tw.days){
+      if(s.day && s.day !== "all" && d.date !== s.day) continue;
+      const sl = daySlots(d, slotMin);
+      for(let i = 0; i + L <= sl.length; i++){
+        if(sl[i + L - 1] !== sl[i] + (L - 1) * slotMin) continue;
+        const times = sl.slice(i, i + L);
+        const order = assignBlock(fam.map(o => Object.assign({}, o)), times, (o, m) => !occ.teacherAt(d.date, m, o.teacher) && !occ.familyAt(d.date, m, s.family));
+        if(!order) continue;
+        if(fam.every(o => o.date === d.date && toMin(o.time) === times[order.indexOf(order.find(z => z.id === o.id))])) continue;   // where they are now
+        const next = others.some(o => o.date === d.date && (toMin(o.time) === times[0] + L * slotMin || toMin(o.time) + slotMin === times[0]));
+        const sameDay = others.some(o => o.date === d.date);
+        opts.push({ date:d.date, times, order, next, score: (next ? -1000 : sameDay ? -300 : 0) + prefScore(d.date, times[0], ct, {}) });
+      }
+    }
+    opts.sort((a, b) => s.day && s.day !== "all" ? (a.times[0] - b.times[0]) : (a.score - b.score));
+    s.opts = opts;
+    const cur = fam.filter(x => x.date);
+    const names = [...new Set(fam.map(x => (sessName(x).split(",")[1] || sessName(x)).trim()))];
+    const shown = opts.slice(0, s.day && s.day !== "all" ? 80 : 12);
+    return {
+      size:"wide",
+      title: `${cur.length ? "Change time" : "Pick a time"} · ${names.map(esc).join(", ")}`,
+      body: `<div class="hint">${cur.length ? `Now: ${cur.map(x => `${esc(fmtDateLong(x.date))}, ${esc(fmt12(x.time))}`).join(" · ")}. ` : ""}Only times that are free for you${others.length ? " and don't clash with this family's other teachers" : ""}. ${others.length ? `Other teachers: ${others.map(o => `${esc(o.teacher)} ${esc(fmtDate(o.date))} ${esc(fmt12(o.time))}`).join(" · ")}.` : ""}</div>
+        <div class="chips"><button class="chip${!s.day || s.day === "all" ? " active" : ""}" data-action="rs-day" data-day="all">Best times</button>${tw.days.map(d => `<button class="chip${s.day === d.date ? " active" : ""}" data-action="rs-day" data-day="${esc(d.date)}">${esc(fmtDate(d.date))}</button>`).join("")}</div>
+        <div class="slot-grid">${shown.map((o, k) => `<button class="slot${o.next ? " near" : ""}" data-action="rs-pick" data-k="${k}">${esc(fmt12(o.times[0]))}<small>${s.day && s.day !== "all" ? (o.next ? "next to sibling" : "free") : esc(fmtDate(o.date))}${!(s.day && s.day !== "all") && o.next ? " · next to sibling" : ""}</small></button>`).join("") || `<div class="hint">No free time${s.day && s.day !== "all" ? " on this day" : ""}. Add hours in <b>Change my times</b>.</div>`}</div>
+        ${cur.length && fam.some(x => x.status !== "draft") ? `<div class="hint">Changing the time puts them back in <b>To invite</b> as <b>Moved · re-invite</b>, so the parent gets the new time.</div>` : ""}`,
+      foot: `${cur.length ? `<button class="btn danger" data-action="rs-remove" style="margin-right:auto;">Remove from PTC week</button>` : ""}<button class="btn" data-action="close-modal">Close</button>`
+    };
+  };
+  async function pickResched(k){
+    const o = modalState.opts && modalState.opts[k]; if(!o) return;
+    for(let j = 0; j < o.order.length; j++){
+      const x = sessions.find(y => y.id === o.order[j].id); if(!x) continue;
+      const r = await sbClient.from("ptc_sessions").update(Object.assign({ date:o.date, time: fromMin(o.times[j]) }, movedPatch(x))).eq("id", x.id).select();
+      if(r.error || !r.data || !r.data.length){ alert("Couldn't change the time for " + sessName(x) + (r.error ? ": " + r.error.message : " — the database didn't allow it") + "."); break; }
+      Object.assign(x, r.data[0]);
+    }
+    logHistory("ptc_move", `${o.order.map(sessName).join(", ")} (${modalState.teacher}) → ${fmtDate(o.date)} ${fmt12(o.times[0])}`, "ptc_week", ui.weekId, null);
+    closeModal(); await loadSessions(); render(); toast("Time saved. It's in To invite now.");
+  }
+  async function fillMyTimes(t){
+    const w = currentWeek(); if(!w) return;
+    const pairs = missingOf(t);
+    if(!pairs.length){ toast("Everyone already has a time."); return; }
+    const plan = await runDraft(pairs, false, teacherWeek(w, t));
+    if(plan) toast(`Booked ${plan.placed.length}` + (plan.unplaced.length ? ` · ${plan.unplaced.length} didn't fit (under No time yet)` : "") + ".");
+  }
+  async function bookByHand(t){
+    const w = currentWeek(); if(!w) return;
+    const pairs = missingOf(t); if(!pairs.length) return;
+    const by = myName();
+    const rows = pairs.map(i => ({ week_id: w.id, student_id: i.student_id, student_name: i.student_name || studentName(i.student_id), teacher: i.teacher, subjects: i.subjects || null, date: null, time: null, status: "draft", updated_by_name: by }));
+    const { error } = await sbClient.from("ptc_sessions").upsert(rows, { onConflict: "week_id,student_id,teacher", ignoreDuplicates: true });
+    if(error){ alert("Couldn't add them: " + error.message); return; }
+    logHistory("ptc_draft", `${w.name}: ${t} added ${rows.length} without a time`, "ptc_week", w.id, null);
+    await loadSessions(); render(); toast(`${rows.length} added under No time yet. Tap Pick a time on each.`);
   }
 
   /* --- siblings (admins) --- */
@@ -2191,6 +2552,8 @@ window.kumonPtcNav = function(client, role){
     const t = e.target;
     if(t.id === "dueTeacher"){ ui.dueTeacher = t.value; renderDue(); }
     else if(t.id === "weekTeacher"){ ui.weekTeacher = t.value; renderWeek(); }
+    else if(t.id === "myTeacherPick"){ ui.myTeacher = t.value; ui.timesDraft = null; ui.editTimes = false; renderWeek(); }
+    else if(t.dataset.mtOn != null || t.dataset.mtF){ readTimes(); renderWeek(); }
     else if(t.id === "weekPick"){ ui.weekId = t.value; lsSet("weekId", ui.weekId); ui.weekDay = "all"; await loadSessions(); renderWeek(); }
     else if(t.dataset.msStatus){
       const [sid, mn] = t.dataset.msStatus.split("|");
@@ -2362,7 +2725,7 @@ window.kumonPtcNav = function(client, role){
     if(a === "invite"){ openModal({ kind:"invite", family: btn.dataset.family }); return; }
     if(a === "invite-copy"){
       const ok = await copyText($("#inviteText").value);
-      if(btn.dataset.mark){ await setStatus(weekSessions().filter(x => sessFamily(x) === modalState.family && x.status === "draft" && x.date), "invited"); closeModal(); render(); }
+      if(btn.dataset.mark){ await setStatus(weekSessions().filter(x => sessFamily(x) === modalState.family && (!modalState.teacher || x.teacher === modalState.teacher) && x.status === "draft" && x.date), "invited"); closeModal(); render(); }
       toast(ok ? (btn.dataset.mark ? "Copied — marked invited." : "Copied.") : "Select the text and copy it.");
       return;
     }
@@ -2371,6 +2734,47 @@ window.kumonPtcNav = function(client, role){
       const n = await setStatus(list, btn.dataset.status);
       render(); if(n) toast(`${n} session${n === 1 ? "" : "s"} → ${STATUS[btn.dataset.status].label}`);
       return;
+    }
+    if(a === "my-open"){ ui.myTeacher = btn.dataset.teacher; ui.timesDraft = null; ui.editTimes = false; renderWeek(); window.scrollTo(0, 0); return; }
+    if(a === "my-back"){ ui.myTeacher = ""; ui.timesDraft = null; ui.editTimes = false; renderWeek(); return; }
+    if(a === "my-tab"){ ui.myTab = btn.dataset.tab; lsSet("myTab", ui.myTab); renderWeek(); return; }
+    if(a === "my-times"){ ui.editTimes = true; ui.timesDraft = null; renderWeek(); return; }
+    if(a === "my-times-cancel"){ ui.editTimes = false; ui.timesDraft = null; renderWeek(); return; }
+    if(a === "my-times-save"){ btn.disabled = true; if(await saveTimes()){ render(); toast("Your times are saved."); } else btn.disabled = false; return; }
+    if(a === "my-fill" || a === "my-hand"){
+      if(loadIssues.has("sessions") || loadIssues.has("weeks")){ alert("The PTC week didn't load properly, so the Hub can't tell who already has a time. Refresh the page first."); return; }
+      btn.disabled = true; const t = myTeacher();
+      if(a === "my-fill") await fillMyTimes(t); else await bookByHand(t);
+      return;
+    }
+    if(a === "my-copy"){
+      const fam = btn.dataset.family, t = btn.dataset.teacher, text = myInviteText(fam, t);
+      let ok = false; try{ await navigator.clipboard.writeText(text); ok = true; }catch(err){}
+      if(ok){ ui.copied.add(fam); renderWeek(); toast("Invite copied. Send it, then tap Mark invited."); }
+      else openModal({ kind:"invite", family: fam, teacher: t, text });
+      return;
+    }
+    if(a === "my-status" || a === "my-cant"){
+      const list = weekSessions().filter(x => sessFamily(x) === btn.dataset.family && x.teacher === btn.dataset.teacher && x.date);
+      const status = a === "my-cant" ? "cant" : btn.dataset.status;
+      btn.disabled = true;
+      const n = await setStatus(list, status);
+      if(status === "invited") ui.copied.delete(btn.dataset.family);
+      render();
+      if(a === "my-cant"){ openModal({ kind:"resched", family: btn.dataset.family, teacher: btn.dataset.teacher, day:"all", live:true }); return; }
+      if(n) toast(status === "invited" ? "Marked invited. It's in Waiting now." : status === "confirmed" ? "Confirmed." : STATUS[status].label + ".");
+      return;
+    }
+    if(a === "my-resched"){ openModal({ kind:"resched", family: btn.dataset.family, teacher: btn.dataset.teacher, day:"all", live:true }); return; }
+    if(a === "rs-day"){ modalState.day = btn.dataset.day; renderModal(); return; }
+    if(a === "rs-pick"){ btn.disabled = true; await pickResched(+btn.dataset.k); return; }
+    if(a === "rs-remove"){
+      const list = weekSessions().filter(x => sessFamily(x) === modalState.family && x.teacher === modalState.teacher);
+      if(!list.length || !confirm(`Remove ${[...new Set(list.map(sessName))].join(", ")} from your PTC week? They go back to “children without a time”.`)) return;
+      const r = await deleteWeekSessions(list.map(x => x.id));
+      if(!r.ok){ alert("Couldn't remove: " + r.message + ". Nothing was changed."); return; }
+      logHistory("ptc_remove", `Removed ${list.map(sessName).join(", ")} (${modalState.teacher}) from the PTC week`, "ptc_week", ui.weekId, null);
+      closeModal(); await loadSessions(); await refreshDue(); render(); return;
     }
     if(a === "siblings"){ openModal({ kind:"siblings", picked:[], q:"" }); return; }
     if(a === "sib-more"){ modalState.more = true; renderModal(); return; }

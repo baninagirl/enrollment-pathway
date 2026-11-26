@@ -475,6 +475,12 @@
   .td-title{ font-family:"Sora", system-ui, sans-serif; font-size:24px; font-weight:700; letter-spacing:-.03em; line-height:1.2; margin:0; }
   .td-dek{ color:var(--ink-muted); font-size:14.5px; margin:6px 0 0; line-height:1.5; max-width:64ch; }
   .td-sec{ margin-bottom:44px; }
+  /* PTC week: today's meetings (Nov 26) */
+  .td-ptcw{ display:flex; gap:16px; align-items:center; flex-wrap:wrap; background:var(--accent-soft); border-radius:18px; padding:16px 18px; margin-bottom:28px; }
+  .td-ptcw .big{ font-family:"Sora",sans-serif; font-size:34px; color:var(--accent); line-height:1; font-variant-numeric:tabular-nums; }
+  .td-ptcw > div{ flex:1; min-width:200px; }
+  .td-ptcw p{ margin:2px 0 0; color:var(--ink-muted); font-size:13.5px; }
+  .td-ptcw .btn{ text-decoration:none; }
   .td-ag{ margin-top:16px; padding:6px 0; overflow:hidden; }
   .td-ag-row{ display:grid; grid-template-columns:78px 4px minmax(0,1fr) auto; gap:14px; align-items:center; padding:12px 20px; }
   .td-ag-row + .td-ag-row{ border-top:1px solid var(--border); }
@@ -1745,6 +1751,21 @@ window.kumonPtcNav = function(client, role){
         ${isAdmin() || currentRole === "trainer_teacher" ? `<a class="td-bk-link" href="index.html#calendar">Open the DT &amp; Training calendar ›</a>` : ""}` : ""}
     </section>`;
   }
+  // PTC week: today's meetings for the teacher (or whoever is picked), next one first.
+  function renderPtcWeekToday(){
+    const list = (D.ptcToday || []).filter(x => teacherInFilter(x.teacher, tdUi.who) && x.time && x.status !== "cant");
+    if(!list.length) return "";
+    const nowM = (() => { const d = new Date(Date.now() + 8 * 3600e3); return d.getUTCHours() * 60 + d.getUTCMinutes(); })();
+    const toM = t => { const m = /^(\d{1,2}):(\d{2})/.exec(t || ""); return m ? +m[1] * 60 + +m[2] : 0; };
+    const left = list.filter(x => x.status !== "done" && x.status !== "no_show");
+    const next = left.find(x => toM(x.time) + 15 > nowM) || left[0];
+    const fam = next ? list.filter(x => x.family_key && x.family_key === next.family_key && x.teacher === next.teacher) : [];
+    const names = [...new Set((fam.length ? fam : [next]).filter(Boolean).map(x => firstName(x.student_id) || x.student_name))];
+    const t12 = t => { const m = toM(t), h = Math.floor(m / 60); return `${((h + 11) % 12) + 1}:${String(m % 60).padStart(2, "0")} ${h < 12 ? "AM" : "PM"}`; };
+    return `<section class="td-ptcw"><span class="big">${list.length}</span><div><b>PTC${list.length === 1 ? "" : "s"} today${left.length < list.length ? ` · ${list.length - left.length} done` : ""}</b>
+      <p>${next ? `Next at ${esc(t12(next.time))} · ${esc(names.join(", "))}${next.status === "confirmed" ? "" : " (not confirmed yet)"}` : "All done for today."}</p></div>
+      ${next ? `<a class="btn primary" href="student.html#s=${esc(next.student_id)}&ptc=${esc(next.id)}">Start ${esc(t12(next.time))}</a>` : ""}<a class="btn" href="ptc.html#week">My PTC week</a></section>`;
+  }
   function renderStories(){
     const ptc = ptcThisWeek(), today = todayISO(), over = ptc.filter(d => d.due_date < today);
     const enrs = scopeEnrollments(), np = noProjection(), beh = behindKis(), long = beh.filter(o => o.k.months >= 6);
@@ -1825,7 +1846,7 @@ window.kumonPtcNav = function(client, role){
     const tIn = $("#todoText"), dIn = $("#todoDue"), fIn = $("#todoFor");
     const draft = tIn ? { t: tIn.value, d: dIn ? dIn.value : "", f: fIn ? fIn.value : "", focus: document.activeElement === tIn } : keepTodoDraft;
     if(draft) keepTodoDraft = draft;   // so the to-do card is rebuilt with what's being typed and the chosen day
-    $("#view").innerHTML = warn + renderDay() + renderBookings() + renderTodos() + renderStories() + renderScore() + renderKis();
+    $("#view").innerHTML = warn + renderPtcWeekToday() + renderDay() + renderBookings() + renderTodos() + renderStories() + renderScore() + renderKis();
     if(draft){ keepTodoDraft = draft; const a = $("#todoText"), b = $("#todoDue"), c = $("#todoFor");
       if(a){ a.value = draft.t || ""; if(draft.focus){ a.focus(); a.setSelectionRange(a.value.length, a.value.length); } } if(b) b.value = draft.d || ""; if(c && draft.f) c.value = draft.f; }
     if(drawerStack.length) paintDrawer();
@@ -1936,6 +1957,7 @@ window.kumonPtcNav = function(client, role){
       tdLoad("history", async () => { D.hist = await selectAll("enrollment_monthly_history", "id,subject_enrollment_id,cycle_key,current_level,current_page,lwc", q => q.order("id")); }),
       tdLoad("projections", async () => { D.proj = await selectAll("study_projections", "subject_enrollment_id", q => q.order("subject_enrollment_id")); }),
       tdLoad("PTC", async () => { const r = await sbClient.rpc("ptc_due", { p_days_ahead: 7 }); if(r.error) throw r.error; D.due = r.data || []; }),
+      tdLoad("PTC week", async () => { D.ptcToday = await selectAll("ptc_sessions", "id,student_id,student_name,teacher,date,time,status,family_key", q => q.eq("date", todayISO()).order("time").order("id")); }),
       tdLoad("PTC done", async () => { D.ms = await selectAll("ptc_milestones", "student_id,month_no,due_date,status,done_on", q => q.gte("done_on", monthKey() + "-01").order("student_id")); }),
       tdLoad("payments", async () => { D.rec = await selectAll("payment_receipts", "student_id,covers_month,status,created_at", q => q.gte("covers_month", monthKey() + "-01").lte("covers_month", monthEndOf(monthKey())).order("student_id").order("id")); }),
       tdLoad("absences", async () => { D.abs = await selectAll("absence_records", "student_id,subject_enrollment_ids,marked_absent_at,resumed_at", q => q.order("marked_absent_at").order("id")); }),
