@@ -1422,10 +1422,14 @@ window.kumonPtcNav = function(client, role){
     const d = demandWin(sub, w), st = stockNow(sub), inc = incomingFor(sub);
     const out = {}; let total = 0;
     for(const lv of WS_LEVELS[sub]) for(const b of blocksOf(sub)){
-      const need = getN(d.map, lv, b); if(need <= 0.05) continue;
+      const need = getN(d.map, lv, b); if(need <= 0.05 && getN(d.gap, lv, b) <= 0.05) continue;
       // still on the shelf when this order arrives: today's shelf + what's on the way − what they use until then
-      const left = Math.max(0, (st ? Math.max(0, getN(st.map, lv, b)) : 0) + getN(inc, lv, b) - getN(d.gap, lv, b));
-      const n = Math.ceil(Math.max(0, need - left) - 1e-9);   // exact copies (Kumon takes any number)
+      const have = (st ? Math.max(0, getN(st.map, lv, b)) : 0) + getN(inc, lv, b), gapUse = getN(d.gap, lv, b);
+      const left = Math.max(0, have - gapUse);
+      // Nov 26 fix: what they need BEFORE the order arrives but isn't on the shelf was left out (Rasonabe, N 200 with
+      // O 11 at 0: he reaches O 11 in the first week, so it was never counted). Those copies are short too — order them.
+      const short = Math.max(0, gapUse - have);
+      const n = Math.ceil(Math.max(0, need - left) + short - 1e-9);   // exact copies (Kumon takes any number)
       if(n > 0){ (out[lv] = out[lv] || {})[b] = n; total += n; }
     }
     return { lines: out, total, win: w, weeks: Math.round(w.end / 7), stock: st, demand: d };
