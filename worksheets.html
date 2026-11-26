@@ -1178,7 +1178,11 @@ window.kumonPtcNav = function(client, role){
       g = upto + 1;
     }
   }
-  const monthEnd = key => { const [y, m] = key.split("-").map(Number); return iso(Date.UTC(y, m, 0)); };
+  /* A report month's LWC is where the child was on the 20th, when that report month ends (Nov 26 fix: these used to be
+     dated the last day of the calendar month, and today's LWC dated "today" — so a shelf count taken on Nov 19 counted
+     the whole November report's progress, which mostly happened before the count, as used after it). */
+  const monthEnd = key => { const [y, m] = key.split("-").map(Number); return iso(Date.UTC(y, m - 1, 20)); };
+  const prevMonthEnd = key => { const [y, m] = key.split("-").map(Number); return iso(Date.UTC(y, m - 2, 20)); };
 
   // For every enrollment of a subject: its known positions over time [{ date, G }] (oldest first).
   function trackOf(sub){
@@ -1189,9 +1193,13 @@ window.kumonPtcNav = function(client, role){
       const t = byEnr.get(h.subject_enrollment_id); if(!t || !h.cycle_key) continue;
       const G = hubPos(sub, h); if(G != null) t.pts.push({ date: monthEnd(h.cycle_key), G });
     }
+    // today's LWC belongs to the open report month: dated its 20th once that has passed (it isn't closed out yet)
+    const lastKey = wsHistory.reduce((m, h) => h.cycle_key && h.cycle_key > m ? h.cycle_key : m, "");
+    let liveDate = today;
+    if(lastKey){ const [y, m] = lastKey.split("-").map(Number); const openEnd = iso(Date.UTC(y, m, 20)); if(openEnd < today) liveDate = openEnd; }
     for(const t of byEnr.values()){
       const G = hubPos(sub, t.e);
-      if(G != null && t.e.status === "active") t.pts.push({ date: today, G });
+      if(G != null && t.e.status === "active") t.pts.push({ date: liveDate, G });
       t.pts.sort((a, b) => a.date < b.date ? -1 : 1);
       // positions only go forward (a typo'd lower level shouldn't count as negative use)
       for(let i = 1; i < t.pts.length; i++) if(t.pts[i].G < t.pts[i-1].G) t.pts[i].G = t.pts[i-1].G;
@@ -1224,8 +1232,7 @@ window.kumonPtcNav = function(client, role){
   /* ---------- the repeat factor: Kumon's Used ÷ what the children's progress alone would use ---------- */
   function advancedInMonth(sub, key){
     // pages advanced during month `key` (from the end of the month before to the end of `key`)
-    const tracks = trackOf(sub); const end = monthEnd(key);
-    const [y, m] = key.split("-").map(Number); const prevEnd = iso(Date.UTC(y, m - 1, 0));
+    const tracks = trackOf(sub); const end = monthEnd(key), prevEnd = prevMonthEnd(key);
     let pages = 0, kids = 0;
     for(const t of tracks.values()){
       const a = t.pts.find(p => p.date === prevEnd), b = t.pts.find(p => p.date === end);
@@ -1272,7 +1279,7 @@ window.kumonPtcNav = function(client, role){
       // the child's own repeats: NWU × 10 ÷ pages moved, over the same months
       let used = 0, moved = 0;
       for(const h of withNwu.slice(0, HIST_MONTHS)){
-        const end = monthEnd(h.cycle_key); const [y, m] = h.cycle_key.split("-").map(Number); const prevEnd = iso(Date.UTC(y, m - 1, 0));
+        const end = monthEnd(h.cycle_key), prevEnd = prevMonthEnd(h.cycle_key);
         const a2 = t.pts.find(q => q.date === prevEnd), b2 = t.pts.find(q => q.date === end);
         if(a2 && b2){ used += Number(h.nwu) * 10; moved += Math.max(0, b2.G - a2.G); }
       }
@@ -1374,7 +1381,9 @@ window.kumonPtcNav = function(client, role){
     const P = plansOf(sub); const pos = c.positions || {};
     for(const pl of P.plans.values()){ const t = pl.t; if(pl.kc) continue;
       const after = t.pts.filter(p => p.date > c.counted_on);
-      const start = pos[t.e.id] != null ? Number(pos[t.e.id]) : (after.length ? after[0].G : null);
+      // where they were on the count day: the later of what was saved then and what the reports now show for that day
+      const atCount = posOn(t, c.counted_on), saved = pos[t.e.id] != null ? Number(pos[t.e.id]) : null;
+      const start = saved != null || atCount != null ? Math.max(saved != null ? saved : -Infinity, atCount != null ? atCount : -Infinity) : (after.length ? after[0].G : null);
       const end = t.pts.length ? t.pts[t.pts.length - 1].G : null;
       if(start == null || end == null || end <= start) continue;
       walkPages(sub, start, end, (li, g, n) => addCopies(used, sub, g, n * pl.repAt(li) / 10));
@@ -1459,7 +1468,8 @@ window.kumonPtcNav = function(client, role){
       for(const t of trackOf(sub).values()){
         if(isKC(t.e)) continue;   // KC children don't use paper tests
         const after = t.pts.filter(p => p.date > c.counted_on);
-        const start = pos[t.e.id] != null ? Number(pos[t.e.id]) : (after.length ? after[0].G : null);
+        const atCount = posOn(t, c.counted_on), saved = pos[t.e.id] != null ? Number(pos[t.e.id]) : null;
+        const start = saved != null || atCount != null ? Math.max(saved != null ? saved : -Infinity, atCount != null ? atCount : -Infinity) : (after.length ? after[0].G : null);
         const end = t.pts.length ? t.pts[t.pts.length - 1].G : null;
         if(start == null || end == null || end <= start) continue;
         for(let li = 0; li < L.length; li++){ const e = (li + 1) * 200; if(e > start && e <= end && AT_LEVELS[sub].includes(L[li])) map[sub][L[li]] = (map[sub][L[li]] || 0) - AT_RETAKE; }
