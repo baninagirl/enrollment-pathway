@@ -544,7 +544,8 @@
   .cal-h{ position:sticky; top:0; z-index:3; background:var(--surface); border-bottom:1px solid var(--border); padding:9px 10px 7px; font-size:13px; font-weight:700; display:flex; flex-direction:column; }
   .cal-h span{ font-size:11px; font-weight:500; color:var(--ink-faint); } .cal-h.me{ color:var(--accent); }
   .cal-corner{ position:sticky; left:0; top:0; z-index:4; background:var(--surface); border-bottom:1px solid var(--border); }
-  .cal-t{ position:sticky; left:0; z-index:2; background:var(--surface); font-size:11px; color:var(--ink-faint); text-align:right; padding:0 7px; height:36px; padding-top:3px; white-space:nowrap; font-variant-numeric:tabular-nums; border-top:1px solid transparent; }
+  .cal-t{ position:sticky; left:0; z-index:2; background:var(--surface); font-size:11px; color:var(--ink-faint); text-align:right; padding:4px 8px 0; height:36px; box-sizing:border-box; white-space:nowrap; font-variant-numeric:tabular-nums; border-top:1px solid var(--surface-2); }
+  .cal-t.hour{ font-size:12px; font-weight:700; color:var(--ink); border-top-color:var(--border); }
   .cal-slot{ height:36px; border-left:1px solid var(--surface-2); border-top:1px solid var(--surface-2); padding:2px 3px; }
   .cal-slot.hour{ border-top-color:var(--border); }
   .cal-slot.off{ background:repeating-linear-gradient(135deg, var(--surface-2) 0 6px, transparent 6px 12px); }
@@ -2678,13 +2679,13 @@ window.kumonPtcNav = function(client, role){
       const sib = (famTeachers.get(sessFamily(x)) || new Set()).size > 1;
       const others = sib ? list.filter(o => sessFamily(o) === sessFamily(x) && o.teacher !== x.teacher).map(o => `${o.teacher} ${o.date ? (o.date === x.date ? "" : fmtDate(o.date) + " ") + fmt12(o.time) : "no time yet"}`).join(", ") : "";
       const dr = canDrag(x.teacher);
-      return `<div class="cal-card ${calStage(x)}${sib ? " sib" : ""}${dr ? "" : " locked"}"${dr ? ` draggable="true"` : ""} data-sid="${esc(x.id)}" data-action="${dr ? "cal-open" : ""}" title="${esc(sessName(x) + (x.subjects ? " · " + x.subjects : "") + " · " + (STATUS[x.status] || {}).label + (x.moved_at && x.status === "draft" ? " (moved)" : "") + (others ? " · sibling with " + others : ""))}"><b>${esc(sessName(x))}</b><small>${esc(x.subjects || "")}${x.status === "draft" && x.moved_at ? " · moved" : ""}${others ? " · sib " + esc(others) : ""}</small>${extra || ""}</div>`;
+      return `<div class="cal-card ${calStage(x)}${sib ? " sib" : ""}${dr ? "" : " locked"}"${dr ? ` draggable="true"` : ""} data-sid="${esc(x.id)}" data-action="${dr ? "cal-open" : ""}" title="${esc(sessName(x) + (x.subjects ? " · " + x.subjects : "") + " · " + (STATUS[x.status] || {}).label + (x.moved_at && x.status === "draft" ? " (moved)" : "") + (others ? " · sibling with " + others : ""))}"><b>${esc(sessName(x))}</b><small>${x.time ? esc(fmt12(x.time)) + (x.subjects ? " · " : "") : ""}${esc(x.subjects || "")}${x.status === "draft" && x.moved_at ? " · moved" : ""}${others ? " · sib " + esc(others) : ""}</small>${extra || ""}</div>`;
     };
     const me = currentTeacherName;
-    let h = `<div class="cal-grid" style="grid-template-columns:58px repeat(${cols.length}, minmax(150px,1fr))"><div class="cal-corner"></div>`;
+    let h = `<div class="cal-grid" style="grid-template-columns:74px repeat(${cols.length}, minmax(150px,1fr))"><div class="cal-corner"></div>`;
     cols.forEach(t => { const n = list.filter(x => x.teacher === t && x.date === day).length; h += `<div class="cal-h${t === me ? " me" : ""}">${esc(t)}${t === me ? " (you)" : ""}<span>${n} PTC${n === 1 ? "" : "s"}${free.get(t).size ? "" : " · not free"}</span></div>`; });
     rows.forEach(m => {
-      h += `<div class="cal-t">${m % 60 === 0 ? esc(fmt12(m)) : ""}</div>`;
+      h += `<div class="cal-t${m % 60 === 0 ? " hour" : ""}">${m % 60 === 0 ? esc(fmt12(m)) : esc(fmt12(m).replace(/ (AM|PM)$/, ""))}</div>`;
       cols.forEach(t => { const x = at.get(t + "|" + m); h += `<div class="cal-slot${m % 60 === 0 ? " hour" : ""}${free.get(t).has(m) ? "" : " off"}" data-t="${esc(t)}" data-m="${m}">${x ? card(x) : ""}</div>`; });
     });
     h += `</div>`;
