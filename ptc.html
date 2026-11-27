@@ -598,6 +598,8 @@
   .mw-fix-act{ display:flex; gap:8px; flex-wrap:wrap; }
   .mw-warn{ color:var(--bad); font-weight:600; }
   .mw-edit .day-rows{ padding:12px 16px 0; }
+  .mw-add{ display:flex; gap:10px; align-items:center; flex-wrap:wrap; padding:10px 16px 0; }
+  .mw-add input{ max-width:180px; }
   .mw-cap{ padding:10px 16px; font-size:13px; color:var(--ink-muted); }
   .mw-cap.bad{ color:var(--bad); }
   .mw-edit .row-actions{ padding:0 16px 14px; }
@@ -1238,8 +1240,9 @@ window.kumonPtcNav = function(client, role){
     weeks = (data || []).map(w => Object.assign(w, { days: Array.isArray(w.days) ? w.days.slice().sort((a,b) => a.date < b.date ? -1 : 1) : [] }));
   }
   function pickDefaultWeek(){
-    const keep = weeks.find(w => w.id === (ui.weekId || lsGet("weekId", "")));
     const open = weeks.filter(w => !w.closed_at);
+    let keep = weeks.find(w => w.id === ui.weekId);
+    if(!keep){ const saved = weeks.find(w => w.id === lsGet("weekId", "")); if(saved && (!saved.closed_at || !open.length)) keep = saved; }
     ui.weekId = keep ? keep.id : (open[0] || weeks[0] || {}).id || null;
   }
   async function loadSessions(){
@@ -2234,7 +2237,7 @@ window.kumonPtcNav = function(client, role){
     const r = hoursRow(w, t);
     if(!r) return w.days;
     const inWeek = new Set(w.days.map(d => d.date));
-    return (Array.isArray(r.days) ? r.days : []).filter(d => inWeek.has(d.date)).sort((a,b) => a.date < b.date ? -1 : 1);
+    return (Array.isArray(r.days) ? r.days : []).filter(d => inWeek.has(d.date) || d.own).sort((a,b) => a.date < b.date ? -1 : 1);   // own = a day the teacher added
   }
   function teacherWeek(w, t){ return { id: w.id, name: w.name, days: teacherDays(w, t), slot_minutes: w.slot_minutes || 15 }; }
   function slotCount(days, slotMin){ return days.reduce((n, d) => n + daySlots(d, slotMin).length, 0); }
@@ -2325,7 +2328,7 @@ window.kumonPtcNav = function(client, role){
     const count = {}; fams.forEach(f => count[f.stage] = (count[f.stage] || 0) + 1);
     const notime = fams.filter(f => f.stage === "notime");
     const outside = weekSessions().filter(x => x.teacher === t && x.date && !inHours(tw, x));
-    const editing = ui.editTimes || (!set && !fams.length);
+    const editing = !w.closed_at && (ui.editTimes || (!set && !fams.length));
     const picker = isAdmin() ? `<button class="btn sm ghost" data-action="my-back">‹ All teachers</button>`
       : (myGroupTeachers().length > 1 ? `<select id="myTeacherPick">${myGroupTeachers().map(n => `<option value="${esc(n)}"${n === t ? " selected" : ""}>${esc(n)}${n === currentTeacherName ? " (you)" : ""}</option>`).join("")}</select>` : "");
     const step = (n, label, state) => `<span class="mw-step ${state}"><i>${state === "done" ? "✓" : n}</i>${label}</span>`;
@@ -2342,11 +2345,12 @@ window.kumonPtcNav = function(client, role){
 
     // 1. free times
     if(editing) html += timesEditor(w, t);
-    else html += `<div class="mw-times"><span><b>My free times:</b> ${set ? tw.days.map(d => `${esc(fmtDate(d.date))} ${esc(fmt12(d.from))}–${esc(fmt12(d.to))}`).join(" · ") || "none" : "not set yet"}</span><span class="faint">${cap} PTCs fit</span><button class="btn sm" data-action="my-times">${set ? "Change my times" : "Set my free times"}</button></div>`;
+    else html += `<div class="mw-times"><span><b>My free times:</b> ${set ? tw.days.map(d => `${esc(fmtDate(d.date))} ${esc(fmt12(d.from))}–${esc(fmt12(d.to))}`).join(" · ") || "none" : "not set yet"}</span><span class="faint">${cap} PTCs fit</span>${w.closed_at ? "" : `<button class="btn sm" data-action="my-times">${set ? "Change my times" : "Set my free times"}</button>`}</div>`;
 
     // 2. booking
     const noTimeKids = weekSessions().filter(x => x.teacher === t && !x.date).length, needTime = missing.length + noTimeKids;
-    if(needTime && !editing){
+    if(w.closed_at) html += `<div class="mw-fix warn"><p><b>This PTC week is closed.</b> Pick the current week in the box at the top to set times and book families.</p></div>`;
+    if(needTime && !editing && !w.closed_at){
       const short = missing.length + weekSessions().filter(x => x.teacher === t).length > cap;
       html += `<div class="mw-fix"><p><b>${needTime} child${needTime === 1 ? " doesn't" : "ren don't"} have a PTC time yet.</b> ${set ? "Fill my times books them all near each family's usual class time, next to a sibling's PTC when there is one. You can move anyone after." : "Set your free times first, then Fill my times books them all."}${short ? ` <br><span class="mw-warn">Your times fit ${cap} PTCs, so not everyone fits. Add more hours, or book the rest by hand.</span>` : ""}</p>
         <div class="mw-fix-act">${missing.length ? `<button class="btn sm" data-action="my-hand">Book by hand</button>` : ""}<button class="btn sm primary" data-action="my-fill"${set ? "" : " disabled"}>Fill my times</button></div></div>`;
@@ -2413,6 +2417,9 @@ window.kumonPtcNav = function(client, role){
     if(ui.timesDraft && ui.timesDraft.week === w.id && ui.timesDraft.teacher === t) return ui.timesDraft;
     const r = hoursRow(w, t);
     const days = w.days.map(d => { const x = r && (r.days || []).find(y => y.date === d.date); return x ? Object.assign({ on:true }, x) : Object.assign({}, d, { on: !r }); });
+    const inWeek = new Set(w.days.map(d => d.date));
+    ((r && r.days) || []).filter(d => d.own && !inWeek.has(d.date)).forEach(d => days.push(Object.assign({ on:true }, d)));
+    days.sort((a, b) => a.date < b.date ? -1 : 1);
     return (ui.timesDraft = { week: w.id, teacher: t, days });
   }
   function timesEditor(w, t){
@@ -2424,10 +2431,11 @@ window.kumonPtcNav = function(client, role){
         <div class="day-row head"><span></span><span>Day</span><span>From</span><span>To</span><span>Break from</span><span>Break to</span></div>
         ${s.days.map((d, i) => `<div class="day-row">
           <input type="checkbox" data-mt-on="${i}"${d.on ? " checked" : ""} aria-label="Free on ${esc(fmtDate(d.date))}">
-          <span>${esc(fmtDate(d.date))}</span>
+          <span>${esc(fmtDate(d.date))}${d.own ? ` <button class="linkbtn" data-action="my-times-del" data-i="${i}" title="Remove this day">✕</button>` : ""}</span>
           ${["from","to","break_from","break_to"].map(k => `<input type="time" data-mt-f="${k}" data-i="${i}" value="${esc(d[k] || "")}"${d.on ? "" : " disabled"}>`).join("")}
         </div>`).join("")}
       </div>
+      <div class="mw-add"><input type="date" id="mtAddDate" aria-label="Day to add"><button class="btn sm" data-action="my-times-add">+ Add a day</button><span class="faint">For a day outside the PTC week, e.g. a Saturday you can come in.</span></div>
       <div class="mw-cap ${cap < need ? "bad" : ""}"><b>${cap}</b> PTCs fit in these times · you have <b>${need}</b> child${need === 1 ? "" : "ren"}${cap < need ? ` · <b>${need - cap} won't fit</b>, add more hours` : ""}</div>
       <div class="row-actions" style="justify-content:flex-end;">${hoursRow(w, t) || weekSessions().some(x => x.teacher === t) ? `<button class="btn sm" data-action="my-times-cancel">Cancel</button>` : ""}<button class="btn sm primary" data-action="my-times-save">Save my times</button></div>
     </div>`;
@@ -2440,7 +2448,7 @@ window.kumonPtcNav = function(client, role){
   async function saveTimes(){
     readTimes();
     const s = ui.timesDraft, w = currentWeek(); if(!s || !w) return false;
-    const days = s.days.filter(d => d.on).map(d => ({ date:d.date, from:d.from, to:d.to, break_from:d.break_from || null, break_to:d.break_to || null }));
+    const days = s.days.filter(d => d.on).map(d => Object.assign({ date:d.date, from:d.from, to:d.to, break_from:d.break_from || null, break_to:d.break_to || null }, d.own ? { own:true } : {}));
     const bad = days.find(d => toMin(d.from) == null || toMin(d.to) == null || toMin(d.to) <= toMin(d.from));
     if(bad){ alert(`Check your hours on ${fmtDate(bad.date)}.`); return false; }
     const row = { week_id: w.id, teacher: s.teacher, days, updated_by_name: myName(), updated_at: new Date().toISOString() };
@@ -2666,7 +2674,9 @@ window.kumonPtcNav = function(client, role){
     return all.filter(t => pairsOf(t).length || weekSessions().some(x => x.teacher === t));
   }
   function renderCalendar(w, weekSel){
-    const days = w.days.map(d => d.date);
+    const extra = new Set(); hours.filter(h => h.week_id === w.id).forEach(h => (h.days || []).forEach(d => { if(d.own) extra.add(d.date); }));
+    const calDays = [...new Set([...w.days.map(d => d.date), ...extra])].sort();
+    const days = calDays;
     if(!days.includes(ui.calDay)) ui.calDay = days.includes(todayISO()) ? todayISO() : days[0];
     const day = ui.calDay, slotMin = w.slot_minutes || 15;
     const cols = calCols(w);
@@ -2703,7 +2713,7 @@ window.kumonPtcNav = function(client, role){
     const viewSeg = `<div class="seg-mini"><button data-action="view" data-view="list">List</button><button class="on" data-action="view" data-view="cal">Calendar</button></div>`;
     const back = isAdmin() && ui.myTeacher ? `<button class="btn sm ghost" data-action="my-back">‹ All teachers</button>` : "";
     return `<div class="toolbar">${back}${weekSel}${viewSeg}<span class="grow"></span><label class="cal-who">Show <select id="calWhoPick"><option value="all"${!ui.calWho || ui.calWho === "all" ? " selected" : ""}>Everyone</option>${teacherList().filter(t => pairsOf(t).length || weekSessions().some(x => x.teacher === t)).map(t => `<option value="${esc(t)}"${calCols(w).length === 1 && calCols(w)[0] === t ? " selected" : ""}>${esc(t)}${t === currentTeacherName ? " (you)" : ""}</option>`).join("")}</select></label></div>
-      <div class="cal-days">${w.days.map(d => `<button class="mw-tab${d.date === day ? " on" : ""}" data-action="cal-day" data-day="${esc(d.date)}">${esc(fmtDate(d.date))}<em>${list.filter(x => x.date === d.date && cols.includes(x.teacher)).length}</em></button>`).join("")}</div>
+      <div class="cal-days">${calDays.map(d => `<button class="mw-tab${d === day ? " on" : ""}" data-action="cal-day" data-day="${esc(d)}">${esc(fmtDate(d))}<em>${list.filter(x => x.date === d && cols.includes(x.teacher)).length}</em></button>`).join("")}</div>
       <div class="cal-legend"><span><i class="lg invite"></i>To invite</span><span><i class="lg waiting"></i>Invited · no reply yet</span><span><i class="lg cant"></i>Can't make it</span><span><i class="lg confirmed"></i>Confirmed</span><span><i class="lg done"></i>Done</span><span><i class="lg sib"></i>Family also with another teacher</span><span><i class="lg off"></i>Not free</span></div>
       <div class="cal-wrap"><div class="cal-scroll">${cols.length ? h : `<div class="empty">No teachers to show.</div>`}</div>
         <aside class="cal-tray"><h3>No time yet <span class="faint">${nTray}</span></h3><p class="faint">${nTray ? "Drag one onto the calendar to book it." : "Everyone has a time."}</p>${tray}</aside></div>
@@ -3143,6 +3153,18 @@ window.kumonPtcNav = function(client, role){
     if(a === "my-back"){ ui.myTeacher = ""; ui.timesDraft = null; ui.editTimes = false; renderWeek(); return; }
     if(a === "my-tab"){ ui.myTab = btn.dataset.tab; lsSet("myTab", ui.myTab); renderWeek(); return; }
     if(a === "my-times"){ ui.editTimes = true; ui.timesDraft = null; renderWeek(); return; }
+    if(a === "my-times-add"){
+      readTimes(); const s0 = ui.timesDraft, v = ($("#mtAddDate") || {}).value;
+      if(!s0) return;
+      if(!v){ alert("Pick a day first."); return; }
+      const have = s0.days.find(d => d.date === v);
+      if(have) have.on = true;
+      else { const last = s0.days.filter(d => d.on).slice(-1)[0] || { from:"10:00", to:"18:30", break_from:"12:00", break_to:"13:30" };
+        s0.days.push({ date:v, on:true, own:true, from:last.from, to:last.to, break_from:last.break_from || "", break_to:last.break_to || "" });
+        s0.days.sort((a, b) => a.date < b.date ? -1 : 1); }
+      renderWeek(); return;
+    }
+    if(a === "my-times-del"){ readTimes(); const s0 = ui.timesDraft; if(s0) s0.days.splice(+btn.dataset.i, 1); renderWeek(); return; }
     if(a === "my-times-cancel"){ ui.editTimes = false; ui.timesDraft = null; renderWeek(); return; }
     if(a === "my-times-save"){ btn.disabled = true; if(await saveTimes()){ render(); toast("Your times are saved."); } else btn.disabled = false; return; }
     if(a === "my-fill" || a === "my-hand"){
