@@ -1606,14 +1606,15 @@ window.kumonPtcNav = function(client, role){
 
   /* ----- PTC week ----- */
   function renderWeek(){ renderWeekShell(); }
-  // A family with PTCs at more than one teacher is "together" when they're all on one day with no more than 15 minutes between them.
+  // A family with PTCs at more than one teacher is "not back to back" when the parent would wait 30 minutes or more
+  // between two of them, or has to come on two different days (Nov 28).
   function famApart(key){
     const list = weekSessions().filter(x => sessFamily(x) === key && x.date && x.time).sort(bySlot);
     if(list.length < 2 || new Set(list.map(x => x.teacher)).size < 2) return null;
     const slot = (currentWeek() && currentWeek().slot_minutes) || 15;
     for(let i = 1; i < list.length; i++){
       const a = list[i - 1], b = list[i];
-      if(a.date !== b.date || toMin(b.time) - (toMin(a.time) + slot) > 15) return list;
+      if(a.date !== b.date || toMin(b.time) - (toMin(a.time) + slot) >= 30) return list;
     }
     return null;
   }
@@ -2378,7 +2379,7 @@ window.kumonPtcNav = function(client, role){
     if(outside.length) html += `<div class="mw-fix warn"><p><b>${outside.length} PTC${outside.length === 1 ? " is" : "s are"} outside your free times</b> (you changed your times after booking). Use <b>Reschedule</b> on ${outside.length === 1 ? "it" : "them"} below.</p></div>`;
 
     const apartN = fams.filter(f => f.stage !== "done" && famApart(f.key)).length;
-    if(apartN) html += `<div class="mw-fix warn"><p><b>${apartN} famil${apartN === 1 ? "y isn't" : "ies aren't"} back to back</b> with their other teacher${apartN === 1 ? "" : "s"}, so the parent would wait or come twice. Tap <b>Reschedule</b> on ${apartN === 1 ? "it" : "each"}: the times right next to the other teacher are listed first.</p><div class="mw-fix-act"><button class="btn sm primary" data-action="join-up" data-teacher="${esc(t)}">Put mine back to back</button><button class="btn sm${ui.onlyApart ? " primary" : ""}" data-action="my-apart">${ui.onlyApart ? "Show all" : "Show only these"}</button></div></div>`;
+    if(apartN) html += `<div class="mw-fix warn"><p><b>${apartN} famil${apartN === 1 ? "y isn't" : "ies aren't"} back to back</b> with their other teacher${apartN === 1 ? "" : "s"}: the parent would wait 30 minutes or more, or come on two different days. Tap <b>Reschedule</b> on ${apartN === 1 ? "it" : "each"}: the times right next to the other teacher are listed first.</p><div class="mw-fix-act"><button class="btn sm primary" data-action="join-up" data-teacher="${esc(t)}">Put mine back to back</button><button class="btn sm${ui.onlyApart ? " primary" : ""}" data-action="my-apart">${ui.onlyApart ? "Show all" : "Show only these"}</button></div></div>`;
     else ui.onlyApart = false;
     if(notime.length){
       html += `<div class="card"><div class="card-head"><h3>No time yet <span class="faint">${notime.length}</span></h3><span class="hint">Pick a time for each, then invite the parent.</span></div><div class="mw-list">${notime.map(f => famCard(w, t, f)).join("")}</div></div>`;
