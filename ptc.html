@@ -517,6 +517,8 @@
   .cap-table td, .cap-table th{ padding:5px 10px !important; font-size:12.5px !important; }
   .cap-bad{ color:var(--bad); font-weight:700; }
   .sib-group{ border:1px solid var(--border); border-radius:10px; padding:10px 12px; display:flex; flex-direction:column; gap:6px; }
+  .sib-fam{ border-top:1px solid var(--border); padding-top:8px; display:flex; flex-direction:column; gap:4px; }
+  .sib-row{ display:flex; justify-content:space-between; align-items:center; gap:10px; font-size:13px; }
   .sib-group label{ display:flex; gap:8px; align-items:center; font-size:13px; }
   .sib-group .row-actions{ justify-content:flex-start; }
   .note-chip{ font-size:11.5px; color:var(--ink-muted); white-space:normal; max-width:260px; display:inline-block; }
@@ -557,6 +559,8 @@
   .cal-card.invite{ background:var(--surface-2); border-color:var(--ink-faint); } .cal-card.waiting{ background:var(--warn-soft); border-color:var(--warn); } .cal-card.cant{ background:var(--bad-soft); border-color:var(--bad); }
   .cal-card.confirmed{ background:var(--good-soft); border-color:var(--good); } .cal-card.done{ background:var(--surface-2); border-color:var(--border); color:var(--ink-faint); }
   .cal-card.sib{ box-shadow:inset 0 0 0 1.5px var(--accent); } .cal-card.locked{ cursor:default; } .cal-card.dragging{ opacity:.35; }
+  .cal-card.apart{ box-shadow:inset 0 0 0 2px var(--bad); }
+  .lg.apart{ box-shadow:inset 0 0 0 2px var(--bad); background:var(--surface); }
   .cal-card.new{ border-style:dashed; border-width:1px 1px 1px 3px; }
   .cal-tray{ background:var(--surface); border:1px solid var(--border); border-radius:16px; padding:12px; display:flex; flex-direction:column; gap:8px; max-height:72vh; overflow:auto; }
   .cal-tray h3{ margin:0; font-size:14px; } .cal-tray p{ margin:0; font-size:12px; }
@@ -1398,7 +1402,8 @@ window.kumonPtcNav = function(client, role){
     const freeFor = (date, min, i) => !occ.teacherAt(date, min, i.teacher) && !occ.familyAt(date, min, i.family);
     const adjacentBonus = (fk, date, start, end) => {
       const ex = famExisting.get(fk) || []; if(!ex.length) return 0;
-      return ex.some(e => e.date === date && (e.min === end || e.min + slotMin === start)) ? -500 : (ex.some(e => e.date === date) ? -200 : 300);
+      // keeping a family back to back beats the spread-out caps (1000 / 400) — Nov 27
+      return ex.some(e => e.date === date && (e.min === end || e.min + slotMin === start)) ? -3000 : (ex.some(e => e.date === date) ? -1200 : 300);
     };
     const book = (i, date, min) => {
       const x = Object.assign({}, i, { date, time: fromMin(min) });
@@ -1601,6 +1606,20 @@ window.kumonPtcNav = function(client, role){
 
   /* ----- PTC week ----- */
   function renderWeek(){ renderWeekShell(); }
+  // A family with PTCs at more than one teacher is "together" when they're all on one day with no more than 15 minutes between them.
+  function famApart(key){
+    const list = weekSessions().filter(x => sessFamily(x) === key && x.date && x.time).sort(bySlot);
+    if(list.length < 2 || new Set(list.map(x => x.teacher)).size < 2) return null;
+    const slot = (currentWeek() && currentWeek().slot_minutes) || 15;
+    for(let i = 1; i < list.length; i++){
+      const a = list[i - 1], b = list[i];
+      if(a.date !== b.date || toMin(b.time) - (toMin(a.time) + slot) > 15) return list;
+    }
+    return null;
+  }
+  function famBasis(key){
+    return key.startsWith("pf:") ? "Linked as siblings in Siblings" : key.startsWith("bg:") ? "Same billing group in Payments" : "";
+  }
   // The admin-run table views from before Nov 26 (kept, not shown).
   function renderWeekOld(){
     const w = currentWeek();
@@ -2065,7 +2084,7 @@ window.kumonPtcNav = function(client, role){
       if(cur) return `<button class="slot current" disabled>${fmt12(m)}<small>now</small></button>`;
       if(fb) return `<button class="slot" disabled title="${esc(sessName(fb))} with ${esc(fb.teacher)}">${fmt12(m)}<small>sibling: ${esc(sessName(fb))}</small></button>`;
       if(tb) return `<button class="slot" disabled title="${esc(sessName(tb))}">${fmt12(m)}<small>${esc(sessName(tb))}</small></button>`;
-      return `<button class="slot${near ? " near" : ""}" data-action="move-to" data-time="${fromMin(m)}"${near ? ` title="Right next to a sibling's session"` : ""}>${fmt12(m)}<small>${near ? "next to sibling" : "free"}</small></button>`;
+      return `<button class="slot${near ? " near" : ""}" data-action="move-to" data-time="${fromMin(m)}"${near ? ` title="Right next to a sibling's session"` : ""}>${fmt12(m)}<small>${near ? "next to their other PTC" : "free"}</small></button>`;
     }).join("");
     const famLine = famOthers.length ? `<div class="hint">Same family: ${famOthers.sort(bySlot).map(o => `<b>${esc(sessName(o))}</b> ${esc(fmtDate(o.date))} ${esc(fmt12(o.time))} (${esc(o.teacher)})`).join(" · ")}. Green = right next to a sibling.</div>` : "";
     const famEditable = list.filter(o => sessFamily(o) === fam).every(o => canEditTeacher(o.teacher));
@@ -2293,7 +2312,8 @@ window.kumonPtcNav = function(client, role){
       const pairs = pairsOf(t).length, list = weekSessions().filter(x => x.teacher === t);
       const timed = list.filter(x => x.date).length;
       const c = k => list.filter(x => k.includes(x.status)).length;
-      return { t, pairs, timed, set: !!hoursRow(w, t), invite: c(["draft"]), waiting: c(["invited","cant"]), confirmed: c(["confirmed"]), done: c(["done","no_show"]), total: Math.max(pairs, list.length) };
+      const apart = new Set(list.filter(x => x.status !== "done" && x.status !== "no_show").map(sessFamily).filter(k => famApart(k))).size;
+      return { t, pairs, timed, apart, set: !!hoursRow(w, t), invite: c(["draft"]), waiting: c(["invited","cant"]), confirmed: c(["confirmed"]), done: c(["done","no_show"]), total: Math.max(pairs, list.length) };
     }).filter(r => r.total);
     const all = rows.reduce((a, r) => { ["total","timed","waiting","confirmed","done"].forEach(k => a[k] += r[k]); return a; }, { total:0, timed:0, waiting:0, confirmed:0, done:0 });
     return `<div class="toolbar">${weekSel}<div class="seg-mini"><button class="on" data-action="view" data-view="list">List</button><button data-action="view" data-view="cal">Calendar</button></div><button class="btn sm" data-action="week-edit">Days &amp; hours</button><button class="btn sm" data-action="week-new">New PTC week</button><button class="btn sm" data-action="siblings">Siblings</button><span class="grow"></span><button class="btn sm" data-action="redo-drafts" title="Book every PTC nobody has invited yet again, spread out">Redo all drafts</button><button class="btn sm primary" data-action="draft-all">Draft everyone</button>${w.closed_at ? `<span class="pill st-draft">Closed</span>` : ""}</div>
@@ -2301,13 +2321,13 @@ window.kumonPtcNav = function(client, role){
         ${ringSvg(all.confirmed + all.done, all.total, "PTCs confirmed")}
         <div class="mw-title"><h3>${esc(w.name)}</h3><span class="faint">${esc(weekRange(w))} · teachers set their own times and book their own families</span></div>
       </div>
-      <div class="card"><div class="table-scroll"><table class="stable mw-prog"><thead><tr><th>Teacher</th><th>Times</th><th>Booked</th><th>To invite</th><th>Invited</th><th>Confirmed</th><th>Done</th><th></th></tr></thead><tbody>
+      <div class="card"><div class="table-scroll"><table class="stable mw-prog"><thead><tr><th>Teacher</th><th>Times</th><th>Booked</th><th>To invite</th><th>Invited</th><th>Confirmed</th><th>Done</th><th>Not back to back</th><th></th></tr></thead><tbody>
         ${rows.map(r => `<tr class="mw-row" data-action="my-open" data-teacher="${esc(r.t)}">
           <td><b>${esc(r.t)}</b></td>
           <td>${r.set ? `<span class="pill st-confirmed">Set</span>` : `<span class="pill st-draft">Not set</span>`}</td>
           <td class="tnum">${!r.set && !r.timed ? `<span class="pill st-moved">Not started</span>` : `${r.timed} of ${r.total}`}</td>
-          <td class="tnum">${r.invite}</td><td class="tnum">${r.waiting}</td><td class="tnum">${r.confirmed}</td><td class="tnum">${r.done}</td>
-          <td><span class="btn sm ghost">Open</span></td></tr>`).join("") || `<tr><td colspan="8" class="faint">No teachers with active students.</td></tr>`}
+          <td class="tnum">${r.invite}</td><td class="tnum">${r.waiting}</td><td class="tnum">${r.confirmed}</td><td class="tnum">${r.done}</td><td class="tnum">${r.apart ? `<span class="pill st-cant">${r.apart}</span>` : "0"}</td>
+          <td><span class="btn sm ghost">Open</span></td></tr>`).join("") || `<tr><td colspan="9" class="faint">No teachers with active students.</td></tr>`}
       </tbody></table></div></div>`;
   }
   function ringSvg(n, total, word){
@@ -2357,6 +2377,9 @@ window.kumonPtcNav = function(client, role){
     }
     if(outside.length) html += `<div class="mw-fix warn"><p><b>${outside.length} PTC${outside.length === 1 ? " is" : "s are"} outside your free times</b> (you changed your times after booking). Use <b>Change time</b> on ${outside.length === 1 ? "it" : "them"} below.</p></div>`;
 
+    const apartN = fams.filter(f => f.stage !== "done" && famApart(f.key)).length;
+    if(apartN) html += `<div class="mw-fix warn"><p><b>${apartN} famil${apartN === 1 ? "y isn't" : "ies aren't"} back to back</b> with their other teacher${apartN === 1 ? "" : "s"}, so the parent would wait or come twice. Tap <b>Change time</b> on ${apartN === 1 ? "it" : "each"}: the times right next to the other teacher are listed first.</p><div class="mw-fix-act"><button class="btn sm${ui.onlyApart ? " primary" : ""}" data-action="my-apart">${ui.onlyApart ? "Show all" : "Show only these"}</button></div></div>`;
+    else ui.onlyApart = false;
     if(notime.length){
       html += `<div class="card"><div class="card-head"><h3>No time yet <span class="faint">${notime.length}</span></h3><span class="hint">Pick a time for each, then invite the parent.</span></div><div class="mw-list">${notime.map(f => famCard(w, t, f)).join("")}</div></div>`;
     }
@@ -2365,7 +2388,7 @@ window.kumonPtcNav = function(client, role){
     if(fams.length > notime.length){
       const tab = ui.myTab;
       const q = ui.weekSearch.trim().toLowerCase();
-      const shown = fams.filter(f => f.stage === tab && (!q || f.list.some(searchMatch)));
+      const shown = ui.onlyApart ? fams.filter(f => f.stage !== "done" && famApart(f.key)) : fams.filter(f => f.stage === tab && (!q || f.list.some(searchMatch)));
       html += `<div class="mw-tabs">${MY_TABS.map(([k, l]) => `<button class="mw-tab${tab === k ? " on" : ""}" data-action="my-tab" data-tab="${k}">${l}<em>${count[k] || 0}</em></button>`).join("")}<span class="grow"></span><input type="text" id="weekSearch" placeholder="Search child or parent…" value="${esc(ui.weekSearch)}" style="max-width:220px;"></div>
         <div class="mw-hint faint">${{ invite:"Copy the invite, send it to the parent by text or Messenger, then tap Mark invited.", waiting:"When the parent replies, tap Confirmed, or Can't make it to pick another time.", confirmed:"On the day, tap Start. The child's profile opens with everything for the meeting and a place for your notes.", done:"Meetings held. Open the notes any time; they're also on the child's profile under PTC history." }[tab]}</div>
         <div class="mw-list">${shown.map(f => famCard(w, t, f)).join("") || `<div class="empty">${q ? "No family matches your search." : { invite:"Everyone has been invited.", waiting:"No one is waiting for an answer.", confirmed:"No confirmed families yet.", done:"No meetings held yet." }[tab]}</div>`}</div>`;
@@ -2388,6 +2411,8 @@ window.kumonPtcNav = function(client, role){
     if(list.some(x => x.status === "cant")) tags.push(`<span class="pill st-cant">Can't make it</span>`);
     if(f.stage === "done") tags.push(list.every(x => x.status === "no_show") ? `<span class="pill st-no_show">Didn't come</span>` : `<span class="pill st-done">Done</span>`);
     if(list.some(x => x.date && !inHours(teacherWeek(w, t), x))) tags.push(`<span class="pill st-cant">Outside your times</span>`);
+    const apart = f.stage !== "done" && famApart(f.key);
+    if(apart) tags.push(`<span class="pill st-cant" title="This family's PTCs: ${esc(apart.map(x => `${x.teacher} ${fmtDate(x.date)} ${fmt12(x.time)}`).join(", "))}. Use Change time: times next to the other teacher are listed first.">Not back to back</span>`);
     const fk = esc(f.key), tt = esc(t);
     const change = canEdit ? `<button class="linkbtn" data-action="my-resched" data-family="${fk}" data-teacher="${tt}">Change time</button>` : "";
     let act = "";
@@ -2407,7 +2432,7 @@ window.kumonPtcNav = function(client, role){
     return `<div class="mw-fam">
       <div class="mw-when">${when}</div>
       <div class="mw-main"><div class="mw-name"><b>${esc([...new Set(list.map(sessName))].join(" · "))}</b>${tags.join("")}</div>
-        ${p.name || p.phone ? `<div class="faint mw-parent">Parent: ${esc([p.name, p.phone].filter(Boolean).join(" · "))}</div>` : ""}
+        ${p.name || p.phone || (kids.length > 1 || others.length) && famBasis(f.key) ? `<div class="faint mw-parent">${esc([p.name || p.phone ? "Parent: " + [p.name, p.phone].filter(Boolean).join(" · ") : "", (kids.length > 1 || others.length) ? famBasis(f.key) : ""].filter(Boolean).join(" · "))}</div>` : ""}
         <div class="mw-kids">${kidChips}</div>${otherLine}${list.find(x => x.note && f.stage !== "done") ? `<div class="faint mw-note">✎ ${esc(list.find(x => x.note).note)}</div>` : ""}</div>
       <div class="mw-act">${act}</div></div>`;
   }
@@ -2628,7 +2653,7 @@ window.kumonPtcNav = function(client, role){
       title: `${cur.length ? "Change time" : "Pick a time"} · ${names.map(esc).join(", ")}`,
       body: `<div class="hint">${cur.length ? `Now: ${cur.map(x => `${esc(fmtDateLong(x.date))}, ${esc(fmt12(x.time))}`).join(" · ")}. ` : ""}Only times that are free for you${others.length ? " and don't clash with this family's other teachers" : ""}. ${others.length ? `Other teachers: ${others.map(o => `${esc(o.teacher)} ${esc(fmtDate(o.date))} ${esc(fmt12(o.time))}`).join(" · ")}.` : ""}</div>
         <div class="chips"><button class="chip${!s.day || s.day === "all" ? " active" : ""}" data-action="rs-day" data-day="all">Best times</button>${tw.days.map(d => `<button class="chip${s.day === d.date ? " active" : ""}" data-action="rs-day" data-day="${esc(d.date)}">${esc(fmtDate(d.date))}</button>`).join("")}</div>
-        <div class="slot-grid">${shown.map((o, k) => `<button class="slot${o.next ? " near" : ""}" data-action="rs-pick" data-k="${k}">${esc(fmt12(o.times[0]))}<small>${s.day && s.day !== "all" ? (o.next ? "next to sibling" : "free") : esc(fmtDate(o.date))}${!(s.day && s.day !== "all") && o.next ? " · next to sibling" : ""}</small></button>`).join("") || `<div class="hint">No free time${s.day && s.day !== "all" ? " on this day" : ""}. Add hours in <b>Change my times</b>.</div>`}</div>
+        <div class="slot-grid">${shown.map((o, k) => `<button class="slot${o.next ? " near" : ""}" data-action="rs-pick" data-k="${k}">${esc(fmt12(o.times[0]))}<small>${s.day && s.day !== "all" ? (o.next ? "next to their other PTC" : "free") : esc(fmtDate(o.date))}${!(s.day && s.day !== "all") && o.next ? " · next to their other PTC" : ""}</small></button>`).join("") || `<div class="hint">No free time${s.day && s.day !== "all" ? " on this day" : ""}. Add hours in <b>Change my times</b>.</div>`}</div>
         ${cur.length && fam.some(x => x.status !== "draft") ? `<div class="hint">Changing the time puts them back in <b>To invite</b> as <b>Moved · re-invite</b>, so the parent gets the new time.</div>` : ""}`,
       foot: `${cur.length ? `<button class="btn danger" data-action="rs-remove" style="margin-right:auto;">Remove from PTC week</button>` : ""}<button class="btn" data-action="close-modal">Close</button>`
     };
@@ -2690,11 +2715,13 @@ window.kumonPtcNav = function(client, role){
     const free = new Map(cols.map(t => { const d = teacherDays(w, t).find(x => x.date === day); return [t, new Set(d ? daySlots(d, slotMin) : [])]; }));
     const at = new Map(); list.forEach(x => { if(x.date === day && x.time) at.set(x.teacher + "|" + toMin(x.time), x); });
     const famTeachers = new Map(); list.forEach(x => { const f = sessFamily(x); (famTeachers.get(f) || famTeachers.set(f, new Set()).get(f)).add(x.teacher); });
+    const apartSet = new Set([...famTeachers.keys()].filter(k => famTeachers.get(k).size > 1 && famApart(k)));
     const card = (x, extra) => {
       const sib = (famTeachers.get(sessFamily(x)) || new Set()).size > 1;
       const others = sib ? list.filter(o => sessFamily(o) === sessFamily(x) && o.teacher !== x.teacher).map(o => `${o.teacher} ${o.date ? (o.date === x.date ? "" : fmtDate(o.date) + " ") + fmt12(o.time) : "no time yet"}`).join(", ") : "";
       const dr = canDrag(x.teacher) && x.status !== "done" && x.status !== "no_show";
-      return `<div class="cal-card ${calStage(x)}${sib ? " sib" : ""}${dr ? "" : " locked"}"${dr ? ` draggable="true"` : ""} data-sid="${esc(x.id)}" data-action="${dr ? "cal-open" : ""}" title="${esc(sessName(x) + (x.subjects ? " · " + x.subjects : "") + " · " + (STATUS[x.status] || {}).label + (x.moved_at && x.status === "draft" ? " (moved)" : "") + (others ? " · also with " + others : ""))}"><b>${esc(sessName(x))}</b><small>${x.time ? esc(fmt12(x.time)) + (x.subjects ? " · " : "") : ""}${esc(x.subjects || "")}${x.status === "draft" && x.moved_at ? " · moved" : ""}${others ? " · also " + esc(others) : ""}</small>${extra || ""}</div>`;
+      const ap = sib && x.status !== "done" && x.status !== "no_show" && apartSet.has(sessFamily(x));
+      return `<div class="cal-card ${calStage(x)}${sib ? " sib" : ""}${ap ? " apart" : ""}${dr ? "" : " locked"}"${dr ? ` draggable="true"` : ""} data-sid="${esc(x.id)}" data-action="${dr ? "cal-open" : ""}" title="${esc(sessName(x) + (x.subjects ? " · " + x.subjects : "") + " · " + (STATUS[x.status] || {}).label + (x.moved_at && x.status === "draft" ? " (moved)" : "") + (others ? " · also with " + others : ""))}"><b>${esc(sessName(x))}</b><small>${x.time ? esc(fmt12(x.time)) + (x.subjects ? " · " : "") : ""}${esc(x.subjects || "")}${x.status === "draft" && x.moved_at ? " · moved" : ""}${others ? " · also " + esc(others) : ""}</small>${extra || ""}</div>`;
     };
     const me = currentTeacherName;
     let h = `<div class="cal-grid" style="grid-template-columns:74px repeat(${cols.length}, minmax(150px,1fr))"><div class="cal-corner"></div>`;
@@ -2714,7 +2741,7 @@ window.kumonPtcNav = function(client, role){
     const back = isAdmin() && ui.myTeacher ? `<button class="btn sm ghost" data-action="my-back">‹ All teachers</button>` : "";
     return `<div class="toolbar">${back}${weekSel}${viewSeg}<span class="grow"></span><label class="cal-who">Show <select id="calWhoPick"><option value="all"${!ui.calWho || ui.calWho === "all" ? " selected" : ""}>Everyone</option>${teacherList().filter(t => pairsOf(t).length || weekSessions().some(x => x.teacher === t)).map(t => `<option value="${esc(t)}"${calCols(w).length === 1 && calCols(w)[0] === t ? " selected" : ""}>${esc(t)}${t === currentTeacherName ? " (you)" : ""}</option>`).join("")}</select></label></div>
       <div class="cal-days">${calDays.map(d => `<button class="mw-tab${d === day ? " on" : ""}" data-action="cal-day" data-day="${esc(d)}">${esc(fmtDate(d))}<em>${list.filter(x => x.date === d && cols.includes(x.teacher)).length}</em></button>`).join("")}</div>
-      <div class="cal-legend"><span><i class="lg invite"></i>To invite</span><span><i class="lg waiting"></i>Invited · no reply yet</span><span><i class="lg cant"></i>Can't make it</span><span><i class="lg confirmed"></i>Confirmed</span><span><i class="lg done"></i>Done</span><span><i class="lg sib"></i>Family also with another teacher</span><span><i class="lg off"></i>Not free</span></div>
+      <div class="cal-legend"><span><i class="lg invite"></i>To invite</span><span><i class="lg waiting"></i>Invited · no reply yet</span><span><i class="lg cant"></i>Can't make it</span><span><i class="lg confirmed"></i>Confirmed</span><span><i class="lg done"></i>Done</span><span><i class="lg sib"></i>Family also with another teacher</span><span><i class="lg apart"></i>Not back to back</span><span><i class="lg off"></i>Not free</span></div>
       <div class="cal-wrap"><div class="cal-scroll">${cols.length ? h : `<div class="empty">No teachers to show.</div>`}</div>
         <aside class="cal-tray"><h3>No time yet <span class="faint">${nTray}</span></h3><p class="faint">${nTray ? "Drag one onto the calendar to book it." : "Everyone has a time."}</p>${tray}</aside></div>
       <div class="faint cal-foot">Drag a name to a free time in the same teacher's column. ${isAdmin() ? "As an admin you can move anyone." : "You can move your own families; everyone else's are shown for reference."} Moving a PTC that was already invited puts it back in To invite as Moved · re-invite. On a phone, tap a name to change its time.</div>`;
@@ -2832,7 +2859,7 @@ window.kumonPtcNav = function(client, role){
     const teachers = teacherList().filter(t => missingOf(t).length);
     if(!teachers.length){ toast("Everyone already has a time."); return; }
     const n = teachers.reduce((a, t) => a + missingOf(t).length, 0);
-    if(!noAsk && !confirm(`Book ${n} children for ${teachers.length} teachers?\n\nEach child goes into their teacher's free times (or the week's hours if the teacher hasn't set theirs), near their usual class time and next to siblings. Nobody already booked is moved. Teachers can change anything after.`)) return;
+    if(!noAsk && !confirm(`Book ${n} children for ${teachers.length} teachers?\n\nEach child goes into their teacher's free times (or the week's hours if the teacher hasn't set theirs), near their usual class time and next to their other PTCs. Nobody already booked is moved. Teachers can change anything after.`)) return;
     let placed = 0, unplaced = 0;
     for(let i = 0; i < teachers.length; i++){
       toast(`Booking ${teachers[i]} (${i + 1} of ${teachers.length})…`);
@@ -2881,9 +2908,11 @@ window.kumonPtcNav = function(client, role){
       size:"xwide",
       title:"Siblings",
       body:`<div class="hint">Siblings get back-to-back PTC times. Billing groups already count as one family. Below: children who share a parent phone number or a last name — tick the real siblings and link them. This only affects PTC scheduling, not billing.</div>
-        <div class="sib-group"><b>Link by hand</b>
+        <div class="sib-group"><b>Find a child</b><span class="hint">Link siblings by hand, or see a child's family and remove someone who isn't a sibling. Siblings don't need the same last name.</span>
           <input type="text" id="sibSearch" placeholder="Type a student's name…" value="${esc(s.q || "")}">
           ${found.length ? `<div class="chips">${found.map(x => `<button class="chip" data-action="sib-add" data-id="${esc(x.id)}">+ ${esc(studentName(x.id))}</button>`).join("")}</div>` : ""}
+          ${found.filter(x => !familyKeyOf(x.id).startsWith("st:")).slice(0, 6).map(x => { const key = familyKeyOf(x.id), mem = familyMembers(key).filter(id => enrollments.some(e => e.student_id === id));
+            return mem.length < 2 ? "" : `<div class="sib-fam"><div class="hint"><b>${esc(studentName(x.id))}</b>'s family · ${esc(famBasis(key))}</div>${mem.map(id => `<div class="sib-row"><span>${esc(studentName(id))}</span><button class="btn sm ghost" data-action="sib-remove" data-id="${esc(id)}">Remove from family</button></div>`).join("")}</div>`; }).join("")}
           ${pickedHtml}
           ${(s.picked || []).length >= 2 ? `<div class="row-actions"><button class="btn sm primary" data-action="sib-link-picked">Link these as siblings</button></div>` : `<div class="hint">Add two or more children.</div>`}
         </div>
@@ -3151,7 +3180,8 @@ window.kumonPtcNav = function(client, role){
     }
     if(a === "my-open"){ ui.myTeacher = btn.dataset.teacher; ui.timesDraft = null; ui.editTimes = false; renderWeek(); window.scrollTo(0, 0); return; }
     if(a === "my-back"){ ui.myTeacher = ""; ui.timesDraft = null; ui.editTimes = false; renderWeek(); return; }
-    if(a === "my-tab"){ ui.myTab = btn.dataset.tab; lsSet("myTab", ui.myTab); renderWeek(); return; }
+    if(a === "my-apart"){ ui.onlyApart = !ui.onlyApart; renderWeek(); return; }
+    if(a === "my-tab"){ ui.onlyApart = false; ui.myTab = btn.dataset.tab; lsSet("myTab", ui.myTab); renderWeek(); return; }
     if(a === "my-times"){ ui.editTimes = true; ui.timesDraft = null; renderWeek(); return; }
     if(a === "my-times-add"){
       readTimes(); const s0 = ui.timesDraft, v = ($("#mtAddDate") || {}).value;
@@ -3208,6 +3238,16 @@ window.kumonPtcNav = function(client, role){
     if(a === "sib-add"){ modalState.picked = [...new Set([...(modalState.picked || []), btn.dataset.id])]; modalState.q = ""; renderModal(); return; }
     if(a === "sib-link-picked"){ const ids = $$("[data-sib-picked]").filter(c => c.checked).map(c => c.dataset.sibPicked); await linkSiblings(ids); modalState.picked = []; renderModal(); return; }
     if(a === "sib-link"){ const ids = $$(`[data-sib-g="${btn.dataset.g}"]`).filter(c => c.checked).map(c => c.dataset.id); await linkSiblings(ids); return; }
+    if(a === "sib-remove"){
+      const id = btn.dataset.id;
+      if(!confirm(`Take ${studentName(id)} out of this family?\n\nThey'll get their own PTC invite and image. Nobody's PTC time changes. Billing groups in Payments aren't touched.`)) return;
+      btn.disabled = true;
+      const { error } = await sbClient.from("ptc_families").upsert([{ student_id: id, family_id: uuid() }], { onConflict:"student_id" });
+      if(error){ alert("Couldn't remove: " + error.message); btn.disabled = false; return; }
+      const r = await sbClient.rpc("ptc_refresh_families"); if(r.error) console.warn(r.error);
+      logHistory("ptc_siblings", `Removed ${studentName(id)} from their family`, "ptc_family", id, null);
+      await Promise.all([loadFamilies(), loadSessions()]); render(); renderModal(); toast(`${studentName(id)} is their own family now.`); return;
+    }
     if(a === "sib-dismiss"){ const ids = $$(`[data-sib-g="${btn.dataset.g}"]`).map(c => c.dataset.id); await dismissSiblings(ids); return; }
   });
   document.addEventListener("keydown", (e) => { if(e.key === "Escape" && modalState) closeModal(); });
