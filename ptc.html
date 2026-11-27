@@ -2344,10 +2344,11 @@ window.kumonPtcNav = function(client, role){
     else html += `<div class="mw-times"><span><b>My free times:</b> ${set ? tw.days.map(d => `${esc(fmtDate(d.date))} ${esc(fmt12(d.from))}–${esc(fmt12(d.to))}`).join(" · ") || "none" : "not set yet"}</span><span class="faint">${cap} PTCs fit</span><button class="btn sm" data-action="my-times">${set ? "Change my times" : "Set my free times"}</button></div>`;
 
     // 2. booking
-    if(missing.length && !editing){
+    const noTimeKids = weekSessions().filter(x => x.teacher === t && !x.date).length, needTime = missing.length + noTimeKids;
+    if(needTime && !editing){
       const short = missing.length + weekSessions().filter(x => x.teacher === t).length > cap;
-      html += `<div class="mw-fix"><p><b>${missing.length} child${missing.length === 1 ? " doesn't" : "ren don't"} have a PTC time yet.</b> ${set ? "Fill my times books them all near each family's usual class time, next to a sibling's PTC when there is one. You can move anyone after." : "Set your free times first, then Fill my times books them all."}${short ? ` <br><span class="mw-warn">Your times fit ${cap} PTCs, so not everyone fits. Add more hours, or book the rest by hand.</span>` : ""}</p>
-        <div class="mw-fix-act"><button class="btn sm" data-action="my-hand">Book by hand</button><button class="btn sm primary" data-action="my-fill"${set ? "" : " disabled"}>Fill my times</button></div></div>`;
+      html += `<div class="mw-fix"><p><b>${needTime} child${needTime === 1 ? " doesn't" : "ren don't"} have a PTC time yet.</b> ${set ? "Fill my times books them all near each family's usual class time, next to a sibling's PTC when there is one. You can move anyone after." : "Set your free times first, then Fill my times books them all."}${short ? ` <br><span class="mw-warn">Your times fit ${cap} PTCs, so not everyone fits. Add more hours, or book the rest by hand.</span>` : ""}</p>
+        <div class="mw-fix-act">${missing.length ? `<button class="btn sm" data-action="my-hand">Book by hand</button>` : ""}<button class="btn sm primary" data-action="my-fill"${set ? "" : " disabled"}>Fill my times</button></div></div>`;
     }
     if(outside.length) html += `<div class="mw-fix warn"><p><b>${outside.length} PTC${outside.length === 1 ? " is" : "s are"} outside your free times</b> (you changed your times after booking). Use <b>Change time</b> on ${outside.length === 1 ? "it" : "them"} below.</p></div>`;
 
@@ -2634,6 +2635,7 @@ window.kumonPtcNav = function(client, role){
   }
   async function fillMyTimes(t){
     const w = currentWeek(); if(!w) return;
+    if(!(await clearNoTime([t]))) return;
     const pairs = missingOf(t);
     if(!pairs.length){ toast("Everyone already has a time."); return; }
     const plan = await runDraft(pairs, false, teacherWeek(w, t));
@@ -2792,7 +2794,7 @@ window.kumonPtcNav = function(client, role){
     const redo = weekSessions().filter(x => x.status === "draft" && !x.moved_at);
     const keep = weekSessions().length - redo.length;
     if(!redo.length){ toast("No drafts to redo."); return; }
-    if(!confirm(`Redo ${redo.length} PTC times?\n\nEvery PTC that hasn't been invited yet is booked again, spread over all the PTC days with a short break every hour.\n\n${keep} PTC${keep === 1 ? "" : "s"} already invited, confirmed, moved or held stay where they are.\n\nIf a teacher copied an invite but didn't send it yet, that family's time will change.`)) return;
+    if(!confirm(`Redo ${redo.length} PTC times?\n\nEvery PTC that hasn't been invited yet is booked again, spread over all the PTC days with a short break every hour. This includes times teachers already changed by hand.\n\n${keep} PTC${keep === 1 ? "" : "s"} already invited, confirmed, moved or held stay where they are.\n\nIf a teacher copied an invite but didn't send it yet, that family's time will change.`)) return;
     toast(`Taking ${redo.length} drafts off…`);
     const r = await deleteWeekSessions(redo.map(x => x.id));
     if(!r.ok){ alert("Couldn't take the drafts off: " + r.message + (r.removed ? ` (${r.removed} were removed; press Draft everyone to book them again)` : ". Nothing was changed.")); await loadSessions(); render(); return; }
@@ -2802,8 +2804,17 @@ window.kumonPtcNav = function(client, role){
   }
 
   // ---- Draft everyone (admins): every child without a time, in each teacher's own free times ----
+  // PTCs left with no time by an earlier draft are booked again too (they're taken off first, then placed with everyone missing).
+  async function clearNoTime(teachers){
+    const ids = weekSessions().filter(x => !x.date && x.status === "draft" && teachers.includes(x.teacher)).map(x => x.id);
+    if(!ids.length) return true;
+    const r = await deleteWeekSessions(ids);
+    if(!r.ok){ alert("Couldn't redo the PTCs with no time: " + r.message); await loadSessions(); render(); return false; }
+    await loadSessions(); return true;
+  }
   async function draftEveryone(noAsk){
     const w = currentWeek(); if(!w) return;
+    if(!(await clearNoTime(teacherList()))) return;
     const teachers = teacherList().filter(t => missingOf(t).length);
     if(!teachers.length){ toast("Everyone already has a time."); return; }
     const n = teachers.reduce((a, t) => a + missingOf(t).length, 0);
