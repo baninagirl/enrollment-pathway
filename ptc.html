@@ -2436,10 +2436,22 @@ window.kumonPtcNav = function(client, role){
     const others = fam.filter(x => x.teacher !== t && x.date).sort(bySlot);
     const p = parentOf([...new Set(fam.map(x => x.student_id))]);
     const first = n => { const s = studentById.get(n.student_id); return (s && s.first_name) || (sessName(n).split(",")[1] || sessName(n)).trim(); };
-    const lines = [`Good day${p.name ? ", " + p.name : ""}! 😊 This is ${t} from Kumon Iligan City.`, "", `Our Parent-Teacher Conference (PTC) week is ${w ? weekRange(w) : ""}. I've set aside this time for you:`];
-    mine.forEach(x => lines.push(`• ${fmtDateLong(x.date)}, ${fmt12(x.time)} – ${fmt12(toMin(x.time) + slotMin)}: ${first(x)}${x.subjects ? " (" + x.subjects + ")" : ""}`));
-    if(others.length){ lines.push(""); others.forEach(o => lines.push(`${first(o)} also meets ${o.teacher}: ${fmtDateLong(o.date)}, ${fmt12(o.time)}.`)); }
-    lines.push("", "Does that time work for you? If not, just reply and we'll find another time. Thank you!");
+    const kids = [...new Set(mine.map(first))];
+    const names = kids.length > 1 ? kids.slice(0, -1).join(", ") + " and " + kids[kids.length - 1] : (kids[0] || "your child");
+    const lines = [
+      "👨‍👩‍👧 PTC Week is coming!",
+      `Good day${p.name ? ", " + p.name : ""}! This is ${t} from Kumon Iligan City Learning Center. We'd love to sit down with you and talk about ${names}'s progress. 💙`,
+      "",
+      "🗓️ Your schedule"
+    ];
+    mine.forEach(x => lines.push(`${fmtDate(x.date)} · ${fmt12(x.time)} – ${fmt12(toMin(x.time) + slotMin)} · ${first(x)}${x.subjects ? " (" + x.subjects + ")" : ""}`));
+    lines.push("", "⏱️ How long", `${slotMin} minutes, one-on-one with ${t}`);
+    if(others.length){
+      lines.push("", "👧👦 With their other teacher" + (others.length > 1 ? "s" : ""));
+      others.forEach(o => lines.push(`${first(o)} meets ${o.teacher} · ${fmtDate(o.date)} · ${fmt12(o.time)}`));
+      if(others.some(o => mine.some(x => x.date === o.date))) lines.push("We booked them back to back so you only need one trip.");
+    }
+    lines.push("", "Please reply to confirm. If the time doesn't work, tell us and we'll find you another one.", "", "See you at the center! 😊", `${t} · Kumon Iligan City Learning Center`);
     return lines.join("\n");
   }
 
