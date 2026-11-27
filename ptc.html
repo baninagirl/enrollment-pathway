@@ -2525,7 +2525,7 @@ window.kumonPtcNav = function(client, role){
     const lastN = n => { const s = studentById.get(n.student_id); return (s && s.last_name) || sessName(n).split(",")[0].trim(); };
     try{ await Promise.all(["700 96px Fredoka", "600 40px Fredoka", "800 30px Nunito", "900 22px Nunito", "700 20px Nunito"].map(f => document.fonts.load(f))); }catch(e){}
     const F = "Fredoka, Sora, sans-serif", N = "Nunito, Inter, sans-serif";
-    const W = 1080, H = 1350, c = document.createElement("canvas"); c.width = W; c.height = H;
+    const W = 1080, H = 2400, c = document.createElement("canvas"); c.width = W; c.height = H;   // drawn tall, cropped to fit below
     const ctx = c.getContext("2d"), ls = v => { try{ ctx.letterSpacing = v; }catch(e){} };
     ctx.fillStyle = "#FFFFFF"; ctx.fillRect(0, 0, W, H);
     // ornaments
@@ -2573,7 +2573,7 @@ window.kumonPtcNav = function(client, role){
       y += h + 16;
     }
     // the family's PTCs with other teachers
-    for(const o of others.slice(0, 3)){
+    for(const o of others){   // every PTC with the family's other teachers (Nov 28: no longer cut at 3)
       const h = 104;
       ctx.fillStyle = "#F6F7FA"; rr(ctx, L, y, CW, h, 22); ctx.fill(); ctx.strokeStyle = "#D9DCE6"; ctx.lineWidth = 2; ctx.stroke();
       const om = toMin(o.time), adj = mine.find(x => x.date === o.date && (toMin(x.time) + slotMin === om || om + slotMin === toMin(x.time)));
