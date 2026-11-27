@@ -2427,7 +2427,7 @@ window.kumonPtcNav = function(client, role){
     else if(f.stage === "waiting") act = list.some(x => x.status === "cant")
       ? `<button class="linkbtn" data-action="my-status" data-family="${fk}" data-teacher="${tt}" data-status="confirmed">They can come after all</button><button class="btn sm primary" data-action="my-resched" data-family="${fk}" data-teacher="${tt}">Pick a new time</button>`
       : `${change}<button class="linkbtn" data-action="my-copy" data-family="${fk}" data-teacher="${tt}">Copy invite again</button>${imgBtn}${startBtns(false)}<button class="btn sm" data-action="my-cant" data-family="${fk}" data-teacher="${tt}">Can't make it</button><button class="btn sm primary" data-action="my-status" data-family="${fk}" data-teacher="${tt}" data-status="confirmed">Confirmed</button>`;
-    else if(f.stage === "confirmed") act = change + imgBtn + startBtns(true);
+    else if(f.stage === "confirmed") act = `<button class="linkbtn" data-action="my-status" data-family="${fk}" data-teacher="${tt}" data-status="invited" title="Put it back in Invited (e.g. tapped Confirmed by mistake)">Not confirmed</button>` + change + imgBtn + startBtns(true);
     else act = list.map(x => `<a class="btn sm" href="student.html#s=${esc(x.student_id)}&ptc=${esc(x.id)}">${x.note ? "Open note" : "Add note"}${list.length > 1 ? " · " + esc((sessName(x).split(",")[1] || sessName(x)).trim()) : ""}</a>`).join("");
     return `<div class="mw-fam">
       <div class="mw-when">${when}</div>
@@ -3299,7 +3299,7 @@ window.kumonPtcNav = function(client, role){
       if(status === "invited") ui.copied.delete(btn.dataset.family);
       render();
       if(a === "my-cant"){ openModal({ kind:"resched", family: btn.dataset.family, teacher: btn.dataset.teacher, day:"all", live:true }); return; }
-      if(n) toast(status === "invited" ? "Marked invited. It's in the Invited tab now." : status === "confirmed" ? "Confirmed." : STATUS[status].label + ".");
+      if(n) toast(status === "invited" ? "It's in the Invited tab now." : status === "confirmed" ? "Confirmed." : STATUS[status].label + ".");
       return;
     }
     if(a === "my-resched"){ openModal({ kind:"resched", family: btn.dataset.family, teacher: btn.dataset.teacher, day:"all", live:true }); return; }
