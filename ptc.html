@@ -560,6 +560,7 @@
   .cal-tray h3{ margin:0; font-size:14px; } .cal-tray p{ margin:0; font-size:12px; }
   .cal-tray-item{ display:flex; flex-direction:column; gap:2px; } .cal-tray-item > span{ font-size:11px; color:var(--ink-faint); } .cal-tray-item .cal-card{ height:38px; }
   .cal-foot{ font-size:12px; margin-top:10px; }
+  .cal-who{ display:inline-flex; gap:8px; align-items:center; font-size:13px; font-weight:600; color:var(--ink-muted); }
   .cal-undo{ position:fixed; right:max(20px, env(safe-area-inset-right, 0px)); bottom:calc(20px + env(safe-area-inset-bottom, 0px)); z-index:96; display:flex; gap:12px; align-items:center; background:var(--surface); border:1px solid var(--border); box-shadow:var(--shadow-modal, 0 8px 24px rgba(0,0,0,.15)); border-radius:14px; padding:10px 14px; font-size:13px; max-width:min(420px, calc(100vw - 40px)); }
   .wk-pick{ display:grid; grid-template-columns:minmax(0,1fr); gap:14px; margin-top:10px; }
   .wk-cal{ max-width:320px; }
@@ -2516,8 +2517,10 @@ window.kumonPtcNav = function(client, role){
   function canDrag(t){ return isAdmin() || (!!currentTeacherName && t === currentTeacherName); }
   function calStage(x){ return x.status === "draft" ? "invite" : x.status === "confirmed" ? "confirmed" : (x.status === "done" || x.status === "no_show") ? "done" : x.status === "cant" ? "cant" : "waiting"; }
   function calCols(w){
-    if(ui.calWho === "me" && myTeacher()) return [myTeacher()];
-    return teacherList().filter(t => pairsOf(t).length || weekSessions().some(x => x.teacher === t));
+    const all = teacherList();
+    if(ui.calWho === "me" && (myTeacher() || currentTeacherName)) return [myTeacher() || currentTeacherName];
+    if(ui.calWho && ui.calWho !== "all" && all.includes(ui.calWho)) return [ui.calWho];
+    return all.filter(t => pairsOf(t).length || weekSessions().some(x => x.teacher === t));
   }
   function renderCalendar(w, weekSel){
     const days = w.days.map(d => d.date);
@@ -2556,7 +2559,7 @@ window.kumonPtcNav = function(client, role){
     const nTray = trayS.length + trayP.length;
     const viewSeg = `<div class="seg-mini"><button data-action="view" data-view="list">List</button><button class="on" data-action="view" data-view="cal">Calendar</button></div>`;
     const back = isAdmin() && ui.myTeacher ? `<button class="btn sm ghost" data-action="my-back">‹ All teachers</button>` : "";
-    return `<div class="toolbar">${back}${weekSel}${viewSeg}<span class="grow"></span>${myTeacher() || currentTeacherName ? `<div class="seg-mini"><button class="${ui.calWho !== "me" ? "on" : ""}" data-action="cal-who" data-who="all">Everyone</button><button class="${ui.calWho === "me" ? "on" : ""}" data-action="cal-who" data-who="me">${isAdmin() && myTeacher() ? esc(myTeacher()) : "Just me"}</button></div>` : ""}</div>
+    return `<div class="toolbar">${back}${weekSel}${viewSeg}<span class="grow"></span><label class="cal-who">Show <select id="calWhoPick"><option value="all"${!ui.calWho || ui.calWho === "all" ? " selected" : ""}>Everyone</option>${teacherList().filter(t => pairsOf(t).length || weekSessions().some(x => x.teacher === t)).map(t => `<option value="${esc(t)}"${calCols(w).length === 1 && calCols(w)[0] === t ? " selected" : ""}>${esc(t)}${t === currentTeacherName ? " (you)" : ""}</option>`).join("")}</select></label></div>
       <div class="cal-days">${w.days.map(d => `<button class="mw-tab${d.date === day ? " on" : ""}" data-action="cal-day" data-day="${esc(d.date)}">${esc(fmtDate(d.date))}<em>${list.filter(x => x.date === d.date && cols.includes(x.teacher)).length}</em></button>`).join("")}</div>
       <div class="cal-legend"><span><i class="lg invite"></i>To invite</span><span><i class="lg waiting"></i>Waiting</span><span><i class="lg cant"></i>Can't make it</span><span><i class="lg confirmed"></i>Confirmed</span><span><i class="lg done"></i>Done</span><span><i class="lg sib"></i>Sibling with another teacher</span><span><i class="lg off"></i>Not free</span></div>
       <div class="cal-wrap"><div class="cal-scroll">${cols.length ? h : `<div class="empty">No teachers to show.</div>`}</div>
@@ -2763,6 +2766,7 @@ window.kumonPtcNav = function(client, role){
     const t = e.target;
     if(t.id === "dueTeacher"){ ui.dueTeacher = t.value; renderDue(); }
     else if(t.id === "weekTeacher"){ ui.weekTeacher = t.value; renderWeek(); }
+    else if(t.id === "calWhoPick"){ ui.calWho = t.value; lsSet("calWho", ui.calWho); renderWeek(); }
     else if(t.id === "myTeacherPick"){ ui.myTeacher = t.value; ui.timesDraft = null; ui.editTimes = false; renderWeek(); }
     else if(t.dataset.mtOn != null || t.dataset.mtF){ readTimes(); renderWeek(); }
     else if(t.id === "weekPick"){ ui.weekId = t.value; lsSet("weekId", ui.weekId); ui.weekDay = "all"; await loadSessions(); renderWeek(); }
