@@ -2447,9 +2447,9 @@ window.kumonPtcNav = function(client, role){
     mine.forEach(x => lines.push(`${fmtDate(x.date)} · ${fmt12(x.time)} – ${fmt12(toMin(x.time) + slotMin)} · ${first(x)}${x.subjects ? " (" + x.subjects + ")" : ""}`));
     lines.push("", "⏱️ How long", `${slotMin} minutes, one-on-one with ${t}`);
     if(others.length){
-      lines.push("", "👧👦 With their other teacher" + (others.length > 1 ? "s" : ""));
-      others.forEach(o => lines.push(`${first(o)} meets ${o.teacher} · ${fmtDate(o.date)} · ${fmt12(o.time)}`));
-      if(others.some(o => mine.some(x => x.date === o.date))) lines.push("We booked them back to back so you only need one trip.");
+      lines.push("", "📚 Also booked for you");
+      others.forEach(o => lines.push(`With ${o.teacher}, about ${first(o)}'s ${o.subjects || "other subject"} · ${fmtDate(o.date)} · ${fmt12(o.time)}`));
+      if(others.some(o => mine.some(x => x.date === o.date))) lines.push("Your PTCs are back to back, so you only need one trip.");
     }
     lines.push("", "Please reply to confirm. If the time doesn't work, tell us and we'll find you another one.", "", "See you at the center! 😊", `${t} · Kumon Iligan City Learning Center`);
     return lines.join("\n");
