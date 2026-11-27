@@ -527,6 +527,51 @@
     .fam-actions{ justify-content:flex-start; max-width:none; }
     .day-row{ grid-template-columns: 22px 90px repeat(4, minmax(0,1fr)); }
   }
+  /* Calendar view + days picker (Nov 27) */
+  .seg-mini{ display:inline-flex; background:var(--surface-2); border-radius:11px; padding:3px; gap:2px; }
+  .seg-mini button{ font:inherit; font-size:13px; font-weight:600; border:none; background:none; color:var(--ink-muted); border-radius:8px; padding:6px 12px; cursor:pointer; }
+  .seg-mini button.on{ background:var(--surface); color:var(--ink); box-shadow:0 1px 2px rgba(0,0,0,.08); }
+  .cal-days{ display:flex; gap:6px; flex-wrap:wrap; margin:4px 0 8px; }
+  .cal-legend{ display:flex; gap:12px; flex-wrap:wrap; font-size:12px; color:var(--ink-muted); margin-bottom:10px; }
+  .cal-legend span{ display:inline-flex; gap:6px; align-items:center; }
+  .cal-legend .lg{ width:12px; height:12px; border-radius:4px; display:inline-block; border-left:3px solid transparent; }
+  .lg.invite{ background:var(--surface-2); border-color:var(--ink-faint) !important; } .lg.waiting{ background:var(--warn-soft); border-color:var(--warn) !important; } .lg.cant{ background:var(--bad-soft); border-color:var(--bad) !important; } .lg.confirmed{ background:var(--good-soft); border-color:var(--good) !important; } .lg.done{ background:var(--surface-2); }
+  .lg.sib{ box-shadow:inset 0 0 0 1.5px var(--accent); } .lg.off{ background:repeating-linear-gradient(135deg, var(--surface-2) 0 3px, transparent 3px 6px); }
+  .cal-wrap{ display:grid; grid-template-columns:minmax(0,1fr) 240px; gap:12px; align-items:start; }
+  .cal-scroll{ background:var(--surface); border:1px solid var(--border); border-radius:16px; overflow:auto; max-height:72vh; }
+  .cal-grid{ display:grid; min-width:max-content; }
+  .cal-h{ position:sticky; top:0; z-index:3; background:var(--surface); border-bottom:1px solid var(--border); padding:9px 10px 7px; font-size:13px; font-weight:700; display:flex; flex-direction:column; }
+  .cal-h span{ font-size:11px; font-weight:500; color:var(--ink-faint); } .cal-h.me{ color:var(--accent); }
+  .cal-corner{ position:sticky; left:0; top:0; z-index:4; background:var(--surface); border-bottom:1px solid var(--border); }
+  .cal-t{ position:sticky; left:0; z-index:2; background:var(--surface); font-size:11px; color:var(--ink-faint); text-align:right; padding:0 7px; height:36px; padding-top:3px; white-space:nowrap; font-variant-numeric:tabular-nums; border-top:1px solid transparent; }
+  .cal-slot{ height:36px; border-left:1px solid var(--surface-2); border-top:1px solid var(--surface-2); padding:2px 3px; }
+  .cal-slot.hour{ border-top-color:var(--border); }
+  .cal-slot.off{ background:repeating-linear-gradient(135deg, var(--surface-2) 0 6px, transparent 6px 12px); }
+  .cal-slot.over{ background:var(--accent-soft); outline:2px dashed var(--accent); outline-offset:-3px; }
+  .cal-slot.clash{ background:var(--bad-soft); outline:2px dashed var(--bad); outline-offset:-3px; }
+  .cal-card{ height:100%; min-height:30px; border-radius:7px; padding:2px 7px; font-size:12px; line-height:1.2; display:flex; flex-direction:column; justify-content:center; border-left:3px solid; overflow:hidden; white-space:nowrap; cursor:pointer; user-select:none; }
+  .cal-card[draggable]{ cursor:grab; }
+  .cal-card b{ font-weight:600; overflow:hidden; text-overflow:ellipsis; } .cal-card small{ font-size:10.5px; opacity:.8; overflow:hidden; text-overflow:ellipsis; }
+  .cal-card.invite{ background:var(--surface-2); border-color:var(--ink-faint); } .cal-card.waiting{ background:var(--warn-soft); border-color:var(--warn); } .cal-card.cant{ background:var(--bad-soft); border-color:var(--bad); }
+  .cal-card.confirmed{ background:var(--good-soft); border-color:var(--good); } .cal-card.done{ background:var(--surface-2); border-color:var(--border); color:var(--ink-faint); }
+  .cal-card.sib{ box-shadow:inset 0 0 0 1.5px var(--accent); } .cal-card.locked{ cursor:default; } .cal-card.dragging{ opacity:.35; }
+  .cal-card.new{ border-style:dashed; border-width:1px 1px 1px 3px; }
+  .cal-tray{ background:var(--surface); border:1px solid var(--border); border-radius:16px; padding:12px; display:flex; flex-direction:column; gap:8px; max-height:72vh; overflow:auto; }
+  .cal-tray h3{ margin:0; font-size:14px; } .cal-tray p{ margin:0; font-size:12px; }
+  .cal-tray-item{ display:flex; flex-direction:column; gap:2px; } .cal-tray-item > span{ font-size:11px; color:var(--ink-faint); } .cal-tray-item .cal-card{ height:38px; }
+  .cal-foot{ font-size:12px; margin-top:10px; }
+  .cal-undo{ position:fixed; right:max(20px, env(safe-area-inset-right, 0px)); bottom:calc(20px + env(safe-area-inset-bottom, 0px)); z-index:96; display:flex; gap:12px; align-items:center; background:var(--surface); border:1px solid var(--border); box-shadow:var(--shadow-modal, 0 8px 24px rgba(0,0,0,.15)); border-radius:14px; padding:10px 14px; font-size:13px; max-width:min(420px, calc(100vw - 40px)); }
+  .wk-pick{ display:grid; grid-template-columns:minmax(0,1fr); gap:14px; margin-top:10px; }
+  .wk-cal{ max-width:320px; }
+  .wk-cal-h{ display:flex; align-items:center; justify-content:space-between; margin-bottom:6px; font-size:14px; }
+  .wk-grid{ display:grid; grid-template-columns:repeat(7, 1fr); gap:3px; text-align:center; }
+  .wk-wd{ font-size:11px; color:var(--ink-faint); font-weight:600; padding:2px 0; }
+  .wk-d{ font:inherit; font-size:13px; border:1px solid transparent; background:none; color:var(--ink); border-radius:9px; height:32px; cursor:pointer; font-variant-numeric:tabular-nums; }
+  .wk-d:hover{ background:var(--surface-2); } .wk-d.today{ font-weight:700; }
+  .wk-d.on{ background:var(--accent-soft); color:var(--accent-soft-ink); border-color:var(--accent); font-weight:600; }
+  .wk-x{ font:inherit; font-size:12px; border:none; background:none; color:var(--ink-faint); cursor:pointer; padding:4px; }
+  .wk-x:hover{ color:var(--bad); }
+  @media (max-width:860px){ .cal-wrap, .wk-pick{ grid-template-columns:1fr; } .cal-tray{ max-height:none; } }
   /* PTC week, run by the teachers (Nov 26) */
   .mw-head{ display:flex; gap:18px; align-items:center; flex-wrap:wrap; padding:16px 18px; margin-bottom:12px; }
   .mw-ring{ position:relative; width:96px; height:96px; flex:none; }
@@ -569,6 +614,7 @@
   .mw-kids{ display:flex; gap:6px; flex-wrap:wrap; }
   .mw-kid{ font-size:12px; border-radius:8px; padding:2px 8px; background:var(--surface-2); color:var(--ink-muted); }
   .mw-other{ font-size:12px; color:var(--ink-muted); }
+  .mw-parent{ font-size:12px; }
   .mw-note{ font-size:12px; }
   .mw-act{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; justify-content:flex-end; }
   .mw-act a.btn{ text-decoration:none; }
@@ -923,7 +969,8 @@ window.kumonPtcNav = function(client, role){
     weekId: null,
     weekView: lsGet("weekView", "teacher"),   // teacher | family
     weekTeacher: "all", weekDay: "all", weekStatus: "all", weekSearch: "",
-    myTeacher: "", myTab: lsGet("myTab", "invite"), editTimes: false, timesDraft: null, copied: new Set()
+    myTeacher: "", myTab: lsGet("myTab", "invite"), editTimes: false, timesDraft: null, copied: new Set(),
+    weekView: lsGet("weekView", "list"), calDay: "", calWho: lsGet("calWho", "all")
   };
   let modalState = null;            // { kind, ... } — move modals re-render on live updates
 
@@ -1780,29 +1827,41 @@ window.kumonPtcNav = function(client, role){
   };
 
   /* --- new / edit PTC week (admins) --- */
+  // Days & hours: tap the dates on a small month calendar (any dates, e.g. Dec 2, 3, 4, 7 and 9), then set each day's hours.
   MODALS.week = (s) => {
+    const month = s.cal || (s.days[0] ? s.days[0].date.slice(0, 7) : todayISO().slice(0, 7));
+    const first = month + "-01", picked = new Set(s.days.map(d => d.date));
+    const lead = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].indexOf(weekdayOf(first));
+    const cells = []; for(let i = 0; i < lead; i++) cells.push(`<span></span>`);
+    for(let d = first; d.slice(0, 7) === month; d = addDaysISO(d, 1)) cells.push(`<button type="button" class="wk-d${picked.has(d) ? " on" : ""}${d === todayISO() ? " today" : ""}" data-action="wk-day" data-date="${d}">${+d.slice(8)}</button>`);
+    const shift = n => { const [y, m] = month.split("-").map(Number); const t = new Date(Date.UTC(y, m - 1 + n, 1)); return t.toISOString().slice(0, 7); };
+    const mLabel = new Date(first + "T00:00:00Z").toLocaleDateString("en-US", { timeZone:"UTC", month:"long", year:"numeric" });
     const rows = s.days.map((d, i) => `<div class="day-row">
-        <input type="checkbox" data-day-on="${i}"${d.on ? " checked" : ""}>
+        <button type="button" class="wk-x" data-action="wk-day" data-date="${esc(d.date)}" aria-label="Remove ${esc(fmtDate(d.date))}">✕</button>
         <span>${esc(fmtDate(d.date))}</span>
-        <input type="time" data-day-f="from" data-i="${i}" value="${esc(d.from)}"${d.on ? "" : " disabled"}>
-        <input type="time" data-day-f="to" data-i="${i}" value="${esc(d.to)}"${d.on ? "" : " disabled"}>
-        <input type="time" data-day-f="break_from" data-i="${i}" value="${esc(d.break_from || "")}"${d.on ? "" : " disabled"}>
-        <input type="time" data-day-f="break_to" data-i="${i}" value="${esc(d.break_to || "")}"${d.on ? "" : " disabled"}>
+        <input type="time" data-day-f="from" data-i="${i}" value="${esc(d.from)}">
+        <input type="time" data-day-f="to" data-i="${i}" value="${esc(d.to)}">
+        <input type="time" data-day-f="break_from" data-i="${i}" value="${esc(d.break_from || "")}">
+        <input type="time" data-day-f="break_to" data-i="${i}" value="${esc(d.break_to || "")}">
       </div>`).join("");
-    const slotsTotal = s.days.filter(d => d.on).reduce((n, d) => n + daySlots(d, 15).length, 0);
+    const slotsTotal = s.days.reduce((n, d) => n + daySlots(d, 15).length, 0);
+    const w = s.id ? weeks.find(x => x.id === s.id) : null;
+    const dropped = w ? sessions.filter(x => x.week_id === w.id && x.date && !picked.has(x.date)).length : 0;
     return {
       size: "wide",
-      title: s.id ? "Edit PTC week" : "New PTC week",
+      title: s.id ? "PTC week · days & hours" : "New PTC week",
       body: `<label class="field">Name<input type="text" id="wkName" value="${esc(s.name)}"></label>
-        <div class="field-row">
-          <label class="field">First day<input type="date" id="wkStart" value="${esc(s.start)}"></label>
-          <label class="field">Last day<input type="date" id="wkEnd" value="${esc(s.end)}"></label>
+        <div class="wk-pick">
+          <div class="wk-cal"><div class="wk-cal-h"><button type="button" class="btn sm ghost" data-action="wk-cal" data-month="${shift(-1)}" aria-label="Previous month">‹</button><b>${esc(mLabel)}</b><button type="button" class="btn sm ghost" data-action="wk-cal" data-month="${shift(1)}" aria-label="Next month">›</button></div>
+            <div class="wk-grid">${["S","M","T","W","T","F","S"].map(x => `<span class="wk-wd">${x}</span>`).join("")}${cells.join("")}</div>
+            <div class="hint">Tap the PTC days. They don't have to be next to each other.</div></div>
+          <div class="day-rows">
+            <div class="day-row head"><span></span><span>Day</span><span>From</span><span>To</span><span>Break from</span><span>Break to</span></div>
+            ${rows || `<div class="hint" style="padding:8px 0;">No days yet. Tap them on the calendar.</div>`}
+          </div>
         </div>
-        <div class="day-rows">
-          <div class="day-row head"><span></span><span>Day</span><span>From</span><span>To</span><span>Break from</span><span>Break to</span></div>
-          ${rows || `<div class="hint">Pick the first and last day.</div>`}
-        </div>
-        <div class="hint">These are the starting hours each teacher sees (<b>${slotsTotal}</b> 15-minute PTCs). Teachers change them to their own free times and book their own families.</div>`,
+        <div class="hint">These are the starting hours each teacher sees (<b>${slotsTotal}</b> 15-minute PTCs). Teachers change them to their own free times.</div>
+        ${dropped ? `<div class="banner">${dropped} PTC${dropped === 1 ? " is" : "s are"} booked on a day you took out. ${dropped === 1 ? "It stays" : "They stay"} booked and show${dropped === 1 ? "s" : ""} as “Outside your times” so the teacher can move ${dropped === 1 ? "it" : "them"}.</div>` : ""}`,
       foot: (s.id ? `<button class="btn danger" data-action="week-delete" style="margin-right:auto;">Delete week</button><button class="btn" data-action="week-close">${s.closed ? "Reopen week" : "Close week"}</button>` : "")
         + `<button class="btn" data-action="close-modal">Cancel</button><button class="btn primary" data-action="week-save">${s.id ? "Save" : "Create"}</button>`
     };
@@ -1819,15 +1878,12 @@ window.kumonPtcNav = function(client, role){
   }
   function openWeekModal(w){
     if(w){
-      const start = w.days.length ? w.days[0].date : todayISO(), end = w.days.length ? w.days[w.days.length-1].date : start;
-      const prev = weekDaysFor(start, end, []).map(d => { const x = w.days.find(y => y.date === d.date); return x ? Object.assign({ on:true }, x) : Object.assign(d, { on:false }); });
-      openModal({ kind:"week", id:w.id, closed: !!w.closed_at, name:w.name, start, end, days: prev });
+      openModal({ kind:"week", id:w.id, closed: !!w.closed_at, name:w.name, days: w.days.map(d => Object.assign({ on:true }, d)) });
     }else{
-      // next Monday → Saturday
-      let start = todayISO(); while(weekdayOf(start) !== "Mon") start = addDaysISO(start, 1);
-      const end = addDaysISO(start, 5);
+      // pick the days on the calendar, starting with next month's view if we're past the 20th
+      const start = todayISO();
       const label = new Date(start + "T00:00:00Z").toLocaleDateString("en-US", { timeZone:"UTC", month:"long", year:"numeric" });
-      openModal({ kind:"week", id:null, name:`PTC week — ${label}`, start, end, days: weekDaysFor(start, end, []) });
+      openModal({ kind:"week", id:null, name:`PTC week — ${label}`, days: [], cal: start.slice(0, 7) });
     }
   }
   function readWeekModal(){
@@ -1835,6 +1891,7 @@ window.kumonPtcNav = function(client, role){
     s.name = $("#wkName").value;
     $$("[data-day-f]").forEach(inp => { const d = s.days[+inp.dataset.i]; if(d) d[inp.dataset.dayF] = inp.value; });
     $$("[data-day-on]").forEach(inp => { const d = s.days[+inp.dataset.dayOn]; if(d) d.on = inp.checked; });
+    s.days.forEach(d => d.on = true);
   }
   async function saveWeek(){
     readWeekModal();
@@ -2199,6 +2256,7 @@ window.kumonPtcNav = function(client, role){
       return;
     }
     const t = myTeacher();
+    if(ui.weekView === "cal"){ $("#weekSection").innerHTML = loadWarn + renderCalendar(w, weekSel); return; }
     if(isAdmin() && !t){ $("#weekSection").innerHTML = loadWarn + renderProgress(w, weekSel); return; }
     $("#weekSection").innerHTML = loadWarn + renderMyWeek(w, t, weekSel);
     restoreFocus();
@@ -2213,7 +2271,7 @@ window.kumonPtcNav = function(client, role){
       return { t, pairs, timed, set: !!hoursRow(w, t), invite: c(["draft"]), waiting: c(["invited","cant"]), confirmed: c(["confirmed"]), done: c(["done","no_show"]), total: Math.max(pairs, list.length) };
     }).filter(r => r.total);
     const all = rows.reduce((a, r) => { ["total","timed","waiting","confirmed","done"].forEach(k => a[k] += r[k]); return a; }, { total:0, timed:0, waiting:0, confirmed:0, done:0 });
-    return `<div class="toolbar">${weekSel}<button class="btn sm" data-action="week-new">New PTC week</button><button class="btn sm" data-action="week-edit">Edit week</button><button class="btn sm" data-action="siblings">Siblings</button><span class="grow"></span>${w.closed_at ? `<span class="pill st-draft">Closed</span>` : ""}</div>
+    return `<div class="toolbar">${weekSel}<div class="seg-mini"><button class="on" data-action="view" data-view="list">List</button><button data-action="view" data-view="cal">Calendar</button></div><button class="btn sm" data-action="week-edit">Days &amp; hours</button><button class="btn sm" data-action="week-new">New PTC week</button><button class="btn sm" data-action="siblings">Siblings</button><span class="grow"></span><button class="btn sm primary" data-action="draft-all">Draft everyone</button>${w.closed_at ? `<span class="pill st-draft">Closed</span>` : ""}</div>
       <div class="mw-head card">
         ${ringSvg(all.confirmed + all.done, all.total, "PTCs confirmed")}
         <div class="mw-title"><h3>${esc(w.name)}</h3><span class="faint">${esc(weekRange(w))} · teachers set their own times and book their own families</span></div>
@@ -2252,7 +2310,7 @@ window.kumonPtcNav = function(client, role){
     const booked = !missing.length && !notime.length;
     const steps = `<div class="mw-steps">${step(1, "My free times", set ? "done" : "now")}${step(2, "Book my families", booked && fams.length ? "done" : set ? "now" : "")}${step(3, "Invite parents", fams.length && !count.invite && booked ? "done" : booked && fams.length ? "now" : "")}</div>`;
 
-    let html = `<div class="toolbar">${picker}${weekSel}<span class="grow"></span>${w.closed_at ? `<span class="pill st-draft">Closed</span>` : ""}</div>
+    let html = `<div class="toolbar">${picker}${weekSel}<div class="seg-mini"><button class="on" data-action="view" data-view="list">List</button><button data-action="view" data-view="cal">Calendar</button></div><span class="grow"></span>${isAdmin() ? `<button class="btn sm" data-action="week-edit">Days &amp; hours</button>` : ""}${w.closed_at ? `<span class="pill st-draft">Closed</span>` : ""}</div>
       <div class="card mw-head">
         ${ringSvg(ready, famTotal, famTotal === 1 ? "family confirmed" : "families confirmed")}
         <div class="mw-title"><h3>${t === currentTeacherName ? "My PTC week" : esc(t) + "'s PTC week"} · ${esc(weekRange(w))}</h3>
@@ -2295,7 +2353,7 @@ window.kumonPtcNav = function(client, role){
     const others = weekSessions().filter(o => sessFamily(o) === f.key && o.teacher !== t).sort(bySlot);
     const canEdit = canEditTeacher(t);
     const when = first.date ? `<b>${esc(fmt12(first.time).replace(/ (AM|PM)$/, ""))}<small>${esc(fmt12(first.time).slice(-2))}</small></b><span>${esc(fmtDate(first.date))}</span>` : `<b>—</b><span>no time</span>`;
-    const solo = kids.length === 1 && !p.name;   // the card's title is already the child's name
+    const solo = kids.length === 1;   // the card's title is the child's name, so the chip only needs the subject
     const kidChips = list.map(x => `<span class="mw-kid">${solo ? esc(x.subjects || "") : esc(sessName(x)) + (x.subjects ? " · " + esc(x.subjects) : "")}${list.length > 1 && x.date && x !== first ? " · " + esc(fmt12(x.time)) : ""}</span>`).join("");
     const otherLine = others.length ? `<div class="mw-other">${others.map(o => `${esc(sessName(o).split(",")[1] ? sessName(o).split(",")[1].trim() : sessName(o))} also meets <b>${esc(o.teacher)}</b>${o.date ? ` · ${esc(fmtDate(o.date))} ${esc(fmt12(o.time))}` : " · no time yet"}`).join("<br>")}</div>` : "";
     const tags = [];
@@ -2318,7 +2376,8 @@ window.kumonPtcNav = function(client, role){
     else act = list.map(x => `<a class="btn sm" href="student.html#s=${esc(x.student_id)}&ptc=${esc(x.id)}">${x.note ? "Open note" : "Add note"}${list.length > 1 ? " · " + esc((sessName(x).split(",")[1] || sessName(x)).trim()) : ""}</a>`).join("");
     return `<div class="mw-fam">
       <div class="mw-when">${when}</div>
-      <div class="mw-main"><div class="mw-name"><b>${esc(p.name || (kids.length > 1 ? "Family of " + kids.length : sessName(first)))}</b>${p.phone ? `<span class="faint">${esc(p.phone)}</span>` : ""}${tags.join("")}</div>
+      <div class="mw-main"><div class="mw-name"><b>${esc([...new Set(list.map(sessName))].join(" · "))}</b>${tags.join("")}</div>
+        ${p.name || p.phone ? `<div class="faint mw-parent">Parent: ${esc([p.name, p.phone].filter(Boolean).join(" · "))}</div>` : ""}
         <div class="mw-kids">${kidChips}</div>${otherLine}${list.find(x => x.note && f.stage !== "done") ? `<div class="faint mw-note">✎ ${esc(list.find(x => x.note).note)}</div>` : ""}</div>
       <div class="mw-act">${act}</div></div>`;
   }
@@ -2450,6 +2509,158 @@ window.kumonPtcNav = function(client, role){
     if(error){ alert("Couldn't add them: " + error.message); return; }
     logHistory("ptc_draft", `${w.name}: ${t} added ${rows.length} without a time`, "ptc_week", w.id, null);
     await loadSessions(); render(); toast(`${rows.length} added under No time yet. Tap Pick a time on each.`);
+  }
+
+  /* ================= Calendar view of the PTC week (Nov 27) ================= */
+  // One day at a time, a column per teacher. Teachers drag their own families; admins drag anyone's.
+  function canDrag(t){ return isAdmin() || (!!currentTeacherName && t === currentTeacherName); }
+  function calStage(x){ return x.status === "draft" ? "invite" : x.status === "confirmed" ? "confirmed" : (x.status === "done" || x.status === "no_show") ? "done" : x.status === "cant" ? "cant" : "waiting"; }
+  function calCols(w){
+    if(ui.calWho === "me" && myTeacher()) return [myTeacher()];
+    return teacherList().filter(t => pairsOf(t).length || weekSessions().some(x => x.teacher === t));
+  }
+  function renderCalendar(w, weekSel){
+    const days = w.days.map(d => d.date);
+    if(!days.includes(ui.calDay)) ui.calDay = days.includes(todayISO()) ? todayISO() : days[0];
+    const day = ui.calDay, slotMin = w.slot_minutes || 15;
+    const cols = calCols(w);
+    const list = weekSessions();
+    // the rows: from the earliest to the latest time anyone is free that day
+    let lo = Infinity, hi = -Infinity;
+    cols.forEach(t => { const d = teacherDays(w, t).find(x => x.date === day); if(d){ lo = Math.min(lo, toMin(d.from)); hi = Math.max(hi, toMin(d.to)); } });
+    list.filter(x => x.date === day && x.time && cols.includes(x.teacher)).forEach(x => { lo = Math.min(lo, toMin(x.time)); hi = Math.max(hi, toMin(x.time) + slotMin); });
+    if(!isFinite(lo)){ lo = 9 * 60; hi = 18 * 60; }
+    const rows = []; for(let m = lo; m < hi; m += slotMin) rows.push(m);
+    const free = new Map(cols.map(t => { const d = teacherDays(w, t).find(x => x.date === day); return [t, new Set(d ? daySlots(d, slotMin) : [])]; }));
+    const at = new Map(); list.forEach(x => { if(x.date === day && x.time) at.set(x.teacher + "|" + toMin(x.time), x); });
+    const famTeachers = new Map(); list.forEach(x => { const f = sessFamily(x); (famTeachers.get(f) || famTeachers.set(f, new Set()).get(f)).add(x.teacher); });
+    const card = (x, extra) => {
+      const sib = (famTeachers.get(sessFamily(x)) || new Set()).size > 1;
+      const others = sib ? list.filter(o => sessFamily(o) === sessFamily(x) && o.teacher !== x.teacher).map(o => `${o.teacher} ${o.date ? (o.date === x.date ? "" : fmtDate(o.date) + " ") + fmt12(o.time) : "no time yet"}`).join(", ") : "";
+      const dr = canDrag(x.teacher);
+      return `<div class="cal-card ${calStage(x)}${sib ? " sib" : ""}${dr ? "" : " locked"}"${dr ? ` draggable="true"` : ""} data-sid="${esc(x.id)}" data-action="${dr ? "cal-open" : ""}" title="${esc(sessName(x) + (x.subjects ? " · " + x.subjects : "") + " · " + (STATUS[x.status] || {}).label + (x.moved_at && x.status === "draft" ? " (moved)" : "") + (others ? " · sibling with " + others : ""))}"><b>${esc(sessName(x))}</b><small>${esc(x.subjects || "")}${x.status === "draft" && x.moved_at ? " · moved" : ""}${others ? " · sib " + esc(others) : ""}</small>${extra || ""}</div>`;
+    };
+    const me = currentTeacherName;
+    let h = `<div class="cal-grid" style="grid-template-columns:58px repeat(${cols.length}, minmax(150px,1fr))"><div class="cal-corner"></div>`;
+    cols.forEach(t => { const n = list.filter(x => x.teacher === t && x.date === day).length; h += `<div class="cal-h${t === me ? " me" : ""}">${esc(t)}${t === me ? " (you)" : ""}<span>${n} PTC${n === 1 ? "" : "s"}${free.get(t).size ? "" : " · not free"}</span></div>`; });
+    rows.forEach(m => {
+      h += `<div class="cal-t">${m % 60 === 0 ? esc(fmt12(m)) : ""}</div>`;
+      cols.forEach(t => { const x = at.get(t + "|" + m); h += `<div class="cal-slot${m % 60 === 0 ? " hour" : ""}${free.get(t).has(m) ? "" : " off"}" data-t="${esc(t)}" data-m="${m}">${x ? card(x) : ""}</div>`; });
+    });
+    h += `</div>`;
+    // tray: this view's PTCs with no time, and children with no PTC yet
+    const trayS = list.filter(x => !x.date && cols.includes(x.teacher));
+    const trayP = cols.flatMap(t => missingOf(t));
+    const tray = trayS.map(x => `<div class="cal-tray-item"><span>${esc(x.teacher)}</span>${card(x)}</div>`).join("")
+      + trayP.map(p => { const dr = canDrag(p.teacher); return `<div class="cal-tray-item"><span>${esc(p.teacher)}</span><div class="cal-card invite new${dr ? "" : " locked"}"${dr ? ` draggable="true"` : ""} data-pair="${esc(p.student_id + "|" + p.teacher)}"><b>${esc(lastFirst(p.student_name || studentName(p.student_id)))}</b><small>${esc(p.subjects || "")} · not booked</small></div></div>`; }).join("");
+    const nTray = trayS.length + trayP.length;
+    const viewSeg = `<div class="seg-mini"><button data-action="view" data-view="list">List</button><button class="on" data-action="view" data-view="cal">Calendar</button></div>`;
+    const back = isAdmin() && ui.myTeacher ? `<button class="btn sm ghost" data-action="my-back">‹ All teachers</button>` : "";
+    return `<div class="toolbar">${back}${weekSel}${viewSeg}<span class="grow"></span>${myTeacher() || currentTeacherName ? `<div class="seg-mini"><button class="${ui.calWho !== "me" ? "on" : ""}" data-action="cal-who" data-who="all">Everyone</button><button class="${ui.calWho === "me" ? "on" : ""}" data-action="cal-who" data-who="me">${isAdmin() && myTeacher() ? esc(myTeacher()) : "Just me"}</button></div>` : ""}</div>
+      <div class="cal-days">${w.days.map(d => `<button class="mw-tab${d.date === day ? " on" : ""}" data-action="cal-day" data-day="${esc(d.date)}">${esc(fmtDate(d.date))}<em>${list.filter(x => x.date === d.date && cols.includes(x.teacher)).length}</em></button>`).join("")}</div>
+      <div class="cal-legend"><span><i class="lg invite"></i>To invite</span><span><i class="lg waiting"></i>Waiting</span><span><i class="lg cant"></i>Can't make it</span><span><i class="lg confirmed"></i>Confirmed</span><span><i class="lg done"></i>Done</span><span><i class="lg sib"></i>Sibling with another teacher</span><span><i class="lg off"></i>Not free</span></div>
+      <div class="cal-wrap"><div class="cal-scroll">${cols.length ? h : `<div class="empty">No teachers to show.</div>`}</div>
+        <aside class="cal-tray"><h3>No time yet <span class="faint">${nTray}</span></h3><p class="faint">${nTray ? "Drag one onto the calendar to book it." : "Everyone has a time."}</p>${tray}</aside></div>
+      <div class="faint cal-foot">Drag a name to a free time in the same teacher's column. ${isAdmin() ? "As an admin you can move anyone." : "You can move your own families; everyone else's are shown for reference."} Moving a PTC that was already invited puts it back in To invite as Moved · re-invite. On a phone, tap a name to change its time.</div>`;
+  }
+
+  // ---- dragging ----
+  let calDrag = null, calUndo = null;
+  function calCanDrop(slot){
+    if(!calDrag || !slot) return false;
+    const t = slot.dataset.t, m = +slot.dataset.m, w = currentWeek(); if(!w) return false;
+    if(t !== calDrag.teacher) return false;
+    const d = teacherDays(w, t).find(x => x.date === ui.calDay);
+    if(!d || !daySlots(d, w.slot_minutes || 15).includes(m)) return false;
+    const occ = occupancy(weekSessions(), calDrag.id ? new Set([calDrag.id]) : null);
+    if(occ.teacherAt(ui.calDay, m, t)) return false;
+    if(occ.familyAt(ui.calDay, m, calDrag.family)) return false;
+    return true;
+  }
+  document.addEventListener("dragstart", e => {
+    const c = e.target.closest && e.target.closest(".cal-card[draggable]"); if(!c) return;
+    if(c.dataset.sid){ const x = sessions.find(y => y.id === c.dataset.sid); if(!x) return; calDrag = { id:x.id, teacher:x.teacher, family: sessFamily(x) }; }
+    else { const [sid, t] = c.dataset.pair.split("|"); const p = missingOf(t).find(q => q.student_id === sid); if(!p) return; calDrag = { pair:p, teacher:t, family: p.family || ("st:" + sid) }; }
+    c.classList.add("dragging"); e.dataTransfer.effectAllowed = "move"; try{ e.dataTransfer.setData("text/plain", "ptc"); }catch(_){}
+  });
+  document.addEventListener("dragend", () => { $$(".cal-card.dragging,.cal-slot.over,.cal-slot.clash").forEach(el => el.classList.remove("dragging","over","clash")); calDrag = null; });
+  document.addEventListener("dragover", e => {
+    if(!calDrag) return;
+    const slot = e.target.closest && e.target.closest(".cal-slot");
+    $$(".cal-slot.over,.cal-slot.clash").forEach(el => el.classList.remove("over","clash"));
+    if(!slot) return;
+    if(calCanDrop(slot)){ e.preventDefault(); slot.classList.add("over"); }
+    else if(slot.dataset.t === calDrag.teacher) slot.classList.add("clash");
+  });
+  document.addEventListener("drop", async e => {
+    if(!calDrag) return;
+    const slot = e.target.closest && e.target.closest(".cal-slot");
+    if(!slot || !calCanDrop(slot)) return;
+    e.preventDefault();
+    const d = calDrag; calDrag = null;
+    const date = ui.calDay, time = fromMin(+slot.dataset.m), w = currentWeek();
+    if(d.id){
+      const x = sessions.find(y => y.id === d.id); if(!x) return;
+      const before = { date:x.date, time:x.time, status:x.status, moved_at:x.moved_at };
+      const r = await sbClient.from("ptc_sessions").update(Object.assign({ date, time }, x.date ? movedPatch(x) : { updated_by_name: myName() })).eq("id", x.id).select();
+      if(r.error || !r.data || !r.data.length){ alert("Couldn't move " + sessName(x) + (r.error ? ": " + r.error.message : " — the database didn't allow it") + "."); return; }
+      Object.assign(x, r.data[0]);
+      calUndo = { id:x.id, before };
+      logHistory("ptc_move", `${sessName(x)} (${x.teacher}) → ${fmtDate(date)} ${fmt12(time)}`, "ptc_week", w.id, null);
+      render();
+      toastUndo(`${sessName(x)} → ${fmtDate(date)} ${fmt12(time)}${before.date && before.status !== "draft" ? " · back in To invite (Moved · re-invite)" : ""}`);
+    }else{
+      const p = d.pair;
+      const row = { week_id: w.id, student_id: p.student_id, student_name: p.student_name || studentName(p.student_id), teacher: p.teacher, subjects: p.subjects || null, date, time, status: "draft", updated_by_name: myName() };
+      const r = await sbClient.from("ptc_sessions").insert(row).select();
+      if(r.error || !r.data || !r.data.length){ alert("Couldn't book " + row.student_name + (r.error ? ": " + r.error.message : "") + "."); return; }
+      sessions.push(r.data[0]);
+      calUndo = { id: r.data[0].id, created: true };
+      logHistory("ptc_draft", `${row.student_name} (${row.teacher}) booked ${fmtDate(date)} ${fmt12(time)}`, "ptc_week", w.id, null);
+      render();
+      toastUndo(`${lastFirst(row.student_name)} booked · ${fmtDate(date)} ${fmt12(time)}`);
+    }
+  });
+  async function calUndoLast(){
+    const u = calUndo; calUndo = null; if(!u) return;
+    if(u.created){
+      const r = await deleteWeekSessions([u.id]);
+      if(!r.ok){ alert("Couldn't undo: " + r.message); return; }
+      await loadSessions();
+    }else{
+      const r = await sbClient.from("ptc_sessions").update(Object.assign({}, u.before, { updated_by_name: myName() })).eq("id", u.id).select();
+      if(r.error || !r.data || !r.data.length){ alert("Couldn't undo" + (r.error ? ": " + r.error.message : "") + "."); return; }
+      const x = sessions.find(y => y.id === u.id); if(x) Object.assign(x, r.data[0]);
+    }
+    render(); toast("Moved back.");
+  }
+  // The page's toast is taken over by the Hub's "Saved" card, which has no buttons, so Undo gets its own small bar.
+  let undoTimer = null;
+  function toastUndo(msg){
+    let bar = $("#calUndoBar");
+    if(!bar){ bar = document.createElement("div"); bar.id = "calUndoBar"; bar.className = "cal-undo"; bar.setAttribute("role", "status"); document.body.appendChild(bar); }
+    bar.innerHTML = `<span>${esc(msg)}</span><button class="linkbtn" type="button">Undo</button>`;
+    bar.hidden = false;
+    bar.querySelector("button").onclick = () => { bar.hidden = true; calUndoLast(); };
+    clearTimeout(undoTimer); undoTimer = setTimeout(() => { bar.hidden = true; }, 8000);
+  }
+
+  // ---- Draft everyone (admins): every child without a time, in each teacher's own free times ----
+  async function draftEveryone(){
+    const w = currentWeek(); if(!w) return;
+    const teachers = teacherList().filter(t => missingOf(t).length);
+    if(!teachers.length){ toast("Everyone already has a time."); return; }
+    const n = teachers.reduce((a, t) => a + missingOf(t).length, 0);
+    if(!confirm(`Book ${n} children for ${teachers.length} teachers?\n\nEach child goes into their teacher's free times (or the week's hours if the teacher hasn't set theirs), near their usual class time and next to siblings. Nobody already booked is moved. Teachers can change anything after.`)) return;
+    let placed = 0, unplaced = 0;
+    for(let i = 0; i < teachers.length; i++){
+      toast(`Booking ${teachers[i]} (${i + 1} of ${teachers.length})…`);
+      const plan = await runDraft(missingOf(teachers[i]), true, teacherWeek(w, teachers[i]));
+      if(!plan) return;
+      placed += plan.placed.length; unplaced += plan.unplaced.length;
+    }
+    logHistory("ptc_draft", `${w.name}: drafted everyone (${placed} booked, ${unplaced} without a time)`, "ptc_week", w.id, { placed, unplaced });
+    toast(`Booked ${placed}` + (unplaced ? ` · ${unplaced} didn't fit (No time yet)` : "") + ". Teachers can now invite parents.");
   }
 
   /* --- siblings (admins) --- */
@@ -2734,6 +2945,23 @@ window.kumonPtcNav = function(client, role){
       const n = await setStatus(list, btn.dataset.status);
       render(); if(n) toast(`${n} session${n === 1 ? "" : "s"} → ${STATUS[btn.dataset.status].label}`);
       return;
+    }
+    if(a === "view"){ ui.weekView = btn.dataset.view; lsSet("weekView", ui.weekView); renderWeek(); return; }
+    if(a === "cal-day"){ ui.calDay = btn.dataset.day; renderWeek(); return; }
+    if(a === "cal-who"){ ui.calWho = btn.dataset.who; lsSet("calWho", ui.calWho); renderWeek(); return; }
+    if(a === "cal-open"){ const x = sessions.find(y => y.id === btn.dataset.sid); if(x) openModal({ kind:"resched", family: sessFamily(x), teacher: x.teacher, day:"all", live:true }); return; }
+    if(a === "draft-all"){
+      if(loadIssues.has("sessions") || loadIssues.has("weeks")){ alert("The PTC week didn't load properly, so the Hub can't tell who already has a time. Refresh the page first."); return; }
+      btn.disabled = true; await draftEveryone(); btn.disabled = false; return;
+    }
+    if(a === "wk-cal"){ modalState.cal = btn.dataset.month; readWeekModal(); renderModal(); return; }
+    if(a === "wk-day"){
+      readWeekModal();
+      const d = btn.dataset.date, i = modalState.days.findIndex(x => x.date === d);
+      if(i >= 0) modalState.days.splice(i, 1);
+      else { const last = modalState.days[modalState.days.length - 1] || { from:"09:00", to:"18:00", break_from:"12:00", break_to:"13:00" };
+        modalState.days.push({ date:d, on:true, from:last.from, to:last.to, break_from:last.break_from, break_to:last.break_to }); modalState.days.sort((a, b) => a.date < b.date ? -1 : 1); }
+      renderModal(); return;
     }
     if(a === "my-open"){ ui.myTeacher = btn.dataset.teacher; ui.timesDraft = null; ui.editTimes = false; renderWeek(); window.scrollTo(0, 0); return; }
     if(a === "my-back"){ ui.myTeacher = ""; ui.timesDraft = null; ui.editTimes = false; renderWeek(); return; }
