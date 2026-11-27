@@ -2368,7 +2368,7 @@ window.kumonPtcNav = function(client, role){
     if(!canEdit) act = `<span class="readonly-note">Another group's</span>`;
     else if(f.stage === "notime") act = `<button class="btn sm primary" data-action="my-resched" data-family="${fk}" data-teacher="${tt}">Pick a time</button>`;
     else if(f.stage === "invite") act = change + (ui.copied.has(f.key)
-      ? `<span class="pill st-confirmed">Copied ✓</span><button class="btn sm primary" data-action="my-status" data-family="${fk}" data-teacher="${tt}" data-status="invited">Mark invited</button>`
+      ? `<button class="btn sm" data-action="my-copy" data-family="${fk}" data-teacher="${tt}" title="Copy the invite again">Copied ✓ · Copy again</button><button class="btn sm primary" data-action="my-status" data-family="${fk}" data-teacher="${tt}" data-status="invited">Mark invited</button>`
       : `<button class="btn sm primary" data-action="my-copy" data-family="${fk}" data-teacher="${tt}">Copy invite</button>`);
     else if(f.stage === "waiting") act = list.some(x => x.status === "cant")
       ? `<button class="linkbtn" data-action="my-status" data-family="${fk}" data-teacher="${tt}" data-status="confirmed">They can come after all</button><button class="btn sm primary" data-action="my-resched" data-family="${fk}" data-teacher="${tt}">Pick a new time</button>`
