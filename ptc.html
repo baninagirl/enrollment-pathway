@@ -979,12 +979,12 @@ window.kumonPtcNav = function(client, role){
 
   const MILESTONES = [1,2,3,6,9,12];
   const STATUS = {
-    draft:     { label:"Not invited",    cls:"st-draft" },
+    draft:     { label:"To invite",    cls:"st-draft" },
     invited:   { label:"Invited",        cls:"st-invited" },
     confirmed: { label:"Confirmed",      cls:"st-confirmed" },
     cant:      { label:"Can't make it",  cls:"st-cant" },
     done:      { label:"Done",           cls:"st-done" },
-    no_show:   { label:"No-show",        cls:"st-no_show" }
+    no_show:   { label:"Didn't come",        cls:"st-no_show" }
   };
   const STATUS_ORDER = ["draft","invited","confirmed","cant","done","no_show"];
   // Status of a new-student PTC while it's still due (phase98). Done / Skipped take it off the list.
@@ -1636,7 +1636,7 @@ window.kumonPtcNav = function(client, role){
     const statTile = (key, label, n, cls) => `<button class="stat ${cls||""}${ui.weekStatus === key ? " selected" : ""}" data-action="week-status" data-status="${key}"><span class="n">${n}</span><span class="l">${label}</span></button>`;
     const stats = `<div class="stats six">
       ${statTile("all", `Sessions · ${famCount} famil${famCount === 1 ? "y" : "ies"}`, scoped.length)}
-      ${statTile("draft", "Not invited yet", st.draft)}
+      ${statTile("draft", "To invite", st.draft)}
       ${statTile("invited", "Invited, waiting", st.invited, st.invited ? "warn" : "")}
       ${statTile("confirmed", "Confirmed", st.confirmed)}
       ${statTile("cant", "Can't make it", st.cant, st.cant ? "bad" : "")}
@@ -2378,7 +2378,7 @@ window.kumonPtcNav = function(client, role){
     const when = first.date ? `<b>${esc(fmt12(first.time).replace(/ (AM|PM)$/, ""))}<small>${esc(fmt12(first.time).slice(-2))}</small></b><span>${esc(fmtDate(first.date))}</span>` : `<b>—</b><span>no time</span>`;
     const solo = kids.length === 1;   // the card's title is the child's name, so the chip only needs the subject
     const kidChips = list.map(x => `<span class="mw-kid">${solo ? esc(x.subjects || "") : esc(sessName(x)) + (x.subjects ? " · " + esc(x.subjects) : "")}${list.length > 1 && x.date && x !== first ? " · " + esc(fmt12(x.time)) : ""}</span>`).join("");
-    const otherLine = others.length ? `<div class="mw-other">${others.map(o => `${esc(sessName(o).split(",")[1] ? sessName(o).split(",")[1].trim() : sessName(o))} also meets <b>${esc(o.teacher)}</b>${o.date ? ` · ${esc(fmtDate(o.date))} ${esc(fmt12(o.time))}` : " · no time yet"}`).join("<br>")}</div>` : "";
+    const otherLine = others.length ? `<div class="mw-other">Also with ${others.map(o => `<b>${esc(o.teacher)}</b> · ${esc((sessName(o).split(",")[1] || sessName(o)).trim())}'s ${esc(o.subjects || "other subject")} · ${o.date ? `${esc(fmtDate(o.date))} ${esc(fmt12(o.time))}` : "no time yet"}`).join("; ")}</div>` : "";
     const tags = [];
     if(list.some(x => x.status === "draft" && x.moved_at)) tags.push(`<span class="pill st-moved">Moved · re-invite</span>`);
     if(list.some(x => x.status === "cant")) tags.push(`<span class="pill st-cant">Can't make it</span>`);
@@ -2387,16 +2387,18 @@ window.kumonPtcNav = function(client, role){
     const fk = esc(f.key), tt = esc(t);
     const change = canEdit ? `<button class="linkbtn" data-action="my-resched" data-family="${fk}" data-teacher="${tt}">Change time</button>` : "";
     let act = "";
+    // Start opens the child's profile with the meeting card, at any stage before Done (Nov 27)
+    const startBtns = (primary) => list.filter(x => x.date && x.status !== "done" && x.status !== "no_show").map(x => `<a class="btn sm${primary ? " primary" : ""}" href="student.html#s=${esc(x.student_id)}&ptc=${esc(x.id)}">Start${list.length > 1 ? " · " + esc((sessName(x).split(",")[1] || sessName(x)).trim()) : ""}</a>`).join("");
     const imgBtn = `<button class="btn sm" data-action="my-img" data-family="${fk}" data-teacher="${tt}" title="An image of this family's PTC time to send the parent">Download image</button>`;
     if(!canEdit) act = `<span class="readonly-note">Another group's</span>`;
     else if(f.stage === "notime") act = `<button class="btn sm primary" data-action="my-resched" data-family="${fk}" data-teacher="${tt}">Pick a time</button>`;
-    else if(f.stage === "invite") act = change + imgBtn + (ui.copied.has(f.key)
+    else if(f.stage === "invite") act = change + imgBtn + startBtns(false) + (ui.copied.has(f.key)
       ? `<button class="btn sm" data-action="my-copy" data-family="${fk}" data-teacher="${tt}" title="Copy the invite again">Copied ✓ · Copy again</button><button class="btn sm primary" data-action="my-status" data-family="${fk}" data-teacher="${tt}" data-status="invited">Mark invited</button>`
       : `<button class="btn sm primary" data-action="my-copy" data-family="${fk}" data-teacher="${tt}">Copy invite</button>`);
     else if(f.stage === "waiting") act = list.some(x => x.status === "cant")
       ? `<button class="linkbtn" data-action="my-status" data-family="${fk}" data-teacher="${tt}" data-status="confirmed">They can come after all</button><button class="btn sm primary" data-action="my-resched" data-family="${fk}" data-teacher="${tt}">Pick a new time</button>`
-      : `<button class="linkbtn" data-action="my-copy" data-family="${fk}" data-teacher="${tt}">Copy invite again</button>${imgBtn}<button class="btn sm" data-action="my-cant" data-family="${fk}" data-teacher="${tt}">Can't make it</button><button class="btn sm primary" data-action="my-status" data-family="${fk}" data-teacher="${tt}" data-status="confirmed">Confirmed</button>`;
-    else if(f.stage === "confirmed") act = change + imgBtn + list.filter(x => x.status === "confirmed").map(x => `<a class="btn sm primary" href="student.html#s=${esc(x.student_id)}&ptc=${esc(x.id)}">Start${list.length > 1 ? " · " + esc((sessName(x).split(",")[1] || sessName(x)).trim()) : ""}</a>`).join("");
+      : `<button class="linkbtn" data-action="my-copy" data-family="${fk}" data-teacher="${tt}">Copy invite again</button>${imgBtn}${startBtns(false)}<button class="btn sm" data-action="my-cant" data-family="${fk}" data-teacher="${tt}">Can't make it</button><button class="btn sm primary" data-action="my-status" data-family="${fk}" data-teacher="${tt}" data-status="confirmed">Confirmed</button>`;
+    else if(f.stage === "confirmed") act = change + imgBtn + startBtns(true);
     else act = list.map(x => `<a class="btn sm" href="student.html#s=${esc(x.student_id)}&ptc=${esc(x.id)}">${x.note ? "Open note" : "Add note"}${list.length > 1 ? " · " + esc((sessName(x).split(",")[1] || sessName(x)).trim()) : ""}</a>`).join("");
     return `<div class="mw-fam">
       <div class="mw-when">${when}</div>
@@ -2681,8 +2683,8 @@ window.kumonPtcNav = function(client, role){
     const card = (x, extra) => {
       const sib = (famTeachers.get(sessFamily(x)) || new Set()).size > 1;
       const others = sib ? list.filter(o => sessFamily(o) === sessFamily(x) && o.teacher !== x.teacher).map(o => `${o.teacher} ${o.date ? (o.date === x.date ? "" : fmtDate(o.date) + " ") + fmt12(o.time) : "no time yet"}`).join(", ") : "";
-      const dr = canDrag(x.teacher);
-      return `<div class="cal-card ${calStage(x)}${sib ? " sib" : ""}${dr ? "" : " locked"}"${dr ? ` draggable="true"` : ""} data-sid="${esc(x.id)}" data-action="${dr ? "cal-open" : ""}" title="${esc(sessName(x) + (x.subjects ? " · " + x.subjects : "") + " · " + (STATUS[x.status] || {}).label + (x.moved_at && x.status === "draft" ? " (moved)" : "") + (others ? " · sibling with " + others : ""))}"><b>${esc(sessName(x))}</b><small>${x.time ? esc(fmt12(x.time)) + (x.subjects ? " · " : "") : ""}${esc(x.subjects || "")}${x.status === "draft" && x.moved_at ? " · moved" : ""}${others ? " · sib " + esc(others) : ""}</small>${extra || ""}</div>`;
+      const dr = canDrag(x.teacher) && x.status !== "done" && x.status !== "no_show";
+      return `<div class="cal-card ${calStage(x)}${sib ? " sib" : ""}${dr ? "" : " locked"}"${dr ? ` draggable="true"` : ""} data-sid="${esc(x.id)}" data-action="${dr ? "cal-open" : ""}" title="${esc(sessName(x) + (x.subjects ? " · " + x.subjects : "") + " · " + (STATUS[x.status] || {}).label + (x.moved_at && x.status === "draft" ? " (moved)" : "") + (others ? " · also with " + others : ""))}"><b>${esc(sessName(x))}</b><small>${x.time ? esc(fmt12(x.time)) + (x.subjects ? " · " : "") : ""}${esc(x.subjects || "")}${x.status === "draft" && x.moved_at ? " · moved" : ""}${others ? " · also " + esc(others) : ""}</small>${extra || ""}</div>`;
     };
     const me = currentTeacherName;
     let h = `<div class="cal-grid" style="grid-template-columns:74px repeat(${cols.length}, minmax(150px,1fr))"><div class="cal-corner"></div>`;
@@ -2702,7 +2704,7 @@ window.kumonPtcNav = function(client, role){
     const back = isAdmin() && ui.myTeacher ? `<button class="btn sm ghost" data-action="my-back">‹ All teachers</button>` : "";
     return `<div class="toolbar">${back}${weekSel}${viewSeg}<span class="grow"></span><label class="cal-who">Show <select id="calWhoPick"><option value="all"${!ui.calWho || ui.calWho === "all" ? " selected" : ""}>Everyone</option>${teacherList().filter(t => pairsOf(t).length || weekSessions().some(x => x.teacher === t)).map(t => `<option value="${esc(t)}"${calCols(w).length === 1 && calCols(w)[0] === t ? " selected" : ""}>${esc(t)}${t === currentTeacherName ? " (you)" : ""}</option>`).join("")}</select></label></div>
       <div class="cal-days">${w.days.map(d => `<button class="mw-tab${d.date === day ? " on" : ""}" data-action="cal-day" data-day="${esc(d.date)}">${esc(fmtDate(d.date))}<em>${list.filter(x => x.date === d.date && cols.includes(x.teacher)).length}</em></button>`).join("")}</div>
-      <div class="cal-legend"><span><i class="lg invite"></i>To invite</span><span><i class="lg waiting"></i>Invited · no reply yet</span><span><i class="lg cant"></i>Can't make it</span><span><i class="lg confirmed"></i>Confirmed</span><span><i class="lg done"></i>Done</span><span><i class="lg sib"></i>Sibling with another teacher</span><span><i class="lg off"></i>Not free</span></div>
+      <div class="cal-legend"><span><i class="lg invite"></i>To invite</span><span><i class="lg waiting"></i>Invited · no reply yet</span><span><i class="lg cant"></i>Can't make it</span><span><i class="lg confirmed"></i>Confirmed</span><span><i class="lg done"></i>Done</span><span><i class="lg sib"></i>Family also with another teacher</span><span><i class="lg off"></i>Not free</span></div>
       <div class="cal-wrap"><div class="cal-scroll">${cols.length ? h : `<div class="empty">No teachers to show.</div>`}</div>
         <aside class="cal-tray"><h3>No time yet <span class="faint">${nTray}</span></h3><p class="faint">${nTray ? "Drag one onto the calendar to book it." : "Everyone has a time."}</p>${tray}</aside></div>
       <div class="faint cal-foot">Drag a name to a free time in the same teacher's column. ${isAdmin() ? "As an admin you can move anyone." : "You can move your own families; everyone else's are shown for reference."} Moving a PTC that was already invited puts it back in To invite as Moved · re-invite. On a phone, tap a name to change its time.</div>`;
