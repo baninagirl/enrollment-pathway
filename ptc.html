@@ -2375,10 +2375,10 @@ window.kumonPtcNav = function(client, role){
       html += `<div class="mw-fix"><p><b>${needTime} child${needTime === 1 ? " doesn't" : "ren don't"} have a PTC time yet.</b> ${set ? "Fill my times books them all near each family's usual class time, next to a sibling's PTC when there is one. You can move anyone after." : "Set your free times first, then Fill my times books them all."}${short ? ` <br><span class="mw-warn">Your times fit ${cap} PTCs, so not everyone fits. Add more hours, or book the rest by hand.</span>` : ""}</p>
         <div class="mw-fix-act">${missing.length ? `<button class="btn sm" data-action="my-hand">Book by hand</button>` : ""}<button class="btn sm primary" data-action="my-fill"${set ? "" : " disabled"}>Fill my times</button></div></div>`;
     }
-    if(outside.length) html += `<div class="mw-fix warn"><p><b>${outside.length} PTC${outside.length === 1 ? " is" : "s are"} outside your free times</b> (you changed your times after booking). Use <b>Change time</b> on ${outside.length === 1 ? "it" : "them"} below.</p></div>`;
+    if(outside.length) html += `<div class="mw-fix warn"><p><b>${outside.length} PTC${outside.length === 1 ? " is" : "s are"} outside your free times</b> (you changed your times after booking). Use <b>Reschedule</b> on ${outside.length === 1 ? "it" : "them"} below.</p></div>`;
 
     const apartN = fams.filter(f => f.stage !== "done" && famApart(f.key)).length;
-    if(apartN) html += `<div class="mw-fix warn"><p><b>${apartN} famil${apartN === 1 ? "y isn't" : "ies aren't"} back to back</b> with their other teacher${apartN === 1 ? "" : "s"}, so the parent would wait or come twice. Tap <b>Change time</b> on ${apartN === 1 ? "it" : "each"}: the times right next to the other teacher are listed first.</p><div class="mw-fix-act"><button class="btn sm primary" data-action="join-up" data-teacher="${esc(t)}">Put mine back to back</button><button class="btn sm${ui.onlyApart ? " primary" : ""}" data-action="my-apart">${ui.onlyApart ? "Show all" : "Show only these"}</button></div></div>`;
+    if(apartN) html += `<div class="mw-fix warn"><p><b>${apartN} famil${apartN === 1 ? "y isn't" : "ies aren't"} back to back</b> with their other teacher${apartN === 1 ? "" : "s"}, so the parent would wait or come twice. Tap <b>Reschedule</b> on ${apartN === 1 ? "it" : "each"}: the times right next to the other teacher are listed first.</p><div class="mw-fix-act"><button class="btn sm primary" data-action="join-up" data-teacher="${esc(t)}">Put mine back to back</button><button class="btn sm${ui.onlyApart ? " primary" : ""}" data-action="my-apart">${ui.onlyApart ? "Show all" : "Show only these"}</button></div></div>`;
     else ui.onlyApart = false;
     if(notime.length){
       html += `<div class="card"><div class="card-head"><h3>No time yet <span class="faint">${notime.length}</span></h3><span class="hint">Pick a time for each, then invite the parent.</span></div><div class="mw-list">${notime.map(f => famCard(w, t, f)).join("")}</div></div>`;
@@ -2412,9 +2412,9 @@ window.kumonPtcNav = function(client, role){
     if(f.stage === "done") tags.push(list.every(x => x.status === "no_show") ? `<span class="pill st-no_show">Didn't come</span>` : `<span class="pill st-done">Done</span>`);
     if(list.some(x => x.date && !inHours(teacherWeek(w, t), x))) tags.push(`<span class="pill st-cant">Outside your times</span>`);
     const apart = f.stage !== "done" && famApart(f.key);
-    if(apart) tags.push(`<span class="pill st-cant" title="This family's PTCs: ${esc(apart.map(x => `${x.teacher} ${fmtDate(x.date)} ${fmt12(x.time)}`).join(", "))}. Use Change time: times next to the other teacher are listed first.">Not back to back</span>`);
+    if(apart) tags.push(`<span class="pill st-cant" title="This family's PTCs: ${esc(apart.map(x => `${x.teacher} ${fmtDate(x.date)} ${fmt12(x.time)}`).join(", "))}. Use Reschedule: times next to the other teacher are listed first.">Not back to back</span>`);
     const fk = esc(f.key), tt = esc(t);
-    const change = canEdit ? `<button class="linkbtn" data-action="my-resched" data-family="${fk}" data-teacher="${tt}">Change time</button>` : "";
+    const change = canEdit ? `<button class="linkbtn" data-action="my-resched" data-family="${fk}" data-teacher="${tt}">Reschedule</button>` : "";
     let act = "";
     // Start opens the child's profile with the meeting card, at any stage before Done (Nov 27)
     const startBtns = (primary) => list.filter(x => x.date && x.status !== "done" && x.status !== "no_show").map(x => `<a class="btn sm${primary ? " primary" : ""}" href="student.html#s=${esc(x.student_id)}&ptc=${esc(x.id)}">Start${list.length > 1 ? " · " + esc((sessName(x).split(",")[1] || sessName(x)).trim()) : ""}</a>`).join("");
@@ -2426,7 +2426,7 @@ window.kumonPtcNav = function(client, role){
       : `<button class="btn sm primary" data-action="my-copy" data-family="${fk}" data-teacher="${tt}">Copy invite</button>`);
     else if(f.stage === "waiting") act = list.some(x => x.status === "cant")
       ? `<button class="linkbtn" data-action="my-status" data-family="${fk}" data-teacher="${tt}" data-status="confirmed">They can come after all</button><button class="btn sm primary" data-action="my-resched" data-family="${fk}" data-teacher="${tt}">Pick a new time</button>`
-      : `<button class="linkbtn" data-action="my-copy" data-family="${fk}" data-teacher="${tt}">Copy invite again</button>${imgBtn}${startBtns(false)}<button class="btn sm" data-action="my-cant" data-family="${fk}" data-teacher="${tt}">Can't make it</button><button class="btn sm primary" data-action="my-status" data-family="${fk}" data-teacher="${tt}" data-status="confirmed">Confirmed</button>`;
+      : `${change}<button class="linkbtn" data-action="my-copy" data-family="${fk}" data-teacher="${tt}">Copy invite again</button>${imgBtn}${startBtns(false)}<button class="btn sm" data-action="my-cant" data-family="${fk}" data-teacher="${tt}">Can't make it</button><button class="btn sm primary" data-action="my-status" data-family="${fk}" data-teacher="${tt}" data-status="confirmed">Confirmed</button>`;
     else if(f.stage === "confirmed") act = change + imgBtn + startBtns(true);
     else act = list.map(x => `<a class="btn sm" href="student.html#s=${esc(x.student_id)}&ptc=${esc(x.id)}">${x.note ? "Open note" : "Add note"}${list.length > 1 ? " · " + esc((sessName(x).split(",")[1] || sessName(x)).trim()) : ""}</a>`).join("");
     return `<div class="mw-fam">
@@ -2649,7 +2649,7 @@ window.kumonPtcNav = function(client, role){
   // Put families back to back (Nov 28): for each family whose PTCs are apart, keep one teacher's PTC where it is
   // (one that's already invited, else the busiest teacher's) and move the others' right next to it.
   // Only PTCs nobody has invited yet are moved. onlyTeacher: move just that teacher's PTCs.
-  async function joinUpFamilies(onlyTeacher){
+  async function joinUpFamilies(onlyTeacher, moveInvited){
     const w = currentWeek(); if(!w) return;
     const load = {}; weekSessions().forEach(x => load[x.teacher] = (load[x.teacher] || 0) + 1);
     const keys = [...new Set(weekSessions().filter(x => x.date && (!onlyTeacher || x.teacher === onlyTeacher)).map(sessFamily))].filter(k => famApart(k));
@@ -2663,12 +2663,12 @@ window.kumonPtcNav = function(client, role){
       for(const t of teachers){
         if(t === fixed || (onlyTeacher && t !== onlyTeacher)) continue;
         if(!famApart(key)) break;
-        if(byT[t].some(x => x.status !== "draft")){ blocked = true; continue; }
+        if(byT[t].some(x => x.status !== "draft" && !(moveInvited && (x.status === "invited" || x.status === "cant")))){ blocked = true; continue; }
         const o = reschedOptions(key, t).filter(z => z.next).sort((a, b) => a.score - b.score)[0];
         if(!o){ blocked = true; continue; }
         for(let j = 0; j < o.order.length; j++){
           const x = sessions.find(y => y.id === o.order[j].id); if(!x) continue;
-          const r = await sbClient.from("ptc_sessions").update({ date:o.date, time: fromMin(o.times[j]), updated_by_name: myName() }).eq("id", x.id).select();
+          const r = await sbClient.from("ptc_sessions").update(Object.assign({ date:o.date, time: fromMin(o.times[j]) }, x.status === "draft" ? { updated_by_name: myName() } : movedPatch(x))).eq("id", x.id).select();
           if(r.error || !r.data || !r.data.length){ blocked = true; break; }
           Object.assign(x, r.data[0]);
         }
@@ -2682,14 +2682,14 @@ window.kumonPtcNav = function(client, role){
     await loadSessions(); render();
     const left = keys.length - joined;
     toast(joined ? `${joined} famil${joined === 1 ? "y is" : "ies are"} back to back now.` + (left ? ` ${left} still need${left === 1 ? "s" : ""} a teacher: ${invited ? invited + " already invited" : ""}${invited && stuck ? ", " : ""}${stuck ? stuck + " with no free time beside the other PTC" : ""}.` : "")
-      : keys.length ? `Couldn't join any automatically (${invited ? invited + " already invited" : ""}${invited && stuck ? ", " : ""}${stuck ? stuck + " with no free time beside the other PTC" : ""}). Use Change time on those.` : "Every family is already back to back.");
+      : keys.length ? `Couldn't join any automatically (${invited ? invited + " already invited" : ""}${invited && stuck ? ", " : ""}${stuck ? stuck + " with no free time beside the other PTC" : ""}). ${invited ? "Invited ones: each teacher can press Put mine back to back in their week (it moves them and marks them Moved · re-invite), or Reschedule one by one." : "Use Reschedule on those."}` : "Every family is already back to back.");
   }
 
   MODALS.resched = (s) => {
-    const w = currentWeek(); if(!w) return { title:"Change time", body:"" };
+    const w = currentWeek(); if(!w) return { title:"Reschedule", body:"" };
     const list = weekSessions();
     const fam = list.filter(o => sessFamily(o) === s.family && o.teacher === s.teacher);
-    if(!fam.length) return { title:"Change time", body:`<div class="empty">Nothing to move.</div>`, foot:`<button class="btn" data-action="close-modal">Close</button>` };
+    if(!fam.length) return { title:"Reschedule", body:`<div class="empty">Nothing to move.</div>`, foot:`<button class="btn" data-action="close-modal">Close</button>` };
     const tw = teacherWeek(w, s.teacher), slotMin = tw.slot_minutes, L = fam.length;
     const occ = occupancy(list.map(x => Object.assign({}, x, { family: sessFamily(x) })), new Set(fam.map(o => o.id)));
     const others = list.filter(o => sessFamily(o) === s.family && o.teacher !== s.teacher && o.date);
@@ -2716,7 +2716,7 @@ window.kumonPtcNav = function(client, role){
     const shown = opts.slice(0, s.day && s.day !== "all" ? 80 : 12);
     return {
       size:"wide",
-      title: `${cur.length ? "Change time" : "Pick a time"} · ${names.map(esc).join(", ")}`,
+      title: `${cur.length ? "Reschedule" : "Pick a time"} · ${names.map(esc).join(", ")}`,
       body: `<div class="hint">${cur.length ? `Now: ${cur.map(x => `${esc(fmtDateLong(x.date))}, ${esc(fmt12(x.time))}`).join(" · ")}. ` : ""}Only times that are free for you${others.length ? " and don't clash with this family's other teachers" : ""}. ${others.length ? `Other teachers: ${others.map(o => `${esc(o.teacher)} ${esc(fmtDate(o.date))} ${esc(fmt12(o.time))}`).join(" · ")}.` : ""}</div>
         <div class="chips"><button class="chip${!s.day || s.day === "all" ? " active" : ""}" data-action="rs-day" data-day="all">Best times</button>${tw.days.map(d => `<button class="chip${s.day === d.date ? " active" : ""}" data-action="rs-day" data-day="${esc(d.date)}">${esc(fmtDate(d.date))}</button>`).join("")}</div>
         <div class="slot-grid">${shown.map((o, k) => `<button class="slot${o.next ? " near" : ""}" data-action="rs-pick" data-k="${k}">${esc(fmt12(o.times[0]))}<small>${s.day && s.day !== "all" ? (o.next ? "next to their other PTC" : "free") : esc(fmtDate(o.date))}${!(s.day && s.day !== "all") && o.next ? " · next to their other PTC" : ""}</small></button>`).join("") || `<div class="hint">No free time${s.day && s.day !== "all" ? " on this day" : ""}. Add hours in <b>Change my times</b>.</div>`}</div>
@@ -3249,8 +3249,16 @@ window.kumonPtcNav = function(client, role){
     if(a === "join-up"){
       if(loadIssues.has("sessions") || loadIssues.has("weeks")){ alert("The PTC week didn't load properly. Refresh the page first."); return; }
       const t = btn.dataset.teacher || "";
+      let moveInv = false;
+      if(t){
+        const inv = weekSessions().filter(x => x.teacher === t && (x.status === "invited" || x.status === "cant") && famApart(sessFamily(x))).length;
+        if(inv){
+          if(!confirm(`${inv} of your PTCs that aren't back to back were already sent to parents.\n\nThey'll move next to the family's other PTC and go back to To invite as "Moved · re-invite", so you can send the parent the new time.\n\nConfirmed PTCs don't move.`)) return;
+          moveInv = true;
+        }
+      }
       if(!t && !confirm("Put every family's PTCs back to back?\n\nFor each family that isn't, one teacher's PTC stays where it is and the others move right next to it. Only PTCs nobody has invited yet are moved; teachers can change anything after.")) return;
-      btn.disabled = true; await joinUpFamilies(t); btn.disabled = false; return;
+      btn.disabled = true; await joinUpFamilies(t, moveInv); btn.disabled = false; return;
     }
     if(a === "my-apart"){ ui.onlyApart = !ui.onlyApart; renderWeek(); return; }
     if(a === "my-tab"){ ui.onlyApart = false; ui.myTab = btn.dataset.tab; lsSet("myTab", ui.myTab); renderWeek(); return; }
