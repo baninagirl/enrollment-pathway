@@ -1974,10 +1974,11 @@ window.kumonPtcNav = function(client, role){
     const r = await reopenMilestonesFor(ids);
     if(!r.ok){ await restoreMilestones(snap.rows, () => true); return r; }
     const gone = new Set(); let message = "";
-    for(let i = 0; i < ids.length; i += 100){
-      const { data, error } = await sbClient.from("ptc_sessions").delete().in("id", ids.slice(i, i + 100)).select("id");
-      (data || []).forEach(x => gone.add(x.id));
-      if(error){ message = error.message; break; }
+    for(let i = 0; i < ids.length; i += 50){
+      let res = await sbClient.from("ptc_sessions").delete().in("id", ids.slice(i, i + 50)).select("id");
+      if(res.error){ await new Promise(r => setTimeout(r, 1200)); res = await sbClient.from("ptc_sessions").delete().in("id", ids.slice(i, i + 50)).select("id"); }   // one retry on a hiccup
+      (res.data || []).forEach(x => gone.add(x.id));
+      if(res.error){ message = res.error.message; break; }
     }
     if(gone.size < ids.length){
       await restoreMilestones(snap.rows, sid => !gone.has(sid));
@@ -2248,7 +2249,7 @@ window.kumonPtcNav = function(client, role){
     if(list.some(x => x.status === "confirmed")) return "confirmed";
     return "done";
   }
-  const MY_TABS = [["invite","To invite"],["waiting","Waiting"],["confirmed","Confirmed"],["done","Done"]];
+  const MY_TABS = [["invite","To invite"],["waiting","Invited"],["confirmed","Confirmed"],["done","Done"]];
   function myFamilies(w, t){
     const mine = weekSessions().filter(x => x.teacher === t);
     const map = new Map();
@@ -2297,7 +2298,7 @@ window.kumonPtcNav = function(client, role){
         ${ringSvg(all.confirmed + all.done, all.total, "PTCs confirmed")}
         <div class="mw-title"><h3>${esc(w.name)}</h3><span class="faint">${esc(weekRange(w))} · teachers set their own times and book their own families</span></div>
       </div>
-      <div class="card"><div class="table-scroll"><table class="stable mw-prog"><thead><tr><th>Teacher</th><th>Times</th><th>Booked</th><th>To invite</th><th>Waiting</th><th>Confirmed</th><th>Done</th><th></th></tr></thead><tbody>
+      <div class="card"><div class="table-scroll"><table class="stable mw-prog"><thead><tr><th>Teacher</th><th>Times</th><th>Booked</th><th>To invite</th><th>Invited</th><th>Confirmed</th><th>Done</th><th></th></tr></thead><tbody>
         ${rows.map(r => `<tr class="mw-row" data-action="my-open" data-teacher="${esc(r.t)}">
           <td><b>${esc(r.t)}</b></td>
           <td>${r.set ? `<span class="pill st-confirmed">Set</span>` : `<span class="pill st-draft">Not set</span>`}</td>
@@ -2701,7 +2702,7 @@ window.kumonPtcNav = function(client, role){
     const back = isAdmin() && ui.myTeacher ? `<button class="btn sm ghost" data-action="my-back">‹ All teachers</button>` : "";
     return `<div class="toolbar">${back}${weekSel}${viewSeg}<span class="grow"></span><label class="cal-who">Show <select id="calWhoPick"><option value="all"${!ui.calWho || ui.calWho === "all" ? " selected" : ""}>Everyone</option>${teacherList().filter(t => pairsOf(t).length || weekSessions().some(x => x.teacher === t)).map(t => `<option value="${esc(t)}"${calCols(w).length === 1 && calCols(w)[0] === t ? " selected" : ""}>${esc(t)}${t === currentTeacherName ? " (you)" : ""}</option>`).join("")}</select></label></div>
       <div class="cal-days">${w.days.map(d => `<button class="mw-tab${d.date === day ? " on" : ""}" data-action="cal-day" data-day="${esc(d.date)}">${esc(fmtDate(d.date))}<em>${list.filter(x => x.date === d.date && cols.includes(x.teacher)).length}</em></button>`).join("")}</div>
-      <div class="cal-legend"><span><i class="lg invite"></i>To invite</span><span><i class="lg waiting"></i>Waiting</span><span><i class="lg cant"></i>Can't make it</span><span><i class="lg confirmed"></i>Confirmed</span><span><i class="lg done"></i>Done</span><span><i class="lg sib"></i>Sibling with another teacher</span><span><i class="lg off"></i>Not free</span></div>
+      <div class="cal-legend"><span><i class="lg invite"></i>To invite</span><span><i class="lg waiting"></i>Invited · no reply yet</span><span><i class="lg cant"></i>Can't make it</span><span><i class="lg confirmed"></i>Confirmed</span><span><i class="lg done"></i>Done</span><span><i class="lg sib"></i>Sibling with another teacher</span><span><i class="lg off"></i>Not free</span></div>
       <div class="cal-wrap"><div class="cal-scroll">${cols.length ? h : `<div class="empty">No teachers to show.</div>`}</div>
         <aside class="cal-tray"><h3>No time yet <span class="faint">${nTray}</span></h3><p class="faint">${nTray ? "Drag one onto the calendar to book it." : "Everyone has a time."}</p>${tray}</aside></div>
       <div class="faint cal-foot">Drag a name to a free time in the same teacher's column. ${isAdmin() ? "As an admin you can move anyone." : "You can move your own families; everyone else's are shown for reference."} Moving a PTC that was already invited puts it back in To invite as Moved · re-invite. On a phone, tap a name to change its time.</div>`;
@@ -2797,7 +2798,8 @@ window.kumonPtcNav = function(client, role){
     if(!confirm(`Redo ${redo.length} PTC times?\n\nEvery PTC that hasn't been invited yet is booked again, spread over all the PTC days with a short break every hour. This includes times teachers already changed by hand.\n\n${keep} PTC${keep === 1 ? "" : "s"} already invited, confirmed, moved or held stay where they are.\n\nIf a teacher copied an invite but didn't send it yet, that family's time will change.`)) return;
     toast(`Taking ${redo.length} drafts off…`);
     const r = await deleteWeekSessions(redo.map(x => x.id));
-    if(!r.ok){ alert("Couldn't take the drafts off: " + r.message + (r.removed ? ` (${r.removed} were removed; press Draft everyone to book them again)` : ". Nothing was changed.")); await loadSessions(); render(); return; }
+    if(!r.ok && !r.removed){ alert("Couldn't take the drafts off: " + r.message + ". Nothing was changed."); await loadSessions(); render(); return; }
+    if(!r.ok) toast(`Only ${r.removed} of ${redo.length} came off (${r.message}). Booking those again now; press Redo all drafts again for the rest.`);
     await loadSessions(); ui.copied = new Set();
     logHistory("ptc_draft", `${w.name}: redo all drafts (${redo.length} taken off, booked again spread out)`, "ptc_week", w.id, { redone: redo.length, kept: keep });
     await draftEveryone(true);
@@ -3163,7 +3165,7 @@ window.kumonPtcNav = function(client, role){
       if(status === "invited") ui.copied.delete(btn.dataset.family);
       render();
       if(a === "my-cant"){ openModal({ kind:"resched", family: btn.dataset.family, teacher: btn.dataset.teacher, day:"all", live:true }); return; }
-      if(n) toast(status === "invited" ? "Marked invited. It's in Waiting now." : status === "confirmed" ? "Confirmed." : STATUS[status].label + ".");
+      if(n) toast(status === "invited" ? "Marked invited. It's in the Invited tab now." : status === "confirmed" ? "Confirmed." : STATUS[status].label + ".");
       return;
     }
     if(a === "my-resched"){ openModal({ kind:"resched", family: btn.dataset.family, teacher: btn.dataset.teacher, day:"all", live:true }); return; }
