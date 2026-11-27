@@ -1375,6 +1375,21 @@ window.kumonPtcNav = function(client, role){
     const fams = [...byFam.entries()].map(([key, list]) => ({ key, list, busiest: Math.max(...list.map(i => teacherLoad[i.teacher] || 0)) }));
     fams.sort((a,b) => b.list.length - a.list.length || b.busiest - a.busiest || a.key.localeCompare(b.key));
 
+    // Spread out (Nov 27): each teacher's PTCs are shared across ALL their days in proportion to each day's hours,
+    // and at most 3 per clock hour (a 15-minute breather every hour) while there is room for that.
+    const totalSlots = days.reduce((n, d) => n + d.slots.length, 0) || 1;
+    const tCount = {}; items.forEach(i => { tCount[i.teacher] = (tCount[i.teacher] || 0) + 1; });
+    const tDay = {}, tHour = {};
+    existing.forEach(x => { if(tCount[x.teacher] != null) tCount[x.teacher]++; });
+    existing.forEach(x => { if(x.date && x.time){ const k = x.teacher + "|" + x.date; tDay[k] = (tDay[k] || 0) + 1; const h = k + "|" + Math.floor(toMin(x.time) / 60); tHour[h] = (tHour[h] || 0) + 1; } });
+    const dayCap = (t, d) => Math.ceil(d.slots.length * (tCount[t] || 0) / totalSlots);
+    const hourMax = t => (tCount[t] || 0) <= totalSlots * 0.75 ? 3 : 4;
+    const crowd = (t, date, m) => {
+      const d = days.find(x => x.date === date); let p = 0;
+      if(d && (tDay[t + "|" + date] || 0) >= dayCap(t, d)) p += 1000;
+      if((tHour[t + "|" + date + "|" + Math.floor(m / 60)] || 0) >= hourMax(t)) p += 400;
+      return p;
+    };
     const placed = [], unplaced = []; let split = 0;
     const freeFor = (date, min, i) => !occ.teacherAt(date, min, i.teacher) && !occ.familyAt(date, min, i.family);
     const adjacentBonus = (fk, date, start, end) => {
@@ -1384,6 +1399,7 @@ window.kumonPtcNav = function(client, role){
     const book = (i, date, min) => {
       const x = Object.assign({}, i, { date, time: fromMin(min) });
       placed.push(x); occ.put(x); dayLoad[date] = (dayLoad[date] || 0) + 1;
+      const tk = i.teacher + "|" + date; tDay[tk] = (tDay[tk] || 0) + 1; const hk = tk + "|" + Math.floor(min / 60); tHour[hk] = (tHour[hk] || 0) + 1;
       (famExisting.get(i.family) || famExisting.set(i.family, []).get(i.family)).push({ date, min });
     };
 
@@ -1395,7 +1411,9 @@ window.kumonPtcNav = function(client, role){
       for(const d of days){
         for(let s = 0; s + L <= d.slots.length; s++){
           if(d.slots[s + L - 1] !== d.slots[s] + (L - 1) * slotMin) continue;   // a break in the middle
-          cands.push({ date:d.date, idx:s, slots:d.slots, score: prefScore(d.date, d.slots[s], ct, dayLoad) + adjacentBonus(fam.key, d.date, d.slots[s], d.slots[s] + L*slotMin) });
+          const tset = [...new Set(fam.list.map(i => i.teacher))];
+          const cr = tset.reduce((p, t) => p + d.slots.slice(s, s + L).reduce((q, m) => q + crowd(t, d.date, m), 0), 0);
+          cands.push({ date:d.date, idx:s, slots:d.slots, score: prefScore(d.date, d.slots[s], ct, dayLoad) + adjacentBonus(fam.key, d.date, d.slots[s], d.slots[s] + L*slotMin) + cr });
         }
       }
       cands.sort((a,b) => a.score - b.score);
@@ -1412,7 +1430,7 @@ window.kumonPtcNav = function(client, role){
         let best = null;
         for(const d of days) for(const m of d.slots){
           if(!freeFor(d.date, m, i)) continue;
-          const sc = prefScore(d.date, m, ct, dayLoad) + adjacentBonus(fam.key, d.date, m, m + slotMin);
+          const sc = prefScore(d.date, m, ct, dayLoad) + adjacentBonus(fam.key, d.date, m, m + slotMin) + crowd(i.teacher, d.date, m);
           if(!best || sc < best.sc) best = { date:d.date, m, sc };
         }
         if(best) book(i, best.date, best.m); else unplaced.push(i);
@@ -2273,7 +2291,7 @@ window.kumonPtcNav = function(client, role){
       return { t, pairs, timed, set: !!hoursRow(w, t), invite: c(["draft"]), waiting: c(["invited","cant"]), confirmed: c(["confirmed"]), done: c(["done","no_show"]), total: Math.max(pairs, list.length) };
     }).filter(r => r.total);
     const all = rows.reduce((a, r) => { ["total","timed","waiting","confirmed","done"].forEach(k => a[k] += r[k]); return a; }, { total:0, timed:0, waiting:0, confirmed:0, done:0 });
-    return `<div class="toolbar">${weekSel}<div class="seg-mini"><button class="on" data-action="view" data-view="list">List</button><button data-action="view" data-view="cal">Calendar</button></div><button class="btn sm" data-action="week-edit">Days &amp; hours</button><button class="btn sm" data-action="week-new">New PTC week</button><button class="btn sm" data-action="siblings">Siblings</button><span class="grow"></span><button class="btn sm primary" data-action="draft-all">Draft everyone</button>${w.closed_at ? `<span class="pill st-draft">Closed</span>` : ""}</div>
+    return `<div class="toolbar">${weekSel}<div class="seg-mini"><button class="on" data-action="view" data-view="list">List</button><button data-action="view" data-view="cal">Calendar</button></div><button class="btn sm" data-action="week-edit">Days &amp; hours</button><button class="btn sm" data-action="week-new">New PTC week</button><button class="btn sm" data-action="siblings">Siblings</button><span class="grow"></span><button class="btn sm" data-action="redo-drafts" title="Book every PTC nobody has invited yet again, spread out">Redo all drafts</button><button class="btn sm primary" data-action="draft-all">Draft everyone</button>${w.closed_at ? `<span class="pill st-draft">Closed</span>` : ""}</div>
       <div class="mw-head card">
         ${ringSvg(all.confirmed + all.done, all.total, "PTCs confirmed")}
         <div class="mw-title"><h3>${esc(w.name)}</h3><span class="faint">${esc(weekRange(w))} · teachers set their own times and book their own families</span></div>
@@ -2767,13 +2785,28 @@ window.kumonPtcNav = function(client, role){
     clearTimeout(undoTimer); undoTimer = setTimeout(() => { bar.hidden = true; }, 8000);
   }
 
+  // ---- Redo all drafts (admins): every PTC nobody has invited yet comes off and is booked again, spread out ----
+  async function redoAllDrafts(){
+    const w = currentWeek(); if(!w) return;
+    const redo = weekSessions().filter(x => x.status === "draft" && !x.moved_at);
+    const keep = weekSessions().length - redo.length;
+    if(!redo.length){ toast("No drafts to redo."); return; }
+    if(!confirm(`Redo ${redo.length} PTC times?\n\nEvery PTC that hasn't been invited yet is booked again, spread over all the PTC days with a short break every hour.\n\n${keep} PTC${keep === 1 ? "" : "s"} already invited, confirmed, moved or held stay where they are.\n\nIf a teacher copied an invite but didn't send it yet, that family's time will change.`)) return;
+    toast(`Taking ${redo.length} drafts off…`);
+    const r = await deleteWeekSessions(redo.map(x => x.id));
+    if(!r.ok){ alert("Couldn't take the drafts off: " + r.message + (r.removed ? ` (${r.removed} were removed; press Draft everyone to book them again)` : ". Nothing was changed.")); await loadSessions(); render(); return; }
+    await loadSessions(); ui.copied = new Set();
+    logHistory("ptc_draft", `${w.name}: redo all drafts (${redo.length} taken off, booked again spread out)`, "ptc_week", w.id, { redone: redo.length, kept: keep });
+    await draftEveryone(true);
+  }
+
   // ---- Draft everyone (admins): every child without a time, in each teacher's own free times ----
-  async function draftEveryone(){
+  async function draftEveryone(noAsk){
     const w = currentWeek(); if(!w) return;
     const teachers = teacherList().filter(t => missingOf(t).length);
     if(!teachers.length){ toast("Everyone already has a time."); return; }
     const n = teachers.reduce((a, t) => a + missingOf(t).length, 0);
-    if(!confirm(`Book ${n} children for ${teachers.length} teachers?\n\nEach child goes into their teacher's free times (or the week's hours if the teacher hasn't set theirs), near their usual class time and next to siblings. Nobody already booked is moved. Teachers can change anything after.`)) return;
+    if(!noAsk && !confirm(`Book ${n} children for ${teachers.length} teachers?\n\nEach child goes into their teacher's free times (or the week's hours if the teacher hasn't set theirs), near their usual class time and next to siblings. Nobody already booked is moved. Teachers can change anything after.`)) return;
     let placed = 0, unplaced = 0;
     for(let i = 0; i < teachers.length; i++){
       toast(`Booking ${teachers[i]} (${i + 1} of ${teachers.length})…`);
@@ -3073,6 +3106,10 @@ window.kumonPtcNav = function(client, role){
     if(a === "cal-day"){ ui.calDay = btn.dataset.day; renderWeek(); return; }
     if(a === "cal-who"){ ui.calWho = btn.dataset.who; lsSet("calWho", ui.calWho); renderWeek(); return; }
     if(a === "cal-open"){ const x = sessions.find(y => y.id === btn.dataset.sid); if(x) openModal({ kind:"resched", family: sessFamily(x), teacher: x.teacher, day:"all", live:true }); return; }
+    if(a === "redo-drafts"){
+      if(loadIssues.has("sessions") || loadIssues.has("weeks")){ alert("The PTC week didn't load properly. Refresh the page first."); return; }
+      btn.disabled = true; await redoAllDrafts(); btn.disabled = false; return;
+    }
     if(a === "draft-all"){
       if(loadIssues.has("sessions") || loadIssues.has("weeks")){ alert("The PTC week didn't load properly, so the Hub can't tell who already has a time. Refresh the page first."); return; }
       btn.disabled = true; await draftEveryone(); btn.disabled = false; return;
