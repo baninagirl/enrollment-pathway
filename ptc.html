@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Kumon Hub — PTC</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700&family=Inter:wght@400;500;600;700;800&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fredoka:wght@600;700&family=Nunito:wght@700;800;900&display=swap">
 <!-- HUB-SAVE-STATUS v1: one Saving / Saved / Couldn't save card on every page. Same block in every page; edit all together. -->
 <style id="hubSaveStatusCss">
 .hubss{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translate(-50%,24px) scale(.96);opacity:0;pointer-events:none;
@@ -2365,15 +2366,16 @@ window.kumonPtcNav = function(client, role){
     const fk = esc(f.key), tt = esc(t);
     const change = canEdit ? `<button class="linkbtn" data-action="my-resched" data-family="${fk}" data-teacher="${tt}">Change time</button>` : "";
     let act = "";
+    const imgBtn = `<button class="btn sm" data-action="my-img" data-family="${fk}" data-teacher="${tt}" title="An image of this family's PTC time to send the parent">Download image</button>`;
     if(!canEdit) act = `<span class="readonly-note">Another group's</span>`;
     else if(f.stage === "notime") act = `<button class="btn sm primary" data-action="my-resched" data-family="${fk}" data-teacher="${tt}">Pick a time</button>`;
-    else if(f.stage === "invite") act = change + (ui.copied.has(f.key)
+    else if(f.stage === "invite") act = change + imgBtn + (ui.copied.has(f.key)
       ? `<button class="btn sm" data-action="my-copy" data-family="${fk}" data-teacher="${tt}" title="Copy the invite again">Copied ✓ · Copy again</button><button class="btn sm primary" data-action="my-status" data-family="${fk}" data-teacher="${tt}" data-status="invited">Mark invited</button>`
       : `<button class="btn sm primary" data-action="my-copy" data-family="${fk}" data-teacher="${tt}">Copy invite</button>`);
     else if(f.stage === "waiting") act = list.some(x => x.status === "cant")
       ? `<button class="linkbtn" data-action="my-status" data-family="${fk}" data-teacher="${tt}" data-status="confirmed">They can come after all</button><button class="btn sm primary" data-action="my-resched" data-family="${fk}" data-teacher="${tt}">Pick a new time</button>`
-      : `<button class="linkbtn" data-action="my-copy" data-family="${fk}" data-teacher="${tt}">Copy invite again</button><button class="btn sm" data-action="my-cant" data-family="${fk}" data-teacher="${tt}">Can't make it</button><button class="btn sm primary" data-action="my-status" data-family="${fk}" data-teacher="${tt}" data-status="confirmed">Confirmed</button>`;
-    else if(f.stage === "confirmed") act = change + list.filter(x => x.status === "confirmed").map(x => `<a class="btn sm primary" href="student.html#s=${esc(x.student_id)}&ptc=${esc(x.id)}">Start${list.length > 1 ? " · " + esc((sessName(x).split(",")[1] || sessName(x)).trim()) : ""}</a>`).join("");
+      : `<button class="linkbtn" data-action="my-copy" data-family="${fk}" data-teacher="${tt}">Copy invite again</button>${imgBtn}<button class="btn sm" data-action="my-cant" data-family="${fk}" data-teacher="${tt}">Can't make it</button><button class="btn sm primary" data-action="my-status" data-family="${fk}" data-teacher="${tt}" data-status="confirmed">Confirmed</button>`;
+    else if(f.stage === "confirmed") act = change + imgBtn + list.filter(x => x.status === "confirmed").map(x => `<a class="btn sm primary" href="student.html#s=${esc(x.student_id)}&ptc=${esc(x.id)}">Start${list.length > 1 ? " · " + esc((sessName(x).split(",")[1] || sessName(x)).trim()) : ""}</a>`).join("");
     else act = list.map(x => `<a class="btn sm" href="student.html#s=${esc(x.student_id)}&ptc=${esc(x.id)}">${x.note ? "Open note" : "Add note"}${list.length > 1 ? " · " + esc((sessName(x).split(",")[1] || sessName(x)).trim()) : ""}</a>`).join("");
     return `<div class="mw-fam">
       <div class="mw-when">${when}</div>
@@ -2453,6 +2455,111 @@ window.kumonPtcNav = function(client, role){
     }
     lines.push("", "Please reply to confirm. If the time doesn't work, tell us and we'll find you another one.", "", "See you at the center! 😊", `${t} · Kumon Iligan City Learning Center`);
     return lines.join("\n");
+  }
+
+  /* ----- PTC card image for one family (Nov 27): drawn in the browser, nothing is uploaded ----- */
+  function rr(ctx, x, y, w, h, r){ ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); }
+  function fitText(ctx, text, maxW, font, size){ let s = size; do { ctx.font = font.replace("{s}", s); } while(ctx.measureText(text).width > maxW && --s > 12); return s; }
+  async function ptcCardBlob(familyKey, t){
+    const w = currentWeek(), slotMin = (w && w.slot_minutes) || 15;
+    const fam = weekSessions().filter(x => sessFamily(x) === familyKey);
+    const mine = fam.filter(x => x.teacher === t && x.date).sort(bySlot);
+    const others = fam.filter(x => x.teacher !== t && x.date).sort(bySlot);
+    const firstN = n => { const s = studentById.get(n.student_id); return (s && s.first_name) || (sessName(n).split(",")[1] || sessName(n)).trim(); };
+    const lastN = n => { const s = studentById.get(n.student_id); return (s && s.last_name) || sessName(n).split(",")[0].trim(); };
+    try{ await Promise.all(["700 96px Fredoka", "600 40px Fredoka", "800 30px Nunito", "900 22px Nunito", "700 20px Nunito"].map(f => document.fonts.load(f))); }catch(e){}
+    const F = "Fredoka, Sora, sans-serif", N = "Nunito, Inter, sans-serif";
+    const W = 1080, H = 1350, c = document.createElement("canvas"); c.width = W; c.height = H;
+    const ctx = c.getContext("2d"), ls = v => { try{ ctx.letterSpacing = v; }catch(e){} };
+    ctx.fillStyle = "#FFFFFF"; ctx.fillRect(0, 0, W, H);
+    // ornaments
+    ctx.strokeStyle = "#1B1D2A"; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(750, 0); ctx.quadraticCurveTo(900, 64, 1050, 0); ctx.stroke();
+    [[820, 98, 28, "#1F7A4D", 22], [910, 150, 30, "#D7263D", 34], [990, 82, 26, "#2F5BD3", 22]].forEach(([x, y, r, col, top]) => {
+      ctx.beginPath(); ctx.moveTo(x, top); ctx.lineTo(x, y - r); ctx.stroke();
+      ctx.fillStyle = col; ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = "#FFFFFF"; [[-8, -8], [9, 6]].forEach(([dx, dy]) => { ctx.beginPath(); ctx.arc(x + dx, y + dy, 4, 0, Math.PI * 2); ctx.fill(); });
+    });
+    let y = 56; const L = 64, R = W - 64, CW = R - L;
+    ctx.textBaseline = "top";
+    ls("1.6px"); ctx.font = `800 20px ${N}`; ctx.fillStyle = "#1E3FA8"; ctx.fillText("KUMON ILIGAN CITY LEARNING CENTER", L, y); ls("0px");
+    y += 38; ctx.font = `700 96px ${F}`; ctx.fillStyle = "#D7263D"; ctx.fillText("Your PTC", L, y);
+    y += 92; ctx.fillStyle = "#1F7A4D"; ctx.fillText("Schedule", L, y);
+    // who it's for
+    const kids = [...new Map(fam.map(x => [x.student_id, x])).values()];
+    const sameLast = new Set(kids.map(lastN)).size === 1;
+    const kidNames = sameLast ? kids.map(firstN) : kids.map(k => firstN(k) + " " + lastN(k));
+    const joined = kidNames.length > 1 ? kidNames.slice(0, -1).join(", ") + " & " + kidNames[kidNames.length - 1] : kidNames[0];
+    const forLine = "For the family of " + joined + (sameLast ? " " + lastN(kids[0]) : "");
+    y += 116; fitText(ctx, forLine, CW, `800 {s}px ${N}`, 30); ctx.fillStyle = "#33364A"; ctx.fillText(forLine, L, y);
+    y += 62;
+    // this teacher's PTCs, one box per day
+    const byDate = []; mine.forEach(x => { const g = byDate.find(b => b.date === x.date); if(g) g.list.push(x); else byDate.push({ date: x.date, list: [x] }); });
+    for(const g of byDate){
+      const h = 210, d = new Date(g.date + "T00:00:00Z");
+      ctx.fillStyle = "#E4ECFF"; rr(ctx, L, y, CW, h, 26); ctx.fill(); ctx.strokeStyle = "#2F5BD3"; ctx.lineWidth = 3; ctx.stroke();
+      // date page
+      const px = L + 22, py = y + 22, pw = 150, ph = h - 44;
+      ctx.fillStyle = "#FFFFFF"; rr(ctx, px, py, pw, ph, 18); ctx.fill();
+      ctx.save(); rr(ctx, px, py, pw, ph, 18); ctx.clip(); ctx.fillStyle = "#2F5BD3"; ctx.fillRect(px, py, pw, 40); ctx.restore();
+      ctx.textAlign = "center"; ls("2px"); ctx.fillStyle = "#FFFFFF"; ctx.font = `600 22px ${F}`;
+      ctx.fillText(d.toLocaleDateString("en-US", { timeZone:"UTC", weekday:"short" }).toUpperCase(), px + pw / 2, py + 8);
+      ls("0px"); ctx.fillStyle = "#1E3FA8"; ctx.font = `700 76px ${F}`; ctx.fillText(String(d.getUTCDate()), px + pw / 2, py + 48);
+      ls("2px"); ctx.font = `600 22px ${F}`; ctx.fillText(d.toLocaleDateString("en-US", { timeZone:"UTC", month:"short" }).toUpperCase(), px + pw / 2, py + 128); ls("0px");
+      ctx.textAlign = "left";
+      const tx = px + pw + 26, tw = R - 22 - tx;
+      const from = toMin(g.list[0].time), to = toMin(g.list[g.list.length - 1].time) + slotMin;
+      const range = `${fmt12(from).replace(/ (AM|PM)$/, fmt12(from).slice(-2) === fmt12(to).slice(-2) ? "" : " $1")} – ${fmt12(to)}`;
+      fitText(ctx, range, tw, `700 {s}px ${F}`, 60); ctx.fillStyle = "#1E3FA8"; ctx.fillText(range, tx, y + 34);
+      ctx.font = `900 28px ${N}`; ctx.fillStyle = "#1B1D2A"; ctx.fillText("with " + t, tx, y + 104);
+      let cx = tx; const cy = y + 148; ctx.font = `800 20px ${N}`;
+      for(const x of g.list){ const label = firstN(x) + (x.subjects ? " · " + x.subjects : ""); const cw = ctx.measureText(label).width + 24; if(cx + cw > R - 22) break; ctx.fillStyle = "#FFFFFF"; rr(ctx, cx, cy, cw, 36, 10); ctx.fill(); ctx.fillStyle = "#1B1D2A"; ctx.fillText(label, cx + 12, cy + 7); cx += cw + 8; }
+      y += h + 16;
+    }
+    // the family's PTCs with other teachers
+    for(const o of others.slice(0, 3)){
+      const h = 104;
+      ctx.fillStyle = "#F6F7FA"; rr(ctx, L, y, CW, h, 22); ctx.fill(); ctx.strokeStyle = "#D9DCE6"; ctx.lineWidth = 2; ctx.stroke();
+      const om = toMin(o.time), adj = mine.find(x => x.date === o.date && (toMin(x.time) + slotMin === om || om + slotMin === toMin(x.time)));
+      const tag = adj ? (om > toMin(adj.time) ? "RIGHT AFTER" : "RIGHT BEFORE") : new Date(o.date + "T00:00:00Z").toLocaleDateString("en-US", { timeZone:"UTC", weekday:"short", month:"short", day:"numeric" }).toUpperCase();
+      ctx.textAlign = "center"; ls("1px"); ctx.font = `600 20px ${F}`; ctx.fillStyle = "#6A6D7C"; ctx.fillText(tag, L + 22 + 75, y + 40); ls("0px"); ctx.textAlign = "left";
+      const tx = L + 22 + 150 + 26;
+      ctx.font = `700 40px ${F}`; ctx.fillStyle = "#1B1D2A"; ctx.fillText(`${fmt12(om).replace(/ (AM|PM)$/, "")} – ${fmt12(om + slotMin)}`, tx, y + 14);
+      const about = `with ${o.teacher} · about ${firstN(o)}'s ${o.subjects || "other subject"}`;
+      fitText(ctx, about, R - 22 - tx, `800 {s}px ${N}`, 24); ctx.fillStyle = "#33364A"; ctx.fillText(about, tx, y + 64);
+      y += h + 14;
+    }
+    // what we'll talk about
+    y += 16; ctx.font = `600 32px ${F}`; ctx.fillStyle = "#1B1D2A"; ctx.fillText("What we'll talk about", L, y); y += 50;
+    const pills = ["How they're doing in class", "Their study plan", "Goals for next year"], pw3 = (CW - 24) / 3;
+    pills.forEach((p, i) => { const x = L + i * (pw3 + 12); ctx.fillStyle = "#EAF6EF"; rr(ctx, x, y, pw3, 70, 16); ctx.fill(); fitText(ctx, p, pw3 - 32, `900 {s}px ${N}`, 22); ctx.fillStyle = "#145A37"; ctx.fillText(p, x + 16, y + 23); });
+    // banner right under the content; the image is cropped to fit (never shorter than a square)
+    const outH = Math.max(1080, Math.min(H, y + 70 + 56 + 112 + 48));
+    const by = outH - 48 - 112;
+    ctx.fillStyle = "#1F7A4D"; rr(ctx, L, by, CW, 112, 24); ctx.fill();
+    ctx.strokeStyle = "#FFFFFF"; ctx.lineWidth = 4; ctx.lineJoin = "round"; ctx.lineCap = "round";
+    const ix = L + 30, iy = by + 30; ctx.beginPath(); ctx.moveTo(ix + 52, iy + 36); ctx.lineTo(ix + 52, iy + 4); ctx.lineTo(ix, iy + 4); ctx.lineTo(ix, iy + 56); ctx.lineTo(ix + 12, iy + 44); ctx.lineTo(ix + 52, iy + 44); ctx.closePath(); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(ix + 12, iy + 18); ctx.lineTo(ix + 40, iy + 18); ctx.moveTo(ix + 12, iy + 30); ctx.lineTo(ix + 30, iy + 30); ctx.stroke();
+    ctx.fillStyle = "#FFFFFF"; ctx.font = `600 36px ${F}`; ctx.fillText("Reply to confirm 😊", ix + 84, by + 22);
+    ctx.fillStyle = "#CDEBD9"; ctx.font = `700 20px ${N}`; ctx.fillText("Can't make it? Tell us and we'll find you another time.", ix + 84, by + 68);
+    const out = document.createElement("canvas"); out.width = W; out.height = outH;
+    out.getContext("2d").drawImage(c, 0, 0, W, outH, 0, 0, W, outH);
+    const blob = await new Promise(res => out.toBlob(res, "image/png"));
+    const name = `PTC ${joined}${sameLast ? " " + lastN(kids[0]) : ""} - ${mine[0] ? fmtDate(mine[0].date, { weekday: undefined }) : ""}.png`.replace(/[\\/:*?"<>|]/g, "");
+    return { blob, name };
+  }
+  async function downloadPtcCard(familyKey, t){
+    const { blob, name } = await ptcCardBlob(familyKey, t);
+    if(!blob){ alert("Couldn't make the image on this device."); return; }
+    const file = new File([blob], name, { type: "image/png" });
+    const touch = matchMedia("(pointer: coarse)").matches;
+    if(touch && navigator.canShare && navigator.canShare({ files: [file] })){
+      try{ await navigator.share({ files: [file], title: "PTC schedule" }); return; }catch(e){ if(e && e.name === "AbortError") return; }
+    }
+    const url = URL.createObjectURL(blob), a = document.createElement("a");
+    a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+    toast("Image saved. Send it to the parent with the invite.");
   }
 
   /* ----- change time / pick a time: back-to-back times free for this teacher and the family ----- */
@@ -2991,6 +3098,7 @@ window.kumonPtcNav = function(client, role){
       if(a === "my-fill") await fillMyTimes(t); else await bookByHand(t);
       return;
     }
+    if(a === "my-img"){ btn.disabled = true; try{ await downloadPtcCard(btn.dataset.family, btn.dataset.teacher); }catch(err){ console.warn(err); alert("Couldn't make the image: " + (err && err.message || err)); } btn.disabled = false; return; }
     if(a === "my-copy"){
       const fam = btn.dataset.family, t = btn.dataset.teacher, text = myInviteText(fam, t);
       let ok = false; try{ await navigator.clipboard.writeText(text); ok = true; }catch(err){}
