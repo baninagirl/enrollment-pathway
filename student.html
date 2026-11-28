@@ -1370,7 +1370,7 @@ window.kumonPtcNav = function(client, role){
       student: st.data, enrollments: en.data || [], schedules, history: hi.data || [], projections: pr.data || [],
       absences: ab.data || [], milestones: ms.data || [], payments: pay.data || [], attendance: att.data || [],
       firstTick: firstTick.error ? null : ((firstTick.data || [])[0] || {}).week_start || null, firstDay: ptcFirstDay,
-      moves: mv.error ? [] : (mv.data || []), sessions: sesr.error ? [] : (sesr.data || []),
+      moves: mv.error ? [] : (mv.data || []), sessions: sesr.error ? [] : (sesr.data || []).filter(x => !x.skip_reason),   // taken out of a PTC week: not a meeting
       partial: [hi, pr, ab, ms, pay, sc, att, firstTick].some(r => r.error)
     };
   }

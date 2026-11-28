@@ -602,6 +602,8 @@
   .mw-fix-act{ display:flex; gap:8px; flex-wrap:wrap; }
   .mw-warn{ color:var(--bad); font-weight:600; }
   .mw-edit .day-rows{ padding:12px 16px 0; }
+  .mw-out summary{ padding:12px 16px; cursor:pointer; }
+  .mw-out .mw-list{ padding:0 12px 12px; }
   .mw-add{ display:flex; gap:10px; align-items:center; flex-wrap:wrap; padding:10px 16px 0; }
   .mw-add input{ max-width:180px; }
   .mw-cap{ padding:10px 16px; font-size:13px; color:var(--ink-muted); }
@@ -1306,7 +1308,10 @@ window.kumonPtcNav = function(client, role){
 
   /* ---------------- PTC week: slots ---------------- */
   function currentWeek(){ return weeks.find(w => w.id === ui.weekId) || null; }
-  function weekSessions(){ return sessions.filter(x => x.week_id === ui.weekId); }
+  // skip_reason = a teacher took this child out of the PTC week (phase163): kept as a row so no draft books them again.
+  function weekSessions(){ return sessions.filter(x => x.week_id === ui.weekId && !x.skip_reason); }
+  function weekAll(){ return sessions.filter(x => x.week_id === ui.weekId); }
+  function weekSkipped(){ return sessions.filter(x => x.week_id === ui.weekId && x.skip_reason); }
   function daySlots(day, slotMin){
     const from = toMin(day.from), to = toMin(day.to), bf = toMin(day.break_from), bt = toMin(day.break_to);
     const out = [];
@@ -1481,7 +1486,7 @@ window.kumonPtcNav = function(client, role){
     return [...map.values()].map(p => Object.assign(p, { subjects: [...p.subj].sort().join(", ") }));
   }
   function missingPairs(){
-    const have = new Set(weekSessions().map(x => x.student_id + "|" + x.teacher));
+    const have = new Set(weekAll().map(x => x.student_id + "|" + x.teacher));
     return neededPairs().filter(p => !have.has(p.student_id + "|" + p.teacher) && (isAdmin() || myGroupTeachers().includes(p.teacher)));
   }
 
@@ -1991,6 +1996,16 @@ window.kumonPtcNav = function(client, role){
   }
   // Deletes sessions; any new-student PTC they had marked done goes back on the due list.
   // If the delete fails (or the database refuses it), the PTCs of sessions that are still there are marked done again.
+  async function takeOutOfWeek(list){
+    const ids = list.map(x => x.id);
+    const res = await sbClient.from("ptc_sessions").update({ skip_reason:"removed", date:null, time:null, status:"draft", moved_at:null, updated_by_name: myName() }).in("id", ids).select();
+    if(res.error && /skip_reason/.test(res.error.message || "")) return deleteWeekSessions(ids);   // phase163 not run yet
+    if(res.error) return { ok:false, message: res.error.message };
+    (res.data || []).forEach(r => { const x = sessions.find(y => y.id === r.id); if(x) Object.assign(x, r); });
+    const wasDone = list.filter(x => x.status === "done").map(x => x.id);
+    let reopened = 0; if(wasDone.length) reopened = (await reopenAfterUndo(wasDone)) || 0;
+    return { ok:true, reopened };
+  }
   async function deleteWeekSessions(ids){
     const snap = await doneMilestonesFor(ids);
     if(!snap.ok) return snap;
@@ -2263,7 +2278,7 @@ window.kumonPtcNav = function(client, role){
   function slotCount(days, slotMin){ return days.reduce((n, d) => n + daySlots(d, slotMin).length, 0); }
   function weekRange(w){ return w.days.length ? `${fmtDate(w.days[0].date)} – ${fmtDate(w.days[w.days.length-1].date)}` : "no days yet"; }
   function pairsOf(t){ return neededPairs().filter(p => p.teacher === t); }
-  function missingOf(t){ const have = new Set(weekSessions().filter(x => x.teacher === t).map(x => x.student_id)); return pairsOf(t).filter(p => !have.has(p.student_id)); }
+  function missingOf(t){ const have = new Set(weekAll().filter(x => x.teacher === t).map(x => x.student_id)); return pairsOf(t).filter(p => !have.has(p.student_id)); }
   // Stage of one family's meetings with this teacher: the earliest stage any of them is at.
   function stageOf(list){
     if(list.some(x => !x.date)) return "notime";
@@ -2384,6 +2399,9 @@ window.kumonPtcNav = function(client, role){
     if(notime.length){
       html += `<div class="card"><div class="card-head"><h3>No time yet <span class="faint">${notime.length}</span></h3><span class="hint">Pick a time for each, then invite the parent.</span></div><div class="mw-list">${notime.map(f => famCard(w, t, f)).join("")}</div></div>`;
     }
+
+    const out = weekSkipped().filter(x => x.teacher === t);
+    if(out.length) html += `<details class="card mw-out"><summary><b>Taken out of PTC week</b> <span class="faint">${out.length} · no PTC this week, drafting skips them</span></summary><div class="mw-list">${out.map(x => `<div class="mw-fam"><div class="mw-when"><b>—</b><span>out</span></div><div class="mw-main"><div class="mw-name"><b>${esc(sessName(x))}</b></div><div class="mw-kids"><span class="mw-kid">${esc(x.subjects || "")}</span></div></div><div class="mw-act">${canEditTeacher(t) ? `<button class="btn sm" data-action="my-addback" data-id="${esc(x.id)}">Add back</button>` : ""}</div></div>`).join("")}</div></details>`;
 
     // 3. the four stages
     if(fams.length > notime.length){
@@ -2654,7 +2672,7 @@ window.kumonPtcNav = function(client, role){
     const w = currentWeek(); if(!w) return;
     const load = {}; weekSessions().forEach(x => load[x.teacher] = (load[x.teacher] || 0) + 1);
     const keys = [...new Set(weekSessions().filter(x => x.date && (!onlyTeacher || x.teacher === onlyTeacher)).map(sessFamily))].filter(k => famApart(k));
-    let joined = 0, stuck = 0, invited = 0;
+    let joined = 0, stuck = 0, invited = 0; const undo = [];
     for(const key of keys){
       const list = weekSessions().filter(x => sessFamily(x) === key && x.date);
       const byT = {}; list.forEach(x => (byT[x.teacher] = byT[x.teacher] || []).push(x));
@@ -2669,7 +2687,9 @@ window.kumonPtcNav = function(client, role){
         if(!o){ blocked = true; continue; }
         for(let j = 0; j < o.order.length; j++){
           const x = sessions.find(y => y.id === o.order[j].id); if(!x) continue;
+          const before = { date:x.date, time:x.time, status:x.status, moved_at:x.moved_at };
           const r = await sbClient.from("ptc_sessions").update(Object.assign({ date:o.date, time: fromMin(o.times[j]) }, x.status === "draft" ? { updated_by_name: myName() } : movedPatch(x))).eq("id", x.id).select();
+          if(!r.error && r.data && r.data.length) undo.push({ id:x.id, before });
           if(r.error || !r.data || !r.data.length){ blocked = true; break; }
           Object.assign(x, r.data[0]);
         }
@@ -2679,9 +2699,10 @@ window.kumonPtcNav = function(client, role){
       else if(blocked && teachers.some(t => t !== fixed && byT[t].some(x => x.status !== "draft"))) invited++;
       else stuck++;
     }
-    logHistory("ptc_move", `${w.name}: put ${joined} famil${joined === 1 ? "y" : "ies"} back to back${onlyTeacher ? " (" + onlyTeacher + ")" : ""}`, "ptc_week", w.id, { joined, stuck, invited });
+    logHistory("ptc_move", `${w.name}: put ${joined} famil${joined === 1 ? "y" : "ies"} back to back${onlyTeacher ? " (" + onlyTeacher + ")" : ""}`, "ptc_week", w.id, { joined, stuck, invited, moved: undo });
     await loadSessions(); render();
     const left = keys.length - joined;
+    if(undo.length){ calUndo = { multi: undo }; setTimeout(() => toastUndo(`Moved ${undo.length} PTC${undo.length === 1 ? "" : "s"} to put families back to back.`), 3600); }
     toast(joined ? `${joined} famil${joined === 1 ? "y is" : "ies are"} back to back now.` + (left ? ` ${left} still need${left === 1 ? "s" : ""} a teacher: ${invited ? invited + " already invited" : ""}${invited && stuck ? ", " : ""}${stuck ? stuck + " with no free time beside the other PTC" : ""}.` : "")
       : keys.length ? `Couldn't join any automatically (${invited ? invited + " already invited" : ""}${invited && stuck ? ", " : ""}${stuck ? stuck + " with no free time beside the other PTC" : ""}). ${invited ? "Invited ones: each teacher can press Put mine back to back in their week (it moves them and marks them Moved · re-invite), or Reschedule one by one." : "Use Reschedule on those."}` : "Every family is already back to back.");
   }
@@ -2722,7 +2743,7 @@ window.kumonPtcNav = function(client, role){
         <div class="chips"><button class="chip${!s.day || s.day === "all" ? " active" : ""}" data-action="rs-day" data-day="all">Best times</button>${tw.days.map(d => `<button class="chip${s.day === d.date ? " active" : ""}" data-action="rs-day" data-day="${esc(d.date)}">${esc(fmtDate(d.date))}</button>`).join("")}</div>
         <div class="slot-grid">${shown.map((o, k) => `<button class="slot${o.next ? " near" : ""}" data-action="rs-pick" data-k="${k}">${esc(fmt12(o.times[0]))}<small>${s.day && s.day !== "all" ? (o.next ? "next to their other PTC" : "free") : esc(fmtDate(o.date))}${!(s.day && s.day !== "all") && o.next ? " · next to their other PTC" : ""}</small></button>`).join("") || `<div class="hint">No free time${s.day && s.day !== "all" ? " on this day" : ""}. Add hours in <b>Change my times</b>.</div>`}</div>
         ${cur.length && fam.some(x => x.status !== "draft") ? `<div class="hint">Changing the time puts them back in <b>To invite</b> as <b>Moved · re-invite</b>, so the parent gets the new time.</div>` : ""}`,
-      foot: `${cur.length ? `<button class="btn danger" data-action="rs-remove" style="margin-right:auto;">Remove from PTC week</button>` : ""}<button class="btn" data-action="close-modal">Close</button>`
+      foot: `${cur.length ? `<button class="btn danger" data-action="rs-remove" style="margin-right:auto;">Take out of PTC week</button>` : ""}<button class="btn" data-action="close-modal">Close</button>`
     };
   };
   async function pickResched(k){
@@ -2873,6 +2894,16 @@ window.kumonPtcNav = function(client, role){
   });
   async function calUndoLast(){
     const u = calUndo; calUndo = null; if(!u) return;
+    if(u.multi){
+      let bad = 0;
+      for(const m of u.multi){
+        const r = await sbClient.from("ptc_sessions").update(Object.assign({}, m.before, { updated_by_name: myName() })).eq("id", m.id).select();
+        if(r.error || !r.data || !r.data.length){ bad++; continue; }
+        const x = sessions.find(y => y.id === m.id); if(x) Object.assign(x, r.data[0]);
+      }
+      logHistory("ptc_move", `Undid putting families back to back (${u.multi.length - bad} PTCs moved back)`, "ptc_week", ui.weekId, { undone: u.multi });
+      render(); toast(bad ? `Moved back ${u.multi.length - bad}; ${bad} couldn't be.` : "Moved back."); return;
+    }
     if(u.created){
       const r = await deleteWeekSessions([u.id]);
       if(!r.ok){ alert("Couldn't undo: " + r.message); return; }
@@ -2892,7 +2923,7 @@ window.kumonPtcNav = function(client, role){
     bar.innerHTML = `<span>${esc(msg)}</span><button class="linkbtn" type="button">Undo</button>`;
     bar.hidden = false;
     bar.querySelector("button").onclick = () => { bar.hidden = true; calUndoLast(); };
-    clearTimeout(undoTimer); undoTimer = setTimeout(() => { bar.hidden = true; }, 8000);
+    clearTimeout(undoTimer); undoTimer = setTimeout(() => { bar.hidden = true; }, 15000);
   }
 
   // ---- Redo all drafts (admins): every PTC nobody has invited yet comes off and is booked again, spread out ----
@@ -3190,9 +3221,8 @@ window.kumonPtcNav = function(client, role){
     }
     if(a === "session-delete"){
       const x = sessions.find(y => y.id === modalState.id); if(!x) return;
-      if(!confirm(`Remove ${sessName(x)}'s session with ${x.teacher} from this PTC week?`)) return;
-      // Any new-student PTC this session had marked done goes back on the due list (put back if the remove fails).
-      const r = await deleteWeekSessions([x.id]);
+      if(!confirm(`Take ${sessName(x)} (${x.teacher}) out of this PTC week? Drafting won't book them again.`)) return;
+      const r = await takeOutOfWeek([x]);
       if(!r.ok){ alert("Couldn't remove the session: " + r.message + ". Nothing was changed."); return; }
       logHistory("ptc_remove", `Removed ${sessName(x)} (${x.teacher}) from the PTC week`, "ptc_session", x.id, null);
       closeModal(); await loadSessions(); await refreshDue(); render();
@@ -3261,6 +3291,14 @@ window.kumonPtcNav = function(client, role){
       if(!t && !confirm("Put every family's PTCs back to back?\n\nFor each family that isn't, one teacher's PTC stays where it is and the others move right next to it. Only PTCs nobody has invited yet are moved; teachers can change anything after.")) return;
       btn.disabled = true; await joinUpFamilies(t, moveInv); btn.disabled = false; return;
     }
+    if(a === "my-addback"){
+      btn.disabled = true;
+      const r = await sbClient.from("ptc_sessions").update({ skip_reason:null, updated_by_name: myName() }).eq("id", btn.dataset.id).select();
+      if(r.error || !r.data || !r.data.length){ alert("Couldn't add back" + (r.error ? ": " + r.error.message : "") + "."); btn.disabled = false; return; }
+      const x = sessions.find(y => y.id === btn.dataset.id); if(x) Object.assign(x, r.data[0]);
+      logHistory("ptc_addback", `Added ${sessName(x || r.data[0])} back to the PTC week`, "ptc_week", ui.weekId, null);
+      render(); toast("Added back. It's under No time yet: Pick a time or press Fill my times."); return;
+    }
     if(a === "my-apart"){ ui.onlyApart = !ui.onlyApart; renderWeek(); return; }
     if(a === "my-tab"){ ui.onlyApart = false; ui.myTab = btn.dataset.tab; lsSet("myTab", ui.myTab); renderWeek(); return; }
     if(a === "my-times"){ ui.editTimes = true; ui.timesDraft = null; renderWeek(); return; }
@@ -3308,8 +3346,8 @@ window.kumonPtcNav = function(client, role){
     if(a === "rs-pick"){ btn.disabled = true; await pickResched(+btn.dataset.k); return; }
     if(a === "rs-remove"){
       const list = weekSessions().filter(x => sessFamily(x) === modalState.family && x.teacher === modalState.teacher);
-      if(!list.length || !confirm(`Remove ${[...new Set(list.map(sessName))].join(", ")} from your PTC week? They go back to “children without a time”.`)) return;
-      const r = await deleteWeekSessions(list.map(x => x.id));
+      if(!list.length || !confirm(`Take ${[...new Set(list.map(sessName))].join(", ")} out of your PTC week?\n\nFor a child who doesn't need a PTC this week (e.g. had one already). Drafting won't book them again; you can add them back any time under "Taken out of PTC week".`)) return;
+      const r = await takeOutOfWeek(list);
       if(!r.ok){ alert("Couldn't remove: " + r.message + ". Nothing was changed."); return; }
       logHistory("ptc_remove", `Removed ${list.map(sessName).join(", ")} (${modalState.teacher}) from the PTC week`, "ptc_week", ui.weekId, null);
       closeModal(); await loadSessions(); await refreshDue(); render(); return;
